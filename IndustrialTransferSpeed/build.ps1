@@ -1,0 +1,27 @@
+# Build script for IndustrialTransferSpeed Harmony Mod
+# Output: D:\!RustServer\HarmonyMods\IndustrialTransferSpeed.dll
+
+Write-Host "Building IndustrialTransferSpeed..." -ForegroundColor Cyan
+
+$projectPath = Join-Path $PSScriptRoot "IndustrialTransferSpeed\IndustrialTransferSpeed.csproj"
+dotnet build $projectPath -c Release
+
+if ($LASTEXITCODE -eq 0) {
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    if (-not (Test-Path $harmonyModsPath)) {
+        New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
+    }
+
+    $dllPath = Join-Path $PSScriptRoot "IndustrialTransferSpeed\bin\Release\net48\IndustrialTransferSpeed.dll"
+    if (-not (Test-Path $dllPath)) {
+        $dllPath = Join-Path $PSScriptRoot "IndustrialTransferSpeed\bin\Release\IndustrialTransferSpeed.dll"
+    }
+    $destPath = Join-Path $harmonyModsPath "IndustrialTransferSpeed.dll"
+
+    Copy-Item -Path $dllPath -Destination $destPath -Force
+    Write-Host "`nBuild successful! IndustrialTransferSpeed.dll copied to $destPath" -ForegroundColor Green
+    Write-Host "Config: HarmonyConfig/IndustrialTransferSpeed.json (created on first run)" -ForegroundColor Yellow
+} else {
+    Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
+    exit 1
+}

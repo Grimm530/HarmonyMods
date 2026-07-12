@@ -1,0 +1,44 @@
+{
+  "76561198078144472": [
+    {
+      "CategoryIndex": 0,
+      "Place": 1
+    },
+    {
+      "CategoryIndex": 1,
+      "Place": 3
+    }
+  ],
+  "76561198141904216": [
+    {
+      "CategoryIndex": 0,
+      "Place": 2
+    }
+  ],
+  "76561198035108091": [
+    {
+      "CategoryIndex": 0,
+      "Place": 3
+    },
+    {
+      "CategoryIndex": 1,
+      "Place": 2
+    }
+  ],
+  "76561198996099230": [
+    {
+      "CategoryIndex": 1,
+      "Place": 1
+    },
+    {
+      "CategoryIndex": 2,
+      "Place": 2
+    }
+  ],
+  "76561198994512180": [
+    {
+      "CategoryIndex": 2,
+      "Place": 3
+    }
+  ]
+}

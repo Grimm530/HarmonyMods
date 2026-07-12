@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Percentage grid overlay (0–1)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 12px; font-family: system-ui, sans-serif; background: #1a1a1a; color: #e0e0e0; }
+    h1 { font-size: 1rem; margin: 0 0 8px 0; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .toolbar label { display: flex; align-items: center; gap: 4px; }
+    .toolbar input[type="number"] { width: 48px; }
+    .wrap { position: relative; display: inline-block; max-width: 100%; }
+    #img { display: block; max-width: 100%; height: auto; vertical-align: top; }
+    #overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+    #overlay canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: auto; cursor: crosshair; }
+    #readout { position: fixed; bottom: 8px; left: 8px; right: 8px; padding: 8px; background: rgba(0,0,0,0.85); border-radius: 6px; font-size: 13px; font-family: monospace; }
+    .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Percentage grid overlay (0–1) — use with a Rust UI screenshot</h1>
+  <div class="toolbar">
+    <label>Columns <input type="number" id="cols" value="20" min="2" max="50"></label>
+    <label>Rows <input type="number" id="rows" value="10" min="2" max="50"></label>
+    <label><input type="checkbox" id="showLabels" checked> Labels</label>
+    <label><input type="file" id="file" accept="image/*"> Load screenshot</label>
+  </div>
+  <p class="hint">Load a screenshot (e.g. 2560×1440) with inventory open. Hover over the image to see normalized X,Y (0–1). Use these for LeftButtonCenter, RightButtonCenter, etc.</p>
+  <div class="wrap">
+    <img id="img" src="" alt="Screenshot" style="display:none;">
+    <div id="overlay" style="display:none;">
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+  <div id="readout">Load an image to start. Hover to see X, Y (0–1).</div>
+
+  <script>
+    const img = document.getElementById('img');
+    const canvas = document.getElementById('canvas');
+    const overlay = document.getElementById('overlay');
+    const readout = document.getElementById('readout');
+    const ctx = canvas.getContext('2d');
+    let cols = 20, rows = 10, showLabels = true;
+
+    function drawGrid() {
+      const w = canvas.width, h = canvas.height;
+      if (!w || !h) return;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(255, 200, 80, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.font = '10px monospace';
+      ctx.fillStyle = 'rgba(255, 200, 80, 0.9)';
+      for (let i = 0; i <= cols; i++) {
+        const x = (i / cols) * w;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+        if (showLabels && i < cols) ctx.fillText((i / cols).toFixed(2), x + 2, 12);
+      }
+      for (let j = 0; j <= rows; j++) {
+        const y = (j / rows) * h;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+        if (showLabels && j < rows) ctx.fillText((1 - j / rows).toFixed(2), 2, y - 2);
+      }
+    }
+
+    function resize() {
+      if (!img.src || !img.naturalWidth) return;
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const maxW = Math.min(w, window.innerWidth - 24);
+      const scale = maxW / w;
+      canvas.width = maxW;
+      canvas.height = h * scale;
+      canvas.style.width = maxW + 'px';
+      canvas.style.height = (h * scale) + 'px';
+      overlay.style.width = maxW + 'px';
+      overlay.style.height = (h * scale) + 'px';
+      overlay.style.display = 'block';
+      drawGrid();
+    }
+
+    document.getElementById('file').onchange = function (e) {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      const url = URL.createObjectURL(f);
+      img.onload = () => { URL.revokeObjectURL(url); resize(); };
+      img.src = url;
+      img.style.display = 'block';
+    };
+
+    document.getElementById('cols').oninput = function () { cols = Math.max(2, parseInt(this.value, 10) || 20); drawGrid(); };
+    document.getElementById('rows').oninput = function () { rows = Math.max(2, parseInt(this.value, 10) || 10); drawGrid(); };
+    document.getElementById('showLabels').onchange = function () { showLabels = this.checked; drawGrid(); };
+
+    canvas.addEventListener('mousemove', function (e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = 1 - (e.clientY - rect.top) / rect.height;
+      readout.textContent = 'X = ' + x.toFixed(4) + '   Y = ' + y.toFixed(4) + '   (use for anchormin/anchormax, LeftButtonCenter, RightButtonCenter)';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+using HarmonyLib;
+
+namespace AlphaLoot.Harmony.Patches;
+
+[HarmonyPatch(typeof(ScarecrowNPC), "ApplyLoot")]
+public class ScarecrowNPC_ApplyLoot_Patch
+{
+	[HarmonyPrefix]
+	private static bool Prefix(ScarecrowNPC __instance, NPCPlayerCorpse corpse)
+	{
+		AlphaLootMod instance = AlphaLootMod.Instance;
+		if (instance == null)
+		{
+			return true;
+		}
+		if (!instance.TryGetNPCProfile(__instance.ShortPrefabName, out var profile) || !profile.Enabled)
+		{
+			return true;
+		}
+		instance.PopulateCorpseLoot(__instance, corpse);
+		return false;
+	}
+}

@@ -1,0 +1,144 @@
+Rust Server Influx Metrics Report
+Generated: 2026-01-22 16:37:04
+Lookback Window: 60 minutes
+Server Tag: svr1_pve
+
+
+== Top CPU Consuming Plugins (Runtime Performance - Excludes Init) ==
+Plugin | Avg Runtime ms | Peak Runtime ms | Init Time s | % of Total
+-------|----------------|-----------------|-------------|-----------
+AdminMenu | 0.62 | 2.57 | N/A | 60.10%
+ZombieHorde | N/A | 0.10 | N/A | 3.93%
+SkinBox | 0.03 | 1.36 | N/A | 3.67%
+AnimalSpawn | N/A | 0.01 | N/A | 3.24%
+AlphaLoot | N/A | 0.23 | N/A | 3.16%
+GrimmZone | N/A | 0.01 | N/A | 2.98%
+RaidableBases | N/A | 0.60 | N/A | 1.96%
+CombatClasses | N/A | 0.34 | N/A | 1.76%
+TruePVE | N/A | N/A | N/A | 1.17%
+RelocateBuilds | N/A | 0.07 | N/A | 0.92%
+RustCar | 0.24 | 0.35 | N/A | 0.82%
+CustomHelicopterTiers2 | N/A | 0.28 | N/A | 0.77%
+Minimap | 0.02 | 0.07 | N/A | 0.73%
+JetPack | N/A | 0.05 | N/A | 0.68%
+Kits | 0.13 | 0.29 | N/A | 0.60%
+
+Note: Runtime metrics exclude initialization time for accurate performance measurement.
+      Init Time shows one-time initialization cost. Avg/Peak Runtime shows ongoing performance.
+
+== Plugin Initialization Times ==
+No initialization time data found. This may indicate plugins haven't completed initialization yet.
+
+== HarmonyMod Plugins (Loaded Status) ==
+Plugin | Total ms | Total s | Avg ms/min
+-------|----------|---------|-----------
+RustServerMetrics | 621.00 | 0.62 | 10.35
+NoGibs | 621.00 | 0.62 | 10.35
+SafeZonePVE | 621.00 | 0.62 | 10.35
+UnlockTier1 | 621.00 | 0.62 | 10.35
+Vanish | 621.00 | 0.62 | 10.35
+NoActiveItemDrop | 621.00 | 0.62 | 10.35
+
+== Most Expensive Method Calls (Invoke Hooks) ==
+Hook | Total ms | Total s | Avg ms/min
+-----|----------|---------|-----------
+BaseAIBrain::TickMovement | 41,949.66 | 41.95 | 699.16
+BaseEntity::NetworkPositionTick | 33,788.17 | 33.79 | 563.14
+BaseNpc::TickAi | 13,322.25 | 13.32 | 222.04
+TriggerParent::OnTick | 12,093.94 | 12.09 | 201.57
+CCTV_RC::ServerTick | 11,856.78 | 11.86 | 197.61
+HackableLockedCrate::LandCheck | 9,663.18 | 9.66 | 161.05
+RootMotionPlayer::PlayServerTick | 6,135.24 | 6.14 | 102.25
+AutoTurret::ServerTick | 6,124.53 | 6.12 | 102.08
+AutoTurret::SendAimDir | 4,964.79 | 4.96 | 82.75
+NPCPlayer::TickMovement | 4,381.75 | 4.38 | 73.03
+TrainSignal::RefreshLightState | 3,496.00 | 3.50 | 58.27
+RidableHorse::UpdateClients | 2,456.25 | 2.46 | 40.94
+Buoyancy::CheckSleepState | 1,076.83 | 1.08 | 17.95
+NPCShopKeeper::Greeting | 986.01 | 0.99 | 16.43
+HarborCraneContainerPickup::ProcessCraneMovement | 946.53 | 0.95 | 15.78
+
+== Invoke Time by Behaviour ==
+Behaviour | Total ms | Total s
+----------|----------|--------
+BaseAIBrain | 41,949.66 | 41.95
+BaseEntity | 34,515.44 | 34.52
+BaseNpc | 13,322.25 | 13.32
+TriggerParent | 12,093.94 | 12.09
+CCTV_RC | 11,856.78 | 11.86
+AutoTurret | 11,089.32 | 11.09
+HackableLockedCrate | 9,663.18 | 9.66
+RootMotionPlayer | 6,135.24 | 6.14
+NPCPlayer | 4,634.42 | 4.63
+TrainSignal | 3,496.00 | 3.50
+RidableHorse | 2,627.30 | 2.63
+Buoyancy | 1,084.65 | 1.08
+NPCShopKeeper | 991.69 | 0.99
+HarborCraneContainerPickup | 953.84 | 0.95
+HotAirBalloon | 703.21 | 0.70
+
+== Object Work Queue Hotspots ==
+Work Item | Total ms | Total s
+----------|----------|--------
+TickFSMWorkQueue::RunJob | 61,153.90 | 61.15
+DroppedItemUnderwaterQueue::RunJob | 48,185.00 | 48.19
+FoodSpoilingWorkQueue::RunJob | 37,561.50 | 37.56
+UpdateAutoTurretScanQueue::RunJob | 9,424.48 | 9.42
+JunkpileWaterWorkQueue::RunJob | 621.89 | 0.62
+UpdateSurroundingsQueue::RunJob | 68.36 | 0.07
+UpdateSkinWorkQueue::RunJob | 7.51 | 0.01
+EggDropWorkQueue::RunJob | 3.29 | 0.00
+StabilityCheckWorkQueue::RunJob | 3.00 | 0.00
+
+== RPC Call Times ==
+No datapoints were returned.
+
+== Server Update Hotspots ==
+Update | Total ms | Total s
+-------|----------|--------
+ServerMgr::Update | 366,604.68 | 366.60
+AIThinkManager::ProcessQueue | 56,851.08 | 56.85
+BasePlayer::ServerCycle | 54,725.22 | 54.73
+BaseMountable::FixedUpdateCycle | 17,500.60 | 17.50
+Buoyancy::Cycle | 5,001.81 | 5.00
+BaseEntity::Spawn | 1,905.84 | 1.91
+ConnectionQueue::Cycle | 1,620.25 | 1.62
+BaseNetworkable::Kill | 773.45 | 0.77
+ServerBuildingManager::Cycle | 715.38 | 0.72
+IOEntity::ProcessQueue | 578.88 | 0.58
+BaseNetwork::Cycle | 126.44 | 0.13
+BasePet::ProcessMovementQueue | 53.22 | 0.05
+
+== Optimization Opportunities ==
+
+Top 3 Plugin Optimization Targets (by Runtime Performance):
+  • AdminMenu: Avg Runtime: 0.62 ms, Peak: 2.57 ms  (60.1% of total)
+  • ZombieHorde: Runtime data not available  (3.93% of total)
+  • SkinBox: Avg Runtime: 0.03 ms, Peak: 1.36 ms  (3.67% of total)
+
+Most Expensive System Hooks (Core Game):
+  • BaseAIBrain::TickMovement: 41.95 s (5.14% of system time)
+  • BaseEntity::NetworkPositionTick: 33.79 s (4.14% of system time)
+  • BaseNpc::TickAi: 13.32 s (1.63% of system time)
+
+Work Queue Hotspots:
+  • TickFSMWorkQueue::RunJob: 61.15 s (38.94% of work queue time)
+  • DroppedItemUnderwaterQueue::RunJob: 48.19 s (30.69% of work queue time)
+  • FoodSpoilingWorkQueue::RunJob: 37.56 s (23.92% of work queue time)
+
+Note: HarmonyMods (GrimmNPC, etc.) show 'loaded status' only, not actual CPU usage.
+      To measure HarmonyMod performance, check invoke_execution hooks they may trigger.
+
+== CPU / Frame Stats ==
+Average FPS: 223.31
+Min FPS: 1.00 / Max FPS: 240.00
+Smoothed FPS: 222.03
+Average Frame Time (ms): 5.06
+Worst Frame Time (ms): 1,991.66
+
+== Memory Usage ==
+Average Used: 0 GB
+Peak Used: 0 GB
+Avg Allocations: 2,041
+Avg GC Collections: 293
+

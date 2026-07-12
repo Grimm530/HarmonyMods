@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Default: repo root RustDedicated_Data\Managed (relative to this folder).
+    Override: dotnet build -p:RustManagedDir="C:\path\to\RustDedicated_Data\Managed\"
+    Or: $env:RUST_MANAGED = "...\Managed" (build.ps1 passes it).
+  -->
+  <PropertyGroup>
+    <RustManagedDir Condition="'$(RustManagedDir)' == '' and '$(RUST_MANAGED)' != ''">$([MSBuild]::EnsureTrailingSlash('$(RUST_MANAGED)'))</RustManagedDir>
+    <RustManagedDir Condition="'$(RustManagedDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed\</RustManagedDir>
+  </PropertyGroup>
+</Project>

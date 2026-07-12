@@ -1,0 +1,14 @@
+<Project>
+  <!--
+    Resolves RustDedicated_Data\Managed without hard-coding one drive layout.
+    Override: dotnet build -p:RustManaged="D:\path\to\RustDedicated_Data\Managed"
+    Or set RUST_MANAGED before running build.ps1.
+  -->
+  <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' != ''">$(RustManaged)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' and '$(RUST_MANAGED)' != ''">$(RUST_MANAGED)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll')">$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll')">D:\!RustServer\RustDedicated_Data\Managed</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('$(USERPROFILE)\RustDedicated_Data\Managed\Assembly-CSharp.dll')">$(USERPROFILE)\RustDedicated_Data\Managed</RustManaged>
+  </PropertyGroup>
+</Project>

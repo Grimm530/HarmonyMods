@@ -1,0 +1,39 @@
+<Project>
+  <!--
+    Shared Rust Managed assembly path for all Harmony mod projects under this folder.
+    Override: dotnet build -p:RustManaged="D:\path\to\RustDedicated_Data\Managed"
+    Or set environment variable RUST_MANAGED before build.ps1.
+  -->
+  <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' != ''">$(RustManaged)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And '$(RUST_MANAGED)' != ''">$(RUST_MANAGED)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('$(MSBuildThisFileDirectory)..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll')">$(MSBuildThisFileDirectory)..\..\RustDedicated_Data\Managed</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll')">D:\!RustServer\RustDedicated_Data\Managed</RustManaged>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+  </PropertyGroup>
+
+  <!-- Current Assembly-CSharp exposes ReadOnlySpan in RPC signatures; compile against game facades. -->
+  <ItemGroup Condition="'$(RustSpanRefs)' != 'false' And '$(RustManaged)' != ''">
+    <Reference Include="mscorlib">
+      <HintPath>$(RustManaged)\mscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="System">
+      <HintPath>$(RustManaged)\System.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Core">
+      <HintPath>$(RustManaged)\System.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>$(RustManaged)\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime">
+      <HintPath>$(RustManaged)\System.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(RustManaged)\netstandard.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>$(RustManaged)\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

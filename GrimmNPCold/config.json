@@ -1,0 +1,12 @@
+{
+  "CanTargetAnimal": false,
+  "CanTargetNpc": false,
+  "CanTargetSleepingPlayer": false,
+  "CanTargetWoundedPlayer": false,
+  "CanTargetSafeZonePlayer": false,
+  "PreventScarecrowTargeting": true,
+  "ForceRespectAiDormant": false,
+  "DefaultSleepDistance": 160.0,
+  "Prefab": "assets/rust.ai/agents/npcplayer/humannpc/scientist/scientistnpc_heavy.prefab",
+  "EnableDebugLogging": false
+}

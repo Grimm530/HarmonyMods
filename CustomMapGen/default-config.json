@@ -1,0 +1,50 @@
+{
+  "Enabled": true,
+  "GenerateRingRoad": "Wanted",
+  "GenerateAboveGroundTrainTracks": "Wanted",
+  "RemoveSmallPowerLines": true,
+  "RemoveLargePowerLines": true,
+  "RemoveRivers": false,
+  "RemoveCarWrecks": true,
+  "EnableCliffs": true,
+  "LakeMinAmount": 2,
+  "LakeMaxAmount": 2,
+  "LakesBlocked": false,
+  "LakesGenerate": "Wanted",
+  "IslandsEnabled": true,
+  "IslandIntensity": 7,
+  "OasesMinAmount": 2,
+  "OasesMaxAmount": 2,
+  "OasesBlocked": false,
+  "OasesGenerate": "Wanted",
+  "CanyonsMinAmount": 2,
+  "CanyonsMaxAmount": 2,
+  "CanyonsBlocked": false,
+  "CanyonsGenerate": "NotWanted",
+  "TerrainConfiguration": {
+    "IslandConfig": {
+      "Enabled": true,
+      "Intensity": 7
+    },
+    "MountainConfig": {
+      "ReduceMountains": true
+    },
+    "TierConfig": {
+      "Enabled": true,
+      "Tier0Percentage": 0.33,
+      "Tier1Percentage": 0.33,
+      "Tier2Percentage": 0.34
+    },
+    "BiomeConfig": {
+      "Enabled": true,
+      "AridPercentage": 0.25,
+      "TemperatePercentage": 0.25,
+      "TundraPercentage": 0.25,
+      "ArcticPercentage": 0.25,
+      "JunglePercentage": 0.5
+    },
+    "FlattenShoreAndBay": true,
+    "BiomeAxisAngle": "TopDesertBottomSnow",
+    "LootAxisAngle": "LeftTier0RightTier2"
+  }
+}

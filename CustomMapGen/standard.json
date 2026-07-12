@@ -1,0 +1,1256 @@
+{
+  "generateRingRoad": "Wanted",
+  "generateAboveGroundTrainTracks": "Wanted",
+  "removeSmallPowerLines": true,
+  "removeLargePowerLines": true,
+  "removeCarWrecks": true,
+  "removeRivers": false,
+  "allowBuildingOnRoads": false,
+  "modifyTiers": false,
+  "trySpawningOutpostInCenter": true,
+  "terrainConfiguration": {
+    "islandConfig": {
+      "enabled": true,
+      "intensity": 7
+    },
+    "mountainConfig": {
+      "reduceMountains": true
+    },
+    "tierConfig": {
+      "enabled": true,
+      "tier0Percentage": 0.33,
+      "tier1Percentage": 0.33,
+      "tier2Percentage": 0.34
+    },
+    "biomeConfig": {
+      "enabled": true,
+      "aridPercentage": 0.25,
+      "temperatePercentage": 0.25,
+      "tundraPercentage": 0.25,
+      "arcticPercentage": 0.25,
+      "junglePercentage": 0.5
+    },
+    "flattenShoreAndBay": true,
+    "biomeAxisAngle": "TopDesertBottomSnow",
+    "lootAxisAngle": "LeftTier0RightTier2"
+  },
+  "oilRigConfigurations": [
+    {
+      "biomePreference": {
+        "enabled": false,
+        "biome": "Desert"
+      },
+      "position": {
+        "enabled": true,
+        "alignment": "Top",
+        "position": 0.023255814
+      },
+      "desired": true,
+      "type": "Large Oilrig",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "biomePreference": {
+        "enabled": false,
+        "biome": "Desert"
+      },
+      "position": {
+        "enabled": true,
+        "alignment": "Right",
+        "position": 1
+      },
+      "desired": true,
+      "type": "Small Oilrig",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "safezones": [
+    {
+      "customPrefab": {
+        "enabled": true,
+        "id": "ba8bcb8c8e2f4be9927ca4bac3e97c1c"
+      },
+      "desired": true,
+      "type": "Outpost",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "customPrefab": {
+        "enabled": false,
+        "id": "default"
+      },
+      "desired": false,
+      "type": "Bandit Town",
+      "blocked": true,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "customPrefab": {
+        "enabled": false,
+        "id": "default"
+      },
+      "desired": false,
+      "type": "Fishing Village A",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "customPrefab": {
+        "enabled": false,
+        "id": "default"
+      },
+      "desired": false,
+      "type": "Fishing Village B",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "customPrefab": {
+        "enabled": false,
+        "id": "default"
+      },
+      "desired": false,
+      "type": "Fishing Village C",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "customPrefab": {
+        "enabled": false,
+        "id": "default"
+      },
+      "desired": false,
+      "type": "Ranch",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "customPrefab": {
+        "enabled": false,
+        "id": "default"
+      },
+      "desired": false,
+      "type": "Large Barn",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    }
+  ],
+  "largeMonuments": [
+    {
+      "desired": true,
+      "type": "Airfield",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": true,
+      "type": "Junkyard",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": true,
+      "type": "Launch Site",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": true,
+      "type": "Military Tunnels",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": false,
+      "type": "Powerplant",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": false,
+      "type": "Radtown",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": false,
+      "type": "Trainyard",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": false,
+      "type": "Water Treatment",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": true,
+      "type": "Sphere Tank",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": true,
+      "type": "Satellite Dish",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": false,
+      "type": "Nuclear Missile Silo",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": false,
+      "type": "Ziggurat",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "desired": true,
+      "type": "Excavator",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "desired": true,
+      "type": "Large Oilrig",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "desired": true,
+      "type": "Small Oilrig",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "smallMonuments": [
+    {
+      "type": "Gas Station",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Supermarket",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "Wanted"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Warehouse",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Lighthouse",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Sewer Branch",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Swamp A",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Swamp B",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Swamp C",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Military Base A",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Military Base B",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Military Base C",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Military Base D",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Arctic Research Base A",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "harbors": [
+    {
+      "type": "Small Harbor",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Large Harbor",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Ferry Terminal",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    }
+  ],
+  "waterWells": [
+    {
+      "type": "Water Well A",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Water Well B",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Water Well C",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Water Well D",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Water Well E",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "caves": [
+    {
+      "type": "Cave Large Hard",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Large Medium",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Large Sewers Hard",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Medium Easy",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Medium Hard",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Medium Medium",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Small Easy",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Small Hard",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Cave Small Medium",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "mountains": [
+    {
+      "type": "Mountain 1",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Mountain 2",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Mountain 3",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Mountain 4",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Mountain 5",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "quarries": [
+    {
+      "type": "Sulfur Quarry",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Stone Quarry",
+      "blocked": true,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    },
+    {
+      "type": "Hqm Quarry",
+      "blocked": false,
+      "allowedToSetBiomes": true,
+      "biomePreferences": [
+        {
+          "biomeType": "Snow",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Forest",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Tundra",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Desert",
+          "selection": "NoPreference"
+        },
+        {
+          "biomeType": "Jungle",
+          "selection": "NoPreference"
+        }
+      ]
+    }
+  ],
+  "icebergs": [
+    {
+      "type": "Iceberg 1",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Iceberg 2",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Iceberg 3",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Iceberg 4",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Iceberg 5",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "iceLakes": [
+    {
+      "type": "Ice Lake 1",
+      "blocked": true,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ice Lake 2",
+      "blocked": true,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ice Lake 3",
+      "blocked": true,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ice Lake 4",
+      "blocked": true,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "ruins": [
+    {
+      "type": "Ruin A",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ruin B",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ruin C",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ruin D",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    },
+    {
+      "type": "Ruin E",
+      "blocked": false,
+      "allowedToSetBiomes": false,
+      "biomePreferences": null
+    }
+  ],
+  "fileName": {
+    "0": "{Type}",
+    "1": "{_}",
+    "2": "{_}",
+    "3": "{Size}",
+    "4": "{_}",
+    "5": "{ShortId}"
+  },
+  "webhook": {
+    "enabled": false,
+    "url": ""
+  },
+  "underwaterLabsConfiguration": {
+    "minAmount": 1,
+    "maxAmount": 1,
+    "blocked": false,
+    "generate": "NoPreference"
+  },
+  "lakesConfiguration": {
+    "minAmount": 2,
+    "maxAmount": 2,
+    "blocked": false,
+    "generate": "Wanted"
+  },
+  "oasesConfiguration": {
+    "minAmount": 2,
+    "maxAmount": 2,
+    "blocked": false,
+    "generate": "Wanted"
+  },
+  "canyonsConfiguration": {
+    "minAmount": 2,
+    "maxAmount": 2,
+    "blocked": false,
+    "generate": "NotWanted"
+  },
+  "blockedPrefabs": [],
+  "removeUndergroundTunnels": false,
+  "embedCargoShipPath": true
+}

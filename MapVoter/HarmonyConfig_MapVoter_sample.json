@@ -1,0 +1,42 @@
+{
+  "Config Version": "2.0.0",
+  "Commands": {
+    "Open MapVoter UI": "mvote",
+    "Generate Maps": "MapVoter.generate",
+    "vote result": "voteresult"
+  },
+  "Options": {
+    "Enable file Debug mode (true/false)": false,
+    "Enable Console Debug mode (true/false)": false,
+    "Disable UI": false
+  },
+  "Discord Settings": {
+    "Log to Discord (true/false)": true,
+    "Discord Logs Channel Id": "1421127672066609162",
+    "Vote Channel id": "1421127672066609162",
+    "Winning Map Channel id": "1466925412239020270",
+    "Discord bridge URL (ticket-support-system mapvoterDiscordBridge)": "http://localhost:3921",
+    "Mention role on vote start and end": "@everyone"
+  },
+  "Map options (manual list, used when not using RustMaps)": [
+    { "id": "3500", "name": "Map 3500", "imageUrl": "" },
+    { "id": "4000", "name": "Map 4000", "imageUrl": "" },
+    { "id": "4500", "name": "Map 4500", "imageUrl": "" }
+  ],
+  "UI Theme": {
+    "Color Scheme": {
+      "Background Color (Panel background)": "#1a1d29",
+      "Surface Color (Card surfaces)": "#252938",
+      "Primary Color (Bright cyan)": "#00d9ff",
+      "Success Color (Neon green)": "#00ff88",
+      "Error Color (Bright red)": "#ff4757",
+      "Text Primary Color (Pure white)": "#ffffff"
+    },
+    "Typography": {
+      "Title Size": 20,
+      "Header Size": 16,
+      "Body Size": 14,
+      "Small Size": 12
+    }
+  }
+}

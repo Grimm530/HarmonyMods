@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ProjectGuid>{3ADF00F4-DB15-457F-A893-743DC80C98FB}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Facepunch.Harmony.GatherManager</RootNamespace>
+    <AssemblyName>GatherManager</AssemblyName>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <Company>Facepunch Studios</Company>
+    <Product>GatherManager</Product>
+    <Copyright>Copyright © Facepunch Studios 2022</Copyright>
+    <AssemblyVersion>1.2.0</AssemblyVersion>
+    <Description>Harmony mod: gather scale, craft scale, blueprints.grantall, /gather command</Description>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ManagedPath>C:\!2XRUST\RustDedicated_Data\Managed</ManagedPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony">
+      <HintPath>$(ManagedPath)\Rust.Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(ManagedPath)\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedPath)\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(ManagedPath)\Assembly-CSharp-firstpass.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Network">
+      <HintPath>$(ManagedPath)\Facepunch.Network.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.System">
+      <HintPath>$(ManagedPath)\Facepunch.System.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Console">
+      <HintPath>$(ManagedPath)\Facepunch.Console.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>$(ManagedPath)\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Data">
+      <HintPath>$(ManagedPath)\Rust.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Global">
+      <HintPath>$(ManagedPath)\Rust.Global.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Localization">
+      <HintPath>$(ManagedPath)\Rust.Localization.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedPath)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedPath)\UnityEngine.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <Import Project="..\Facepunch.Harmony.Weaver\Facepunch.Harmony.Weaver.projitems" Label="Shared" />
+</Project>
