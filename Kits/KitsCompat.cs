@@ -326,7 +326,7 @@ namespace KitsHarmony
                     if (!_resolveAttempted)
                     {
                         _resolveAttempted = true;
-                        Debug.LogWarning("[Kits] Permissions mod not loaded — kit Permission fields will only allow server admins until Permissions.dll is loaded.");
+                        Debug.LogWarning("[Kits] Permissions mod not loaded — kit Permission fields will only allow server admins until 0Permissions.dll is loaded.");
                     }
                     return;
                 }

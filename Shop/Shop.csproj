@@ -66,6 +66,9 @@
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(RustManaged)\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>$(RustManaged)\UnityEngine.AIModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>$(RustManaged)\UnityEngine.ImageConversionModule.dll</HintPath>
     </Reference>

@@ -85,7 +85,9 @@ namespace BackpacksHarmony
         private Coroutine _saveRoutine;
         private bool _coreInitialized;
 
-        private readonly Plugin Arena, BackpackButton, EventManager, ItemRetriever;
+        private readonly Plugin Arena, BackpackButton, EventManager;
+        /// <summary>Assigned at runtime when ItemRetriever Harmony mod is discovered.</summary>
+        internal Plugin ItemRetriever;
 
         public Backpacks()
         {
@@ -350,7 +352,7 @@ namespace BackpacksHarmony
             _immortalProtection.Add(1);
 
             CheckBackpackButtonPlugin();
-            RegisterAsItemSupplier();
+            MaybeRegisterItemRetriever();
 
             if (_config.EnableDataPersistenceDebug)
             {
@@ -532,7 +534,7 @@ namespace BackpacksHarmony
                     CheckBackpackButtonPlugin();
                     break;
                 case nameof(ItemRetriever):
-                    RegisterAsItemSupplier();
+                    MaybeRegisterItemRetriever();
                     break;
             }
         }
@@ -1975,7 +1977,22 @@ namespace BackpacksHarmony
             LogWarning($"Disabled GUI button in the config because the {nameof(BackpackButton)} plugin was detected.");
         }
 
-        private void RegisterAsItemSupplier()
+        /// <summary>Bind ItemRetriever PluginReference and register supplier callbacks (safe to call repeatedly).</summary>
+        internal void MaybeRegisterItemRetriever()
+        {
+            var bridge = ItemRetrieverBinder.TryResolveBridge();
+            if (bridge == null)
+                return;
+
+            if (ItemRetriever == bridge)
+                return;
+
+            ItemRetriever = bridge;
+            RegisterAsItemSupplier();
+            Puts("Registered with ItemRetriever for backpack retrieve mode.");
+        }
+
+        internal void RegisterAsItemSupplier()
         {
             ItemRetriever?.Call("API_AddSupplier", this, new Dictionary<string, object>
             {

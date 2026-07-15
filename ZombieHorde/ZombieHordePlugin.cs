@@ -66,6 +66,7 @@ namespace ZombieHorde
         {
             IgnoreUntilHurtPlayers.Clear();
             RaidingZombies.Shutdown();
+            Compat.Timer.CancelAll();
             Horde.SpawnOrder.OnUnload();
 
             for (int i = Horde.AllHordes.Count - 1; i >= 0; i--)
@@ -390,7 +391,8 @@ namespace ZombieHorde
             {
                 Vector2 randomInCircle = Random.insideUnitCircle * size;
                 Vector3 position = new Vector3(randomInCircle.x, 0, randomInCircle.y);
-                position.y = TerrainMeta.HeightMap.GetHeight(position);
+                if (TerrainMeta.HeightMap != null)
+                    position.y = TerrainMeta.HeightMap.GetHeight(position);
                 if (NavmeshSpawnPoint.Find(position, 25f, out position))
                 {
                     if (Physics.SphereCast(new Ray(position + Vector3.up * 5f, Vector3.down), 10f, 10f, SPAWN_RAYCAST_MASK))
@@ -401,7 +403,16 @@ namespace ZombieHorde
                         return position;
                 }
             }
-            return ServerMgr.FindSpawnPoint().pos;
+
+            try
+            {
+                var sp = ServerMgr.FindSpawnPoint();
+                if (sp != null)
+                    return sp.pos;
+            }
+            catch { }
+
+            return Vector3.zero;
         }
 
         private void CreateMonumentHordeOrders()

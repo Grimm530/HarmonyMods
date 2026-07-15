@@ -1,5 +1,4 @@
-// Misc game hooks. All method names use string literals to avoid compile errors
-// when the exact publicized name differs from what Oxide reports.
+// Misc game hooks — targets verified against .cursor/!Assembly-RUST for this server build.
 using System;
 using HarmonyLib;
 using UnityEngine;
@@ -8,35 +7,37 @@ using STPlugin = Oxide.Plugins.SkillTree;
 namespace SkillTreeHarmony.Patches
 {
     // ---- Building ---------------------------------------------------------
+    // Planner has two DoBuild overloads; patch the Construction.Target path (returns BaseEntity).
 
-    [HarmonyPatch(typeof(Planner), "DoBuild")]
+    [HarmonyPatch(typeof(Planner), "DoBuild", new[] { typeof(Construction.Target), typeof(Construction) })]
     public static class Planner_DoBuild_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(Planner __instance)
+        public static void Postfix(Planner __instance, BaseEntity __result)
         {
-            if (__instance == null) return;
-            try { STPlugin.Dispatch_OnEntityBuilt(__instance, null); }
+            if (__instance == null || __result == null) return;
+            try { STPlugin.Dispatch_OnEntityBuilt(__instance, __result.gameObject); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityBuilt: " + ex.Message); }
         }
     }
 
     // ---- Item condition ---------------------------------------------------
 
-    [HarmonyPatch(typeof(Item), "LoseCondition")]
+    [HarmonyPatch(typeof(Item), "LoseCondition", new[] { typeof(float) })]
     public static class Item_LoseCondition_Patch
     {
         [HarmonyPrefix]
-        public static void Prefix(Item __instance, ref float val)
+        public static void Prefix(Item __instance, ref float amount)
         {
-            try { STPlugin.Dispatch_OnLoseCondition(__instance, ref val); }
+            try { STPlugin.Dispatch_OnLoseCondition(__instance, ref amount); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnLoseCondition: " + ex.Message); }
         }
     }
 
     // ---- Mount / dismount -------------------------------------------------
+    // DismountPlayer is (BasePlayer, bool) in IL even when lite has a default.
 
-    [HarmonyPatch(typeof(BaseMountable), "MountPlayer")]
+    [HarmonyPatch(typeof(BaseMountable), "MountPlayer", new[] { typeof(BasePlayer) })]
     public static class BaseMountable_MountPlayer_Patch
     {
         [HarmonyPostfix]
@@ -48,7 +49,7 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseMountable), "DismountPlayer")]
+    [HarmonyPatch(typeof(BaseMountable), "DismountPlayer", new[] { typeof(BasePlayer), typeof(bool) })]
     public static class BaseMountable_DismountPlayer_Patch
     {
         [HarmonyPostfix]
@@ -60,24 +61,26 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    // ---- Player input -----------------------------------------------------
+    // ---- Player input (boat turbo) ----------------------------------------
+    // No BasePlayer.ServerInput — Oxide OnPlayerInput comes from OnReceiveTick.
 
-    [HarmonyPatch(typeof(BasePlayer), "ServerInput")]
-    public static class BasePlayer_ServerInput_Patch
+    [HarmonyPatch(typeof(BasePlayer), "OnReceiveTick", new[] { typeof(PlayerTick), typeof(bool) })]
+    public static class BasePlayer_OnReceiveTick_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(BasePlayer __instance, InputState input)
+        public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || input == null) return;
-            try { STPlugin.Dispatch_OnPlayerInput(__instance, input); }
+            if (__instance == null || __instance.serverInput == null) return;
+            if (!STPlugin.IsHookSubscribed("OnPlayerInput")) return;
+            try { STPlugin.Dispatch_OnPlayerInput(__instance, __instance.serverInput); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerInput: " + ex.Message); }
         }
     }
 
-    // ---- Entity spawn (via BaseNetworkable.Spawned or NetworkableAwake) ---
+    // ---- Entity spawn -----------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseNetworkable), "Spawned")]
-    public static class BaseNetworkable_Spawned_Patch
+    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
+    public static class BaseNetworkable_Spawn_Patch
     {
         [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
@@ -88,23 +91,24 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    // ---- Revive -----------------------------------------------------------
+    // ---- Revive (medical tool on wounded teammate) ------------------------
 
-    [HarmonyPatch(typeof(BasePlayer), "Revive")]
-    public static class BasePlayer_Revive_Patch
+    [HarmonyPatch(typeof(BasePlayer), "OnMedicalToolApplied")]
+    public static class BasePlayer_OnMedicalToolApplied_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(BasePlayer __instance, BasePlayer reviver)
+        public static void Postfix(BasePlayer __instance, BasePlayer fromPlayer, bool canRevive)
         {
-            if (__instance == null) return;
-            try { STPlugin.Dispatch_OnPlayerRevive(reviver, __instance); }
+            if (__instance == null || fromPlayer == null || !canRevive) return;
+            if (fromPlayer == __instance) return;
+            try { STPlugin.Dispatch_OnPlayerRevive(fromPlayer, __instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerRevive: " + ex.Message); }
         }
     }
 
     // ---- Health change ---------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseCombatEntity), "SetHealth")]
+    [HarmonyPatch(typeof(BaseCombatEntity), "SetHealth", new[] { typeof(float) })]
     public static class BaseCombatEntity_SetHealth_Patch
     {
         [HarmonyPrefix]
@@ -112,6 +116,7 @@ namespace SkillTreeHarmony.Patches
         {
             __state = __instance?.Health() ?? 0f;
         }
+
         [HarmonyPostfix]
         public static void Postfix(BaseCombatEntity __instance, float __state)
         {
@@ -123,14 +128,15 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Active item change ----------------------------------------------
 
-    [HarmonyPatch(typeof(BasePlayer), "SwitchHandAndEquipActive")]
-    public static class BasePlayer_SwitchHandAndEquipActive_Patch
+    [HarmonyPatch(typeof(BasePlayer), "UpdateActiveItem", new[] { typeof(ItemId) })]
+    public static class BasePlayer_UpdateActiveItem_Patch
     {
         [HarmonyPrefix]
         public static void Prefix(BasePlayer __instance, out Item __state)
         {
             __state = __instance?.GetActiveItem();
         }
+
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance, Item __state)
         {
@@ -160,23 +166,23 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Explosive throw -------------------------------------------------
 
-    [HarmonyPatch(typeof(ThrownWeapon), "ServerThrow")]
+    [HarmonyPatch(typeof(ThrownWeapon), "ServerThrow", new[] { typeof(Vector3) })]
     public static class ThrownWeapon_ServerThrow_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(ThrownWeapon __instance, Vector3 position)
+        public static void Postfix(ThrownWeapon __instance)
         {
             var player = __instance?.GetOwnerPlayer();
             if (player == null) return;
-            // ThrownWeapon itself is the weapon; dispatch with null explosive entity.
             try { STPlugin.Dispatch_OnExplosiveThrown(player, null, __instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnExplosiveThrown: " + ex.Message); }
         }
     }
 
-    // ---- Timed explosive explode -----------------------------------------
+    // ---- Timed explosive explode ----------------------------------------
+    // Parameterless Explode() calls Explode(Vector3); patch the Vector3 overload once.
 
-    [HarmonyPatch(typeof(TimedExplosive), "Explode")]
+    [HarmonyPatch(typeof(TimedExplosive), "Explode", new[] { typeof(Vector3) })]
     public static class TimedExplosive_Explode_Patch
     {
         [HarmonyPostfix]
@@ -190,7 +196,7 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Mixing table toggle --------------------------------------------
 
-    [HarmonyPatch(typeof(MixingTable), "StartMixing")]
+    [HarmonyPatch(typeof(MixingTable), "StartMixing", new[] { typeof(BasePlayer) })]
     public static class MixingTable_StartMixing_Patch
     {
         [HarmonyPostfix]
@@ -219,21 +225,21 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Mission success ------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseMission), "MissionSuccess")]
+    [HarmonyPatch(typeof(BaseMission), "MissionSuccess", new[] { typeof(BaseMission.MissionInstance), typeof(BasePlayer) })]
     public static class BaseMission_MissionSuccess_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(BaseMission __instance, BaseMission.MissionInstance missionInstance, BasePlayer assignee)
+        public static void Postfix(BaseMission __instance, BaseMission.MissionInstance instance, BasePlayer assignee)
         {
             if (__instance == null || assignee == null) return;
-            try { STPlugin.Dispatch_OnMissionSucceeded(__instance, missionInstance, assignee); }
+            try { STPlugin.Dispatch_OnMissionSucceeded(__instance, instance, assignee); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnMissionSucceeded: " + ex.Message); }
         }
     }
 
     // ---- Item action / container changes --------------------------------
 
-    [HarmonyPatch(typeof(ItemMod), "ServerCommand")]
+    [HarmonyPatch(typeof(ItemMod), "ServerCommand", new[] { typeof(Item), typeof(string), typeof(BasePlayer) })]
     public static class ItemMod_ServerCommand_Patch
     {
         [HarmonyPostfix]
@@ -245,7 +251,7 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(ItemContainer), "Insert")]
+    [HarmonyPatch(typeof(ItemContainer), "Insert", new[] { typeof(Item) })]
     public static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]
@@ -257,9 +263,9 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    // ---- Entity kill (storage containers, collectibles, workbenches etc.) -
+    // ---- Entity kill ----------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseNetworkable), "Kill", typeof(BaseNetworkable.DestroyMode))]
+    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) })]
     public static class BaseNetworkable_Kill_Patch
     {
         [HarmonyPrefix]
@@ -268,7 +274,6 @@ namespace SkillTreeHarmony.Patches
             if (__instance == null) return;
             try
             {
-                // Order matters: more-derived types first (Workbench < StorageContainer).
                 switch (__instance)
                 {
                     case Workbench wb:          STPlugin.Dispatch_OnEntityKill_Workbench(wb);          break;
@@ -283,26 +288,28 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Pay for upgrade ------------------------------------------------
 
-    [HarmonyPatch(typeof(BuildingBlock), "PayForUpgrade")]
+    [HarmonyPatch(typeof(BuildingBlock), "PayForUpgrade", new[] { typeof(ConstructionGrade), typeof(BasePlayer) })]
     public static class BuildingBlock_PayForUpgrade_Patch
     {
         [HarmonyPrefix]
-        public static bool Prefix(BuildingBlock __instance, ConstructionGrade grade, BasePlayer player)
+        public static bool Prefix(BuildingBlock __instance, ConstructionGrade g, BasePlayer player)
         {
-            object r = STPlugin.Dispatch_OnPayForUpgrade(player, __instance, grade);
+            object r = STPlugin.Dispatch_OnPayForUpgrade(player, __instance, g);
             return r == null;
         }
     }
 
     // ---- Player wound ---------------------------------------------------
 
-    [HarmonyPatch(typeof(BasePlayer), "BecomeWounded")]
+    [HarmonyPatch(typeof(BasePlayer), "BecomeWounded", new[] { typeof(HitInfo) })]
     public static class BasePlayer_BecomeWounded_Patch
     {
         [HarmonyPrefix]
         public static bool Prefix(BasePlayer __instance, HitInfo info)
         {
             object r = STPlugin.Dispatch_OnPlayerWound(__instance, info);
+            // Oxide: return false to prevent wound. Non-null object that is false => block.
+            if (r is bool b) return b;
             return r == null;
         }
     }

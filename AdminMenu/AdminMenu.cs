@@ -62,6 +62,8 @@ namespace AdminMenuHarmony
 
 		    LoadConfiguration();
 		    RegisterMessages();
+		    // Prefer existing HarmonyLanguage/AdminMenu.json over embedded defaults.
+		    AdminMenuHost.Instance?.ReloadLanguage();
 		    SetupPlayerActions();
 	    }
 

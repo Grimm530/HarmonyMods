@@ -189,6 +189,20 @@ namespace ShopHarmony
             RegisterConsole("shop.install", arg => InvokeConsoleMethod(nameof(Shop.CmdConsoleShopInstall), arg), serverAdmin: true);
             RegisterConsole("shop.manage", arg => InvokeConsoleMethod(nameof(Shop.CmdConsoleShopManage), arg), serverAdmin: true);
             RegisterConsole("shop.discordtest", arg => InvokeConsoleMethod(nameof(Shop.CmdDiscordTest), arg), serverAdmin: true);
+            Action<ConsoleSystem.Arg> horseCmd = arg =>
+            {
+                try
+                {
+                    _plugin?.CmdShopHorse(arg);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Shop Harmony] shop.horse: " + ex.Message);
+                }
+            };
+            RegisterConsole("shop.horse", horseCmd);
+            // Backward-compatible alias for old Shop data still using animalspawn.horse
+            RegisterConsole("animalspawn.horse", horseCmd);
 
             // Default chat aliases until config RegisterCommands runs
             foreach (var name in new[] { "s", "shop", "shops", "shop.setvm", "shop.setnpc", "shop.install" })
@@ -365,8 +379,17 @@ namespace ShopHarmony
             };
 
             ConsoleSystem.Index.Server.Dict[dictKey] = cmd;
-            if (!hasDot && ConsoleSystem.Index.Server.GlobalDict != null)
+            if (hasDot)
+            {
+                // Facepunch may resolve Parent.Name or FullName depending on client
+                if (!string.IsNullOrEmpty(fullName) &&
+                    !string.Equals(dictKey, fullName, StringComparison.OrdinalIgnoreCase))
+                    ConsoleSystem.Index.Server.Dict[fullName] = cmd;
+            }
+            else if (ConsoleSystem.Index.Server.GlobalDict != null)
+            {
                 ConsoleSystem.Index.Server.GlobalDict[cmdName] = cmd;
+            }
 
             _registeredCommands.Add(cmd);
         }

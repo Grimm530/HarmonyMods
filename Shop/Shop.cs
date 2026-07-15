@@ -46,6 +46,9 @@ namespace ShopHarmony
 
         private static Shop _instance;
 
+        /// <summary>Owned-horse limit + Shop spawn helper (max from Horse Limits config).</summary>
+        public HorseLimiter HorseLimiter { get; } = new HorseLimiter();
+
         public Shop()
         {
             Version = new VersionNumber(2, 4, 201);
@@ -413,6 +416,9 @@ namespace ShopHarmony
                     [UIDLCItem] = NotificationsConf.BaseNotification.Create(1)
                 }
             };
+
+            [JsonProperty(PropertyName = LangRu ? "Лимит лошадей" : "Horse Limits")]
+            public HorseLimitSettings HorseLimits = HorseLimitSettings.CreateDefault();
 
             public VersionNumber Version;
 
@@ -2502,7 +2508,16 @@ namespace ShopHarmony
                         }
                         else
                         {
-                            _instance?.Server.Command(check);
+                            var trimmed = check.Trim();
+                            if (trimmed.StartsWith("shop.horse", StringComparison.OrdinalIgnoreCase) ||
+                                trimmed.StartsWith("animalspawn.horse", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _instance?.DispatchHorseShopCommand(trimmed);
+                            }
+                            else
+                            {
+                                _instance?.Server.Command(check);
+                            }
                         }
                 }
             }
@@ -5974,6 +5989,9 @@ namespace ShopHarmony
 
             CheckInitializationStatus();
 
+            HorseLimiter.Configure(_config?.HorseLimits ?? HorseLimitSettings.CreateDefault());
+            HorseLimiter.ScanExistingHorses();
+
             // Initialize wipe start time - will be auto-detected from first sale
             _wipeStartTime = DateTime.MinValue;
 
@@ -6011,6 +6029,7 @@ namespace ShopHarmony
             }
             finally
             {
+                HorseLimiter.Clear();
                 _config = null;
 
                 _instance = null;
@@ -15779,6 +15798,63 @@ namespace ShopHarmony
             {
                 SendReply(arg, $"Failed to send Discord test message: {ex.Message}");
                 PrintError($"Discord test failed: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Shop Command product helper: shop.horse "Horse Name" %steamid% [refundAmount]
+        /// Charge happens in Shop before the command runs; refunds on over-limit.
+        /// </summary>
+        internal void CmdShopHorse(ConsoleSystem.Arg arg)
+        {
+            HorseLimiter.Configure(_config?.HorseLimits ?? HorseLimitSettings.CreateDefault());
+            HorseLimiter.HandleConsoleCommand(arg, (player, amount) =>
+            {
+                if (player == null || amount <= 0) return;
+                try
+                {
+                    GetPlayerEconomy(player)?.AddBalance(player, amount);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Shop Horse] Refund failed: " + ex.Message);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Direct dispatch from ToCommand — avoids ConsoleSystem.Run treating the full line as the command name.
+        /// </summary>
+        internal void DispatchHorseShopCommand(string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine)) return;
+            try
+            {
+                if (!ServerHelper.TrySplitCommandLine(commandLine.Trim(), out string cmdName, out string[] args))
+                {
+                    Debug.LogWarning("[Shop Horse] Could not parse: " + commandLine);
+                    return;
+                }
+
+                var sb = new StringBuilder(cmdName);
+                if (args != null)
+                {
+                    foreach (var a in args)
+                    {
+                        sb.Append(' ');
+                        if (a != null && a.IndexOfAny(new[] { ' ', '"' }) >= 0)
+                            sb.Append('"').Append(a.Replace("\"", "\\\"")).Append('"');
+                        else
+                            sb.Append(a ?? "");
+                    }
+                }
+
+                var opt = ConsoleSystem.Option.Server.Quiet();
+                CmdShopHorse(new ConsoleSystem.Arg(opt, sb.ToString()));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop Horse] DispatchHorseShopCommand: " + ex.Message);
             }
         }
 

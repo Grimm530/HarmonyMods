@@ -48,14 +48,35 @@ namespace ZombieHorde
 
         public static bool Create(SpawnOrder spawnOrder)
         {
+            if (spawnOrder == null || ConfigData.Configuration?.Horde == null || ConfigData.Configuration.Member?.Loadouts == null)
+            {
+                Compat.PrintWarning("Horde.Create aborted: missing config or spawn order.");
+                return false;
+            }
+
+            if (ConfigData.Configuration.Member.Loadouts.Count == 0)
+            {
+                Compat.PrintWarning("Horde.Create aborted: no loadouts configured.");
+                return false;
+            }
+
             Horde horde = new Horde(spawnOrder);
 
-            for (int i = 0; i < spawnOrder.InitialMemberCount; i++)
-                horde.SpawnMember(spawnOrder.Position);
-
-            if (horde.members.Count == 0)
+            try
             {
-                horde.Destroy();
+                for (int i = 0; i < spawnOrder.InitialMemberCount; i++)
+                    horde.SpawnMember(spawnOrder.Position);
+            }
+            catch (Exception ex)
+            {
+                Compat.PrintWarning("Horde.Create spawn loop: " + ex.Message);
+            }
+
+            if (horde.members == null || horde.members.Count == 0)
+            {
+                // Permanent: do not schedule Destroy→Create(this) retry (that NRE'd after reload / empty Grimm spawns).
+                Compat.PrintWarning("Horde.Create produced 0 members near " + spawnOrder.Position + " — not auto-retrying via Destroy.");
+                horde.Destroy(true, false);
                 return false;
             }
 
@@ -291,23 +312,37 @@ namespace ZombieHorde
 
         public void SpawnMember(Vector3 position)
         {
+            var cfg = ConfigData.Configuration;
+            if (cfg?.Member?.Loadouts == null || cfg.Member.Loadouts.Count == 0)
+                return;
+
             ConfigData.MemberOptions.Loadout loadout = null;
 
-            if (!string.IsNullOrEmpty(hordeProfile) && ConfigData.Configuration.HordeProfiles != null
-                && ConfigData.Configuration.HordeProfiles.ContainsKey(hordeProfile))
+            if (!string.IsNullOrEmpty(hordeProfile) && cfg.HordeProfiles != null
+                && cfg.HordeProfiles.ContainsKey(hordeProfile))
             {
-                string loadoutId = ConfigData.Configuration.HordeProfiles[hordeProfile].GetRandom();
-                loadout = ConfigData.Configuration.Member.Loadouts.FirstOrDefault(x => x.LoadoutID == loadoutId);
+                var profileLoadouts = cfg.HordeProfiles[hordeProfile];
+                if (profileLoadouts != null && profileLoadouts.Count > 0)
+                {
+                    string loadoutId = profileLoadouts.GetRandom();
+                    loadout = cfg.Member.Loadouts.FirstOrDefault(x => x != null && x.LoadoutID == loadoutId);
+                }
             }
 
             if (loadout == null)
-                loadout = ConfigData.Configuration.Member.Loadouts.GetRandom();
+                loadout = cfg.Member.Loadouts.GetRandom();
+
+            if (loadout == null)
+                return;
 
             // Final safety: never place exactly on top of an existing member.
             Vector3 spawnPos = GetSpreadSpawnPosition(position, members?.Count ?? 0);
 
             ZombieNPC zombieNpc = GrimmNpcBridge.Spawn(spawnPos, loadout, this);
             if (!zombieNpc) return;
+
+            if (members == null)
+                members = Pool.Get<List<ZombieNPC>>();
 
             members.Add(zombieNpc);
 
@@ -347,8 +382,43 @@ namespace ZombieHorde
             HordeGrid.Remove(this);
             AllHordes.Remove(this);
 
-            if (!permanent && AllHordes.Count <= ConfigData.Configuration.Horde.MaximumHordes)
-                Compat.Timer.In(ConfigData.Configuration.Horde.RespawnTime, () => SpawnOrder.Create(this));
+            var cfg = ConfigData.Configuration;
+            if (permanent || cfg?.Horde == null)
+                return;
+
+            if (AllHordes.Count > cfg.Horde.MaximumHordes)
+                return;
+
+            // Snapshot values — do not call SpawnOrder.Create(this) on a torn-down Horde after reload.
+            Vector3 localPos = InitialPosition;
+            bool local = IsLocalHorde;
+            float roam = MaximumRoamDistance;
+            int initial = initialMemberCount;
+            int maxMembers = maximumMemberCount;
+            string profile = hordeProfile;
+            float delay = cfg.Horde.RespawnTime;
+
+            Compat.Timer.In(delay, () =>
+            {
+                if (ZombieHordePlugin.Instance == null || ConfigData.Configuration?.Horde == null)
+                    return;
+                if (AllHordes.Count > ConfigData.Configuration.Horde.MaximumHordes)
+                    return;
+
+                try
+                {
+                    if (local)
+                        SpawnOrder.Create(localPos, initial, maxMembers, roam, profile);
+                    else
+                        SpawnOrder.Create(
+                            ZombieHordePlugin.Instance.GetSpawnPoint(),
+                            initial, maxMembers, roam, profile);
+                }
+                catch (Exception ex)
+                {
+                    Compat.PrintWarning("Horde respawn Create: " + ex.Message);
+                }
+            });
         }
 
         private Vector3 CalculateCentralLocation()
@@ -627,7 +697,20 @@ namespace ZombieHorde
 
             internal static void Create(Horde horde)
             {
-                Vector3 basePos = horde.IsLocalHorde ? horde.InitialPosition : ZombieHordePlugin.Instance.GetSpawnPoint();
+                if (horde == null || ZombieHordePlugin.Instance == null || ConfigData.Configuration?.Horde == null)
+                    return;
+
+                Vector3 basePos;
+                try
+                {
+                    basePos = horde.IsLocalHorde ? horde.InitialPosition : ZombieHordePlugin.Instance.GetSpawnPoint();
+                }
+                catch (Exception ex)
+                {
+                    Compat.PrintWarning("SpawnOrder.Create(Horde) GetSpawnPoint: " + ex.Message);
+                    return;
+                }
+
                 if (NavmeshSpawnPoint.Find(basePos, 10f, out Vector3 position))
                 {
                     _spawnOrders.Enqueue(new SpawnOrder(position, horde.initialMemberCount, horde.maximumMemberCount,
@@ -686,12 +769,41 @@ namespace ZombieHorde
                 RESTART:
                 if (_isDespawning) StopDespawning();
 
-                while (AllHordes.Count > ConfigData.Configuration.Horde.MaximumHordes)
+                var cfg = ConfigData.Configuration;
+                if (cfg?.Horde == null || ZombieHordePlugin.Instance == null)
+                {
+                    _spawnOrders.Clear();
+                    _spawnRoutine = null;
+                    _isSpawning = false;
+                    yield break;
+                }
+
+                while (AllHordes.Count > cfg.Horde.MaximumHordes)
+                {
                     yield return CoroutineEx.waitForSeconds(10f);
+                    cfg = ConfigData.Configuration;
+                    if (cfg?.Horde == null || ZombieHordePlugin.Instance == null)
+                    {
+                        _spawnOrders.Clear();
+                        _spawnRoutine = null;
+                        _isSpawning = false;
+                        yield break;
+                    }
+                }
+
+                if (_spawnOrders.Count == 0)
+                {
+                    _spawnRoutine = null;
+                    _isSpawning = false;
+                    yield break;
+                }
 
                 SpawnOrder spawnOrder = _spawnOrders.Dequeue();
                 if (spawnOrder != null)
-                    Horde.Create(spawnOrder);
+                {
+                    try { Horde.Create(spawnOrder); }
+                    catch (Exception ex) { Compat.PrintWarning("ProcessSpawnOrders Horde.Create: " + ex.Message); }
+                }
 
                 if (_spawnOrders.Count > 0)
                 {

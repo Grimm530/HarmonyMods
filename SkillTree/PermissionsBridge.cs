@@ -192,7 +192,7 @@ namespace SkillTreeHarmony
                     if (!_resolveAttempted)
                     {
                         _resolveAttempted = true;
-                        Debug.LogWarning("[SkillTree] Permissions mod not loaded - permission checks will fail until Permissions.dll is loaded.");
+                        Debug.LogWarning("[SkillTree] Permissions mod not loaded - permission checks will fail until 0Permissions.dll is loaded.");
                     }
                     return;
                 }

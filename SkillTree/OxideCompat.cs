@@ -574,11 +574,26 @@ namespace Oxide.Core.Plugins
             if (name.Equals("ImageLibrary", StringComparison.OrdinalIgnoreCase))
                 return _imgLib;
 
-            // Known AppDomain keys from other Harmony mods.
+            // Known AppDomain keys from other Harmony mods (MovementSpeed_ApiType, Economics_ApiType, ...).
             string key = name + "_ApiType";
             var apiType = AppDomain.CurrentDomain.GetData(key) as Type;
             if (apiType != null)
                 return new PluginBridgeApi(apiType) { Name = name, IsLoaded = true };
+
+            // Explicit scan for MovementSpeed (RoadRunner dependency).
+            if (name.Equals("MovementSpeed", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
+                    {
+                        var t = asm.GetType("MovementSpeedHarmony.MovementSpeedMod");
+                        if (t != null)
+                            return new PluginBridgeApi(t) { Name = name, IsLoaded = true };
+                    }
+                    catch { }
+                }
+            }
 
             // Scan assemblies for well-known type names.
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())

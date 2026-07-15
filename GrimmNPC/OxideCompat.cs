@@ -245,11 +245,18 @@ namespace GrimmNPC
             _commands.Clear();
         }
 
+        /// <summary>
+        /// Oxide PluginReference stand-in. For "Kits", also binds the Harmony Kits mod via
+        /// AppDomain <c>Kits_ApiType</c> (same contract as RaidableBases / Shop).
+        /// </summary>
         public sealed class PluginRef
         {
+            private const string KitsAppDomainKey = "Kits_ApiType";
+
             private readonly string _name;
             private object _plugin;
             private MethodInfo _call;
+            private bool _loggedKitsBind;
 
             private PluginRef(string name) { _name = name; }
 
@@ -270,6 +277,7 @@ namespace GrimmNPC
                 {
                     Resolve();
                     if (_plugin == null) return null;
+                    if (_plugin is KitsHarmonyBridge) return "Harmony";
                     var p = _plugin.GetType().GetProperty("Author");
                     return p?.GetValue(_plugin) as string;
                 }
@@ -281,19 +289,40 @@ namespace GrimmNPC
                 if (_plugin == null) return null;
                 try
                 {
+                    if (_plugin is KitsHarmonyBridge kitsBridge)
+                        return kitsBridge.Call(method, args ?? Array.Empty<object>());
+
                     if (_call == null)
                         _call = _plugin.GetType().GetMethod("Call", new[] { typeof(string), typeof(object[]) });
                     return _call?.Invoke(_plugin, new object[] { method, args ?? Array.Empty<object>() });
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.LogWarning("[GrimmNPC] PluginRef(" + _name + ")." + method + ": " + (ex.InnerException ?? ex).Message);
                     return null;
                 }
             }
 
             private void Resolve()
             {
-                if (_plugin != null) return;
+                // Drop stale Oxide ref; Harmony Kits bridge re-checks AppDomain each resolve.
+                if (_plugin != null && !(_plugin is KitsHarmonyBridge)) return;
+
+                if (string.Equals(_name, "Kits", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (TryGetKitsApiType() != null)
+                    {
+                        _plugin = KitsHarmonyBridge.Instance;
+                        if (!_loggedKitsBind)
+                        {
+                            _loggedKitsBind = true;
+                            Debug.Log("[GrimmNPC] Kits resolve: bound Harmony Kits_ApiType (GiveKit/IsKit)");
+                        }
+                        return;
+                    }
+                    _plugin = null;
+                }
+
                 try
                 {
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -310,6 +339,59 @@ namespace GrimmNPC
                     }
                 }
                 catch { }
+            }
+
+            private static Type TryGetKitsApiType()
+            {
+                try { return AppDomain.CurrentDomain.GetData(KitsAppDomainKey) as Type; }
+                catch { return null; }
+            }
+
+            /// <summary>Reflection bridge to KitsHarmony.KitsHarmonyMod static GiveKit / IsKit.</summary>
+            private sealed class KitsHarmonyBridge
+            {
+                public static readonly KitsHarmonyBridge Instance = new KitsHarmonyBridge();
+
+                public object Call(string method, object[] args)
+                {
+                    Type api = TryGetKitsApiType();
+                    if (api == null) return null;
+
+                    try
+                    {
+                        if (string.Equals(method, "GiveKit", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (args == null || args.Length < 2 || !(args[0] is BasePlayer player))
+                                return "Kits GiveKit unavailable";
+                            string kitName = args[1] as string ?? args[1]?.ToString();
+                            MethodInfo give = api.GetMethod("GiveKit", BindingFlags.Public | BindingFlags.Static, null,
+                                new[] { typeof(BasePlayer), typeof(string) }, null);
+                            return give?.Invoke(null, new object[] { player, kitName });
+                        }
+
+                        if (string.Equals(method, "isKit", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(method, "IsKit", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (args == null || args.Length < 1) return false;
+                            string kitName = args[0] as string ?? args[0]?.ToString();
+                            MethodInfo isKit = api.GetMethod("IsKit", BindingFlags.Public | BindingFlags.Static, null,
+                                new[] { typeof(string) }, null)
+                                ?? api.GetMethod("isKit", BindingFlags.Public | BindingFlags.Static, null,
+                                    new[] { typeof(string) }, null);
+                            return isKit != null && (bool)isKit.Invoke(null, new object[] { kitName });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[GrimmNPC] KitsHarmonyBridge." + method + ": " + (ex.InnerException ?? ex).Message);
+                        if (string.Equals(method, "isKit", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(method, "IsKit", StringComparison.OrdinalIgnoreCase))
+                            return false;
+                        return (ex.InnerException ?? ex).Message;
+                    }
+
+                    return null;
+                }
             }
         }
 

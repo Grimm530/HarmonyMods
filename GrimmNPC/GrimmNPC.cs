@@ -1987,6 +1987,8 @@ namespace GrimmNPC
                     }
                     else
                     {
+                        // Unstick swim anim / custom-nav from older false-positive IsSwimming frames.
+                        NpcSpawnOpenWaterSwim.ClearStickySwimModelState(this);
                         Brain.Navigator.CanUseNavMesh = true;
                         Brain.Navigator.CanUseCustomNav = false;
                         
@@ -4667,6 +4669,11 @@ namespace GrimmNPC
             GeneratePositions();
             // Seed currently used NPC userIDs to prevent duplicates
             SeedUsedNpcUserIds();
+            // Late-bind Kits (Harmony may load Kits after GrimmNPC; PluginRef retries via Kits_ApiType).
+            if (Kits != null && Kits.Exists)
+                Puts("Kits Harmony mod linked - NPC Config.Kit / GiveKit enabled.");
+            else
+                Puts("Kits not found yet - NPC Config.Kit skipped until Kits.dll loads (wear/belt still apply).");
             // Display NPC count on server
             GetNpcCounts(out int customScientists, out int totalScientists, out int otherScientists, out int animals, out int otherNpcPlayers, out int totalNpcs);
             Puts($"NPCs on server -> CustomScientists: {customScientists}, Vanilla Scientists: {otherScientists}, Total Scientists: {totalScientists}, Animals: {animals}, Other NPC Players: {otherNpcPlayers}, Total NPCs: {totalNpcs}");
@@ -7043,6 +7050,8 @@ namespace GrimmNPC
         {
             private const float OpenWaterMinWaterPlane = -80f;
             private const float OpenWaterMinSubmergeDepth = 0.65f;
+            /// <summary>BasePlayer.IsSwimming / ChaosNPC modelState threshold.</summary>
+            private const float MinImmersionForSwim = 0.65f;
 
             internal static float SafeWaterFactor(ScientistNPC npc)
             {
@@ -7074,9 +7083,20 @@ namespace GrimmNPC
                 }
             }
 
+            /// <summary>
+            /// True only when the NPC is actually immersed in a swimable water body.
+            /// Geometric ocean-plane checks alone false-positive on dry inland terrain below sea level
+            /// (quarries / valleys) — that disables NavMesh and plays the swim anim on land.
+            /// </summary>
             internal static bool TryEvaluate(ScientistNPC npc)
             {
                 if (npc == null || TerrainMeta.WaterMap == null)
+                    return false;
+
+                // Hard gate: must be immersed via WaterFactor. Do not trust modelState.waterLevel here —
+                // older builds forced it to 0.85 and that stuck zombies in "swim" on dry land.
+                float wf = SafeWaterFactor(npc);
+                if (wf < MinImmersionForSwim)
                     return false;
 
                 Vector3 p = npc.ServerPosition;
@@ -7088,33 +7108,62 @@ namespace GrimmNPC
                 if (waterPlane < OpenWaterMinWaterPlane)
                     return false;
 
-                if (waterPlane <= terrainH + 0.08f && p.y > terrainH + 0.25f)
+                // Dry ground: water surface at/near terrain (and no deep volume) => not swimming.
+                WaterLevel.WaterInfo wi = WaterLevel.GetWaterInfo(p, waves: true, volumes: true, npc);
+                float volumeDepth = wi.isValid ? wi.currentDepth : 0f;
+                float planeAboveTerrain = waterPlane - terrainH;
+                if (planeAboveTerrain < OpenWaterMinSubmergeDepth && volumeDepth < OpenWaterMinSubmergeDepth)
+                    return false;
+
+                // Standing on walkable ground with only a shallow puddle / ocean-column phantom.
+                float feetAboveTerrain = p.y - terrainH;
+                if (feetAboveTerrain >= -0.2f && feetAboveTerrain <= 1.35f
+                    && volumeDepth < OpenWaterMinSubmergeDepth
+                    && planeAboveTerrain < 1.45f)
                     return false;
 
                 const float subsurfaceM = 0.45f;
-                if (p.y > waterPlane - subsurfaceM)
+                if (p.y > waterPlane - subsurfaceM && volumeDepth < OpenWaterMinSubmergeDepth)
                     return false;
 
                 if (p.y < terrainH - 25f)
                     return false;
 
-                WaterLevel.WaterInfo wi = WaterLevel.GetWaterInfo(p, waves: true, volumes: true, npc);
-                float wf = SafeWaterFactor(npc);
-                if (wf >= 0.58f && wi.currentDepth < 1.45f)
-                    return false;
-
                 if (wi.isValid)
                 {
-                    if (wi.currentDepth < OpenWaterMinSubmergeDepth)
+                    if (wi.currentDepth < OpenWaterMinSubmergeDepth && planeAboveTerrain < OpenWaterMinSubmergeDepth)
                         return false;
                 }
-                else
+                else if (waterPlane - p.y < OpenWaterMinSubmergeDepth)
                 {
-                    if (waterPlane - p.y < OpenWaterMinSubmergeDepth)
-                        return false;
+                    return false;
                 }
 
                 return true;
+            }
+
+            /// <summary>Clear sticky swim model state forced by older builds so clients stop playing swim on land.
+            /// Safe to call often: no-ops when waterLevel already dry.</summary>
+            internal static void ClearStickySwimModelState(ScientistNPC npc)
+            {
+                if (npc?.modelState == null)
+                    return;
+                if (npc.modelState.waterLevel < 0.05f)
+                    return;
+                // Only clear when we are sure we are not in swimable water (avoid fighting real immersion).
+                float wf = SafeWaterFactor(npc);
+                if (wf >= MinImmersionForSwim)
+                    return;
+
+                npc.modelState.waterLevel = 0f;
+                try
+                {
+                    NpcSpawnSwimMovementHelper.PushModelState(npc);
+                }
+                catch
+                {
+                    try { npc.SendModelState(force: true); } catch { }
+                }
             }
         }
 
@@ -7229,6 +7278,13 @@ namespace GrimmNPC
                 return holdY;
             }
 
+            internal static void PushModelState(ScientistNPC npc)
+            {
+                if (npc == null) return;
+                BasePlayerUpdateModelState?.Invoke(npc, null);
+                npc.SendModelState(force: true);
+            }
+
             private static void TryPushSwimModelState(ScientistNPC npc)
             {
                 if (npc?.modelState == null || npc.net == null)
@@ -7238,8 +7294,9 @@ namespace GrimmNPC
                 if (LastSwimModelStateSend.TryGetValue(id, out float last) && (now - last) < ModelStateSwimSendInterval)
                     return;
 
+                // Use real immersion only — never force waterLevel up to 0.85 (that stuck zombies in swim anim on land).
                 float wf = Mathf.Clamp01(NpcSpawnOpenWaterSwim.SafeWaterFactor(npc));
-                float wl = wf >= 0.65f ? wf : Mathf.Max(wf, 0.85f);
+                float wl = wf;
                 if (Mathf.Abs(npc.modelState.waterLevel - wl) < 0.02f)
                 {
                     LastSwimModelStateSend[id] = now;
@@ -7247,8 +7304,7 @@ namespace GrimmNPC
                 }
 
                 npc.modelState.waterLevel = wl;
-                BasePlayerUpdateModelState?.Invoke(npc, null);
-                npc.SendModelState(force: true);
+                PushModelState(npc);
                 LastSwimModelStateSend[id] = now;
             }
 
@@ -7256,6 +7312,13 @@ namespace GrimmNPC
             {
                 var npc = __instance.BaseEntity as ScientistNPC;
                 if (npc == null) return;
+
+                // Belt-and-suspenders: if immersion gate failed, do not run custom swim locomotion.
+                if (!NpcSpawnOpenWaterSwim.TryEvaluate(npc))
+                {
+                    NpcSpawnOpenWaterSwim.ClearStickySwimModelState(npc);
+                    return;
+                }
 
                 Vector3 currentPos = __instance.BaseEntity.transform.position;
                 float targetSpeed = GetTargetSpeedMethod != null
@@ -7309,16 +7372,10 @@ namespace GrimmNPC
             {
                 if (!(__instance.BaseEntity is CustomScientistNpc npc) || npc.Config == null || !npc.Config.CanSwim)
                     return true;
-                
-                bool playerSwim = NpcSpawnOpenWaterSwim.SafeIsSwimming(npc);
-                bool openWater = NpcSpawnOpenWaterSwim.TryEvaluate(npc);
-                if (playerSwim || openWater)
-                {
-                    __result = true;
-                    return false;
-                }
 
-                __result = false;
+                // Do NOT OR BasePlayer.IsSwimming alone — WaterFactor/ocean plane false-positives on dry
+                // inland terrain below sea level. TryEvaluate requires real immersion + water body depth.
+                __result = NpcSpawnOpenWaterSwim.TryEvaluate(npc);
                 return false;
             }
         }

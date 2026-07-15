@@ -18,7 +18,7 @@ Harmony port of **ZombieHorde** 0.6.351. Spawns via **GrimmNPC** reflection (`Sp
 - **Spawn:** `GrimmNpcBridge` → GrimmNPC `SpawnNpc` → attach `ZombieNPC` MonoBehaviour
 - **AI:** GrimmNPC states (`RoamState` / `ChaseState` / `CombatState` / optional Raid)
 - **Horde logic:** Ported `Horde` + leader tick on `ZombieNPC`
-- **RaidingZombies:** Built-in (Oxide 3.2.1) — C4/rocket raiders on leaders; config section `Raiding Zombies Options`
+- **RaidingZombies:** Built-in (Oxide 3.2.1) — picks raid hordes + TC scan; **raid AI is GrimmNPC** (`RaidState` / `RaidStateMelee`). Does not `AddState(Cooldown)` (avoids duplicate-state spam)
 - **Config:** Identical JsonProperty names to Oxide config
 - **Hooks:** Harmony patches for damage, death, turrets/APC/heli, NPC/animal target, safe zone, corpse loot, dud explosives, gather sensations, chat
 

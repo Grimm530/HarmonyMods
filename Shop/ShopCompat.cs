@@ -391,7 +391,7 @@ namespace ShopHarmony
                     if (!_resolveAttempted)
                     {
                         _resolveAttempted = true;
-                        Debug.LogWarning("[Shop] Permissions mod not loaded — shop Permission fields require Permissions.dll.");
+                        Debug.LogWarning("[Shop] Permissions mod not loaded — shop Permission fields require 0Permissions.dll.");
                     }
                     return;
                 }
@@ -613,11 +613,76 @@ namespace ShopHarmony
 
     public class ServerHelper
     {
+        /// <summary>
+        /// Run a server console command. Facepunch <see cref="ConsoleSystem.Run(ConsoleSystem.Option, string)"/>
+        /// treats the whole string as the command name (no arg split), so we tokenize and pass args separately.
+        /// </summary>
         public void Command(string command)
         {
             if (string.IsNullOrWhiteSpace(command)) return;
-            try { ConsoleSystem.Run(ConsoleSystem.Option.Server, command); }
-            catch (Exception ex) { Debug.LogWarning("[Shop] Server.Command: " + ex.Message); }
+            try
+            {
+                if (!TrySplitCommandLine(command.Trim(), out string cmdName, out string[] args))
+                {
+                    ConsoleSystem.Run(ConsoleSystem.Option.Server, command.Trim());
+                    return;
+                }
+
+                if (args == null || args.Length == 0)
+                    ConsoleSystem.Run(ConsoleSystem.Option.Server, cmdName);
+                else
+                    ConsoleSystem.Run(ConsoleSystem.Option.Server, cmdName, args);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop] Server.Command: " + ex.Message);
+            }
+        }
+
+        /// <summary>Split: shop.horse "Appaloosa Horse" 7656... -> cmd + args (respects quotes).</summary>
+        internal static bool TrySplitCommandLine(string line, out string cmdName, out string[] args)
+        {
+            cmdName = null;
+            args = null;
+            if (string.IsNullOrWhiteSpace(line)) return false;
+
+            var tokens = new List<string>();
+            var sb = new StringBuilder();
+            bool inQuotes = false;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (c == '"')
+                {
+                    inQuotes = !inQuotes;
+                    continue;
+                }
+                if (!inQuotes && char.IsWhiteSpace(c))
+                {
+                    if (sb.Length > 0)
+                    {
+                        tokens.Add(sb.ToString());
+                        sb.Clear();
+                    }
+                    continue;
+                }
+                sb.Append(c);
+            }
+            if (sb.Length > 0)
+                tokens.Add(sb.ToString());
+
+            if (tokens.Count == 0) return false;
+            cmdName = tokens[0];
+            if (tokens.Count == 1)
+            {
+                args = Array.Empty<string>();
+                return true;
+            }
+
+            args = new string[tokens.Count - 1];
+            for (int i = 1; i < tokens.Count; i++)
+                args[i - 1] = tokens[i];
+            return true;
         }
     }
 

@@ -620,7 +620,7 @@ namespace RaidableBases
                     if (!_resolveAttempted)
                     {
                         _resolveAttempted = true;
-                        Debug.LogWarning("[RaidableBases] Permissions mod not loaded - grant/check via harmony.load Permissions. Server admins still pass.");
+                        Debug.LogWarning("[RaidableBases] Permissions mod not loaded - grant/check via harmony.load 0Permissions. Server admins still pass.");
                     }
                     return;
                 }

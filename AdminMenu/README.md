@@ -4,15 +4,15 @@ Oxide-free Harmony port of **AdminMenu 2.1.13** (Chaos UI). Uses Permissions for
 
 ## Load order
 
-1. **Permissions.dll** (preferred first)
+1. **0Permissions.dll** (preferred first)
 2. **AdminMenu.dll**
 
 ```text
-harmony.load Permissions
+harmony.load 0Permissions
 harmony.load AdminMenu
 ```
 
-Startup load order is filesystem-defined. AdminMenu auto-rebinds and re-registers `adminmenu.*` when Permissions loads or is reloaded (`Permissions_Generation` + ready callback). After `harmony.reload Permissions`, you do **not** need to reload AdminMenu.
+Startup load order is filesystem-defined. AdminMenu auto-rebinds and re-registers `adminmenu.*` when Permissions loads or is reloaded (`Permissions_Generation` + ready callback). After `harmony.reload 0Permissions`, you do **not** need to reload AdminMenu.
 
 ## Access (Permissions only)
 
@@ -38,7 +38,7 @@ perm grant group admin adminmenu.permissions
 |------|------|
 | Config | `HarmonyConfig/AdminMenu.json` |
 | Data | `HarmonyData/AdminMenu/` |
-| Lang | `HarmonyLanguage/AdminMenu.json` (optional overrides) |
+| Lang | `HarmonyLanguage/AdminMenu.json` (file wins over embedded defaults) |
 | Images | `HarmonyImages/AdminMenu/` (`magnifyingglass.png`, `adminmenulogo.png`) |
 
 ## Command

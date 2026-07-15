@@ -41,11 +41,52 @@ $text = $text.Replace(
 $text = $text.Replace("[PluginReference]`r`n        private Plugin", "private Plugin")
 $text = $text.Replace("[PluginReference]`n        private Plugin", "private Plugin")
 
+# ItemRetriever is bound at runtime from ItemRetriever Harmony mod
+$text = $text.Replace(
+    "private readonly Plugin Arena, BackpackButton, EventManager, ItemRetriever;",
+    "private readonly Plugin Arena, BackpackButton, EventManager;`r`n        /// <summary>Assigned at runtime when ItemRetriever Harmony mod is discovered.</summary>`r`n        internal Plugin ItemRetriever;")
+
+# Expose supplier registration for Harmony bind
+$text = $text.Replace("private void RegisterAsItemSupplier()", "internal void RegisterAsItemSupplier()")
+
+# Inject MaybeRegisterItemRetriever before RegisterAsItemSupplier if missing
+if ($text -notmatch "MaybeRegisterItemRetriever") {
+    $maybe = @"
+        /// <summary>Bind ItemRetriever PluginReference and register supplier callbacks (safe to call repeatedly).</summary>
+        internal void MaybeRegisterItemRetriever()
+        {
+            var bridge = ItemRetrieverBinder.TryResolveBridge();
+            if (bridge == null)
+                return;
+
+            ItemRetriever = bridge;
+            RegisterAsItemSupplier();
+        }
+
+"@
+    $text = $text.Replace("internal void RegisterAsItemSupplier()", $maybe + "        internal void RegisterAsItemSupplier()")
+}
+
+# OnServerInitialized / OnPluginLoaded should use MaybeRegister
+$text = $text.Replace(
+    "CheckBackpackButtonPlugin();`r`n            RegisterAsItemSupplier();",
+    "CheckBackpackButtonPlugin();`r`n            MaybeRegisterItemRetriever();")
+$text = $text.Replace(
+    "CheckBackpackButtonPlugin();`n            RegisterAsItemSupplier();",
+    "CheckBackpackButtonPlugin();`n            MaybeRegisterItemRetriever();")
+$text = $text.Replace(
+    "case nameof(ItemRetriever):`r`n                    RegisterAsItemSupplier();",
+    "case nameof(ItemRetriever):`r`n                    MaybeRegisterItemRetriever();")
+$text = $text.Replace(
+    "case nameof(ItemRetriever):`n                    RegisterAsItemSupplier();",
+    "case nameof(ItemRetriever):`n                    MaybeRegisterItemRetriever();")
+
 # --- Strip command / hook attributes ---
 $text = [regex]::Replace($text, '(?m)^[ \t]*\[Command\([^\r\n]*\)\]\r?\n', "")
 $text = [regex]::Replace($text, '(?m)^[ \t]*\[ConsoleCommand\([^\r\n]*\)\]\r?\n', "")
 $text = [regex]::Replace($text, '(?m)^[ \t]*\[ChatCommand\([^\r\n]*\)\]\r?\n', "")
 $text = [regex]::Replace($text, '(?m)^[ \t]*\[HookMethod\([^\r\n]*\)\]\r?\n', "")
+
 
 # --- Visibility: commands ---
 $cmdMethods = @(

@@ -512,5 +512,111 @@ namespace ZombieHorde
             catch { }
             return false;
         }
+
+        /// <summary>
+        /// Feed a TC / building into GrimmNPC raid AI (Foundations + CurrentRaidTarget).
+        /// Does not AddState — GrimmNPC already owns AIState.Cooldown via RaidState/RaidStateMelee.
+        /// </summary>
+        public static bool AssignRaidTarget(ScientistNPC npc, BuildingPrivlidge priv)
+        {
+            if (npc == null || npc.IsDestroyed || priv == null || priv.IsDestroyed)
+                return false;
+
+            try
+            {
+                Type npcType = npc.GetType();
+                HashSet<BuildingBlock> foundations = CollectBuildingBlocks(priv);
+
+                PropertyInfo foundationsProp = npcType.GetProperty("Foundations", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (foundationsProp != null && foundations.Count > 0)
+                    foundationsProp.SetValue(npc, foundations);
+
+                BaseCombatEntity raidTarget = null;
+                if (foundations.Count > 0)
+                {
+                    float best = float.MaxValue;
+                    Vector3 origin = npc.transform.position;
+                    foreach (BuildingBlock block in foundations)
+                    {
+                        if (block == null || block.IsDestroyed) continue;
+                        float d = (block.transform.position - origin).sqrMagnitude;
+                        if (d < best)
+                        {
+                            best = d;
+                            raidTarget = block;
+                        }
+                    }
+                }
+                if (raidTarget == null)
+                    raidTarget = priv;
+
+                PropertyInfo currentRaidProp = npcType.GetProperty("CurrentRaidTarget", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                currentRaidProp?.SetValue(npc, raidTarget);
+
+                // Fallback for RaidState when Foundations stayed empty (GetRaidTarget → PlayerTarget).
+                if (foundations.Count == 0)
+                {
+                    PropertyInfo playerTargetProp = npcType.GetProperty("PlayerTarget", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    playerTargetProp?.SetValue(npc, priv);
+                }
+
+                // Enter GrimmNPC's existing Cooldown slot (RaidState / RaidStateMelee) if present.
+                if (npc.Brain != null && npc.Brain.states != null && npc.Brain.states.ContainsKey(AIState.Cooldown))
+                {
+                    try { npc.Brain.SwitchToState(AIState.Cooldown, 0); } catch { }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[ZombieHorde] AssignRaidTarget failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        public static bool HasGrimmRaidState(ScientistNPC npc)
+        {
+            if (npc?.Brain?.states == null) return false;
+            return npc.Brain.states.ContainsKey(AIState.Cooldown);
+        }
+
+        private static HashSet<BuildingBlock> CollectBuildingBlocks(BuildingPrivlidge priv)
+        {
+            var result = new HashSet<BuildingBlock>();
+            if (priv == null || priv.IsDestroyed) return result;
+
+            try
+            {
+                BuildingManager.Building building = priv.GetBuilding();
+                if (building?.buildingBlocks != null)
+                {
+                    foreach (BuildingBlock block in building.buildingBlocks)
+                    {
+                        if (block != null && !block.IsDestroyed)
+                            result.Add(block);
+                    }
+                }
+            }
+            catch { }
+
+            if (result.Count > 0) return result;
+
+            try
+            {
+                List<BuildingBlock> list = Facepunch.Pool.Get<List<BuildingBlock>>();
+                Vis.Entities(priv.transform.position, 25f, list, 1 << 21);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    BuildingBlock block = list[i];
+                    if (block != null && !block.IsDestroyed)
+                        result.Add(block);
+                }
+                Facepunch.Pool.FreeUnmanaged(ref list);
+            }
+            catch { }
+
+            return result;
+        }
     }
 }

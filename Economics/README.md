@@ -14,7 +14,7 @@ Oxide-free Harmony port of **Economics Extended 3.10.4** (SQLite balances, RP tr
 
 ## Dependencies
 
-1. **Permissions.dll** — load before Economics (`harmony.load Permissions` then `harmony.load Economics`).
+1. **0Permissions.dll** — load before Economics (`harmony.load 0Permissions` then `harmony.load Economics`).
 2. **System.Data.SQLite.dll** — required at runtime when `"Balance storage mode"` is `Sqlite`. Place in `RustDedicated_Data/Managed/`. Copy from:
    - `.cursor/HarmonyMods/Rust-Server-Metrics-master/deps/windows/System.Data.SQLite.dll`, or
    - `.cursor/Oxide.Plugins.Cant-Use/Oxide/Oxide.SQLite-master/src/Dependencies/System.Data.SQLite.dll`

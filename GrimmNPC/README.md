@@ -35,7 +35,7 @@ Copies `GrimmNPC.dll` only into server `HarmonyMods/`.
 
 - Call **`SpawnNpc(position, NpcConfig|JObject)`** (NpcSpawn API), not the old `RegisterPending` / `CustomNpcData` API from GrimmNPCold.
 - Skin ID for custom NPCs remains `11162132011012`.
-- Optional Oxide plugins (Kits / Friends / Clans) are resolved by reflection when Oxide is present.
+- Optional plugins: **Kits** binds the Harmony Kits mod via AppDomain `Kits_ApiType` (`GiveKit` / `IsKit`) — load `Kits.dll` for NPC `Config.Kit`. Friends / Clans still resolve via Oxide reflection when Oxide is present.
 
 ## Note on Convoy / BossMonster
 

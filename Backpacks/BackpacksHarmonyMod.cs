@@ -41,12 +41,40 @@ namespace BackpacksHarmony
             BackpacksHost.Instance.Plugin = _plugin;
             RegisterApiType();
             _plugin.HarmonyInit();
+            BindItemRetriever();
             ScrubBackpacksFromReplicatedList();
             RegisterCommands();
             ScheduleServerInitialized();
             Debug.Log($"[Backpacks Harmony] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
             Debug.Log("[Backpacks Harmony] Config: HarmonyConfig/Backpacks.json");
             Debug.Log("[Backpacks Harmony] Chat: /backpack  Console: backpack.open / viewbackpack / ...");
+        }
+
+        private void BindItemRetriever()
+        {
+            try
+            {
+                ItemRetrieverBinder.RegisterReadyCallback(() =>
+                {
+                    try
+                    {
+                        Debug.Log("[Backpacks] ItemRetriever ready - registering retrieve supplier.");
+                        _plugin?.MaybeRegisterItemRetriever();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[Backpacks] ItemRetriever ready callback: " + ex.Message);
+                    }
+                });
+                if (ItemRetrieverBinder.TryResolveBridge() == null)
+                    Debug.Log("[Backpacks] ItemRetriever not loaded yet (normal if DLL order is alphabetical). Will bind when it loads.");
+                else
+                    _plugin?.MaybeRegisterItemRetriever();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Backpacks] BindItemRetriever: " + ex.Message);
+            }
         }
 
         private void ScheduleServerInitialized(int attempt = 0)

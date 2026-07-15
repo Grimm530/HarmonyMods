@@ -400,7 +400,7 @@ namespace RustRewardsHarmony
                     if (!_resolveAttempted)
                     {
                         _resolveAttempted = true;
-                        Debug.LogWarning("[GrimmRewards] Permissions mod not loaded — permission fields will only allow server admins until Permissions.dll is loaded.");
+                        Debug.LogWarning("[GrimmRewards] Permissions mod not loaded — permission fields will only allow server admins until 0Permissions.dll is loaded.");
                     }
                     return;
                 }

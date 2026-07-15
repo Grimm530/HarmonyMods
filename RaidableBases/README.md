@@ -50,7 +50,7 @@ Raidable Bases as a **standalone Harmony mod** with **no Oxide dependency**. Sou
 
 ## Loading
 
-- Load **Permissions** first (`HarmonyMods/Permissions.dll`) for `raidablebases.*` perms/groups.
+- Load **0Permissions** first (`HarmonyMods/0Permissions.dll`) for `raidablebases.*` perms/groups.
 - Load **Kits** if profiles use Scientist/Murderer Kits.
 - Load **CopyPaste** before RaidableBases.
 - Then load **RaidableBases**. Entry: `RaidableBases.RaidableBasesHarmonyEntry`.

@@ -67,7 +67,171 @@ namespace BackpacksHarmony
         public string Name { get; set; } = "";
         public string Title { get; set; } = "";
         public bool IsLoaded { get; set; }
-        public object Call(string method, params object[] args) => null;
+
+        /// <summary>Optional Call override for cross-mod bridges (e.g. ItemRetriever).</summary>
+        public Func<string, object[], object> CallHandler { get; set; }
+
+        public virtual object Call(string method, params object[] args) =>
+            CallHandler != null ? CallHandler(method, args) : null;
+    }
+
+    /// <summary>
+    /// Resolves ItemRetriever Harmony mod via AppDomain and builds a Plugin bridge for PluginReference.
+    /// </summary>
+    public static class ItemRetrieverBinder
+    {
+        public const string AppDomainApiKey = "ItemRetriever_ApiType";
+        public const string AppDomainPluginKey = "ItemRetriever_Plugin";
+        public const string AppDomainReadyCallbacksKey = "ItemRetriever_ReadyCallbacks";
+        public const string AppDomainGenerationKey = "ItemRetriever_Generation";
+
+        private static int _boundGen = -1;
+        private static Plugin _bridge;
+        private static Type _apiType;
+        private static MethodInfo _callApi;
+        private static MethodInfo _registerReady;
+        private static bool _loggedLink;
+        private static Action _readyCallback;
+
+        public static Plugin TryResolveBridge()
+        {
+            EnsureBound();
+            return _bridge;
+        }
+
+        public static void RegisterReadyCallback(Action callback)
+        {
+            if (callback == null) return;
+            _readyCallback = callback;
+            EnsureBound();
+            try
+            {
+                if (_registerReady != null)
+                {
+                    _registerReady.Invoke(null, new object[] { callback });
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var list = AppDomain.CurrentDomain.GetData(AppDomainReadyCallbacksKey) as System.Collections.IList;
+                if (list == null)
+                {
+                    list = new List<Action>();
+                    AppDomain.CurrentDomain.SetData(AppDomainReadyCallbacksKey, list);
+                }
+                lock (list)
+                {
+                    if (!list.Contains(callback))
+                        list.Add(callback);
+                }
+            }
+            catch { }
+
+            // If already loaded, fire now
+            if (_bridge != null)
+            {
+                try { callback(); }
+                catch { }
+            }
+        }
+
+        private static int ReadGeneration()
+        {
+            try
+            {
+                if (AppDomain.CurrentDomain.GetData(AppDomainGenerationKey) is int g)
+                    return g;
+            }
+            catch { }
+            return 0;
+        }
+
+        private static Type ResolveApiType()
+        {
+            var fromDomain = AppDomain.CurrentDomain.GetData(AppDomainApiKey) as Type;
+            if (fromDomain != null) return fromDomain;
+
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var t = asm.GetType("ItemRetrieverHarmony.ItemRetrieverHarmonyMod");
+                    if (t != null) return t;
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        private static void EnsureBound()
+        {
+            int gen = ReadGeneration();
+            if (_bridge != null && _boundGen == gen && _apiType != null && _callApi != null)
+                return;
+
+            try
+            {
+                _apiType = ResolveApiType();
+                if (_apiType == null)
+                {
+                    _bridge = null;
+                    _callApi = null;
+                    return;
+                }
+
+                // Prefer live Instance
+                var instanceProp = _apiType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                var instance = instanceProp?.GetValue(null);
+                if (instance == null)
+                {
+                    _bridge = null;
+                    _callApi = null;
+                    return;
+                }
+
+                _callApi = _apiType.GetMethod("CallApi", BindingFlags.Public | BindingFlags.Static,
+                    null, new[] { typeof(string), typeof(object[]) }, null);
+                _registerReady = _apiType.GetMethod("RegisterReadyCallback", BindingFlags.Public | BindingFlags.Static,
+                    null, new[] { typeof(Action) }, null);
+
+                _bridge = new Plugin
+                {
+                    Name = "ItemRetriever",
+                    Title = "Item Retriever",
+                    IsLoaded = true,
+                    CallHandler = (method, args) =>
+                    {
+                        try
+                        {
+                            return _callApi?.Invoke(null, new object[] { method, args ?? Array.Empty<object>() });
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning("[Backpacks] ItemRetriever.Call: " + ex.Message);
+                            return null;
+                        }
+                    }
+                };
+                _boundGen = gen;
+
+                if (!_loggedLink)
+                {
+                    _loggedLink = true;
+                    Debug.Log("[Backpacks] Linked to ItemRetriever Harmony mod for retrieve mode.");
+                }
+                else
+                    Debug.Log($"[Backpacks] Re-linked to ItemRetriever Harmony mod (gen={gen}).");
+            }
+            catch (Exception ex)
+            {
+                _bridge = null;
+                _callApi = null;
+                Debug.LogWarning("[Backpacks] ItemRetriever bind failed: " + ex.Message);
+            }
+        }
     }
 
     #endregion
@@ -364,7 +528,7 @@ namespace BackpacksHarmony
                     if (!_resolveAttempted)
                     {
                         _resolveAttempted = true;
-                        Debug.LogWarning("[Backpacks] Permissions mod not loaded - backpack Permission fields require Permissions.dll.");
+                        Debug.LogWarning("[Backpacks] Permissions mod not loaded - backpack Permission fields require 0Permissions.dll.");
                     }
                     return;
                 }

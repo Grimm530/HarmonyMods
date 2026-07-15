@@ -39,7 +39,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Build successful!  SkillTree.dll -> $destPath" -ForegroundColor Green
     Write-Host "Config:  HarmonyConfig/SkillTree.json"         -ForegroundColor Yellow
     Write-Host "Data:    HarmonyData/  (or CustomSkillTreeDataDirectory in config)" -ForegroundColor Yellow
-    Write-Host "Load:    harmony.load SkillTree  (Permissions mod must be loaded first)" -ForegroundColor Gray
+    Write-Host "Load:    auto on startup (alphabetical). Binds Permissions + MovementSpeed via ready callbacks." -ForegroundColor Gray
 } else {
     Write-Host ""
     Write-Host "Build FAILED! Check errors above." -ForegroundColor Red

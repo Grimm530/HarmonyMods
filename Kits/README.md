@@ -90,6 +90,6 @@ Relative data keys are unchanged (`Kits/Kits`, `Kits/Players/{id}`, etc.) — th
 ## Notes
 
 - Enable **Offline Image Mode** is optional; built-in HTTP image loader works without ImageLibrary.
-- **Permissions:** Load `Permissions.dll` for Oxide-style groups. Kit `Permission` fields (e.g. `kits.defensep3`) are enforced via that mod. Server admins do **not** auto-pass kit perms — grant via `admin` (or other) groups. See `HarmonyConfig/Permissions.json`.
+- **Permissions:** Load `0Permissions.dll` for Oxide-style groups. Kit `Permission` fields (e.g. `kits.defensep3`) are enforced via that mod. Server admins do **not** auto-pass kit perms — grant via `admin` (or other) groups. See `HarmonyConfig/Permissions.json`.
 - **AutoWipe** on new save: wipe detection uses `SaveRestore.WipeId` change; first boot after load stores the id without wiping. Use `kits.reset` manually if needed.
 - Plugin hooks (`OnKitRedeemed`, `canRedeemKit`, Notify) are no-ops without Oxide plugins.

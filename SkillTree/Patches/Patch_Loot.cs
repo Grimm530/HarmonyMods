@@ -1,4 +1,6 @@
 // OnLootEntity / CanLootEntity / OnLootEntityEnd
+// LootContainer does not declare PlayerOpenLoot (inherits StorageContainer) — patching
+// LootContainer.PlayerOpenLoot fails with "Undefined target method". Use PlayerLoot like ArmoredTrain.
 using HarmonyLib;
 using UnityEngine;
 using STPlugin = Oxide.Plugins.SkillTree;
@@ -6,35 +8,47 @@ using STPlugin = Oxide.Plugins.SkillTree;
 namespace SkillTreeHarmony.Patches
 {
     /// <summary>
-    /// OnLootEntity — postfix on LootContainer.PlayerOpenLoot.
-    /// CanLootEntity (void) also called here for the plugin to record the event.
+    /// OnLootEntity / CanLootEntity — when a player successfully starts looting a LootContainer.
     /// </summary>
-    [HarmonyPatch(typeof(LootContainer), nameof(LootContainer.PlayerOpenLoot), typeof(BasePlayer), typeof(string), typeof(bool))]
-    public static class LootContainer_PlayerOpenLoot_Patch
+    [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.StartLootingEntity), new[] { typeof(BaseEntity), typeof(bool) })]
+    public static class PlayerLoot_StartLootingEntity_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(LootContainer __instance, BasePlayer player, bool __result)
+        public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (__instance == null || player == null || !__result) return;
-            try
+            if (!__result || __instance == null || targetEntity == null) return;
+            BasePlayer player = __instance.baseEntity;
+            if (player == null) return;
+
+            if (targetEntity is LootContainer loot)
             {
-                STPlugin.Dispatch_CanLootEntity(player, __instance);
-                STPlugin.Dispatch_OnLootEntity(player, __instance);
+                try
+                {
+                    STPlugin.Dispatch_CanLootEntity(player, loot);
+                    STPlugin.Dispatch_OnLootEntity(player, loot);
+                }
+                catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntity: " + ex.Message); }
             }
-            catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntity: " + ex.Message); }
         }
     }
 
-    /// <summary>OnLootEntityEnd — postfix on StorageContainer.PlayerStoppedLooting.</summary>
-    [HarmonyPatch(typeof(StorageContainer), nameof(StorageContainer.PlayerStoppedLooting))]
-    public static class StorageContainer_PlayerStoppedLooting_Patch
+    /// <summary>
+    /// OnLootEntityEnd — PlayerLoot.Clear is the stop-looting entry; entitySource is still set in prefix.
+    /// </summary>
+    [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.Clear))]
+    public static class PlayerLoot_Clear_Patch
     {
-        [HarmonyPostfix]
-        public static void Postfix(StorageContainer __instance, BasePlayer player)
+        [HarmonyPrefix]
+        public static void Prefix(PlayerLoot __instance)
         {
-            if (__instance == null || player == null) return;
-            try { STPlugin.Dispatch_OnLootEntityEnd(player, __instance); }
-            catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntityEnd: " + ex.Message); }
+            BasePlayer player = __instance?.baseEntity;
+            BaseEntity source = __instance?.entitySource;
+            if (player == null || source == null) return;
+            if (source is StorageContainer sc)
+            {
+                try { STPlugin.Dispatch_OnLootEntityEnd(player, sc); }
+                catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntityEnd: " + ex.Message); }
+            }
         }
     }
 }

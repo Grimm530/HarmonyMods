@@ -27,12 +27,16 @@ namespace GrimmNPC.NpcSpawnExtensionMethods
             return default;
         }
 
-        public static bool IsSteamId(this ulong id) => id > 76561197960265728UL;
+        public static bool IsSteamId(this ulong id) => id >= 76561197960265728UL;
 
         public static bool IsSteamId(this EncryptedValue<ulong> id)
         {
-            try { return ((ulong)id) > 76561197960265728UL; }
-            catch { return false; }
+            try { return ((ulong)id) >= 76561197960265728UL; }
+            catch
+            {
+                try { return id.Get() >= 76561197960265728UL; }
+                catch { return false; }
+            }
         }
     }
 }

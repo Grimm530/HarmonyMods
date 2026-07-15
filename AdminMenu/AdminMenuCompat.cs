@@ -594,6 +594,7 @@ namespace AdminMenuHarmony
                     var n = asm.GetName().Name ?? "";
                     if (n.EndsWith("Harmony", StringComparison.OrdinalIgnoreCase) ||
                         n.Equals("Permissions", StringComparison.OrdinalIgnoreCase) ||
+                        n.Equals("0Permissions", StringComparison.OrdinalIgnoreCase) ||
                         n.Equals("Economics", StringComparison.OrdinalIgnoreCase) ||
                         n.Equals("Kits", StringComparison.OrdinalIgnoreCase) ||
                         n.Equals("Shop", StringComparison.OrdinalIgnoreCase) ||
@@ -678,7 +679,10 @@ namespace AdminMenuHarmony
     {
         private readonly Dictionary<string, string> _embedded =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<string, string> _override;
+        private Dictionary<string, string> _file =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        public int FileMessageCount => _file.Count;
 
         public void RegisterMessages(Dictionary<string, string> messages)
         {
@@ -687,26 +691,37 @@ namespace AdminMenuHarmony
                 _embedded[kv.Key] = kv.Value;
         }
 
-        public void LoadOverrideFile(string path)
+        /// <summary>Load HarmonyLanguage/&lt;Mod&gt;.json — file entries win over embedded defaults.</summary>
+        public bool LoadLanguageFile(string path)
         {
-            _override = null;
-            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            _file = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return false;
             try
             {
-                _override = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path))
-                            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var loaded = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path));
+                if (loaded == null) return false;
+                foreach (var kv in loaded)
+                {
+                    if (!string.IsNullOrEmpty(kv.Key) && kv.Value != null)
+                        _file[kv.Key] = kv.Value;
+                }
+                return _file.Count > 0;
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[AdminMenu] Lang override load failed: " + ex.Message);
+                Debug.LogWarning("[AdminMenu] Lang file load failed: " + ex.Message);
+                return false;
             }
         }
+
+        // Kept for older call sites.
+        public void LoadOverrideFile(string path) => LoadLanguageFile(path);
 
         public string GetMessage(string key, string userId = null)
         {
             if (string.IsNullOrEmpty(key)) return "";
-            if (_override != null && _override.TryGetValue(key, out var ov) && !string.IsNullOrEmpty(ov))
-                return ov;
+            if (_file.TryGetValue(key, out var fromFile) && !string.IsNullOrEmpty(fromFile))
+                return fromFile;
             if (_embedded.TryGetValue(key, out var msg))
                 return msg;
             return key;
@@ -854,6 +869,7 @@ namespace AdminMenuHarmony
         public string LangDirectory { get; private set; }
         public string ImagesDirectory { get; private set; }
         public string ConfigPath { get; private set; }
+        public string LangPath { get; private set; }
 
         public PermissionLib Permission { get; } = new PermissionLib();
         public TimerLib Timer { get; } = new TimerLib();
@@ -871,6 +887,7 @@ namespace AdminMenuHarmony
             Instance.LangDirectory = Path.Combine(Instance.ServerRoot, "HarmonyLanguage");
             Instance.ImagesDirectory = Path.Combine(Instance.ServerRoot, "HarmonyImages", "AdminMenu");
             Instance.ConfigPath = Path.Combine(Instance.ConfigDirectory, "AdminMenu.json");
+            Instance.LangPath = Path.Combine(Instance.LangDirectory, "AdminMenu.json");
 
             Directory.CreateDirectory(Instance.ConfigDirectory);
             Directory.CreateDirectory(Instance.DataDirectory);
@@ -885,17 +902,23 @@ namespace AdminMenuHarmony
                 IsLoaded = true
             };
 
-            var langFile = Path.Combine(Instance.LangDirectory, "AdminMenu.json");
-            Instance.Lang.LoadOverrideFile(langFile);
-
             // Do NOT call AdminMenuImages.TryLoad here — FileStorage must not be
             // touched until after Bootstrap sets server.identity. Images load from
             // ScheduleServerInitialized / HarmonyServerInitialized instead.
 
             Debug.Log($"[AdminMenu] Config: {Instance.ConfigPath}");
             Debug.Log($"[AdminMenu] Data:   {Instance.DataDirectory}");
-            Debug.Log($"[AdminMenu] Lang:   {langFile}");
+            Debug.Log($"[AdminMenu] Lang:   {Instance.LangPath}");
             Debug.Log($"[AdminMenu] Images: {Instance.ImagesDirectory}");
+        }
+
+        /// <summary>Reload HarmonyLanguage/AdminMenu.json (does not overwrite the file).</summary>
+        public void ReloadLanguage()
+        {
+            if (Lang.LoadLanguageFile(LangPath))
+                Debug.Log($"[AdminMenu] OK: Loaded {Lang.FileMessageCount} lang entries from HarmonyLanguage/AdminMenu.json");
+            else
+                Debug.LogWarning("[AdminMenu] HarmonyLanguage/AdminMenu.json missing or empty — using embedded defaults");
         }
 
         public static void Shutdown()

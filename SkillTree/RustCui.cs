@@ -81,8 +81,8 @@ namespace Oxide.Game.Rust.Cui
         {
             if (player?.net != null)
             {
-                // Clients only forward ConsoleGen commands. Rewrite Oxide-style UI_Kits
-                // callbacks to cui.endtest so KitsHarmony.Patches.Cui_Endtest_Patch can route them.
+                // Clients only forward ConsoleGen commands. Rewrite SkillTree CUI button commands
+                // to cui.endtest ST … so Patches.Cui_Endtest_Patch can route them.
                 json = RewriteHarmonyButtonCommands(json);
                 CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection ), json);
                 return true;
@@ -93,16 +93,37 @@ namespace Oxide.Game.Rust.Cui
 
         /// <summary>
         /// Oxide plugins use custom console commands on CUI buttons. Under Harmony those
-        /// never leave the client. Bridge BuyableUI commands through cui.endtest RBBUI.
+        /// never leave the client. Bridge SkillTree commands through cui.endtest ST.
         /// </summary>
         private static string RewriteHarmonyButtonCommands(string json)
         {
             if (string.IsNullOrEmpty(json))
                 return json;
-            if (json.IndexOf("ui_buyable_", StringComparison.Ordinal) < 0)
+            if (json.IndexOf("\"command\":", StringComparison.Ordinal) < 0)
                 return json;
-            return json
-                .Replace("\"command\":\"ui_buyable_", "\"command\":\"cui.endtest RBBUI ui_buyable_");
+
+            var cmds = SkillTreeHarmony.SkillTreeMod.Instance?.UiConsoleCommands;
+            if (cmds == null || cmds.Count == 0)
+                return json;
+
+            // Longer names first (list is pre-sorted). Match exact command token, not prefixes.
+            for (int i = 0; i < cmds.Count; i++)
+            {
+                var cmd = cmds[i];
+                if (string.IsNullOrEmpty(cmd)) continue;
+
+                string withArgs = "\"command\":\"" + cmd + " ";
+                string alone = "\"command\":\"" + cmd + "\"";
+                string bridgeArgs = "\"command\":\"cui.endtest ST " + cmd + " ";
+                string bridgeAlone = "\"command\":\"cui.endtest ST " + cmd + "\"";
+
+                if (json.IndexOf(withArgs, StringComparison.Ordinal) >= 0)
+                    json = json.Replace(withArgs, bridgeArgs);
+                if (json.IndexOf(alone, StringComparison.Ordinal) >= 0)
+                    json = json.Replace(alone, bridgeAlone);
+            }
+
+            return json;
         }
 
         public static bool DestroyUi(BasePlayer player, string elem)

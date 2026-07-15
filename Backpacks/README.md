@@ -15,7 +15,7 @@ Output: `HarmonyMods/Backpacks.dll` (server root).
 harmony.load Backpacks
 ```
 
-Requires **Permissions.dll** loaded first (permission bridge via `Permissions_ApiType`).
+Requires **0Permissions.dll** loaded first (permission bridge via `Permissions_ApiType`).
 
 ## Config
 
@@ -71,10 +71,20 @@ Chat / console (IPlayer covalence style):
 
 ## Deferred / gaps
 
-- **ItemRetriever** — not ported. PluginReference stays null; retrieve registration is skipped (`ItemRetriever?.Call`). Gather works; retrieve UI/mode is gracefully disabled.
+- **ItemRetriever** — Harmony mod (`HarmonyMods/ItemRetriever.dll`). Backpacks binds via AppDomain ready callback — **no load-order requirement**. Auto-start is typically alphabetical (`Backpacks` then `ItemRetriever` then `Permissions`); that is fine.
 - **OnNetworkSubscriptionsUpdate** — not patched (no clean Harmony target yet).
 - **Arena / EventManager / BackpackButton** — PluginReferences stubbed null (same as Oxide when those plugins are absent).
 - **OnGroupPermission / OnUserPermission** hooks — not patched yet (capacity refresh on grant/revoke may need a Permissions event bridge later).
+
+## Startup order (auto)
+
+Facepunch HarmonyLoader enumerates `HarmonyMods/*.dll` (filesystem order; often alphabetical). Do **not** rely on:
+
+```
+Permissions -> ItemRetriever -> Backpacks
+```
+
+That order only applies to manual `harmony.load`. On boot you get roughly `Backpacks` -> `ItemRetriever` -> `Permissions`. Both **Permissions** and **ItemRetriever** publish ready callbacks so Backpacks rebinds when they load later.
 
 ## Source layout
 

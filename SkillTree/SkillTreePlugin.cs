@@ -59,6 +59,11 @@ using UnityEngine;
  * Also handle respec.
  */
 
+/* 1.7.122
+ * Fixed NullReferenceException in OnFuelConsume (Smelt_Speed) when Create/SplitItem returned null.
+ * Fixed scoreboard init logging an error when scanning plugin metadata file SkillTree.json.
+ */
+
 /* 1.7.6
  * Fixed an issue with permission mods not registering correctly.
  * Fixed the upload showing 1.7.1
@@ -66,7 +71,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Skill Tree", "imthenewguy edited by Grimm530", "1.7.121")]
+    [Info("Skill Tree", "imthenewguy edited by Grimm530", "1.7.122")]
     [Description("Skills on a tree!")]
     public partial class SkillTree : RustPlugin
     {
@@ -7418,14 +7423,15 @@ namespace Oxide.Plugins
             var player = crafter.owner;
             if (player == null) return;
 
-            if (task.blueprint == null)
+            if (task == null || task.blueprint == null || item == null || item.info == null)
             {
                 return;
             }
 
             if (!ExcludeFromCraftXP(item.info.shortname))
             {
-                var experienceGain = CraftTimes.ContainsKey(task.taskUID) && config.buff_settings.timeBasedCraftingXP ? Math.Round(CraftTimes[task.taskUID] * config.xp_settings.xp_sources.Crafting, 2) : Math.Round((item.info.Blueprint.time + 0.99f) * config.xp_settings.xp_sources.Crafting, 2);
+                var blueprintTime = item.info.Blueprint != null ? item.info.Blueprint.time : task.blueprint.time;
+                var experienceGain = CraftTimes.ContainsKey(task.taskUID) && config.buff_settings.timeBasedCraftingXP ? Math.Round(CraftTimes[task.taskUID] * config.xp_settings.xp_sources.Crafting, 2) : Math.Round((blueprintTime + 0.99f) * config.xp_settings.xp_sources.Crafting, 2);
                 AwardXP(player, experienceGain, null, false, false, nameof(config.xp_settings.xp_sources.Crafting));
             }
             BuffDetails bd;
@@ -14581,41 +14587,56 @@ namespace Oxide.Plugins
 
         void OnFuelConsume(BaseOven oven, Item fuel, ItemModBurnable burnable)
         {
+            if (oven == null || oven.IsDestroyed) return;
+
             float modifier;
             if (!ovens.TryGetValue(oven, out modifier) || !RollSuccessful(modifier)) return;
-            List<Item> remove_items = new List<Item>();
-            foreach (var item in new List<Item>(oven.inventory.itemList))
+
+            var inventory = oven.inventory;
+            if (inventory?.itemList == null) return;
+
+            // Snapshot — we mutate amounts / remove while scanning.
+            foreach (var item in new List<Item>(inventory.itemList))
             {
-                var itemModCookable = item.info.GetComponent<ItemModCookable>();
-                if (itemModCookable?.becomeOnCooked == null || item.temperature < itemModCookable.lowTemp || item.temperature > itemModCookable.highTemp || itemModCookable.cookTime < 0) continue;
+                if (item?.info == null || item.amount < 1) continue;
+
+                var itemModCookable = item.info.ItemModCookable;
+                if (itemModCookable == null || itemModCookable.becomeOnCooked == null || itemModCookable.amountOfBecome < 1) continue;
+                if (item.temperature < itemModCookable.lowTemp || item.temperature > itemModCookable.highTemp || itemModCookable.cookTime < 0) continue;
+
                 var itemToGive = ItemManager.Create(itemModCookable.becomeOnCooked, itemModCookable.amountOfBecome);
-                if (!itemToGive.MoveToContainer(oven.inventory))
-                    itemToGive.Drop(oven.inventory.dropPosition, oven.inventory.dropVelocity);
-                if (item.amount == 1) item.Remove();
-                else item.SplitItem(1).Remove();
-            }
-            foreach (var item in new List<Item>(remove_items))
-            {
-                item.Remove();
+                if (itemToGive == null) continue;
+
+                if (!itemToGive.MoveToContainer(inventory))
+                    itemToGive.Drop(inventory.dropPosition, inventory.dropVelocity);
+
+                // Prefer amount-- over SplitItem(1).Remove() — SplitItem returns null when amount <= split size.
+                if (item.amount > 1)
+                {
+                    item.amount--;
+                    item.MarkDirty();
+                }
+                else item.Remove();
             }
         }
 
         void OnOvenToggle(BaseOven oven, BasePlayer player)
         {
+            if (oven == null || oven.IsDestroyed || player == null) return;
             if (oven.temperature != BaseOven.TemperatureType.Smelting) return;
             // Checks if the oven is on when the toggle occurs, and if it is, we exit because its being turned off.
             if (oven.IsOn())
             {
-                if (ovens.ContainsKey(oven)) ovens.Remove(oven);
+                ovens.Remove(oven);
                 return;
             }
             // See if the player has the buff assigned.
             BuffDetails bd;
             if (GetBuffDetails(player.userID, out bd) && bd.GetBuff(Buff.Smelt_Speed, out var value))
             {
-                if (oven.inventory.itemList == null || oven.inventory.itemList.Count == 0) return;
-                ovens.Remove(oven);
-                ovens.Add(oven, value);
+                // inventory can be null during spawn/despawn (e.g. RaidableBases paste)
+                if (oven.inventory?.itemList == null || oven.inventory.itemList.Count == 0) return;
+                ovens[oven] = value;
             }
         }
 
@@ -16182,6 +16203,7 @@ namespace Oxide.Plugins
 
         void OnEntityKill(StorageContainer container)
         {
+            if (container is BaseOven oven) ovens.Remove(oven);
             RemoveContainer(container);
         }
 
@@ -16449,8 +16471,8 @@ namespace Oxide.Plugins
                 try
                 {
                     var useridString = FormatUserIDFromPath(file);
-                    var userid = Convert.ToUInt64(useridString);
-                    if (userid == 0 || data.ContainsKey(userid)) continue;
+                    // Skip plugin aggregate (SkillTree.json) and any other non-steamid files in the same folder.
+                    if (!ulong.TryParse(useridString, out var userid) || userid == 0 || data.ContainsKey(userid)) continue;
                     if (permission.UserHasPermission(useridString, perm_no_scoreboard)) continue;
                     var obj = LoadOfflinePlayerInfo(file, false);
                     data.Add(userid, new ScoreboardInfo.ScoreInfo(obj.name ?? useridString, obj.xp, obj.prestige_level, obj.prestige_level > 0 ? config.prestige_settings.levels.TryGetValue(obj.prestige_level, out var presData) ? presData.RankUpPic : 0 : 0));

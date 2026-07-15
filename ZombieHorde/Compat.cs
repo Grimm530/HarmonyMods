@@ -66,7 +66,7 @@ namespace ZombieHorde
         public static void NextTick(Action action)
         {
             if (action == null) return;
-            BootstrapRunner.Start(NextTickCo(action));
+            BootstrapRunner.Start(NextTickCo(action), null);
         }
 
         private static IEnumerator NextTickCo(Action action)
@@ -90,33 +90,80 @@ namespace ZombieHorde
 
         public sealed class TimerHelper
         {
+            private readonly List<Coroutine> _serverCoroutines = new List<Coroutine>();
+            private readonly List<GameObject> _bootstrapObjects = new List<GameObject>();
+            private int _generation;
+
             public void In(float delay, Action action) => Once(delay, action);
 
             public void Once(float delay, Action action)
             {
                 if (action == null) return;
-                BootstrapRunner.Start(OnceCo(delay, action));
+                int gen = _generation;
+                BootstrapRunner.Start(OnceCo(delay, action, gen), Track);
             }
 
             public void Every(float interval, Action action)
             {
                 if (action == null) return;
-                BootstrapRunner.Start(EveryCo(interval, action));
+                int gen = _generation;
+                BootstrapRunner.Start(EveryCo(interval, action, gen), Track);
             }
 
-            private static IEnumerator OnceCo(float delay, Action action)
+            /// <summary>
+            /// Cancel pending Once/Every callbacks. Required on harmony.reload — ServerMgr coroutines
+            /// otherwise fire against a null Instance/Configuration and NRE in SpawnOrder.Create.
+            /// </summary>
+            public void CancelAll()
+            {
+                _generation++;
+                if (ServerMgr.Instance != null)
+                {
+                    for (int i = 0; i < _serverCoroutines.Count; i++)
+                    {
+                        Coroutine c = _serverCoroutines[i];
+                        if (c != null)
+                        {
+                            try { ServerMgr.Instance.StopCoroutine(c); } catch { }
+                        }
+                    }
+                }
+                _serverCoroutines.Clear();
+
+                for (int i = 0; i < _bootstrapObjects.Count; i++)
+                {
+                    GameObject go = _bootstrapObjects[i];
+                    if (go != null)
+                    {
+                        try { UnityEngine.Object.Destroy(go); } catch { }
+                    }
+                }
+                _bootstrapObjects.Clear();
+            }
+
+            private void Track(Coroutine coroutine, GameObject bootstrapGo)
+            {
+                if (coroutine != null)
+                    _serverCoroutines.Add(coroutine);
+                if (bootstrapGo != null)
+                    _bootstrapObjects.Add(bootstrapGo);
+            }
+
+            private IEnumerator OnceCo(float delay, Action action, int gen)
             {
                 if (delay > 0f) yield return new WaitForSeconds(delay);
+                if (gen != _generation) yield break;
                 try { action(); }
                 catch (Exception ex) { Debug.LogWarning("[ZombieHorde] timer.Once: " + ex.Message); }
             }
 
-            private static IEnumerator EveryCo(float interval, Action action)
+            private IEnumerator EveryCo(float interval, Action action, int gen)
             {
-                while (true)
+                while (gen == _generation)
                 {
                     if (interval > 0f) yield return new WaitForSeconds(interval);
                     else yield return null;
+                    if (gen != _generation) yield break;
                     try { action(); }
                     catch (Exception ex) { Debug.LogWarning("[ZombieHorde] timer.Every: " + ex.Message); }
                 }
@@ -390,18 +437,20 @@ namespace ZombieHorde
 
         private sealed class BootstrapRunner : MonoBehaviour
         {
-            public static void Start(IEnumerator routine)
+            public static void Start(IEnumerator routine, Action<Coroutine, GameObject> track)
             {
                 if (routine == null) return;
                 if (ServerMgr.Instance != null)
                 {
-                    ServerMgr.Instance.StartCoroutine(routine);
+                    Coroutine c = ServerMgr.Instance.StartCoroutine(routine);
+                    track?.Invoke(c, null);
                     return;
                 }
                 var go = new GameObject("ZombieHorde_Bootstrap");
                 UnityEngine.Object.DontDestroyOnLoad(go);
                 go.hideFlags = HideFlags.HideAndDontSave;
                 go.AddComponent<BootstrapRunner>()._routine = routine;
+                track?.Invoke(null, go);
             }
 
             private IEnumerator _routine;

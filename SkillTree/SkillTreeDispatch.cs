@@ -238,6 +238,7 @@ namespace Oxide.Plugins
         {
             var inst = Instance;
             if (inst == null || !inst.IsSubscribed(nameof(OnItemCraftFinished))) return;
+            if (task == null || item == null || crafter == null) return;
             try { inst.OnItemCraftFinished(task, item, crafter); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemCraftFinished: " + ex.Message); }
         }
@@ -399,7 +400,8 @@ namespace Oxide.Plugins
         public static void Dispatch_OnOvenToggle(BaseOven oven, BasePlayer player)
         {
             var inst = Instance;
-            if (inst == null || !inst.IsSubscribed(nameof(OnOvenToggle))) return;
+            if (inst == null || oven == null || player == null) return;
+            if (!inst.IsSubscribed(nameof(OnOvenToggle))) return;
             try { inst.OnOvenToggle(oven, player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnOvenToggle: " + ex.Message); }
         }

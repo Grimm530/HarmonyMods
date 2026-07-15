@@ -1,6 +1,6 @@
 # SkillTree Harmony Mod
 
-Port of SkillTree 1.7.121 (imthenewguy / Grimm530) to the Oxide-free Harmony-first stack.
+Port of SkillTree 1.7.122 (imthenewguy / Grimm530) to the Oxide-free Harmony-first stack.
 
 ## Identity
 
@@ -36,13 +36,16 @@ Set `RUST_MANAGED_PATH` or `RUST_SERVER_ROOT` env vars if the auto-detected path
 
 ## Load Order
 
-1. `Permissions.dll` (PermissionsHarmony) **must be loaded first** — permission checks will warn and fail gracefully if missing.
-2. `SkillTree.dll`
+Facepunch loads `HarmonyMods/*.dll` alphabetically (filesystem order). Typical order here:
 
-```
-harmony.load Permissions
-harmony.load SkillTree
-```
+`MovementSpeed` → `Permissions` → `SkillTree`
+
+**Do not rely on a manual load sequence.** SkillTree binds via ready callbacks:
+
+- `Permissions_ReadyCallbacks` → re-register skilltree.* permissions
+- `MovementSpeed_ReadyCallbacks` → rebind RoadRunner / swim `PluginReference`
+
+RoadRunner needs `MovementSpeed.dll` present; if it is missing, those buffs soft-fail (null checks).
 
 ## Commands
 

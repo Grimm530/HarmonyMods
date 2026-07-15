@@ -66,9 +66,16 @@ namespace SkillTreeHarmony
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Exact CUI command names (original casing) for cui.endtest rewrite. Longer names first.</summary>
+        private readonly List<string> _uiConsoleCommands = new List<string>();
         private Action _permissionsReadyCallback;
+        private Action _movementSpeedReadyCallback;
 
         public const string AppDomainApiKey = "SkillTree_ApiType";
+        public const string CuiMarker = "ST";
+
+        /// <summary>CUI button command names sorted longest-first for RustCui rewrite.</summary>
+        public IReadOnlyList<string> UiConsoleCommands => _uiConsoleCommands;
 
         // ---- IHarmonyModHooks ---------------------------------------------
 
@@ -100,16 +107,21 @@ namespace SkillTreeHarmony
             foreach (var cmd in new[] { "score", "scoreboard" })
                 _chatCommandNames.Add(cmd);
 
-            // Register the UI console commands immediately.
+            // Register [ConsoleCommand] handlers + ST_UI immediately (CUI needs them before players open /st).
             RegisterConsoleCommands();
+            RegisterAttributedConsoleCommands();
 
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
 
+            // MovementSpeed loads before SkillTree alphabetically, but harmony.load order can differ.
+            _movementSpeedReadyCallback = OnMovementSpeedReady;
+            RegisterMovementSpeedReadyCallback(_movementSpeedReadyCallback);
+
             // Start init coroutine (waits for ServerMgr + ItemManager).
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
 
-            Debug.Log("[SkillTree] Harmony mod loaded. Chat: /st /skilltree /skills. Config: HarmonyConfig/SkillTree.json. Data: HarmonyData/. Custom player data: see config CustomSkillTreeDataDirectory.");
+            Debug.Log("[SkillTree] Harmony mod loaded. Chat: /st /skilltree /skills. Config: HarmonyConfig/SkillTree.json. No forced DLL load order (Permissions + MovementSpeed bind via ready callbacks).");
         }
 
         private void OnPermissionsReady()
@@ -127,6 +139,60 @@ namespace SkillTreeHarmony
             }
         }
 
+        private void OnMovementSpeedReady()
+        {
+            try
+            {
+                var plugin = OxidePlugin.GetModInstance();
+                if (plugin == null) return;
+                plugin.ResolvePluginReferences();
+                Debug.Log("[SkillTree] MovementSpeed ready — RoadRunner/swim PluginReference rebound.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SkillTree] MovementSpeed ready: " + ex.Message);
+            }
+        }
+
+        private static void RegisterMovementSpeedReadyCallback(Action callback)
+        {
+            if (callback == null) return;
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("MovementSpeed_ApiType") as Type;
+                var mi = t?.GetMethod("RegisterReadyCallback", BindingFlags.Public | BindingFlags.Static,
+                    null, new[] { typeof(Action) }, null);
+                if (mi != null)
+                {
+                    mi.Invoke(null, new object[] { callback });
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var list = AppDomain.CurrentDomain.GetData("MovementSpeed_ReadyCallbacks") as System.Collections.IList;
+                if (list == null)
+                {
+                    list = new List<Action>();
+                    AppDomain.CurrentDomain.SetData("MovementSpeed_ReadyCallbacks", list);
+                }
+                lock (list)
+                {
+                    if (!list.Contains(callback))
+                        list.Add(callback);
+                }
+            }
+            catch { }
+
+            // Already up
+            if (AppDomain.CurrentDomain.GetData("MovementSpeed_ApiType") is Type)
+            {
+                try { callback(); } catch { }
+            }
+        }
+
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
             if (_permissionsReadyCallback != null)
@@ -134,6 +200,7 @@ namespace SkillTreeHarmony
                 PermissionsBridge.UnregisterReadyCallback(_permissionsReadyCallback);
                 _permissionsReadyCallback = null;
             }
+            _movementSpeedReadyCallback = null;
 
             if (_initCoroutine != null && ModRunner.Instance != null)
             {
@@ -276,8 +343,63 @@ namespace SkillTreeHarmony
 
         private void RegisterConsoleCommands()
         {
-            // Core UI console command (sent by CUI buttons).
+            // Legacy name kept for compatibility; SkillTree UI uses many discrete [ConsoleCommand]s.
             RegisterConsole("ST_UI", arg => InvokeConsoleMethod("UI_SkillTree", arg), serverAdmin: false);
+        }
+
+        /// <summary>
+        /// Oxide registers [ConsoleCommand] automatically; Harmony must scan and bind them.
+        /// Without this, /st opens but every button command is a no-op.
+        /// </summary>
+        private void RegisterAttributedConsoleCommands()
+        {
+            var plugin = Plugin;
+            if (plugin == null) return;
+            try
+            {
+                const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                {
+                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    if (attrs == null || attrs.Length == 0) continue;
+                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    {
+                        if (string.IsNullOrWhiteSpace(attr.Command)) continue;
+                        var cmdName = attr.Command.Trim();
+                        TrackUiConsoleCommand(cmdName);
+
+                        // Avoid double-registration (case-insensitive).
+                        if (_registeredCommands.Any(c =>
+                                string.Equals(c.Name, cmdName, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(c.FullName, "global." + cmdName, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        var methodName = mi.Name;
+                        RegisterConsole(cmdName, arg => InvokeConsoleMethod(methodName, arg), serverAdmin: false);
+                    }
+                }
+                SortUiConsoleCommands();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SkillTree] RegisterAttributedConsoleCommands: " + ex.Message);
+            }
+        }
+
+        private void TrackUiConsoleCommand(string cmdName)
+        {
+            if (string.IsNullOrEmpty(cmdName)) return;
+            for (int i = 0; i < _uiConsoleCommands.Count; i++)
+            {
+                if (string.Equals(_uiConsoleCommands[i], cmdName, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            _uiConsoleCommands.Add(cmdName);
+        }
+
+        private void SortUiConsoleCommands()
+        {
+            _uiConsoleCommands.Sort((a, b) => b.Length.CompareTo(a.Length));
         }
 
         private void RefreshDynamicCommands()
@@ -295,18 +417,88 @@ namespace SkillTreeHarmony
                 foreach (var reg in plugin.cmd.RegisteredConsoleCommands)
                 {
                     if (string.IsNullOrEmpty(reg.name)) continue;
-                    var name = reg.name.ToLowerInvariant();
+                    var name = reg.name.Trim();
+                    TrackUiConsoleCommand(name);
                     // Avoid double-registration.
                     if (_registeredCommands.Any(c => string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase) ||
-                                                     string.Equals(c.FullName, name, StringComparison.OrdinalIgnoreCase)))
+                                                     string.Equals(c.FullName, name, StringComparison.OrdinalIgnoreCase) ||
+                                                     string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
                         continue;
                     var captured = reg;
                     RegisterConsole(name, arg => InvokeConsoleMethod(captured.method, arg), serverAdmin: false);
                 }
+                SortUiConsoleCommands();
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[SkillTree] RefreshDynamicCommands: " + ex.Message);
+            }
+        }
+
+        /// <summary>Route cui.endtest ST &lt;cmd&gt; … to the matching console handler.</summary>
+        public void HandleCuiEndtest(ConsoleSystem.Arg args, Array a)
+        {
+            if (Plugin == null || a == null || a.Length < 2) return;
+            var player = args.Connection?.player as BasePlayer ?? args.Player();
+            if (player == null || player.IsDestroyed || !player.IsConnected) return;
+
+            var sb = new StringBuilder();
+            for (int i = 1; i < a.Length; i++)
+            {
+                if (i > 1) sb.Append(' ');
+                string s = a.GetValue(i)?.ToString() ?? string.Empty;
+                if (s.IndexOfAny(new[] { ' ', '"' }) >= 0)
+                    sb.Append('"').Append(s.Replace("\"", "\\\"")).Append('"');
+                else
+                    sb.Append(s);
+            }
+
+            string full = sb.ToString();
+            string cmdName = a.GetValue(1)?.ToString() ?? "";
+            if (string.IsNullOrEmpty(cmdName)) return;
+
+            try
+            {
+                var opt = ConsoleSystem.Option.Server.Quiet();
+                if (args.Connection != null)
+                    opt = opt.FromConnection(args.Connection);
+                var uiArg = new ConsoleSystem.Arg(opt, full);
+
+                // Prefer the ConsoleSystem binding we registered.
+                ConsoleSystem.Command cmd = null;
+                var dict = ConsoleSystem.Index.Server.Dict;
+                var globalDict = ConsoleSystem.Index.Server.GlobalDict;
+                if (dict != null)
+                {
+                    if (!dict.TryGetValue("global." + cmdName, out cmd))
+                        dict.TryGetValue(cmdName, out cmd);
+                }
+                if (cmd == null && globalDict != null)
+                    globalDict.TryGetValue(cmdName, out cmd);
+                // Case-insensitive fallback (CUI casing can differ from registration).
+                if (cmd == null && globalDict != null)
+                {
+                    foreach (var kvp in globalDict)
+                    {
+                        if (string.Equals(kvp.Key.ToString(), cmdName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            cmd = kvp.Value;
+                            break;
+                        }
+                    }
+                }
+
+                if (cmd?.Call != null)
+                {
+                    cmd.Call(uiArg);
+                    return;
+                }
+
+                Debug.LogWarning("[SkillTree] cui.endtest ST: command not registered: " + cmdName);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SkillTree] cui.endtest ST: " + ex.Message);
             }
         }
 
@@ -375,6 +567,7 @@ namespace SkillTreeHarmony
             catch { }
             _registeredCommands.Clear();
             _chatCommandNames.Clear();
+            _uiConsoleCommands.Clear();
         }
     }
 }
