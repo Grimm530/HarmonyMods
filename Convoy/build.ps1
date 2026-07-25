@@ -27,7 +27,7 @@ if ($LASTEXITCODE -eq 0) {
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! Convoy.dll copied to $destPath" -ForegroundColor Green
     Write-Host "Config: HarmonyConfig/Convoy.json" -ForegroundColor Yellow
-    Write-Host "Load: harmony.load Convoy (requires GrimmNPC; or automatic at startup)" -ForegroundColor Gray
+    Write-Host "Load: harmony.load Convoy (requires 0GrimmNPC; or automatic at startup)" -ForegroundColor Gray
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

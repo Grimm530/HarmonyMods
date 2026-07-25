@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyName>PlayerDLCAPI</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>PlayerDlcApiHarmony</RootNamespace>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Description>Harmony mod: Rust DLC and paid workshop skin ownership API.</Description>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony">
+      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(RustManaged)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Facepunch.Steamworks.Win64">
+      <HintPath>$(RustManaged)\Facepunch.Steamworks.Win64.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

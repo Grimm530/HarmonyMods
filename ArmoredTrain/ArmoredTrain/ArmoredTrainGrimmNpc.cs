@@ -33,7 +33,7 @@ namespace ArmoredTrain
                 _grimmType = FindGrimmNpcType();
                 if (_grimmType == null)
                 {
-                    Debug.LogWarning("[ArmoredTrain] GrimmNPC type not found. Load GrimmNPC before ArmoredTrain (harmony.load GrimmNPC). NPCs will not spawn.");
+                    Debug.LogWarning("[ArmoredTrain] GrimmNPC type not found. Load 0GrimmNPC before ArmoredTrain (harmony.load 0GrimmNPC). NPCs will not spawn.");
                     return;
                 }
 

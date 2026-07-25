@@ -83,8 +83,11 @@ public class JsonLeaderboardStorage : ILeaderboardStorage
         {
             if (isUnload && kv.Value.IsOnline)
             {
+                var session = (DateTime.UtcNow - kv.Value.ConnectTime).TotalSeconds;
+                if (session > 0)
+                    kv.Value.TotalPlayTime += session;
                 kv.Value.DisconnectTime = DateTime.UtcNow;
-                kv.Value.TotalPlayTime += (DateTime.UtcNow - kv.Value.ConnectTime).TotalSeconds;
+                kv.Value.ConnectTime = DateTime.UtcNow;
                 kv.Value.IsOnline = false;
             }
             SavePlayer(kv.Value);

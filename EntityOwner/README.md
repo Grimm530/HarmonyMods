@@ -52,7 +52,9 @@ perm usergroup add <steamid> admin
 | `/setowner <player\|steamid>` | Change owner of looked-at entity |
 | `/own [type] [player]` | Take/give ownership (`all`/`block`/`storage`/...) |
 | `/unown [type]` | Remove ownership |
-| `/auth [cupboard\|turret] [player]` | Check or mass-authorize |
+| `/auth all [player]` | Mass-authorize on nearby cupboards **and** turrets (self if no player) |
+| `/auth [cupboard\|turret] [player]` | Check (no player) or mass-authorize that type |
+| `/deauth all [player]` | Mass-deauthorize cupboards and turrets (self if no player) |
 | `/deauth [cupboard\|turret] player` | Mass-deauthorize |
 
 ## Features

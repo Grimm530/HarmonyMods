@@ -168,8 +168,8 @@ namespace EntityOwner
             ["Syntax: Own"] = "Invalid Syntax. \n/own type player\nTypes: all/block/storage/cupboard/sign/sleepingbag/plant/oven/door/turret\n/own player",
             ["Syntax: Unown"] = "Invalid Syntax. \n/unown type player\nTypes: all/block/storage/cupboard/sign/sleepingbag/plant/oven/door/turret\n/unown player",
             ["Syntax: Prod2"] = "Invalid Syntax. \n/prod2 type \nTypes:\n all/block/entity/storage/cupboard/sign/sleepingbag/plant/oven/door/turret",
-            ["Syntax: Auth"] = "Invalid Syntax. \n/auth turret player\n/auth cupboard player/auth player\n/auth",
-            ["Syntax: Deauth"] = "Invalid Syntax. \n/deauth turret player\n/deauth cupboard player/deauth player\n/deauth",
+            ["Syntax: Auth"] = "Invalid Syntax. \n/auth all [player]\n/auth turret [player]\n/auth cupboard [player]\n/auth player\n/auth",
+            ["Syntax: Deauth"] = "Invalid Syntax. \n/deauth all [player]\n/deauth turret player\n/deauth cupboard player\n/deauth player",
             ["Ownership: Changing"] = "Changing ownership..",
             ["Ownership: Removing"] = "Removing ownership..",
             ["Ownership: New"] = "New owner of all around is: {0}",
@@ -331,6 +331,8 @@ namespace EntityOwner
                 sb.Append("  ").Append("<color=\"#ffd479\">/own [all/block]</color> - Take ownership of entire structure").Append("\n");
                 sb.Append("  ").Append("<color=\"#ffd479\">/own [all/block] PlayerName</color> - Give ownership of entire structure to specified player").Append("\n");
                 sb.Append("  ").Append("<color=\"#ffd479\">/unown [all/block]</color> - Remove ownership from entire structure").Append("\n");
+                sb.Append("  ").Append("<color=\"#ffd479\">/auth all</color> - Authorize yourself on nearby cupboards and turrets").Append("\n");
+                sb.Append("  ").Append("<color=\"#ffd479\">/auth all PlayerName</color> - Authorize player on nearby cupboards and turrets").Append("\n");
                 sb.Append("  ").Append("<color=\"#ffd479\">/auth PlayerName</color> - Authorize specified player on all nearby cupboards").Append("\n");
             }
 
@@ -680,7 +682,14 @@ namespace EntityOwner
             }
             else if (args.Length == 1)
             {
-                if (args[0] == "cupboard")
+                if (args[0] == "all")
+                {
+                    // /auth all -> authorize self on nearby cupboards + turrets
+                    massCupboard = true;
+                    massTurret = true;
+                    target = player;
+                }
+                else if (args[0] == "cupboard")
                 {
                     checkCupboard = true;
                 }
@@ -700,7 +709,13 @@ namespace EntityOwner
             }
             else if (args.Length == 2)
             {
-                if (args[0] == "cupboard")
+                if (args[0] == "all")
+                {
+                    massCupboard = true;
+                    massTurret = true;
+                    target = FindPlayerByPartialName(args[1]);
+                }
+                else if (args[0] == "cupboard")
                 {
                     massCupboard = true;
                     target = FindPlayerByPartialName(args[1]);
@@ -783,29 +798,42 @@ namespace EntityOwner
             }
             else if (args.Length == 1)
             {
-                if (args[0] == "cupboard")
+                if (args[0] == "all")
+                {
+                    massCupboard = true;
+                    massTurret = true;
+                    target = player;
+                }
+                else if (args[0] == "cupboard")
                 {
                     SendReply(player, "Invalid Syntax. /deauth cupboard PlayerName");
                     return;
                 }
-
-                if (args[0] == "turret")
+                else if (args[0] == "turret")
                 {
                     SendReply(player, "Invalid Syntax. /deauth turret PlayerName");
                     return;
                 }
-
-                massCupboard = true;
-                target = FindPlayerByPartialName(args[0]);
+                else
+                {
+                    massCupboard = true;
+                    target = FindPlayerByPartialName(args[0]);
+                }
             }
             else if (args.Length == 0)
             {
-                SendReply(player, "Invalid Syntax. /deauth PlayerName\n/deauth turret/cupboard PlayerName");
+                SendReply(player, "Invalid Syntax. /deauth all\n/deauth PlayerName\n/deauth turret/cupboard PlayerName");
                 return;
             }
             else if (args.Length == 2)
             {
-                if (args[0] == "cupboard")
+                if (args[0] == "all")
+                {
+                    massCupboard = true;
+                    massTurret = true;
+                    target = FindPlayerByPartialName(args[1]);
+                }
+                else if (args[0] == "cupboard")
                 {
                     massCupboard = true;
                     target = FindPlayerByPartialName(args[1]);

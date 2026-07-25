@@ -1,13 +1,12 @@
 using System;
 using System.Globalization;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Data.SQLite;
+using Facepunch.Sqlite;
 
 namespace EconomicsHarmony
 {
@@ -90,7 +89,7 @@ namespace EconomicsHarmony
             /// <summary>
             /// File = oxide/data/Economics/Economics.json via Oxide data directory (junction data root for shared paths across zones),
             /// or the same two filenames under "Custom economics data directory" when that setting is set.
-            /// Sqlite = one shared store for all instances if you add System.Data.SQLite.dll and set mode Sqlite.
+            /// Sqlite = Facepunch.Sqlite (RustDedicated_Data/Managed/Facepunch.Sqlite.dll + game sqlite3).
             /// With Sqlite: each connect reloads from the DB; each disconnect upserts so the next zone sees the latest balance.
             /// RP tracking: Economics_RPTracking.json next to Economics.json.
             /// </summary>
@@ -215,9 +214,15 @@ namespace EconomicsHarmony
             void Wipe();
         }
 
-        private sealed class SqliteSharedBalanceStore : ISharedBalanceStore
+        /// <summary>
+        /// Shared balance store via Facepunch.Sqlite (game Managed DLL + native sqlite3).
+        /// Compatible with existing economics_balances.db schema created by the old System.Data.SQLite path.
+        /// </summary>
+        private sealed class SqliteSharedBalanceStore : ISharedBalanceStore, IDisposable
         {
             private readonly string _path;
+            private readonly object _sync = new object();
+            private FacepunchBalanceDb _db;
             private const string Table = "economics_balances";
 
             public SqliteSharedBalanceStore(Economics p)
@@ -225,8 +230,11 @@ namespace EconomicsHarmony
                 _path = p.config.BalanceSqlitePath ?? "";
             }
 
-            public void EnsureSchemaAndLoad(StoredData into)
+            private FacepunchBalanceDb OpenDb()
             {
+                if (_db != null)
+                    return _db;
+
                 if (string.IsNullOrWhiteSpace(_path))
                     throw new InvalidOperationException("Balance SQLite path is empty.");
 
@@ -234,115 +242,172 @@ namespace EconomicsHarmony
                 if (!string.IsNullOrEmpty(dir))
                     Directory.CreateDirectory(dir);
 
-                string cs = $"Data Source={_path};Version=3;Journal Mode=WAL;Busy Timeout=5000;";
-                using (var c = new SQLiteConnection(cs))
+                var db = new FacepunchBalanceDb();
+                db.Open(_path, fastMode: true);
+                // Facepunch defaults to EXCLUSIVE locking; NORMAL allows multi-instance shared DB use.
+                db.Execute("PRAGMA locking_mode = NORMAL");
+                db.Execute("PRAGMA busy_timeout = 5000");
+                _db = db;
+                return _db;
+            }
+
+            public void EnsureSchemaAndLoad(StoredData into)
+            {
+                lock (_sync)
                 {
-                    c.Open();
-                    using (var cmd = c.CreateCommand())
-                    {
-                        cmd.CommandText = $@"
+                    FacepunchBalanceDb db = OpenDb();
+                    db.Execute($@"
 CREATE TABLE IF NOT EXISTS {Table} (
   steam_id TEXT NOT NULL PRIMARY KEY,
   balance REAL NOT NULL,
   last_seen REAL NOT NULL DEFAULT 0,
   last_seen_formatted TEXT NOT NULL DEFAULT ''
-);";
-                        cmd.ExecuteNonQuery();
-                    }
-
-                    using (var cmd = c.CreateCommand())
-                    {
-                        cmd.CommandText = $"SELECT steam_id, balance, last_seen, last_seen_formatted FROM {Table}";
-                        using (var r = cmd.ExecuteReader())
-                        {
-                            while (r.Read())
-                            {
-                                string id = r.GetString(0);
-                                into.Players[id] = new PlayerData
-                                {
-                                    Balance = r.GetDouble(1),
-                                    LastSeen = r.GetDouble(2),
-                                    LastSeenFormatted = r.IsDBNull(3) ? "" : r.GetString(3)
-                                };
-                            }
-                        }
-                    }
+);");
+                    db.LoadAllBalances(into);
                 }
             }
 
             public bool TryGetPlayer(string playerId, out PlayerData data)
             {
                 data = null;
-                if (string.IsNullOrWhiteSpace(_path) || string.IsNullOrEmpty(playerId)) return false;
+                if (string.IsNullOrEmpty(playerId))
+                    return false;
 
-                string cs = $"Data Source={_path};Version=3;Journal Mode=WAL;Busy Timeout=5000;";
-                using (var c = new SQLiteConnection(cs))
+                lock (_sync)
                 {
-                    c.Open();
-                    using (var cmd = c.CreateCommand())
+                    FacepunchBalanceDb db = OpenDb();
+                    if (!db.TryReadPlayer(playerId, out float balance, out float lastSeen, out string lastSeenFormatted))
+                        return false;
+
+                    data = new PlayerData
                     {
-                        cmd.CommandText = $"SELECT balance, last_seen, last_seen_formatted FROM {Table} WHERE steam_id = @id LIMIT 1";
-                        cmd.Parameters.AddWithValue("@id", playerId);
-                        using (var r = cmd.ExecuteReader())
-                        {
-                            if (!r.Read()) return false;
-                            data = new PlayerData
-                            {
-                                Balance = r.GetDouble(0),
-                                LastSeen = r.GetDouble(1),
-                                LastSeenFormatted = r.IsDBNull(2) ? "" : r.GetString(2)
-                            };
-                            return true;
-                        }
-                    }
+                        Balance = balance,
+                        LastSeen = lastSeen,
+                        LastSeenFormatted = lastSeenFormatted ?? ""
+                    };
+                    return true;
                 }
             }
 
             public void Upsert(string playerId, PlayerData pd)
             {
-                string cs = $"Data Source={_path};Version=3;Journal Mode=WAL;Busy Timeout=5000;";
-                using (var c = new SQLiteConnection(cs))
+                if (pd == null || string.IsNullOrEmpty(playerId))
+                    return;
+
+                lock (_sync)
                 {
-                    c.Open();
-                    using (var cmd = c.CreateCommand())
-                    {
-                        cmd.CommandText = $@"
-REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES (@id, @b, @ls, @lsf);";
-                        cmd.Parameters.AddWithValue("@id", playerId);
-                        cmd.Parameters.AddWithValue("@b", pd.Balance);
-                        cmd.Parameters.AddWithValue("@ls", pd.LastSeen);
-                        cmd.Parameters.AddWithValue("@lsf", pd.LastSeenFormatted ?? "");
-                        cmd.ExecuteNonQuery();
-                    }
+                    FacepunchBalanceDb db = OpenDb();
+                    db.Execute(
+                        $"REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES (?, ?, ?, ?);",
+                        playerId,
+                        (float)pd.Balance,
+                        (float)pd.LastSeen,
+                        pd.LastSeenFormatted ?? "");
                 }
             }
 
             public void Delete(string playerId)
             {
-                string cs = $"Data Source={_path};Version=3;Journal Mode=WAL;Busy Timeout=5000;";
-                using (var c = new SQLiteConnection(cs))
+                if (string.IsNullOrEmpty(playerId))
+                    return;
+
+                lock (_sync)
                 {
-                    c.Open();
-                    using (var cmd = c.CreateCommand())
-                    {
-                        cmd.CommandText = $"DELETE FROM {Table} WHERE steam_id = @id";
-                        cmd.Parameters.AddWithValue("@id", playerId);
-                        cmd.ExecuteNonQuery();
-                    }
+                    FacepunchBalanceDb db = OpenDb();
+                    db.Execute($"DELETE FROM {Table} WHERE steam_id = ?;", playerId);
                 }
             }
 
             public void Wipe()
             {
-                string cs = $"Data Source={_path};Version=3;Journal Mode=WAL;Busy Timeout=5000;";
-                using (var c = new SQLiteConnection(cs))
+                lock (_sync)
                 {
-                    c.Open();
-                    using (var cmd = c.CreateCommand())
+                    FacepunchBalanceDb db = OpenDb();
+                    db.Execute($"DELETE FROM {Table};");
+                }
+            }
+
+            public void Dispose()
+            {
+                lock (_sync)
+                {
+                    if (_db == null)
+                        return;
+                    try { _db.Close(); }
+                    catch { /* ignore close errors on unload */ }
+                    _db = null;
+                }
+            }
+        }
+
+        /// <summary>Subclass so we can read multi-column rows (public Facepunch API is single-column).</summary>
+        private sealed class FacepunchBalanceDb : Database
+        {
+            private const string Table = "economics_balances";
+
+            public void LoadAllBalances(StoredData into)
+            {
+                if (into?.Players == null)
+                    return;
+
+                IntPtr stm = Prepare($"SELECT steam_id, balance, last_seen, last_seen_formatted FROM {Table}");
+                var rows = new List<PlayerDataRow>(256);
+                ExecuteAndReadQueryResults(stm, rows, ReadPlayerRow);
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    PlayerDataRow row = rows[i];
+                    if (string.IsNullOrEmpty(row.SteamId))
+                        continue;
+                    into.Players[row.SteamId] = new PlayerData
                     {
-                        cmd.CommandText = $"DELETE FROM {Table}";
-                        cmd.ExecuteNonQuery();
-                    }
+                        Balance = row.Balance,
+                        LastSeen = row.LastSeen,
+                        LastSeenFormatted = row.LastSeenFormatted ?? ""
+                    };
+                }
+            }
+
+            public bool TryReadPlayer(string playerId, out float balance, out float lastSeen, out string lastSeenFormatted)
+            {
+                balance = 0f;
+                lastSeen = 0f;
+                lastSeenFormatted = "";
+
+                IntPtr stm = Prepare($"SELECT steam_id, balance, last_seen, last_seen_formatted FROM {Table} WHERE steam_id = ? LIMIT 1");
+                Bind(stm, 1, playerId);
+                PlayerDataRow? row = ExecuteAndReadQueryResult(stm, ReadPlayerRow);
+                if (!row.HasValue || string.IsNullOrEmpty(row.Value.SteamId))
+                    return false;
+
+                balance = row.Value.Balance;
+                lastSeen = row.Value.LastSeen;
+                lastSeenFormatted = row.Value.LastSeenFormatted ?? "";
+                return true;
+            }
+
+            private static PlayerDataRow ReadPlayerRow(IntPtr stmHandle)
+            {
+                // REAL columns map to float in Facepunch.Sqlite (double is not supported by GetColumnValue).
+                string id = GetColumnValue<string>(stmHandle, 0);
+                float bal = GetColumnValue<float>(stmHandle, 1);
+                float ls = GetColumnValue<float>(stmHandle, 2);
+                string lsf = GetColumnValue<string>(stmHandle, 3) ?? "";
+                return new PlayerDataRow(id, bal, ls, lsf);
+            }
+
+            private readonly struct PlayerDataRow
+            {
+                public readonly string SteamId;
+                public readonly float Balance;
+                public readonly float LastSeen;
+                public readonly string LastSeenFormatted;
+
+                public PlayerDataRow(string steamId, float balance, float lastSeen, string lastSeenFormatted)
+                {
+                    SteamId = steamId;
+                    Balance = balance;
+                    LastSeen = lastSeen;
+                    LastSeenFormatted = lastSeenFormatted;
                 }
             }
         }
@@ -350,9 +415,53 @@ REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES 
         private ISharedBalanceStore CreateSharedBalanceStoreOrNull()
         {
             string mode = config.BalanceStorageMode ?? "File";
-            if (string.Equals(mode, "Sqlite", StringComparison.OrdinalIgnoreCase))
-                return new SqliteSharedBalanceStore(this);
-            return null;
+            if (!string.Equals(mode, "Sqlite", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (!IsFacepunchSqliteAvailable())
+            {
+                PrintError("Economics: Balance storage mode is Sqlite but Facepunch.Sqlite failed to load. Falling back to File (JSON) storage.");
+                return null;
+            }
+
+            return new SqliteSharedBalanceStore(this);
+        }
+
+        private static bool IsFacepunchSqliteAvailable()
+        {
+            try
+            {
+                return typeof(Database) != null;
+            }
+            catch (FileNotFoundException)
+            {
+                return false;
+            }
+            catch (TypeLoadException)
+            {
+                return false;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Disable shared store and persist via JSON when SQLite fails at runtime.</summary>
+        private void DisableSharedBalancesAndFallBackToFile(string reason)
+        {
+            if (_sharedBalances == null)
+                return;
+
+            PrintError($"Economics: disabling Sqlite shared storage ({reason}). Saving balances to JSON instead.");
+            if (_sharedBalances is IDisposable disposable)
+            {
+                try { disposable.Dispose(); }
+                catch { /* ignore */ }
+            }
+            _sharedBalances = null;
+            _dirtyPlayerIds.Clear();
+            changed = true;
         }
 
         /// <summary>One-time copy from legacy oxide/data/Economics.json to oxide/data/Economics/Economics.json or custom directory.</summary>
@@ -603,36 +712,46 @@ REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES 
 
             if (_sharedBalances != null)
             {
-                if (_dirtyPlayerIds.Count > 0)
+                try
                 {
-                    Puts($"Saving {_dirtyPlayerIds.Count} balance record(s) to shared database...");
-                    foreach (var playerId in _dirtyPlayerIds)
+                    if (_dirtyPlayerIds.Count > 0)
                     {
-                        if (storedData.Players.TryGetValue(playerId, out var playerData))
+                        Puts($"Saving {_dirtyPlayerIds.Count} balance record(s) to shared database...");
+                        foreach (var playerId in _dirtyPlayerIds)
                         {
-                            _sharedBalances.Upsert(playerId, playerData);
+                            if (storedData.Players.TryGetValue(playerId, out var playerData))
+                            {
+                                _sharedBalances.Upsert(playerId, playerData);
+                            }
                         }
                     }
-                }
-            }
-            else
-            {
-                var sortedData = new StoredData();
-                var sortedPlayers = storedData.Players
-                    .OrderByDescending(kvp => kvp.Value.LastSeen)
-                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-                foreach (var kvp in sortedPlayers)
+                    changed = false;
+                    _dirtyPlayerIds.Clear();
+                    return;
+                }
+                catch (Exception ex)
                 {
-                    sortedData.Players[kvp.Key] = kvp.Value;
+                    DisableSharedBalancesAndFallBackToFile(ex.Message);
+                    // Fall through to JSON save below.
                 }
-
-                Puts("Saving balances for players...");
-                string dir = Path.GetDirectoryName(_balanceJsonPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-                File.WriteAllText(_balanceJsonPath, JsonConvert.SerializeObject(sortedData, Formatting.Indented));
             }
+
+            var sortedData = new StoredData();
+            var sortedPlayers = storedData.Players
+                .OrderByDescending(kvp => kvp.Value.LastSeen)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+            foreach (var kvp in sortedPlayers)
+            {
+                sortedData.Players[kvp.Key] = kvp.Value;
+            }
+
+            Puts("Saving balances for players...");
+            string dir = Path.GetDirectoryName(_balanceJsonPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            File.WriteAllText(_balanceJsonPath, JsonConvert.SerializeObject(sortedData, Formatting.Indented));
 
             changed = false;
             _dirtyPlayerIds.Clear();
@@ -1955,6 +2074,13 @@ REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES 
 
             SaveData();
             SaveRPTrackingData();
+
+            if (_sharedBalances is IDisposable disposable)
+            {
+                try { disposable.Dispose(); }
+                catch { /* ignore close errors on unload */ }
+                _sharedBalances = null;
+            }
         }
 
         #endregion Stored Data
@@ -2074,9 +2200,10 @@ REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES 
                 catch (Exception ex)
                 {
                     PrintError($"Economics: shared balance storage failed ({ex.Message}). No balances loaded.");
+                    DisableSharedBalancesAndFallBackToFile(ex.Message);
                 }
 
-                if (storedData.Players.Count == 0)
+                if (_sharedBalances != null && storedData.Players.Count == 0)
                 {
                     LoadOrMigrateBalanceDataFromJson();
                     if (storedData.Players.Count > 0)
@@ -2086,9 +2213,11 @@ REPLACE INTO {Table} (steam_id, balance, last_seen, last_seen_formatted) VALUES 
                     }
                 }
             }
-            else
+
+            if (_sharedBalances == null)
             {
-                LoadOrMigrateBalanceDataFromJson();
+                if (storedData.Players.Count == 0)
+                    LoadOrMigrateBalanceDataFromJson();
             }
 
             List<string> playerData = new List<string>(storedData.Players.Keys);

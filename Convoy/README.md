@@ -9,8 +9,8 @@ Harmony port of the Oxide **Convoy** event. Spawns vehicles on roads, mounts Gri
 | **Name** | Convoy |
 | **Type** | Harmony mod |
 | **Config** | `HarmonyConfig/Convoy.json` (same schema as Oxide Convoy) |
-| **Depends on** | **GrimmNPC** (for NPC AI / kits). Load GrimmNPC first. |
-| **Load** | `harmony.load GrimmNPC` then `harmony.load Convoy` |
+| **Depends on** | **0GrimmNPC** (NPC AI / kits; DLL name; C# type still `GrimmNPC`). Optional: **0PveMode** (event ownership when `"PVE Mode Setting"` → Enable), **TruePVE** |
+| **Load** | Prefer: `0Permissions` → `TruePVE` → `0PveMode` → `0GrimmNPC` → `Convoy`. `0GrimmNPC` sorts before Convoy. |
 
 ## Commands
 
@@ -23,21 +23,22 @@ Harmony port of the Oxide **Convoy** event. Spawns vehicles on roads, mounts Gri
 
 1. Builds a road route from `TerrainMeta.Path.Roads` (Route Settings).
 2. Spawns vehicles from Convoy Presets (sedan, bike, bradley, modular, vendor, karuza).
-3. Spawns NPCs via **GrimmNPC.SpawnNpc** (`IdleState` + `CombatStationaryState` when mounted), mounts them, equips wear/belt from NPC Configurations.
+3. Spawns NPCs via **GrimmNPC.SpawnNpc** (`0GrimmNPC.dll`), mounts them, equips wear/belt from NPC Configurations.
 4. Spawns child crates / turrets / samsites from vehicle configs.
-5. Moves the convoy **kinematically along the route** (on-rails). Attack → stop + aggressive turrets.
-6. Map marker follows the lead vehicle. Event lock / loot rules from existing Convoy patches.
+5. Moves the convoy **kinematically along the route** (on-rails). Attack → stop + aggressive turrets + event zone spheres.
+6. Map marker follows the lead vehicle.
+7. **PVE Mode Setting** (when Enable + **0PveMode** loaded): registers a PveMode ownership zone on stop (`OwnerIsStopper`, damage threshold, owner-only loot, cooldowns). When disabled, falls back to Convoy's simple team damage lock.
 
 ## Config
 
-Prefer `HarmonyConfig/Convoy.json` (full Oxide-compatible file is restored there).
+Prefer `HarmonyConfig/Convoy.json` (full Oxide-compatible file).
 
 Important Route Settings:
 
 - **Type of routes**: use **`0`** (standard) for reliable starts. `1` (complex) needs caching time and longer roads.
 - **Minimum road length**: `200` is a good default on most maps.
 
-Do not leave vehicle / NPC / crate arrays empty — the event needs those presets.
+`"Supported Plugins"` → `"PVE Mode Setting"` is wired when **0PveMode** is loaded. Set Enable to `false` to use Convoy-only team lock.
 
 ## Build / deploy
 
@@ -47,10 +48,12 @@ Do not leave vehicle / NPC / crate arrays empty — the event needs those preset
 
 Copies `Convoy.dll` to `c:\!2XRUST\HarmonyMods\Convoy.dll`.
 
+Load: `harmony.load 0PveMode` then `harmony.load Convoy` (`0GrimmNPC` required for NPCs).
+
 ## Known simplifications vs Oxide Convoy
 
 - Kinematic on-rails movement (not full wheel-physics drivers).
-- No EventHeli, PVE mode, Economics, Discord, or CUI GUI.
+- No EventHeli, Economics, Discord, or CUI countdown GUI.
 - Modular cars use the `_spawned` prefab variant (no per-module customization).
 - Custom crate loot tables not applied (vanilla crate loot).
 
@@ -58,7 +61,8 @@ Copies `Convoy.dll` to `c:\!2XRUST\HarmonyMods\Convoy.dll`.
 
 | Symptom | Fix |
 |---------|-----|
-| `RouteNotFound_Exeption` | Map has no roads, or PathType/MinRoadLength too strict. Set PathType `0`, MinRoadLength `200`. Console logs road count. |
+| `RouteNotFound_Exeption` | Map has no roads, or PathType/MinRoadLength too strict. Set PathType `0`, MinRoadLength `200`. |
 | No vehicles | Config missing Sedan/Bike/etc. presets matching Convoy Presets order. |
-| Plain scientists | Load **GrimmNPC** before Convoy. |
-| Marker only (old behavior) | Reload this build — old DLL only created markers. |
+| Plain scientists | Load **0GrimmNPC** before Convoy (`harmony.load 0GrimmNPC`). |
+| No owner / anyone can loot on PVE | Load **0PveMode**, set `"Use the PVE mode of the plugin?"` true. Remove legacy `HarmonyMods/PveMode.dll` if present. |
+| Turrets shoot Bradley | Rebuild includes TurretOptimizer — `harmony.load Convoy`. |

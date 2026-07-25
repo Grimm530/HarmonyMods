@@ -12,6 +12,13 @@ public class LeaderboardConfig
     [JsonProperty("CooldownSeconds")] public float CooldownSeconds { get; set; } = 0.2f;
     [JsonProperty("WipeDataOnNewSave")] public bool WipeDataOnNewSave { get; set; } = false;
 
+    /// <summary>
+    /// When true, hits on NPC BasePlayers (scientists, dwellers, custom NPCs) count toward hitrate BodyHits.
+    /// Oxide UltimateLeaderboard ties this to "Count NPC kills as player kills" (default false there).
+    /// Default true here so PvE/NPC shooting populates the Hitrate tab.
+    /// </summary>
+    [JsonProperty("CountNpcHitsForHitrate")] public bool CountNpcHitsForHitrate { get; set; } = true;
+
     [JsonProperty("Relay")]
     public RelayConfig Relay { get; set; } = new();
 

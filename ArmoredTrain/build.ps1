@@ -30,7 +30,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "`nBuild successful! ArmoredTrain.dll copied to $destPath" -ForegroundColor Green
     Write-Host "Config: HarmonyConfig/ArmoredTrain.json" -ForegroundColor Yellow
     Write-Host "Data:   HarmonyData/ArmoredTrain/" -ForegroundColor Yellow
-    Write-Host "Load: harmony.load ArmoredTrain (requires GrimmNPC; or automatic at startup)" -ForegroundColor Gray
+    Write-Host "Load: harmony.load ArmoredTrain (requires 0GrimmNPC; or automatic at startup)" -ForegroundColor Gray
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

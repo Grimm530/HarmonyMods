@@ -1,3 +1,4 @@
+using Facepunch.Rust;
 using HarmonyLib;
 using UnityEngine;
 
@@ -71,6 +72,31 @@ namespace AutoCodeLockHarmony.Patches
         }
     }
 
+    /// <summary>
+    /// Reliable Oxide OnEntityBuilt replacement — fires for construction and deployables
+    /// after OwnerID / player are assigned (Planner.DoBuild alone often sees OwnerID == 0).
+    /// </summary>
+    [HarmonyPatch(typeof(Analytics.Azure), nameof(Analytics.Azure.OnEntityBuilt))]
+    internal static class Analytics_OnEntityBuilt_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(BaseEntity entity, BasePlayer player)
+        {
+            var plugin = AutoCodeLockMod.Instance?.Plugin;
+            if (plugin == null || entity == null || player == null) return;
+
+            try
+            {
+                plugin.OnEntityBuilt(entity, player);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning("[AutoCodeLock] OnEntityBuilt: " + ex.Message);
+            }
+        }
+    }
+
+    // Backup for construction if Analytics path is skipped for some builds.
     [HarmonyPatch(typeof(Planner), "DoBuild", typeof(Construction.Target), typeof(Construction))]
     internal static class Planner_DoBuild_Patch
     {
@@ -86,7 +112,7 @@ namespace AutoCodeLockHarmony.Patches
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning("[AutoCodeLock] OnEntityBuilt: " + ex.Message);
+                Debug.LogWarning("[AutoCodeLock] OnEntityBuilt(Planner): " + ex.Message);
             }
         }
     }

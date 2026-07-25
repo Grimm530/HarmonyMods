@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using Newtonsoft.Json;
 using UnityEngine;
 using Oxide.Core;
@@ -221,6 +222,7 @@ namespace Oxide.Core.Plugins
     public class Plugin
     {
         public string Name { get; set; }
+        public bool IsLoaded { get; set; }
         public virtual object Call(string hook, params object[] args) => null;
         public virtual T Call<T>(string hook, params object[] args)
         {
@@ -229,16 +231,79 @@ namespace Oxide.Core.Plugins
         }
     }
 
-    /// <summary>Reports which optional plugins exist. Only GrimmNPC-backed NpcSpawn is considered present.</summary>
+    /// <summary>
+    /// Bridges Oxide-style Plugin.Call to the shared 0PveMode Harmony mod via AppDomain
+    /// (<c>PveMode_ApiType</c>), same pattern as TruePVE / Convoy.
+    /// </summary>
+    public sealed class PveModePluginBridge : Plugin
+    {
+        public PveModePluginBridge()
+        {
+            Name = "PveMode";
+            IsLoaded = true;
+        }
+
+        public override object Call(string hook, params object[] args)
+        {
+            if (string.IsNullOrEmpty(hook)) return null;
+            args ??= Array.Empty<object>();
+            try
+            {
+                Type apiType = AppDomain.CurrentDomain.GetData("PveMode_ApiType") as Type;
+                if (apiType == null) return null;
+                object instance = apiType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                if (instance == null) return null;
+
+                MethodInfo call = instance.GetType().GetMethod("Call", new[] { typeof(string), typeof(object[]) });
+                if (call != null)
+                    return call.Invoke(instance, new object[] { hook, args });
+
+                MethodInfo mi = instance.GetType().GetMethod(hook, BindingFlags.Public | BindingFlags.Instance);
+                return mi?.Invoke(instance, args);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[ArmoredTrain] PveMode.Call " + hook + " failed: " + (ex.InnerException?.Message ?? ex.Message));
+                return null;
+            }
+        }
+
+        public static bool IsApiLive()
+        {
+            try
+            {
+                Type apiType = AppDomain.CurrentDomain.GetData("PveMode_ApiType") as Type;
+                if (apiType == null) return false;
+                return apiType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) != null;
+            }
+            catch { return false; }
+        }
+    }
+
+    /// <summary>Reports which optional plugins exist. NpcSpawn (GrimmNPC) + live 0PveMode.</summary>
     public class PluginManager
     {
         public bool Exists(string name)
         {
-            // NpcSpawn is always backed by our GrimmNPC bridge; everything else is soft-disabled.
-            return string.Equals(name, "NpcSpawn", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(name)) return false;
+            if (string.Equals(name, "NpcSpawn", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (string.Equals(name, "PveMode", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "0PveMode", StringComparison.OrdinalIgnoreCase))
+                return PveModePluginBridge.IsApiLive();
+            return false;
         }
 
-        public Plugin Find(string name) => null;
+        public Plugin Find(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            if (string.Equals(name, "PveMode", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "0PveMode", StringComparison.OrdinalIgnoreCase))
+            {
+                return PveModePluginBridge.IsApiLive() ? new PveModePluginBridge() : null;
+            }
+            return null;
+        }
     }
 }
 

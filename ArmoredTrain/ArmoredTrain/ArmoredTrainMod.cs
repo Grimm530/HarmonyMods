@@ -59,7 +59,7 @@ namespace ArmoredTrain
             RegisterCommands();
 
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
-            Debug.Log("[ArmoredTrain] Harmony mod loaded. Commands: " + string.Join(", ", StartCommands) + ". Config: HarmonyConfig/ArmoredTrain.json. Data root: " + Oxide.Core.Interface.Oxide.DataDirectory + ". Requires GrimmNPC.");
+            Debug.Log("[ArmoredTrain] Harmony mod loaded. Commands: " + string.Join(", ", StartCommands) + ". Config: HarmonyConfig/ArmoredTrain.json. Data root: " + Oxide.Core.Interface.Oxide.DataDirectory + ". Requires 0GrimmNPC.");
         }
 
         private IEnumerator WaitForServerThenInit()

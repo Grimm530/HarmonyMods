@@ -219,16 +219,64 @@ namespace CopyPasteHarmony
             var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (field != null)
             {
-                field.SetValue(obj, value);
-                return true;
+                try
+                {
+                    field.SetValue(obj, CoerceValueForMember(field.FieldType, value));
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
             }
             var prop = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (prop != null && prop.CanWrite)
             {
-                prop.SetValue(obj, value, null);
-                return true;
+                try
+                {
+                    prop.SetValue(obj, CoerceValueForMember(prop.PropertyType, value), null);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Newtonsoft often deserializes JSON numbers as Int64; enums and floats need coercion.
+        /// </summary>
+        private static object CoerceValueForMember(Type targetType, object value)
+        {
+            if (value == null || targetType == null)
+                return value;
+            if (targetType.IsInstanceOfType(value))
+                return value;
+
+            Type underlying = Nullable.GetUnderlyingType(targetType) ?? targetType;
+            if (underlying.IsEnum)
+            {
+                if (value is string s)
+                    return Enum.Parse(underlying, s, true);
+                return Enum.ToObject(underlying, Convert.ToInt64(value));
+            }
+
+            if (underlying == typeof(float))
+                return Convert.ToSingle(value);
+            if (underlying == typeof(double))
+                return Convert.ToDouble(value);
+            if (underlying == typeof(int))
+                return Convert.ToInt32(value);
+            if (underlying == typeof(long))
+                return Convert.ToInt64(value);
+            if (underlying == typeof(bool))
+                return Convert.ToBoolean(value);
+            if (underlying == typeof(decimal))
+                return Convert.ToDecimal(value);
+
+            return Convert.ChangeType(value, underlying);
         }
 
         //Config
@@ -3219,8 +3267,10 @@ namespace CopyPasteHarmony
                     var anim = data["animationStyle"];
                     if (!SetFieldOrPropertyValue(entity, "animationStyle", anim))
                     {
-                        int enumValue;
-                        if (anim is int i) enumValue = i; else int.TryParse(anim.ToString(), out enumValue);
+                        int enumValue = 0;
+                        if (anim is int i) enumValue = i;
+                        else if (anim is long l) enumValue = unchecked((int)l);
+                        else if (anim != null) int.TryParse(anim.ToString(), out enumValue);
                         var target = entity.GetType();
                         var member = target.GetField("animationStyle", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) ??
                                      (MemberInfo)target.GetProperty("animationStyle", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);

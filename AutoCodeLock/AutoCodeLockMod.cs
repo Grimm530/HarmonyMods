@@ -62,7 +62,7 @@ namespace AutoCodeLockHarmony
             try
             {
                 _plugin?.RegisterPermissions();
-                Debug.Log("[AutoCodeLock] OK: Permissions ready — perms re-registered.");
+                Debug.Log("[AutoCodeLock] OK: Permissions ready - perms re-registered.");
             }
             catch (Exception ex)
             {

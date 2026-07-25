@@ -185,12 +185,56 @@ namespace Oxide.Core
         public static readonly OxideMod Oxide = new OxideMod();
 
         /// <summary>
-        /// Harmony has no plugin hook bus.  Returns null; plugins treat null as "not handled".
-        /// Optional inter-mod calls (ArmoredTrainEventWin etc.) are wired via AppDomain data
-        /// by the individual mods; those that are absent produce no XP (config=0).
+        /// Harmony has no full Oxide hook bus. Most hooks return null ("not handled").
+        /// CanEntityTakeDamage / CanEntityBeTargeted chain:
+        /// 1) PveMode first (non-owner block must win)
+        /// 2) Convoy second (allow damage to convoy entities / event turrets target players)
         /// </summary>
-        public static object CallHook(string hook, params object[] args) => null;
-        public static object Call(string hook, params object[] args) => null;
+        public static object CallHook(string hook, params object[] args)
+        {
+            if (string.IsNullOrEmpty(hook) || args == null || args.Length < 2)
+                return null;
+
+            if (hook == "CanEntityTakeDamage")
+            {
+                object pve = TryAppDomainBool("PveMode_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage PveMode");
+                if (pve is bool) return pve;
+
+                object convoy = TryAppDomainBool("Convoy_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage Convoy");
+                if (convoy is bool) return convoy;
+            }
+            else if (hook == "CanEntityBeTargeted")
+            {
+                // CallHook args: [target, attacker] (matches TruePVE OnEntityEnterInternal).
+                object pve = TryAppDomainBool("PveMode_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted PveMode");
+                if (pve is bool) return pve;
+
+                object convoy = TryAppDomainBool("Convoy_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted Convoy");
+                if (convoy is bool) return convoy;
+            }
+
+            return null;
+        }
+
+        private static object TryAppDomainBool(string key, object arg0, object arg1, string logLabel)
+        {
+            try
+            {
+                if (AppDomain.CurrentDomain.GetData(key) is Delegate fn)
+                {
+                    object result = fn.DynamicInvoke(arg0, arg1);
+                    if (result is bool)
+                        return result;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[TruePVE] " + logLabel + " bridge: " + ex.Message);
+            }
+            return null;
+        }
+
+        public static object Call(string hook, params object[] args) => CallHook(hook, args);
 
         public static void NextTick(Action action)
         {
@@ -851,6 +895,15 @@ namespace Oxide.Core.Plugins
                     if (apiType != null)
                         return new PluginBridgeApi(apiType) { Name = "Permissions", IsLoaded = ReadLiveInstance(apiType) != null };
                 }
+
+                // PveMode publishes PveMode_ApiType (mod DLL named 0PveMode).
+                if (name.Equals("PveMode", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("0PveMode", StringComparison.OrdinalIgnoreCase))
+                {
+                    apiType = AppDomain.CurrentDomain.GetData("PveMode_ApiType") as Type;
+                    if (apiType != null)
+                        return new PluginBridgeApi(apiType) { Name = "PveMode", IsLoaded = ReadLiveInstance(apiType) != null };
+                }
             }
             catch { }
             return null;
@@ -872,6 +925,9 @@ namespace Oxide.Core.Plugins
             if (name.Equals("Permissions", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("0Permissions", StringComparison.OrdinalIgnoreCase))
                 return new[] { "PermissionsHarmony.PermissionsMod" };
+            if (name.Equals("PveMode", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("0PveMode", StringComparison.OrdinalIgnoreCase))
+                return new[] { "PveModeHarmony.PveModeApi", "PveModeHarmony.PveModeMod" };
             if (name.Equals("SkillTree", StringComparison.OrdinalIgnoreCase))
                 return new[] { "SkillTreeHarmony.SkillTreeMod" };
             if (name.Equals("RaidableBases", StringComparison.OrdinalIgnoreCase))

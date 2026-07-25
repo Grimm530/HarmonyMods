@@ -33,6 +33,8 @@ namespace Convoy
             LoadConfig();
             LogDebug("OnLoaded: config loaded, Debug=" + (Config?.Debug ?? false));
             ConvoyGrimmNpc.Bind();
+            ConvoyDamageApi.Publish();
+            PveModeManager.EnsureOwnerCallbackRegistered();
             ConvoyPathManager.ConfigProvider = () => Instance?.FullConfig;
             ConvoyPathManager.CustomRoutesBaseDir = AppDomain.CurrentDomain.BaseDirectory ?? "";
             ConvoyState.Clear();
@@ -92,6 +94,7 @@ namespace Convoy
             DeleteMapMarkers();
             ConvoyPathManager.OnPluginUnloaded();
             ConvoyPathManager.ConfigProvider = null;
+            ConvoyDamageApi.Unpublish();
             ConvoyState.Clear();
             DestroyRunner();
             Instance = null;
@@ -327,6 +330,20 @@ namespace Convoy
                     FullConfig.NotifyConfig.TimeNotifications = def.NotifyConfig?.TimeNotifications ?? new HashSet<int> { 300, 60, 30, 5 };
                 if (FullConfig.NotifyConfig.GameTipConfig == null)
                     FullConfig.NotifyConfig.GameTipConfig = def.NotifyConfig?.GameTipConfig ?? new ConvoyGameTipConfig { IsEnabled = true, Style = 0 };
+            }
+            if (FullConfig.SupportedPluginsConfig == null)
+                FullConfig.SupportedPluginsConfig = def.SupportedPluginsConfig ?? new ConvoySupportedPluginsConfig();
+            if (FullConfig.SupportedPluginsConfig.PveMode == null)
+                FullConfig.SupportedPluginsConfig.PveMode = new ConvoyPveModeConfig();
+            if (FullConfig.SupportedPluginsConfig.PveMode.ScaleDamage == null)
+            {
+                FullConfig.SupportedPluginsConfig.PveMode.ScaleDamage = new Dictionary<string, float>
+                {
+                    ["Npc"] = 1f,
+                    ["Bradley"] = 2f,
+                    ["Helicopter"] = 2f,
+                    ["Turret"] = 1f
+                };
             }
         }
 

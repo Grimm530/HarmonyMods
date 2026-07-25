@@ -32,6 +32,30 @@ public static class TCUpgradeHelpers
 
 	public const string FxError = "assets/prefabs/weapons/toolgun/effects/repairerror.prefab";
 
+	private static readonly List<(int start, int end, int dlcSteamItemId)> SkinIdRanges = new List<(int, int, int)>
+	{
+		(10244, 10268, 10265),
+		(10272, 10279, 10280),
+		(10311, 10313, 10273),
+		(10360, 10409, 10387),
+		(10483, 10488, 10473),
+		(10521, 10557, 10520)
+	};
+
+	private static readonly HashSet<ulong> WhitelistedSkins = new HashSet<ulong>
+	{
+		2uL,
+		10242uL,
+		10243uL,
+		10246uL,
+		10372uL,
+		10386uL,
+		10384uL,
+		10388uL,
+		10401uL,
+		10406uL
+	};
+
 	public static readonly string[] Colors = new string[17]
 	{
 		"", "0.25 0.56 0.75 1", "0.25 0.72 0.31 1", "0.65 0.28 0.85 1", "0.48 0.15 0.08 1", "0.92 0.46 0.06 1", "0.87 0.87 0.87 1", "0.18 0.18 0.16 1", "0.42 0.33 0.27 1", "0.17 0.21 0.33 1",
@@ -105,6 +129,89 @@ public static class TCUpgradeHelpers
 		{
 		}
 		return true;
+	}
+
+	public static bool IsWallpaperAllowed(BasePlayer player, int skinId)
+	{
+		if ((Object)(object)player == (Object)null)
+		{
+			return true;
+		}
+		TCUpgradeConfig.ConfigData config = TCUpgradeConfig.Config;
+		if (config != null && config.AllowAllSkins)
+		{
+			return true;
+		}
+		if (skinId <= 0 || WhitelistedSkins.Contains((ulong)skinId))
+		{
+			return true;
+		}
+		if ((Object)(object)player.blueprints?.steamInventory != (Object)null && player.blueprints.steamInventory.HasItem(skinId))
+		{
+			return true;
+		}
+		foreach (var (start, end, dlcId) in SkinIdRanges)
+		{
+			if (skinId >= start && skinId <= end)
+			{
+				return (Object)(object)player.blueprints?.steamInventory != (Object)null && player.blueprints.steamInventory.HasItem(dlcId);
+			}
+		}
+		return false;
+	}
+
+	public static string GetMissingResources(List<ItemAmount> required, ItemContainer inventory)
+	{
+		if (required == null || inventory == null)
+		{
+			return "?";
+		}
+		List<string> parts = new List<string>();
+		foreach (ItemAmount item in required)
+		{
+			if (item == null || (Object)(object)item.itemDef == (Object)null)
+			{
+				continue;
+			}
+			int have = inventory.GetAmount(item.itemid, onlyUsableAmounts: false);
+			int need = (int)item.amount;
+			if (have < need)
+			{
+				parts.Add($"{item.itemDef.displayName.english}: {need - have}");
+			}
+		}
+		if (parts.Count <= 0)
+		{
+			return "?";
+		}
+		return string.Join(", ", parts);
+	}
+
+	public static void ApplyWallpaperProtection(BuildingBlock block, bool wallpaperDamage)
+	{
+		if ((Object)(object)block == (Object)null)
+		{
+			return;
+		}
+		if (!wallpaperDamage)
+		{
+			if (block.wallpaperProtection == null)
+			{
+				block.wallpaperProtection = ScriptableObject.CreateInstance<ProtectionProperties>();
+			}
+			if (block.wallpaperProtection.amounts.Length < 26)
+			{
+				block.wallpaperProtection.amounts = new float[26];
+			}
+			for (int i = 0; i < block.wallpaperProtection.amounts.Length; i++)
+			{
+				block.wallpaperProtection.amounts[i] = 1f;
+			}
+		}
+		else
+		{
+			block.wallpaperProtection = null;
+		}
 	}
 
 	public static bool IsOnBarge(BuildingPrivlidge cup)

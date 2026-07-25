@@ -3,8 +3,10 @@ using HarmonyLib;
 namespace Leaderboard.Patches;
 
 /// <summary>
-/// When a player is hit in PvP, record the hit by body part so hitrate charts can update.
-/// Only tracks player-on-player; victim and attacker must be real players (SteamId).
+/// Record body-part hits for hitrate charts when a real player damages a BasePlayer target.
+/// Victims may be human players (always) or NPC BasePlayers (scientists, etc.) when
+/// CountNpcHitsForHitrate is enabled — Oxide UltimateLeaderboard gates this via
+/// CountNPCKillsAsPlayerKills inside CanDamage(..., npc: true).
 /// </summary>
 [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
 public static class Patch_BaseCombatEntity_Hurt
@@ -16,10 +18,14 @@ public static class Patch_BaseCombatEntity_Hurt
 
         var attacker = info.InitiatorPlayer;
         if (attacker == null || attacker.IsNpc || attacker == victim) return;
-        if (!SteamIdHelper.IsSteamId(attacker.userID) || !SteamIdHelper.IsSteamId(victim.userID)) return;
+        if (!SteamIdHelper.IsSteamId(attacker.userID)) return;
 
         var mod = LeaderboardMod.Instance;
         if (mod == null) return;
+
+        bool victimIsHuman = SteamIdHelper.IsSteamId(victim.userID);
+        if (!victimIsHuman && mod.GetConfig()?.CountNpcHitsForHitrate != true)
+            return;
 
         // Only count actual damage (e.g. skip 0-damage or prediction)
         if (!info.hasDamage) return;

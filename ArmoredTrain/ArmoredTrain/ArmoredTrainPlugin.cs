@@ -166,6 +166,9 @@ namespace Oxide.Plugins
             LoadDefaultMessages();
             UpdateConfig();
 
+            // Rebind when 0PveMode loads after ArmoredTrain (same pattern as Convoy / 0Permissions).
+            PveModeManager.EnsurePveModeBound();
+
             GuiManager.LoadImages();
             WagonCustomizer.LoadCurrentCustomizationProfile();
             EventLauncher.AutoStartEvent();
@@ -522,13 +525,25 @@ namespace Oxide.Plugins
 
         private object CanTrainCarCouple(TrainCar trainCar1, TrainCar trainCar2)
         {
-            if (trainCar1 == null || trainCar1.net == null || trainCar2 == null || trainCar2.net == null)
+            if (_eventController == null || trainCar1 == null || trainCar1.net == null || trainCar2 == null || trainCar2.net == null)
                 return null;
 
-            if (_eventController.IsTrainWagon(trainCar1.net.ID.Value) && !_eventController.CanConnectToTrainWagon(trainCar1))
+            bool isEvent1 = _eventController.IsTrainWagon(trainCar1.net.ID.Value);
+            bool isEvent2 = _eventController.IsTrainWagon(trainCar2.net.ID.Value);
+
+            // Oxide only subscribed this hook after OnTrainSpawned. Harmony patches are always live,
+            // so during assembly we must still allow event cars to couple to each other. Otherwise
+            // EnableFrontConnector=false blocks TryCouple against the locomotive and wagons never attach.
+            if (isEvent1 && isEvent2)
+                return null;
+
+            if (_eventController.IsAssemblingTrain)
+                return null;
+
+            if (isEvent1 && !_eventController.CanConnectToTrainWagon(trainCar1))
                 return false;
 
-            if (_eventController.IsTrainWagon(trainCar2.net.ID.Value) && !_eventController.CanConnectToTrainWagon(trainCar2))
+            if (isEvent2 && !_eventController.CanConnectToTrainWagon(trainCar2))
                 return false;
 
             return null;
@@ -1293,6 +1308,7 @@ namespace Oxide.Plugins
 
             public static bool IsEventActive()
             {
+                // Unity destroyed objects compare equal to null via overloaded ==.
                 return _ins != null && _ins._eventController != null;
             }
 
@@ -1362,12 +1378,19 @@ namespace Oxide.Plugins
 
             private static IEnumerator DelayedStartEventCoroutine(EventConfig eventConfig, bool isUnderGround)
             {
-                if (_ins._config.NotifyConfig.PreStartTime > 0)
-                    NotifyManager.SendMessageToAll("PreStartTrain", _ins._config.Prefix, eventConfig.DisplayName, _ins._config.NotifyConfig.PreStartTime);
+                try
+                {
+                    if (_ins._config.NotifyConfig.PreStartTime > 0)
+                        NotifyManager.SendMessageToAll("PreStartTrain", _ins._config.Prefix, eventConfig.DisplayName, _ins._config.NotifyConfig.PreStartTime);
 
-                yield return CoroutineEx.waitForSeconds(_ins._config.NotifyConfig.PreStartTime);
+                    yield return CoroutineEx.waitForSeconds(_ins._config.NotifyConfig.PreStartTime);
 
-                StartEvent(eventConfig, isUnderGround);
+                    StartEvent(eventConfig, isUnderGround);
+                }
+                finally
+                {
+                    _delayedEventStartCoroutine = null;
+                }
             }
 
             private static void StartEvent(EventConfig eventConfig, bool isUnderGround)
@@ -1375,6 +1398,8 @@ namespace Oxide.Plugins
                 GameObject gameObject = new GameObject();
                 _ins._eventController = gameObject.AddComponent<EventController>();
                 _ins._eventController.Init(eventConfig, isUnderGround);
+
+                UnityEngine.Debug.Log("[ArmoredTrain] Event controller started (" + eventConfig.PresetName + "). Spawning train...");
 
                 if (_ins._config.MainConfig.EnableStartStopLogs)
                     NotifyManager.PrintLogMessage("EventStart_Log", eventConfig.PresetName);
@@ -1384,11 +1409,16 @@ namespace Oxide.Plugins
 
             public static void StopEvent(bool isPluginUnloadingOrFailed = false)
             {
-                if (IsEventActive())
+                bool wasActive = IsEventActive();
+
+                if (wasActive)
                 {
                     _ins.Unsubscribes();
 
-                    _ins._eventController.DeleteController();
+                    try { _ins._eventController.DeleteController(); }
+                    catch (Exception ex) { UnityEngine.Debug.LogWarning("[ArmoredTrain] DeleteController failed: " + ex.Message); }
+                    _ins._eventController = null;
+
                     ZoneController.TryDeleteZone();
                     PveModeManager.OnEventEnd();
                     EventMapMarker.DeleteMapMarker();
@@ -1400,6 +1430,8 @@ namespace Oxide.Plugins
                     NotifyManager.SendMessageToAll("EndEvent", _ins._config.Prefix);
                     Interface.CallHook($"On{_ins.Name}EventStop");
 
+                    UnityEngine.Debug.Log("[ArmoredTrain] Event stopped.");
+
                     if (_ins._config.MainConfig.EnableStartStopLogs)
                         NotifyManager.PrintLogMessage("EventStop_Log");
 
@@ -1407,7 +1439,7 @@ namespace Oxide.Plugins
                         AutoStartEvent();
                 }
 
-                if (_delayedEventStartCoroutine != null)
+                if (_delayedEventStartCoroutine != null && ServerMgr.Instance != null)
                 {
                     ServerMgr.Instance.StopCoroutine(_delayedEventStartCoroutine);
                     _delayedEventStartCoroutine = null;
@@ -1467,11 +1499,20 @@ namespace Oxide.Plugins
 
         private class EventController : FacepunchBehaviour
         {
+            private const int MaxSpawnAttempts = 8;
+            private const float ClearSpawnDistance = 25f;
+            private const float SpawnClearTimeoutSeconds = 30f;
+
             public EventConfig EventConfig;
             private TrainEngine _trainEngine;
             private TrainCar _lastWagon;
             private Coroutine _spawnCoroutine;
             private Coroutine _eventCoroutine;
+            private int _spawnAttempts;
+            private int _spawnGeneration;
+            private bool _isAssemblingTrain;
+
+            public bool IsAssemblingTrain => _isAssemblingTrain;
             private readonly List<WagonData> _wagonDatas = new List<WagonData>();
             private readonly HashSet<BradleyAPC> _bradleys = new HashSet<BradleyAPC>();
             private readonly HashSet<AutoTurret> _turrets = new HashSet<AutoTurret>();
@@ -1772,64 +1813,390 @@ namespace Oxide.Plugins
 
                 if (positionData == null)
                 {
+                    UnityEngine.Debug.LogError("[ArmoredTrain] No rail spawn position found. Stopping event.");
                     EventLauncher.StopEvent();
                     return;
                 }
 
-                _spawnCoroutine = ServerMgr.Instance.StartCoroutine(TrainSpawnCoroutine(positionData));
+                _spawnAttempts++;
+                _spawnGeneration++;
+                UnityEngine.Debug.Log("[ArmoredTrain] Spawn attempt " + _spawnAttempts + "/" + MaxSpawnAttempts
+                    + " gen=" + _spawnGeneration
+                    + " at " + positionData.Position + (_isUnderGround ? " (underground)" : " (aboveground)"));
+
+                if (_spawnCoroutine != null && ServerMgr.Instance != null)
+                    ServerMgr.Instance.StopCoroutine(_spawnCoroutine);
+
+                _spawnCoroutine = ServerMgr.Instance.StartCoroutine(TrainSpawnCoroutine(positionData, _spawnGeneration));
             }
 
-            private IEnumerator TrainSpawnCoroutine(PositionData positionData)
+            private bool IsSpawnGenerationCurrent(int spawnGeneration)
             {
+                return spawnGeneration == _spawnGeneration && _ins != null && _ins._eventController == this;
+            }
+
+            private IEnumerator TrainSpawnCoroutine(PositionData positionData, int spawnGeneration)
+            {
+                _isAssemblingTrain = true;
                 yield return CoroutineEx.waitForSeconds(1f);
+                // Do not clear _isAssemblingTrain on stale-gen exit - a newer attempt may own it.
+                if (!IsSpawnGenerationCurrent(spawnGeneration))
+                    yield break;
+
                 SpawnLocomotiveAndDriver(positionData);
 
                 if (_trainEngine == null || !_trainEngine.IsExists() || _driver == null || !_driver.IsExists())
                 {
-                    try { OnSpawnFailed(); } catch (Exception ex) { _ins?.PrintError($"[ArmoredTrain] OnSpawnFailed: {ex.Message}"); }
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Locomotive/driver spawn incomplete (engine="
+                        + (_trainEngine != null && _trainEngine.IsExists()) + ", driver="
+                        + (_driver != null && _driver.IsExists())
+                        + ", mounted=" + (_driver != null && _driver.isMounted) + ").");
+                    try { OnSpawnFailed(); }
+                    catch (Exception ex) { _ins?.PrintError($"[ArmoredTrain] OnSpawnFailed: {ex.Message}"); }
                     yield return CoroutineEx.waitForSeconds(1f);
+                    yield break;
+                }
+
+                if (!_driver.isMounted)
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Driver spawned but is NOT mounted - train may not move.");
+
+                Vector3 spawnAnchor = _trainEngine.transform.position;
+                _lastSpawnAnchor = spawnAnchor;
+                ulong locoNetId = _trainEngine.net != null ? _trainEngine.net.ID.Value : 0UL;
+                UnityEngine.Debug.Log("[ArmoredTrain] Loco ready netId=" + locoNetId
+                    + " prefab=" + _trainEngine.ShortPrefabName
+                    + " pos=" + spawnAnchor
+                    + " wagonsPlanned=" + (EventConfig.WagonsPreset != null ? EventConfig.WagonsPreset.Count : 0));
+
+                // Preferred path: place wagons on the rail behind the loco. The old "drive 25m clear"
+                // wait was timing out even when the loco had already moved hundreds of meters, so the
+                // event never reached OnTrainSpawned (no map marker / full train).
+                if (TrySpawnAllWagonsBehindLocomotive(spawnGeneration))
+                {
+                    yield return CoroutineEx.waitForSeconds(0.5f);
+                    if (!IsSpawnGenerationCurrent(spawnGeneration))
+                        yield break;
+
+                    // Re-assert couples after physics settles, then accept modest spacing drift.
+                    TrainCar previous = _trainEngine;
+                    for (int i = 0; i < _wagonDatas.Count; i++)
+                    {
+                        TrainCar car = _wagonDatas[i]?.TrainCar;
+                        if (car == null || !car.IsExists())
+                            continue;
+                        if (previous != null && !ReferenceEquals(previous, car))
+                            CoupleWagons(previous, car);
+                        previous = car;
+                    }
+
+                    string aliveFailReason;
+                    if (!AreEventTrainCarsAlive(out aliveFailReason))
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] Track-offset spawn lost a car after settle ("
+                            + aliveFailReason + "). Falling back to drive-clear spawn.");
+                        DestroyNonLocomotiveWagons();
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.Log("[ArmoredTrain] Track-offset train assembly OK ("
+                            + _wagonDatas.Count + " cars). Completing spawn.");
+                        OnTrainSpawned();
+                        yield break;
+                    }
+                }
+                else
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Track-offset wagon spawn unavailable; using drive-clear fallback.");
+                    DestroyNonLocomotiveWagons();
+                }
+
+                if (!IsSpawnGenerationCurrent(spawnGeneration)
+                    || _trainEngine == null || !_trainEngine.IsExists()
+                    || _driver == null || !_driver.IsExists())
+                {
+                    OnSpawnFailed();
                     yield break;
                 }
 
                 ChangeSpeed(EngineSpeeds.Fwd_Hi);
                 TrainCar lastTrainCar = _trainEngine;
                 float lastSpawnedTime = Time.realtimeSinceStartup;
+                float nextDebugTime = Time.realtimeSinceStartup + 2f;
 
                 foreach (string wagonPresetName in EventConfig.WagonsPreset)
                 {
+                    if (!IsSpawnGenerationCurrent(spawnGeneration))
+                        yield break;
+
                     WagonConfig wagonConfig = _ins._config.WagonConfigs.FirstOrDefault(x => x.PresetName == wagonPresetName);
 
                     if (wagonConfig == null)
                     {
                         NotifyManager.PrintError(null, "PresetNotFound_Exeption", wagonPresetName);
                         OnSpawnFailed();
-                        break;
+                        yield break;
                     }
 
-                    while (!IsSpawnFailed(lastSpawnedTime, false) && Vector3.Distance(positionData.Position, lastTrainCar.transform.position) < 25)
+                    while (IsSpawnGenerationCurrent(spawnGeneration)
+                        && !IsSpawnFailed(lastSpawnedTime, false)
+                        && !HasClearedSpawnPoint(positionData.Position, spawnAnchor, lastTrainCar))
+                    {
+                        if (Time.realtimeSinceStartup >= nextDebugTime)
+                        {
+                            nextDebugTime = Time.realtimeSinceStartup + 2f;
+                            LogSpawnClearanceDebug(positionData.Position, spawnAnchor, lastTrainCar, locoNetId);
+                        }
                         yield return CoroutineEx.waitForSeconds(0.5f);
+                    }
+
+                    if (!IsSpawnGenerationCurrent(spawnGeneration))
+                        yield break;
+
+                    if (IsSpawnFailed(lastSpawnedTime, false))
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] Spawn failed while waiting to clear spawn: "
+                            + DescribeSpawnFailure(lastSpawnedTime, false));
+                        LogSpawnClearanceDebug(positionData.Position, spawnAnchor, lastTrainCar, locoNetId);
+                        OnSpawnFailed();
+                        yield break;
+                    }
 
                     TrainCar newTrainCar = SpawnTrainCar(wagonConfig.PrefabName, positionData, wagonConfig);
                     yield return CoroutineEx.waitForSeconds(0.5f);
+                    if (!IsSpawnGenerationCurrent(spawnGeneration))
+                        yield break;
 
-                    if (IsSpawnFailed(lastSpawnedTime, false) || !newTrainCar.IsExists())
+                    if (IsSpawnFailed(lastSpawnedTime, false) || newTrainCar == null || !newTrainCar.IsExists())
                     {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] Spawn failed after wagon '" + wagonPresetName + "': "
+                            + DescribeSpawnFailure(lastSpawnedTime, false));
                         OnSpawnFailed();
-                        break;
+                        yield break;
                     }
 
                     CoupleWagons(lastTrainCar, newTrainCar);
                     lastTrainCar = newTrainCar;
                     _lastWagon = newTrainCar;
                     lastSpawnedTime = Time.realtimeSinceStartup;
+                    UnityEngine.Debug.Log("[ArmoredTrain] Drive-clear spawned wagon '" + wagonPresetName
+                        + "' at " + newTrainCar.transform.position);
                 }
 
                 yield return CoroutineEx.waitForSeconds(0.5f);
+                if (!IsSpawnGenerationCurrent(spawnGeneration))
+                    yield break;
 
                 if (IsSpawnFailed(lastSpawnedTime, true))
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Spawn failed on final couple check: "
+                        + DescribeSpawnFailure(lastSpawnedTime, true));
                     OnSpawnFailed();
+                }
                 else
                     OnTrainSpawned();
+            }
+
+            private static bool HasClearedSpawnPoint(Vector3 spawnPos, Vector3 spawnAnchor, TrainCar trainCar)
+            {
+                if (trainCar == null || !trainCar.IsExists())
+                    return false;
+
+                Vector3 trainPos = trainCar.transform.position;
+                float fromSpawn = Vector3.Distance(spawnPos, trainPos);
+                float fromAnchor = Vector3.Distance(spawnAnchor, trainPos);
+                return fromSpawn >= ClearSpawnDistance || fromAnchor >= ClearSpawnDistance;
+            }
+
+            private void LogSpawnClearanceDebug(Vector3 spawnPos, Vector3 spawnAnchor, TrainCar trainCar, ulong expectedLocoNetId)
+            {
+                if (trainCar == null)
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Clearance debug: trainCar null (expectedLocoNetId=" + expectedLocoNetId + ")");
+                    return;
+                }
+
+                Vector3 trainPos = trainCar.transform.position;
+                ulong netId = trainCar.net != null ? trainCar.net.ID.Value : 0UL;
+                ulong engineNetId = _trainEngine != null && _trainEngine.net != null ? _trainEngine.net.ID.Value : 0UL;
+                UnityEngine.Debug.Log("[ArmoredTrain] Clearance wait: carNetId=" + netId
+                    + " engineNetId=" + engineNetId
+                    + " expectedLocoNetId=" + expectedLocoNetId
+                    + " sameRef=" + ReferenceEquals(trainCar, _trainEngine)
+                    + " fromSpawn=" + Vector3.Distance(spawnPos, trainPos).ToString("F1")
+                    + " fromAnchor=" + Vector3.Distance(spawnAnchor, trainPos).ToString("F1")
+                    + " engineFromAnchor=" + (_trainEngine != null && _trainEngine.IsExists()
+                        ? Vector3.Distance(spawnAnchor, _trainEngine.transform.position).ToString("F1")
+                        : "n/a")
+                    + " pos=" + trainPos);
+            }
+
+            private static float GetWagonCoupleSpacing(string frontShortPrefabName, string backShortPrefabName)
+            {
+                if ((!string.IsNullOrEmpty(frontShortPrefabName) && frontShortPrefabName.Contains("workcart"))
+                    || (!string.IsNullOrEmpty(backShortPrefabName) && backShortPrefabName.Contains("workcart")))
+                    return 13.45f;
+
+                if ((!string.IsNullOrEmpty(frontShortPrefabName) && frontShortPrefabName.Contains("locomotive"))
+                    || (!string.IsNullOrEmpty(backShortPrefabName) && backShortPrefabName.Contains("locomotive")))
+                    return 18.38f;
+
+                return 16.25f;
+            }
+
+            private static string GetPrefabShortName(string prefabName)
+            {
+                if (string.IsNullOrEmpty(prefabName))
+                    return string.Empty;
+                int slash = prefabName.LastIndexOf('/');
+                string file = slash >= 0 ? prefabName.Substring(slash + 1) : prefabName;
+                int dot = file.IndexOf('.');
+                return dot >= 0 ? file.Substring(0, dot) : file;
+            }
+
+            private bool TrySpawnAllWagonsBehindLocomotive(int spawnGeneration)
+            {
+                if (EventConfig.WagonsPreset == null || EventConfig.WagonsPreset.Count == 0)
+                    return true;
+
+                if (_trainEngine == null || !_trainEngine.IsExists())
+                    return false;
+
+                if (!TrainTrackSpline.TryFindTrackNear(_trainEngine.transform.position, 5f, out TrainTrackSpline spline, out float locoDist))
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Track-offset spawn: no track near locomotive at "
+                        + _trainEngine.transform.position);
+                    return false;
+                }
+
+                Vector3 locoForward = _trainEngine.transform.forward;
+                Vector3 locoPos = _trainEngine.transform.position;
+                // GetPositionAndTangent flips tangent to match asker forward, so probe +/- along the
+                // spline to learn which distance direction is actually behind the loco.
+                Vector3 posAlongPositive = spline.GetPosition(locoDist + 1f);
+                Vector3 posAlongNegative = spline.GetPosition(locoDist - 1f);
+                float positiveDot = Vector3.Dot((posAlongPositive - locoPos).normalized, locoForward);
+                float negativeDot = Vector3.Dot((posAlongNegative - locoPos).normalized, locoForward);
+                bool increasingIsForward = positiveDot >= negativeDot;
+
+                TrainCar lastTrainCar = _trainEngine;
+                float currentDist = locoDist;
+                int wagonIndex = 0;
+
+                UnityEngine.Debug.Log("[ArmoredTrain] Track-offset: locoRailDist=" + locoDist.ToString("F1")
+                    + " increasingIsForward=" + increasingIsForward
+                    + " +dot=" + positiveDot.ToString("F2")
+                    + " -dot=" + negativeDot.ToString("F2"));
+
+                foreach (string wagonPresetName in EventConfig.WagonsPreset)
+                {
+                    if (!IsSpawnGenerationCurrent(spawnGeneration))
+                        return false;
+
+                    WagonConfig wagonConfig = _ins._config.WagonConfigs.FirstOrDefault(x => x.PresetName == wagonPresetName);
+                    if (wagonConfig == null)
+                    {
+                        NotifyManager.PrintError(null, "PresetNotFound_Exeption", wagonPresetName);
+                        return false;
+                    }
+
+                    float spacing = GetWagonCoupleSpacing(lastTrainCar.ShortPrefabName, GetPrefabShortName(wagonConfig.PrefabName));
+                    float wagonDist = increasingIsForward ? currentDist - spacing : currentDist + spacing;
+
+                    Vector3 tangent;
+                    Vector3 wagonPos = spline.GetPositionAndTangent(wagonDist, locoForward, out tangent) + Vector3.up * 0.5f;
+                    if (tangent.sqrMagnitude < 0.001f)
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] Track-offset spawn: invalid tangent for wagon '"
+                            + wagonPresetName + "' at dist=" + wagonDist.ToString("F1"));
+                        return false;
+                    }
+
+                    Quaternion wagonRot = Quaternion.LookRotation(tangent);
+                    TrainCar newTrainCar = SpawnTrainCar(wagonConfig.PrefabName, new PositionData(wagonPos, wagonRot), wagonConfig);
+                    if (newTrainCar == null || !newTrainCar.IsExists())
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] Track-offset spawn failed for wagon '" + wagonPresetName + "'.");
+                        return false;
+                    }
+
+                    CoupleWagons(lastTrainCar, newTrainCar);
+                    lastTrainCar = newTrainCar;
+                    _lastWagon = newTrainCar;
+                    currentDist = wagonDist;
+                    wagonIndex++;
+
+                    UnityEngine.Debug.Log("[ArmoredTrain] Track-offset wagon " + wagonIndex + "/"
+                        + EventConfig.WagonsPreset.Count + " '" + wagonPresetName
+                        + "' spacing=" + spacing.ToString("F2")
+                        + " railDist=" + wagonDist.ToString("F1")
+                        + " pos=" + wagonPos);
+                }
+
+                return true;
+            }
+
+            private void DestroyNonLocomotiveWagons()
+            {
+                for (int i = _wagonDatas.Count - 1; i >= 0; i--)
+                {
+                    WagonData wagonData = _wagonDatas[i];
+                    if (wagonData == null)
+                    {
+                        _wagonDatas.RemoveAt(i);
+                        continue;
+                    }
+
+                    if (wagonData.TrainCar != null && ReferenceEquals(wagonData.TrainCar, _trainEngine))
+                        continue;
+
+                    if (wagonData.TrainCar != null && wagonData.TrainCar.IsExists())
+                        wagonData.TrainCar.Kill();
+
+                    _wagonDatas.RemoveAt(i);
+                }
+
+                _lastWagon = null;
+            }
+
+            private bool AreEventTrainCarsAlive(out string failReason)
+            {
+                if (_trainEngine == null || !_trainEngine.IsExists())
+                {
+                    failReason = "locomotive missing";
+                    return false;
+                }
+
+                if (_driver == null)
+                {
+                    failReason = "driver null";
+                    return false;
+                }
+
+                if (!_driver.IsExists())
+                {
+                    failReason = "driver destroyed";
+                    return false;
+                }
+
+                for (int i = 0; i < _wagonDatas.Count; i++)
+                {
+                    WagonData wagonData = _wagonDatas[i];
+                    if (wagonData == null)
+                    {
+                        failReason = "wagonData[" + i + "] null";
+                        return false;
+                    }
+
+                    if (wagonData.TrainCar == null || !wagonData.TrainCar.IsExists())
+                    {
+                        string preset = wagonData.WagonConfig != null ? wagonData.WagonConfig.PresetName : "?";
+                        failReason = "car[" + i + "] '" + preset + "' missing/destroyed";
+                        return false;
+                    }
+                }
+
+                failReason = null;
+                return true;
             }
 
             private void SpawnLocomotiveAndDriver(PositionData positionData)
@@ -1854,8 +2221,11 @@ namespace Oxide.Plugins
                 _trainEngine.maxSpeed = locomotiveConfig.MaxSpeed;
 
                 EntityFuelSystem entityFuelSystem = _trainEngine.GetFuelSystem() as EntityFuelSystem;
-                entityFuelSystem.cachedHasFuel = true;
-                entityFuelSystem.nextFuelCheckTime = float.MaxValue;
+                if (entityFuelSystem != null)
+                {
+                    entityFuelSystem.cachedHasFuel = true;
+                    entityFuelSystem.nextFuelCheckTime = float.MaxValue;
+                }
 
                 CreateDriver();
                 ApplyEntityFlag(_trainEngine, BaseEntity.Flags.Reserved2, true);
@@ -1867,42 +2237,115 @@ namespace Oxide.Plugins
                 {
                     WagonData wagonData = _wagonDatas?.FirstOrDefault(x => x.WagonConfig is LocomotiveConfig);
                     if (wagonData == null || wagonData.TrainCar == null || !wagonData.TrainCar.IsExists())
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] CreateDriver: locomotive wagon data missing.");
                         return;
+                    }
 
                     LocomotiveConfig locomotiveConfig = wagonData.WagonConfig as LocomotiveConfig;
                     if (locomotiveConfig == null)
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] CreateDriver: locomotive config missing.");
                         return;
+                    }
 
                     if (_trainEngine == null || !_trainEngine.IsExists())
-                        return;
-
-                    Vector3 spawnPos = _trainEngine.transform.position;
-                    if (spawnPos.y < 30f)
                     {
-                        float terrainY = TerrainMeta.HeightMap.GetHeight(spawnPos);
-                        spawnPos.y = Mathf.Max(terrainY, spawnPos.y + 2f);
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] CreateDriver: train engine missing.");
+                        return;
                     }
+
+                    BaseMountable driverSeat = null;
+                    if (_trainEngine.mountPoints != null && _trainEngine.mountPoints.Count > 0)
+                        driverSeat = _trainEngine.mountPoints[0].mountable;
+
+                    // Spawn on the seat (or locomotive). Do NOT lift to terrain — GrimmNPC navmesh
+                    // rescue already pulls drivers off rails; terrain lift made mount worse.
+                    Vector3 spawnPos = driverSeat != null
+                        ? driverSeat.transform.position
+                        : _trainEngine.transform.position + Vector3.up;
+
                     _driver = NpcSpawnManager.SpawnScientistNpc(locomotiveConfig.DriverName, spawnPos, 1, true, true);
                     if (_driver == null)
-                        return;
-                    if (!_driver.IsExists())
-                        return;
-                    if (_trainEngine != null && _trainEngine.mountPoints != null && _trainEngine.mountPoints.Count > 0)
                     {
-                        var mount = _trainEngine.mountPoints[0].mountable;
-                        if (mount != null)
-                            mount.AttemptMount(_driver);
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] CreateDriver: GrimmNPC returned null for driver preset '" + locomotiveConfig.DriverName + "'.");
+                        return;
                     }
+                    if (!_driver.IsExists())
+                    {
+                        UnityEngine.Debug.LogWarning("[ArmoredTrain] CreateDriver: driver entity was destroyed immediately.");
+                        return;
+                    }
+
+                    NpcSpawnManager.PauseNavigator(_driver);
+
+                    // Teleport onto seat before mount — GrimmNPC may still nudge slightly.
+                    _driver.MovePosition(spawnPos);
+                    _driver.transform.position = spawnPos;
+
+                    if (driverSeat != null)
+                        driverSeat.AttemptMount(_driver, false);
+                    if (!_driver.isMounted)
+                        _trainEngine.AttemptMount(_driver, false);
+
+                    UnityEngine.Debug.Log("[ArmoredTrain] CreateDriver: preset=" + locomotiveConfig.DriverName
+                        + " mounted=" + _driver.isMounted
+                        + " pos=" + _driver.transform.position
+                        + " train=" + _trainEngine.transform.position
+                        + " dist=" + Vector3.Distance(_driver.transform.position, _trainEngine.transform.position).ToString("F1"));
                 }
-                catch
+                catch (Exception ex)
                 {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] CreateDriver failed: " + ex.Message);
                     _driver = null;
                 }
             }
 
+            private string DescribeSpawnFailure(float lastSpawnTime, bool checkWagonDistance)
+            {
+                if (_trainEngine == null || !_trainEngine.IsExists())
+                    return "train engine missing/destroyed";
+                if (_driver == null)
+                    return "driver null";
+                if (!_driver.IsExists())
+                    return "driver destroyed";
+                if (!_driver.isMounted)
+                    return "driver not mounted (engine will not run)";
+                if (_wagonDatas.Any(x => x?.TrainCar == null || !x.TrainCar.IsExists()))
+                    return "a wagon was destroyed";
+                if (Time.realtimeSinceStartup - lastSpawnTime > SpawnClearTimeoutSeconds)
+                {
+                    float moved = Vector3.Distance(_trainEngine.transform.position, _lastSpawnAnchor);
+                    bool engineOn = _trainEngine.engineController != null && _trainEngine.engineController.IsStartingOrOn;
+                    return "timeout " + SpawnClearTimeoutSeconds.ToString("F0") + "s (moved=" + moved.ToString("F1")
+                        + "m engineOn=" + engineOn
+                        + " throttle=" + _trainEngine.CurThrottleSetting + ")";
+                }
+                if (checkWagonDistance)
+                {
+                    for (int i = 1; i < _wagonDatas.Count; i++)
+                    {
+                        WagonData frontWagon = _wagonDatas[i];
+                        WagonData backWagon = _wagonDatas[i - 1];
+                        if (frontWagon?.TrainCar == null || backWagon?.TrainCar == null) continue;
+                        if (Vector3.Angle(frontWagon.TrainCar.transform.forward, backWagon.TrainCar.transform.forward) > 90f)
+                            return "wagon " + i + " facing wrong way";
+                        float distance = Vector3.Distance(frontWagon.TrainCar.transform.position, backWagon.TrainCar.transform.position);
+                        float targetDistance = GetWagonCoupleSpacing(frontWagon.TrainCar.ShortPrefabName, backWagon.TrainCar.ShortPrefabName);
+                        if (Math.Abs(distance - targetDistance) > 1)
+                            return "wagon couple distance " + distance.ToString("F1") + " (want " + targetDistance.ToString("F1") + ")";
+                    }
+                }
+                return "unknown";
+            }
+
+            private Vector3 _lastSpawnAnchor;
+
             private bool IsSpawnFailed(float lastSpawnTime, bool checkWagonDistance)
             {
-                if (!_trainEngine.IsExists() || _driver == null || !_driver.IsExists() || _wagonDatas.Any(x => !x.TrainCar.IsExists()) || Time.realtimeSinceStartup - lastSpawnTime > 30f)
+                if (_trainEngine == null || !_trainEngine.IsExists() || _driver == null || !_driver.IsExists()
+                    || _wagonDatas.Any(x => x == null || x.TrainCar == null || !x.TrainCar.IsExists())
+                    || Time.realtimeSinceStartup - lastSpawnTime > SpawnClearTimeoutSeconds)
                     return true;
 
                 if (!checkWagonDistance)
@@ -1917,7 +2360,7 @@ namespace Oxide.Plugins
                         return true;
 
                     float distance = Vector3.Distance(frontWagon.TrainCar.transform.position, backWagon.TrainCar.transform.position);
-                    float targetDistance = frontWagon.TrainCar.ShortPrefabName.Contains("workcart") || backWagon.TrainCar.ShortPrefabName.Contains("workcart") ? 13.45f : frontWagon.TrainCar.ShortPrefabName.Contains("locomotive") || backWagon.TrainCar.ShortPrefabName.Contains("locomotive") ? 18.38f : 16.25f;
+                    float targetDistance = GetWagonCoupleSpacing(frontWagon.TrainCar.ShortPrefabName, backWagon.TrainCar.ShortPrefabName);
 
                     if (Math.Abs(distance - targetDistance) > 1)
                         return true;
@@ -1937,7 +2380,8 @@ namespace Oxide.Plugins
                 }
 
                 trainCar.CancelInvoke(trainCar.DecayTick);
-                _wagonDatas.Add(new WagonData(trainCar, wagonConfig, trainCar.rigidBody.mass));
+                float mass = trainCar.rigidBody != null ? trainCar.rigidBody.mass : 25000f;
+                _wagonDatas.Add(new WagonData(trainCar, wagonConfig, mass));
 
                 TriggerParentEnclosed triggerParentEnclosed = trainCar.GetComponentInChildren<TriggerParentEnclosed>();
                 if (triggerParentEnclosed != null)
@@ -1950,24 +2394,59 @@ namespace Oxide.Plugins
 
             private void CoupleWagons(TrainCar frontWagon, TrainCar backWagon)
             {
-                backWagon.coupling.frontCoupling.TryCouple(frontWagon.coupling.rearCoupling, false);
-                frontWagon.coupling.rearCoupling.TryCouple(backWagon.coupling.frontCoupling, false);
+                if (frontWagon?.coupling?.rearCoupling == null || backWagon?.coupling?.frontCoupling == null)
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] CoupleWagons: missing coupling on "
+                        + (frontWagon != null ? frontWagon.ShortPrefabName : "null") + " / "
+                        + (backWagon != null ? backWagon.ShortPrefabName : "null"));
+                    return;
+                }
+
+                bool backOk = backWagon.coupling.frontCoupling.TryCouple(frontWagon.coupling.rearCoupling, false);
+                bool frontOk = frontWagon.coupling.rearCoupling.TryCouple(backWagon.coupling.frontCoupling, false);
+                bool coupled = (frontWagon.coupling.rearCoupling.IsCoupled && backWagon.coupling.frontCoupling.IsCoupled)
+                    || backOk || frontOk;
+
+                UnityEngine.Debug.Log("[ArmoredTrain] Couple "
+                    + frontWagon.ShortPrefabName + " <- " + backWagon.ShortPrefabName
+                    + " tryBack=" + backOk + " tryFront=" + frontOk
+                    + " coupled=" + (frontWagon.coupling.rearCoupling.IsCoupled && backWagon.coupling.frontCoupling.IsCoupled));
+
+                if (!coupled && !(frontWagon.coupling.rearCoupling.IsCoupled && backWagon.coupling.frontCoupling.IsCoupled))
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] CoupleWagons failed between "
+                        + frontWagon.ShortPrefabName + " and " + backWagon.ShortPrefabName);
             }
 
             private void OnSpawnFailed()
             {
+                _isAssemblingTrain = false;
                 KillTrain();
                 _trainEngine = null;
+                _driver = null;
                 _wagonDatas.Clear();
 
-                if (_spawnCoroutine != null)
+                if (_spawnCoroutine != null && ServerMgr.Instance != null)
+                {
                     ServerMgr.Instance.StopCoroutine(_spawnCoroutine);
+                    _spawnCoroutine = null;
+                }
 
+                if (_spawnAttempts >= MaxSpawnAttempts)
+                {
+                    UnityEngine.Debug.LogError("[ArmoredTrain] Train spawn failed after " + MaxSpawnAttempts
+                        + " attempts. Stopping event so /atrainstart can run again.");
+                    EventLauncher.StopEvent();
+                    return;
+                }
+
+                UnityEngine.Debug.LogWarning("[ArmoredTrain] Spawn failed; retrying (" + _spawnAttempts + "/" + MaxSpawnAttempts + ").");
                 StartSpawnTrain();
             }
 
             private void OnTrainSpawned()
             {
+                _spawnAttempts = 0;
+                _isAssemblingTrain = false;
                 _spawnCoroutine = ServerMgr.Instance.StartCoroutine(EntitiesSpawnCoroutine());
 
                 _ins.Subscribes();
@@ -1977,8 +2456,14 @@ namespace Oxide.Plugins
                 UpdateCountOfUnlootedCrates();
                 StartMoving();
                 EventMapMarker.CreateMarker();
-                NotifyManager.SendMessageToAll("StartTrain", _ins._config.Prefix, EventConfig.DisplayName, MapHelper.GridToString(MapHelper.PositionToGrid(GetEventPosition())));
-                Interface.CallHook($"On{_ins.Name}StartMoving", GetEventPosition());
+
+                Vector3 pos = GetEventPosition();
+                string grid = MapHelper.GridToString(MapHelper.PositionToGrid(pos));
+                UnityEngine.Debug.Log("[ArmoredTrain] Train spawned at grid " + grid + " pos=" + pos
+                    + " cars=" + _wagonDatas.Count + ". Map markers created.");
+
+                NotifyManager.SendMessageToAll("StartTrain", _ins._config.Prefix, EventConfig.DisplayName, grid);
+                Interface.CallHook($"On{_ins.Name}StartMoving", pos);
             }
 
             private void UpdateTrainCouples()
@@ -2623,11 +3108,30 @@ namespace Oxide.Plugins
 
             private void ChangeSpeed(EngineSpeeds engineSpeeds)
             {
-                if (_trainEngine != null && _trainEngine.engineController != null && !_trainEngine.engineController.IsStartingOrOn && _driver != null && _driver.IsExists())
-                    _trainEngine.engineController.TryStartEngine(_driver);
+                if (_trainEngine == null)
+                    return;
 
-                if (_trainEngine != null)
-                    _trainEngine.SetThrottle(engineSpeeds);
+                // Throttle first so MeetsEngineRequirements can pass even if HasDriver flickers.
+                _trainEngine.SetThrottle(engineSpeeds);
+
+                if (_driver != null && _driver.IsExists() && !_driver.isMounted)
+                {
+                    if (_trainEngine.mountPoints != null && _trainEngine.mountPoints.Count > 0 && _trainEngine.mountPoints[0].mountable != null)
+                        _trainEngine.mountPoints[0].mountable.AttemptMount(_driver, false);
+                    if (!_driver.isMounted)
+                        _trainEngine.AttemptMount(_driver, false);
+                }
+
+                if (_trainEngine.engineController != null && !_trainEngine.engineController.IsStartingOrOn && _driver != null && _driver.IsExists())
+                {
+                    _trainEngine.engineController.TryStartEngine(_driver);
+                    if (!_trainEngine.engineController.IsStartingOrOn)
+                    {
+                        // Force-complete start when fuel/driver checks are satisfied but start didn't stick.
+                        try { _trainEngine.engineController.FinishStartingEngine(); }
+                        catch (Exception ex) { UnityEngine.Debug.LogWarning("[ArmoredTrain] FinishStartingEngine: " + ex.Message); }
+                    }
+                }
             }
 
             public void DeleteController()
@@ -4350,10 +4854,114 @@ namespace Oxide.Plugins
             private static HashSet<ulong> _pveModeOwners = new HashSet<ulong>();
             private static BasePlayer _owner;
             private static float _lastZoneDeleteTime;
+            private static bool _readyCallbackRegistered;
+            private static int _boundGeneration = -1;
 
             public static bool IsPveModeReady()
             {
-                return _ins._config.SupportedPluginsConfig.PveMode.Enable && _ins.plugins.Exists("PveMode");
+                if (_ins == null || _ins._config?.SupportedPluginsConfig?.PveMode == null || !_ins._config.SupportedPluginsConfig.PveMode.Enable)
+                    return false;
+                EnsurePveModePluginRef();
+                return _ins.PveMode != null && Oxide.Core.Plugins.PveModePluginBridge.IsApiLive();
+            }
+
+            /// <summary>
+            /// Bind PluginReference + register ready/owner callbacks. Safe if 0PveMode loads later.
+            /// </summary>
+            public static void EnsurePveModeBound()
+            {
+                EnsurePveModePluginRef();
+                RegisterOwnerCallbacks();
+                if (_readyCallbackRegistered) return;
+                try
+                {
+                    Type apiType = AppDomain.CurrentDomain.GetData("PveMode_ApiType") as Type;
+                    if (apiType != null)
+                    {
+                        MethodInfo reg = apiType.GetMethod("RegisterReadyCallback", BindingFlags.Public | BindingFlags.Static);
+                        reg?.Invoke(null, new object[] { (Action)OnPveModeReady });
+                    }
+                    else
+                    {
+                        const string key = "PveMode_ReadyCallbacks";
+                        var list = AppDomain.CurrentDomain.GetData(key) as List<Action>;
+                        if (list == null)
+                        {
+                            list = new List<Action>();
+                            AppDomain.CurrentDomain.SetData(key, list);
+                        }
+                        lock (list)
+                        {
+                            list.Remove(OnPveModeReady);
+                            list.Add(OnPveModeReady);
+                        }
+                    }
+                    _readyCallbackRegistered = true;
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Failed to register PveMode ready callback: " + ex.Message);
+                }
+            }
+
+            private static void OnPveModeReady()
+            {
+                int gen = 0;
+                try
+                {
+                    var data = AppDomain.CurrentDomain.GetData("PveMode_Generation");
+                    if (data is int i) gen = i;
+                }
+                catch { }
+
+                if (gen == _boundGeneration && IsPveModeReady()) return;
+                _boundGeneration = gen;
+                EnsurePveModePluginRef();
+                RegisterOwnerCallbacks();
+                UnityEngine.Debug.Log("[ArmoredTrain] Bound to PveMode gen=" + gen + " ready=" + IsPveModeReady());
+            }
+
+            private static void EnsurePveModePluginRef()
+            {
+                if (_ins == null) return;
+                if (_ins.PveMode != null && Oxide.Core.Plugins.PveModePluginBridge.IsApiLive()) return;
+                _ins.PveMode = _ins.plugins.Find("PveMode");
+            }
+
+            private static void RegisterOwnerCallbacks()
+            {
+                try
+                {
+                    const string key = "PveMode_OwnerCallbacks";
+                    var list = AppDomain.CurrentDomain.GetData(key) as List<Action<string, string, BasePlayer>>;
+                    if (list == null)
+                    {
+                        list = new List<Action<string, string, BasePlayer>>();
+                        AppDomain.CurrentDomain.SetData(key, list);
+                    }
+                    lock (list)
+                    {
+                        list.Remove(OnOwnerCallback);
+                        list.Add(OnOwnerCallback);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] Failed to register PveMode owner callback: " + ex.Message);
+                }
+            }
+
+            private static void OnOwnerCallback(string shortname, string action, BasePlayer player)
+            {
+                if (_ins == null || !string.Equals(shortname, _ins.Name, StringComparison.OrdinalIgnoreCase)) return;
+                if (action == "set") OnNewOwnerSet(player);
+                else if (action == "clear") OnOwnerDeleted();
+            }
+
+            private static Plugin GetPveMode()
+            {
+                EnsurePveModePluginRef();
+                return _ins?.PveMode;
             }
 
             public static BasePlayer UpdateAndGetEventOwner()
@@ -4371,6 +4979,9 @@ namespace Oxide.Plugins
 
             public static void CreatePveModeZone(Vector3 position, BasePlayer externalOwner)
             {
+                Plugin pve = GetPveMode();
+                if (pve == null) return;
+
                 Dictionary<string, object> config = GetPveModeConfig();
 
                 HashSet<ulong> npcs = NpcSpawnManager.GetEventNpcNetIds();
@@ -4384,7 +4995,7 @@ namespace Oxide.Plugins
                 if (playerOwner == null)
                     playerOwner = externalOwner;
 
-                _ins.PveMode.Call("EventAddPveMode", _ins.Name, config, position, _ins._eventController.EventConfig.ZoneRadius, crates, npcs, bradleys, helicopters, turrets, _pveModeOwners, playerOwner);
+                pve.Call("EventAddPveMode", _ins.Name, config, position, _ins._eventController.EventConfig.ZoneRadius, crates, npcs, bradleys, helicopters, turrets, _pveModeOwners, playerOwner);
             }
 
             private static BasePlayer GetEventOwner()
@@ -4431,16 +5042,19 @@ namespace Oxide.Plugins
                 if (!IsPveModeReady())
                     return;
 
+                Plugin pve = GetPveMode();
+                if (pve == null) return;
+
                 _lastZoneDeleteTime = Time.realtimeSinceStartup;
-                _pveModeOwners = (HashSet<ulong>)_ins.PveMode.Call("GetEventOwners", _ins.Name);
+                _pveModeOwners = (HashSet<ulong>)pve.Call("GetEventOwners", _ins.Name);
 
                 if (_pveModeOwners == null)
                     _pveModeOwners = new HashSet<ulong>();
 
-                ulong userId = (ulong)_ins.PveMode.Call("GetEventOwner", _ins.Name);
+                ulong userId = (ulong)pve.Call("GetEventOwner", _ins.Name);
                 OnNewOwnerSet(userId);
 
-                _ins.PveMode.Call("EventRemovePveMode", _ins.Name, false);
+                pve.Call("EventRemovePveMode", _ins.Name, false);
             }
 
             private static void OnNewOwnerSet(ulong userId)
@@ -4464,8 +5078,9 @@ namespace Oxide.Plugins
 
             public static void OnEventEnd()
             {
-                if (IsPveModeReady())
-                    _ins.PveMode.Call("EventAddCooldown", _ins.Name, _pveModeOwners, _ins._config.SupportedPluginsConfig.PveMode.Cooldown);
+                Plugin pve = GetPveMode();
+                if (IsPveModeReady() && pve != null)
+                    pve.Call("EventAddCooldown", _ins.Name, _pveModeOwners, _ins._config.SupportedPluginsConfig.PveMode.Cooldown);
 
                 _lastZoneDeleteTime = 0;
                 _pveModeOwners.Clear();
@@ -4474,8 +5089,9 @@ namespace Oxide.Plugins
 
             public static bool IsPveModeBlockAction(BasePlayer player)
             {
-                if (IsPveModeReady())
-                    return _ins.PveMode.Call("CanActionEventNoMessage", _ins.Name, player) != null;
+                Plugin pve = GetPveMode();
+                if (IsPveModeReady() && pve != null)
+                    return pve.Call("CanActionEventNoMessage", _ins.Name, player) != null;
 
                 return false;
             }
@@ -4485,10 +5101,13 @@ namespace Oxide.Plugins
                 if (!IsPveModeReady())
                     return false;
 
+                Plugin pve = GetPveMode();
+                if (pve == null) return false;
+
                 BasePlayer eventOwner = GetEventOwner();
 
                 if ((_ins._config.SupportedPluginsConfig.PveMode.NoInteractIfCooldownAndNoOwners && eventOwner == null) || _ins._config.SupportedPluginsConfig.PveMode.NoDealDamageIfCooldownAndTeamOwner)
-                    return !(bool)_ins.PveMode.Call("CanTimeOwner", _ins.Name, (ulong)player.userID, _ins._config.SupportedPluginsConfig.PveMode.Cooldown);
+                    return !(bool)pve.Call("CanTimeOwner", _ins.Name, (ulong)player.userID, _ins._config.SupportedPluginsConfig.PveMode.Cooldown);
 
                 return false;
             }
@@ -4538,7 +5157,13 @@ namespace Oxide.Plugins
 
             public static void CreateMarker()
             {
-                if (!_ins._config.MarkerConfig.Enable) return;
+                if (!_ins._config.MarkerConfig.Enable)
+                {
+                    UnityEngine.Debug.Log("[ArmoredTrain] Marker Config disabled; skipping map markers.");
+                    return;
+                }
+
+                DeleteMapMarker();
 
                 GameObject gameObject = new GameObject
                 {
@@ -4554,6 +5179,8 @@ namespace Oxide.Plugins
                 CreateRadiusMarker(eventPosition);
                 CreateVendingMarker(eventPosition);
                 _updateCounter = ServerMgr.Instance.StartCoroutine(MarkerUpdateCounter());
+                UnityEngine.Debug.Log("[ArmoredTrain] Map markers at " + eventPosition
+                    + " ring=" + (_radiusMarker != null) + " shop=" + (_vendingMarker != null));
             }
 
             private void CreateRadiusMarker(Vector3 position)
@@ -4562,12 +5189,23 @@ namespace Oxide.Plugins
                     return;
 
                 _radiusMarker = GameManager.server.CreateEntity("assets/prefabs/tools/map/genericradiusmarker.prefab", position) as MapMarkerGenericRadius;
+                if (_radiusMarker == null)
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] genericradiusmarker CreateEntity returned null");
+                    return;
+                }
+
                 _radiusMarker.enableSaving = false;
+                _radiusMarker.EnableGlobalBroadcast(true);
                 _radiusMarker.Spawn();
-                _radiusMarker.radius = _ins._config.MarkerConfig.Radius;
+                _radiusMarker.radius = _ins._config.MarkerConfig.Radius > 0f ? _ins._config.MarkerConfig.Radius : 0.2f;
                 _radiusMarker.alpha = _ins._config.MarkerConfig.Alpha;
-                _radiusMarker.color1 = new Color(_ins._config.MarkerConfig.Color1.R, _ins._config.MarkerConfig.Color1.G, _ins._config.MarkerConfig.Color1.B);
-                _radiusMarker.color2 = new Color(_ins._config.MarkerConfig.Color2.R, _ins._config.MarkerConfig.Color2.G, _ins._config.MarkerConfig.Color2.B);
+                var c1 = _ins._config.MarkerConfig.Color1;
+                var c2 = _ins._config.MarkerConfig.Color2;
+                if (c1 != null) _radiusMarker.color1 = new Color(c1.R, c1.G, c1.B);
+                if (c2 != null) _radiusMarker.color2 = new Color(c2.R, c2.G, c2.B);
+                _radiusMarker.SendUpdate();
+                _radiusMarker.SendNetworkUpdate();
             }
 
             private void CreateVendingMarker(Vector3 position)
@@ -4576,17 +5214,30 @@ namespace Oxide.Plugins
                     return;
 
                 _vendingMarker = GameManager.server.CreateEntity("assets/prefabs/deployable/vendingmachine/vending_mapmarker.prefab", position) as VendingMachineMapMarker;
+                if (_vendingMarker == null)
+                {
+                    UnityEngine.Debug.LogWarning("[ArmoredTrain] vending_mapmarker CreateEntity returned null");
+                    return;
+                }
+
+                _vendingMarker.enableSaving = false;
+                _vendingMarker.EnableGlobalBroadcast(true);
                 _vendingMarker.Spawn();
                 _vendingMarker.markerShopName = $"{_ins._eventController.EventConfig.DisplayName} ({NotifyManager.GetTimeMessage(null, _ins._eventController.GetEventTime())})";
+                _vendingMarker.SendNetworkUpdate();
             }
 
             private IEnumerator MarkerUpdateCounter()
             {
                 while (EventLauncher.IsEventActive())
                 {
-                    Vector3 position = _ins._eventController.GetEventPosition();
-                    UpdateVendingMarker(position);
-                    UpdateRadiusMarker(position);
+                    Vector3 position = _ins._eventController != null
+                        ? _ins._eventController.GetEventPosition()
+                        : Vector3.zero;
+                    try { UpdateRadiusMarker(position); }
+                    catch (Exception ex) { UnityEngine.Debug.LogWarning("[ArmoredTrain] Radius marker update failed: " + ex.Message); }
+                    try { UpdateVendingMarker(position); }
+                    catch (Exception ex) { UnityEngine.Debug.LogWarning("[ArmoredTrain] Vending marker update failed: " + ex.Message); }
                     yield return CoroutineEx.waitForSeconds(1f);
                 }
             }
@@ -4617,7 +5268,10 @@ namespace Oxide.Plugins
             public static void DeleteMapMarker()
             {
                 if (_eventMapMarker != null)
+                {
                     _eventMapMarker.Delete();
+                    _eventMapMarker = null;
+                }
             }
 
             private void Delete()
@@ -4628,10 +5282,10 @@ namespace Oxide.Plugins
                 if (_vendingMarker.IsExists())
                     _vendingMarker.Kill();
 
-                if (_updateCounter != null)
+                if (_updateCounter != null && ServerMgr.Instance != null)
                     ServerMgr.Instance.StopCoroutine(_updateCounter);
 
-                Destroy(_eventMapMarker.gameObject);
+                Destroy(gameObject);
             }
         }
 
@@ -4692,6 +5346,20 @@ namespace Oxide.Plugins
                     UpdateClothesWeight(scientistNpc);
 
                 return scientistNpc;
+            }
+
+            /// <summary>Match Convoy: disable navmesh so mounted/driver NPCs stay in seats.</summary>
+            public static void PauseNavigator(ScientistNPC npc)
+            {
+                try
+                {
+                    var brain = npc?.Brain;
+                    var nav = brain?.Navigator;
+                    if (nav == null) return;
+                    nav.CanUseNavMesh = false;
+                    nav.Pause();
+                }
+                catch { }
             }
 
             private static ScientistNPC SpawnScientistNpc(NpcConfig npcConfig, Vector3 position, float healthFraction, bool isStationary, bool isPassive)
@@ -4813,7 +5481,9 @@ namespace Oxide.Plugins
                         { hasRaidWeapons = true; break; }
                     }
                 }
-                if (isPassive)
+                if (isPassive && isStationary)
+                    statesArray = new JArray("IdleState", "CombatStationaryState");
+                else if (isPassive)
                     statesArray = new JArray();
                 else if (isStationary)
                     statesArray = new JArray("IdleState", "CombatStationaryState");
@@ -4834,7 +5504,7 @@ namespace Oxide.Plugins
                     ["SenseRange"] = config.SenseRange,
                     ["ListenRange"] = config.SenseRange / 2f,
                     ["AttackRangeMultiplier"] = config.AttackRangeMultiplier,
-                    ["CheckVisionCone"] = true,
+                    ["CheckVisionCone"] = !isStationary,
                     ["VisionCone"] = config.VisionCone,
                     ["HostileTargetsOnly"] = false,
                     ["DamageScale"] = config.DamageScale,
@@ -4851,7 +5521,10 @@ namespace Oxide.Plugins
                     ["MemoryDuration"] = config.MemoryDuration,
                     ["States"] = statesArray,
                     ["IsRemoveCorpse"] = config.DeleteCorpse,
+                    // TrustPosition alone still snaps to nearby NavMesh (beside rails). Absolute keeps the
+                    // exact XYZ so train drivers/mounted NPCs can AttemptMount.
                     ["TrustPosition"] = true,
+                    ["CustomMapAbsolutePosition"] = isStationary,
                     ["DisplaySashTargetsOnly"] = config.DisplaySashTargetsOnly,
                     ["IgnoreSafeZonePlayers"] = config.IgnoreSafeZonePlayers,
                     ["IgnoreSleepingPlayers"] = config.IgnoreSleepingPlayers,
@@ -5147,6 +5820,17 @@ namespace Oxide.Plugins
 
             public static void SendMessageToAll(string langKey, params object[] args)
             {
+                // Always mirror event announcements to the server console (chat may be disabled in config).
+                try
+                {
+                    object[] logArgs = args != null ? (object[])args.Clone() : Array.Empty<object>();
+                    for (int i = 0; i < logArgs.Length; i++)
+                        if (logArgs[i] is int)
+                            logArgs[i] = GetTimeMessage(null, (int)logArgs[i]);
+                    _ins.Puts(ClearColorAndSize(GetMessage(langKey, null, logArgs)));
+                }
+                catch { }
+
                 foreach (BasePlayer player in BasePlayer.activePlayerList)
                     if (player != null)
                         SendMessageToPlayer(player, langKey, args);

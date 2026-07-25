@@ -5950,6 +5950,7 @@ namespace ShopHarmony
             CheckOnDuplicates();
 
             LoadEconomics();
+            PlayerDLCAPI = plugins.Find("PlayerDLCAPI");
 
             if (!_config.LoginImages)
                 Unsubscribe(nameof(OnPlayerConnected));
@@ -11701,6 +11702,9 @@ namespace ShopHarmony
 
         private bool CanAccesToItem(BasePlayer player, ShopItem item)
         {
+            // Resolve from AppDomain on each purchase check so harmony.reload
+            // PlayerDLCAPI cannot leave Shop holding a stale Cecil-renamed type.
+            PlayerDLCAPI = plugins.Find("PlayerDLCAPI");
             if (PlayerDLCAPI == null || !PlayerDLCAPI.IsLoaded) return true;
 
 			if (item.BypassOwnershipCheck) return true;

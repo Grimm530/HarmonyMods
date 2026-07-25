@@ -196,22 +196,39 @@ namespace AutoCodeLockHarmony
 
         public void OnEntityBuilt(Planner planner, GameObject obj)
         {
-            if (!obj)
+            if (!obj || !planner)
                 return;
 
             BaseEntity entity = obj.ToBaseEntity();
-            if (!planner || !entity || entity.OwnerID == 0UL)
+            BasePlayer player = planner.GetOwnerPlayer();
+            if (!entity || !player)
+                return;
+
+            TryAutoDeployForBuiltEntity(entity, player);
+        }
+
+        /// <summary>Primary build/deploy hook — OwnerID and player are already set.</summary>
+        public void OnEntityBuilt(BaseEntity entity, BasePlayer player)
+        {
+            if (!entity || !player)
+                return;
+
+            TryAutoDeployForBuiltEntity(entity, player);
+        }
+
+        private void TryAutoDeployForBuiltEntity(BaseEntity entity, BasePlayer player)
+        {
+            if (!entity || !player || entity.IsDestroyed)
                 return;
 
             if (entity is not (Door or BoxStorage or Locker or BuildingPrivlidge))
                 return;
 
-            BasePlayer player = planner.GetOwnerPlayer();
-            if (!player)
+            ulong userId = player.GetUserId();
+            if (userId == 0UL)
                 return;
 
-            ulong userId = player.GetUserId();
-            StoredData.PlayerData playerData = storedData.FindPlayerData(userId);
+            StoredData.PlayerData playerData = storedData.FindPlayerData(userId) ?? storedData.SetupPlayer(userId, Configuration);
             if (playerData == null)
                 return;
 
@@ -220,9 +237,14 @@ namespace AutoCodeLockHarmony
                 if (!player || !entity || entity.IsDestroyed)
                     return;
 
+                // OwnerID is often assigned after Planner.DoBuild returns; re-check next tick.
+                if (entity.OwnerID == 0UL)
+                    entity.OwnerID = userId;
+
                 if (entity is Door door)
                 {
-                    if (door.canTakeLock && player.HasPermission(PERMISSION_DEPLOY_DOOR) && playerData.IsSet(Options.DeployDoor))
+                    bool canLock = door.canTakeLock || door.HasSlot(BaseEntity.Slot.Lock);
+                    if (canLock && player.HasPermission(PERMISSION_DEPLOY_DOOR) && playerData.IsSet(Options.DeployDoor))
                         PlaceCodeLock(player, door, playerData);
 
                     if ((door.canTakeCloser || door.HasSlot(BaseEntity.Slot.UpperModifier)) &&
@@ -335,11 +357,16 @@ namespace AutoCodeLockHarmony
         {
             if (!(player.IsAdmin && Configuration.Other.AdminBypass))
             {
-                if (player.GetUserId() != entity.OwnerID)
+                ulong userId = player.GetUserId();
+                // OwnerID can lag one tick behind build; treat unset owner as the placing player.
+                if (entity.OwnerID != 0UL && entity.OwnerID != userId)
                 {
                     SendMessage(player, "Notification.NotLocked");
                     return false;
                 }
+
+                if (entity.OwnerID == 0UL)
+                    entity.OwnerID = userId;
 
                 object externalPlugins = Interface.CallHook("CanAutoLock", player);
                 if (externalPlugins != null)
@@ -373,33 +400,43 @@ namespace AutoCodeLockHarmony
             if (!CanDeployLock(player, entity))
                 return;
 
+            if (entity.GetSlot(BaseEntity.Slot.Lock) != null)
+                return;
+
             ulong userId = player.GetUserId();
+            bool freeLock = player.HasPermission(PERMISSION_NO_LOCK_NEEDED);
 
-            if (player.HasPermission(PERMISSION_NO_LOCK_NEEDED))
-            {
-                CodeLock codelock = GameManager.server.CreateEntity(GetPrefabForSkin(playerData.codeSkin)) as CodeLock;
-                if (!codelock)
-                    return;
-
-                codelock.OwnerID = userId;
-                codelock.SetParent(entity, entity.GetSlotAnchorName(BaseEntity.Slot.Lock));
-
-                if (player.HasPermission(PERMISSION_AUTO_LOCK) && playerData.IsSet(Options.AutoLock))
-                    SetCodeLock(codelock, player, playerData);
-
-                codelock.Spawn();
-                entity.SetSlot(BaseEntity.Slot.Lock, codelock);
-            }
-            else
+            if (!freeLock)
             {
                 Item lockItem = FindLockItem(player);
                 if (lockItem == null)
                     return;
 
-                Deployer deployer = lockItem.GetHeldEntity() as Deployer;
-                if (deployer)
-                    deployer.DoDeploy_Slot(deployer.GetDeployable(), player.eyes.HeadRay(), entity.net.ID);
+                lockItem.UseItem(1);
             }
+
+            string lockPrefab = GetPrefabForSkin(playerData.codeSkin);
+            CodeLock codelock = GameManager.server.CreateEntity(lockPrefab) as CodeLock;
+            if (!codelock)
+                return;
+
+            // Required for networked child entities (same as DoorCloser / RaidableBases lock create).
+            codelock.gameObject.Identity();
+            codelock.OwnerID = userId;
+
+            string anchor = entity.GetSlotAnchorName(BaseEntity.Slot.Lock);
+            codelock.SetParent(entity, anchor);
+            codelock.transform.localPosition = Vector3.zero;
+            codelock.transform.localRotation = Quaternion.identity;
+            codelock.OnDeployed(entity, player, null);
+
+            if (player.HasPermission(PERMISSION_AUTO_LOCK) && playerData.IsSet(Options.AutoLock))
+                SetCodeLock(codelock, player, playerData);
+
+            codelock.Spawn();
+            entity.SetSlot(BaseEntity.Slot.Lock, codelock);
+            codelock.SendNetworkUpdate();
+            entity.SendNetworkUpdate();
         }
 
         private static Item FindLockItem(BasePlayer player)
@@ -407,15 +444,28 @@ namespace AutoCodeLockHarmony
             if (player?.inventory == null)
                 return null;
 
-            Item item = player.inventory.FindItemByItemID(1159991980);
+            Item item = player.inventory.FindItemByItemID(1159991980); // lock.code
             if (item != null)
                 return item;
 
-            item = player.inventory.FindItemByItemID(1586884551);
+            item = player.inventory.FindItemByItemID(1586884551); // lock.code.a.pilot
             if (item != null)
                 return item;
 
-            return player.inventory.FindItemByItemID(-850982208);
+            item = player.inventory.FindItemByItemID(-850982208); // lock.key
+            if (item != null)
+                return item;
+
+            // Fallbacks if ID lookup is patched/intercepted by other mods.
+            item = player.inventory.FindItemByItemID("lock.code");
+            if (item != null)
+                return item;
+
+            item = player.inventory.FindItemByItemName("lock.code");
+            if (item != null)
+                return item;
+
+            return player.inventory.FindItemByItemName("Code Lock");
         }
 
         private string GetPrefabForSkin(CodeLockSkin skin)
@@ -432,6 +482,9 @@ namespace AutoCodeLockHarmony
 
         private void PlaceDoorCloser(BasePlayer player, BaseEntity entity, StoredData.PlayerData playerData)
         {
+            if (entity.GetSlot(BaseEntity.Slot.UpperModifier) != null)
+                return;
+
             const string DOOR_CLOSER_PREFAB = "assets/prefabs/misc/doorcloser/doorcloser.prefab";
 
             DoorCloser doorCloser = GameManager.server.CreateEntity(DOOR_CLOSER_PREFAB) as DoorCloser;
@@ -1042,6 +1095,7 @@ namespace AutoCodeLockHarmony
                                     else
                                         playerData.SetOption(option);
 
+                                    SaveData();
                                     CreateCodelockUI(player);
                                 }, $"{player.GetUserId()}.{option}");
                         });
@@ -1682,7 +1736,16 @@ namespace AutoCodeLockHarmony
                 if (!string.IsNullOrEmpty(dir))
                     Directory.CreateDirectory(dir);
 
-                File.WriteAllText(path, JsonConvert.SerializeObject(storedData, Formatting.Indented));
+                // Serialize player keys as strings — ulong Dictionary keys are unreliable across reload.
+                var dto = new StoredDataDto
+                {
+                    timeSaved = storedData.timeSaved,
+                    playerData = new Dictionary<string, StoredData.PlayerData>()
+                };
+                foreach (var kv in storedData.playerData)
+                    dto.playerData[kv.Key.ToString()] = kv.Value;
+
+                File.WriteAllText(path, JsonConvert.SerializeObject(dto, Formatting.Indented));
             }
             catch (Exception ex)
             {
@@ -1698,7 +1761,17 @@ namespace AutoCodeLockHarmony
 
                 if (File.Exists(path))
                 {
-                    storedData = JsonConvert.DeserializeObject<StoredData>(File.ReadAllText(path));
+                    var dto = JsonConvert.DeserializeObject<StoredDataDto>(File.ReadAllText(path));
+                    storedData = new StoredData { timeSaved = dto?.timeSaved ?? 0 };
+                    if (dto?.playerData != null)
+                    {
+                        foreach (var kv in dto.playerData)
+                        {
+                            if (ulong.TryParse(kv.Key, out ulong id) && kv.Value != null)
+                                storedData.playerData[id] = kv.Value;
+                        }
+                    }
+                    Debug.Log($"[AutoCodeLock] OK: Loaded {storedData.playerData.Count} player data entries");
                 }
                 else
                 {
@@ -1714,6 +1787,12 @@ namespace AutoCodeLockHarmony
 
             if (storedData?.playerData == null)
                 storedData = new StoredData();
+        }
+
+        private class StoredDataDto
+        {
+            public Dictionary<string, StoredData.PlayerData> playerData = new Dictionary<string, StoredData.PlayerData>();
+            public int timeSaved;
         }
 
         #endregion
@@ -1749,6 +1828,7 @@ namespace AutoCodeLockHarmony
                 ["Notification.SkinArgs"] = "Enter a skin type to select: {0}",
                 ["Notification.NoSkinPermission"] = "You do not have permission to use this skin",
                 ["Notification.SkinSet"] = "Preferred skin set to: {0}",
+                ["Notification.NoLockItem"] = "Codelock not deployed. Carry a codelock or grant autocodelock.nolockneed",
 
                 ["Label.Title"] = "AutoCodeLock",
                 ["Label.AutoLock"] = "Auto-lock",

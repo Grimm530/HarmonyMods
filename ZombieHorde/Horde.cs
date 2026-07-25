@@ -207,6 +207,10 @@ namespace ZombieHorde
                     hordeMember.SwitchToChase(baseEntity);
             }
 
+            // Also aggro the reporting member (interestedMember was skipped in the loop).
+            if (force && interestedMember != null && !interestedMember.IsDestroyed)
+                interestedMember.SwitchToChase(baseEntity);
+
             if (!force && Leader && !Leader.IsDestroyed && !Leader.HasTarget)
                 SetLeaderRoamTarget(baseEntity.transform.position);
         }

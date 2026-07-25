@@ -8,8 +8,15 @@
     <Description>Harmony mod: Convoy event (vanilla NPCs, kits, crates, map markers). Port of Convoy Oxide plugin; use /convoystart and /convoystop.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
+    <Publicize Include="Assembly-CSharp" IncludeVirtualMembers="true" IncludeCompilerGeneratedMembers="true" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Rust.Data">
       <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Global">
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Harmony">
       <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>

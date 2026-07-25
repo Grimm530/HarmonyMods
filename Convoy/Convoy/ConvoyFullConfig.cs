@@ -829,7 +829,7 @@ namespace Convoy
     public class ConvoySupportedPluginsConfig
     {
         [JsonProperty("PVE Mode Setting")]
-        public object PveMode { get; set; }
+        public ConvoyPveModeConfig PveMode { get; set; } = new ConvoyPveModeConfig();
 
         [JsonProperty("Economy Setting")]
         public object EconomicsConfig { get; set; }
@@ -845,5 +845,90 @@ namespace Convoy
 
         [JsonProperty("DiscordMessages setting")]
         public object DiscordMessagesConfig { get; set; }
+    }
+
+    /// <summary>Oxide Convoy SupportedPluginsConfig.PveModeConfig — drives shared PveMode Harmony mod.</summary>
+    public class ConvoyPveModeConfig
+    {
+        [JsonProperty("Use the PVE mode of the plugin? [true/false]")]
+        public bool Enable { get; set; }
+
+        [JsonProperty("The owner will immediately be the one who stopped the convoy")]
+        public bool OwnerIsStopper { get; set; }
+
+        [JsonProperty("If a player has a cooldown and the event has NO OWNERS, then he will not be able to interact with the event? [true/false]")]
+        public bool NoInteractIfCooldownAndNoOwners { get; set; }
+
+        [JsonProperty("If a player has a cooldown, and the event HAS AN OWNER, then he will not be able to interact with the event, even if he is on a team with the owner? [true/false]")]
+        public bool NoDealDamageIfCooldownAndTeamOwner { get; set; }
+
+        [JsonProperty("Allow only the owner or his teammates to loot crates? [true/false]")]
+        public bool CanLootOnlyOwner { get; set; }
+
+        [JsonProperty("Display the name of the event owner on a marker on the map? [true/false]")]
+        public bool ShowEventOwnerNameOnMap { get; set; }
+
+        [JsonProperty("The amount of damage that the player has to do to become the Event Owner")]
+        public float Damage { get; set; } = 500f;
+
+        [JsonProperty("Damage coefficients for calculate to become the Event Owner.")]
+        public Dictionary<string, float> ScaleDamage { get; set; } = new Dictionary<string, float>
+        {
+            ["Npc"] = 1f,
+            ["Bradley"] = 2f,
+            ["Helicopter"] = 2f,
+            ["Turret"] = 1f
+        };
+
+        [JsonProperty("Can the non-owner of the event loot the crates? [true/false]")]
+        public bool LootCrate { get; set; }
+
+        [JsonProperty("Can the non-owner of the event hack locked crates? [true/false]")]
+        public bool HackCrate { get; set; }
+
+        [JsonProperty("Can the non-owner of the event loot NPC corpses? [true/false]")]
+        public bool LootNpc { get; set; }
+
+        [JsonProperty("Can an Npc attack a non-owner of the event? [true/false]")]
+        public bool TargetNpc { get; set; } = true;
+
+        [JsonProperty("Can Bradley attack a non-owner of the event? [true/false]")]
+        public bool TargetTank { get; set; } = true;
+
+        [JsonProperty("Can Turret attack a non-owner of the event? [true/false]")]
+        public bool TargetTurret { get; set; } = true;
+
+        [JsonProperty("Can Helicopter attack a non-owner of the event? [true/false]")]
+        public bool TargetHeli { get; set; } = true;
+
+        [JsonProperty("Can the non-owner of the event do damage to Bradley? [true/false]")]
+        public bool DamageTank { get; set; } = true;
+
+        [JsonProperty("Can the non-owner of the event deal damage to the NPC? [true/false]")]
+        public bool DamageNpc { get; set; } = true;
+
+        [JsonProperty("Can the non-owner of the event do damage to Helicopter? [true/false]")]
+        public bool DamageHeli { get; set; } = true;
+
+        [JsonProperty("Can the non-owner of the event do damage to Turret? [true/false]")]
+        public bool DamageTurret { get; set; } = true;
+
+        [JsonProperty("Allow the non-owner of the event to enter the event zone? [true/false]")]
+        public bool CanEnter { get; set; } = true;
+
+        [JsonProperty("Allow a player who has an active cooldown of the Event Owner to enter the event zone? [true/false]")]
+        public bool CanEnterCooldownPlayer { get; set; } = true;
+
+        [JsonProperty("The time that the Event Owner may not be inside the event zone [sec.]")]
+        public int TimeExitOwner { get; set; } = 300;
+
+        [JsonProperty("The time until the end of Event Owner status when it is necessary to warn the player [sec.]")]
+        public int AlertTime { get; set; } = 60;
+
+        [JsonProperty("Prevent the actions of the RestoreUponDeath plugin in the event zone? [true/false]")]
+        public bool RestoreUponDeath { get; set; }
+
+        [JsonProperty("The time that the player can`t become the Event Owner, after the end of the event and the player was its owner [sec.]")]
+        public double Cooldown { get; set; } = 4000d;
     }
 }

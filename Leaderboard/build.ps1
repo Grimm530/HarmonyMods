@@ -1,5 +1,5 @@
 # Build script for Leaderboard Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\Leaderboard.dll
+# Output: <workspace>\HarmonyMods\Leaderboard.dll
 
 Write-Host "Building Leaderboard..." -ForegroundColor Cyan
 
@@ -7,7 +7,9 @@ $projectPath = Join-Path $PSScriptRoot "Leaderboard.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    # Workspace root is three levels up from .cursor/HarmonyMods/Leaderboard
+    $workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $workspaceRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

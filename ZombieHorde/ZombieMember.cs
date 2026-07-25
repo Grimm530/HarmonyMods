@@ -29,7 +29,7 @@ namespace ZombieHorde
         private float lastThrowTime;
         private bool lightsOn;
 
-        public bool RecentlySetDestination => Time.time - lastSetDestinationOverride < 5f;
+        public bool RecentlySetDestination => Time.time - lastSetDestinationOverride < 0.4f;
 
         public bool IsDestroyed => this == null || Npc == null || Npc.IsDestroyed;
 
@@ -44,6 +44,9 @@ namespace ZombieHorde
         {
             get
             {
+                // GrimmNPC owns targeting via CustomScientistNpc.CurrentTarget (not Events.Memory).
+                BaseEntity grimm = GrimmNpcBridge.GetCombatTarget(Npc);
+                if (grimm != null) return grimm;
                 try
                 {
                     if (Brain?.Events?.Memory?.Entity == null) return null;
@@ -53,6 +56,7 @@ namespace ZombieHorde
             }
             set
             {
+                GrimmNpcBridge.SetCombatTarget(Npc, value);
                 try
                 {
                     if (Brain?.Events?.Memory?.Entity == null) return;
@@ -214,10 +218,14 @@ namespace ZombieHorde
 
         public void SetKnown(BaseEntity entity)
         {
-            if (entity == null || Brain?.Senses?.Memory == null) return;
+            if (entity == null || Npc == null) return;
             try
             {
-                Brain.Senses.Memory.SetKnown(entity, Npc, null);
+                MethodInfo setKnown = Npc.GetType().GetMethod("SetKnown", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(BaseEntity) }, null);
+                if (setKnown != null)
+                    setKnown.Invoke(Npc, new object[] { entity });
+                else if (Brain?.Senses?.Memory != null)
+                    Brain.Senses.Memory.SetKnown(entity, Npc, Brain.Senses);
             }
             catch { }
         }
@@ -227,8 +235,7 @@ namespace ZombieHorde
             if (entity == null || Brain == null) return;
             try
             {
-                SetKnown(entity);
-                Brain.Events.Memory.Entity.Set(entity, Brain.Events.CurrentInputMemorySlot);
+                CurrentTarget = entity;
                 Brain.SwitchToState(AIState.Chase, 1);
             }
             catch { }
@@ -278,7 +285,10 @@ namespace ZombieHorde
             recentAttacker = initiator as BasePlayer;
 
             if ((initiator is BasePlayer player && CanTargetBasePlayer(player)) || (initiator is BaseNpc && CanTargetEntity(initiator)))
-                Horde?.RegisterInterestInTarget(this, initiator, isHidingInside || unreachableLastFrame);
+            {
+                // Always force live chase on damage — static roam-to-last-known felt like laggy pathing.
+                Horde?.RegisterInterestInTarget(this, initiator, true);
+            }
         }
 
         public void OnHurtNotify(HitInfo info)

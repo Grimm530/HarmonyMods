@@ -65,9 +65,9 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 | Item.MoveToContainer | Prefix/Postfix | **LootItems** when you take items from a crate/box into your inventory (manual looting) |
 | WorldItem.Pickup | Prefix/Postfix | **LootItems** when a world item is picked up (e.g. InstantBarrel barrel loot, ground pickups) |
 | LootContainer.DropItems | Prefix/Postfix | **LootItems** when barrel (etc.) is broken → items credited to attacker |
-| BaseCombatEntity.Hurt(HitInfo) | Postfix | **PvP hit tracking** → BodyHits (head, chest, stomach, arm, leg) for hitrate charts |
+| BaseCombatEntity.Hurt(HitInfo) | Postfix | **Hitrate BodyHits** → head/chest/stomach/arm/leg (PvP always; NPC BasePlayers when `CountNpcHitsForHitrate`) |
 | TimedExplosive.Explode(Vector3) | Postfix | **ExplosiveUsed** (satchel, C4, beancan, F1, molotov, flashbang, survey charge, rockets, GL HE, MLRS) when they explode → raid stats |
-| BasePlayer.ServerInit | Postfix | Connect → play time start |
+| BasePlayer.PlayerInit | Postfix | Connect → play time start (Oxide OnPlayerConnected equivalent; not ServerInit) |
 | BasePlayer.OnDestroy | Prefix | Disconnect → play time end, save |
 | Chat.say | Prefix | `/lb`, `/leaderboard`, `/stats` → open UI |
 
@@ -88,7 +88,7 @@ Each in-game category is filled from specific **LootType**s and **recording meth
 | **Misc** | Kill | **BaseCombatEntity.Die** → animal/NPC/heli/Bradley kills (bear, boar, wolf, helicopter, bradleyapc, etc.) |
 | **Farming** | Gather | **BasePlayer.GiveItem** (ResourceHarvested) → hemp, berries, potato, cloth, mushroom, corn, pumpkin, flowers, wheat |
 | **Construction / Upgrade** | Construction, Upgrade | **BaseEntity.OnPlaced** → buildings; **BuildingBlock.SetGrade** → upgrades (wood, stone, metal, armored) |
-| **Kills / Deaths / PvP** | Kill, Death, BodyHits | **BasePlayer.Die** → deaths + killer’s kills/max_distance; **BaseCombatEntity.Hurt** → PvP body hits (hitrate) |
+| **Kills / Deaths / Hitrate** | Kill, Death, BodyHits | **BasePlayer.Die** → deaths + killer’s kills/max_distance; **BaseCombatEntity.Hurt** → body hits (PvP + optional NPC) |
 
 So: **Resources** and **Farming** both use **Gather** (different keys); **Looted** uses **Crate** + **LootItems**; **Fired** uses **ShotFired**; **Raid** uses **ExplosiveUsed** (and some **ShotFired** in UI). All of these are produced by the patches above.
 
@@ -104,12 +104,18 @@ cd .cursor\HarmonyMods\Leaderboard
 .\build.ps1
 ```
 
-Output: `D:\!RustServer\HarmonyMods\Leaderboard.dll`. Load: `harmony.load Leaderboard`.
+Output: workspace `HarmonyMods/Leaderboard.dll`. Load: `harmony.load Leaderboard`.
 
-## PvP & hitrate
+## Hitrate (BodyHits)
 
-- **Kills/deaths:** Recorded when a player dies (Patch_BasePlayer_Die). Charts update on kill/death.
-- **Hit damage / hitrate:** When you shoot or melee another player, each hit is recorded by body part (Patch_BaseCombatEntity.Hurt). The **Hitrate** tab shows your PvP hit distribution (HEAD, CHEST, STOMACH, ARM, LEG) as a percentage of your total hits on players.
+- **Targets:** Real players always count. NPC `BasePlayer` targets (scientists, tunnel/underwater dwellers, custom NPCs) count when config `CountNpcHitsForHitrate` is `true` (default). Animals/heli/Bradley are not body-hit targets.
+- **Oxide parity:** UltimateLeaderboard gated NPC body hits behind `Count NPC kills as player kills` (default **false**). This mod uses a dedicated flag defaulting to **true**.
+- **Recording:** `BaseCombatEntity.Hurt` → BodyHits keys `head` / `chest` / `stomach` / `arm` / `leg`.
+
+## Playtime
+
+- Tracked inside this mod (connect → disconnect session seconds). **Does not require PlaytimeTracker.**
+- Connect hook is `BasePlayer.PlayerInit` (same as Shop / AutoCodeLock). On mod load, already-online players are registered so playtime works after `harmony.load Leaderboard`.
 
 ## Compatibility (e.g. BetterBackpack, InstantBarrel)
 

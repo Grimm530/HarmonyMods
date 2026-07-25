@@ -10,7 +10,13 @@ namespace Convoy
     {
         public static bool IsExists(this BaseNetworkable entity) => entity != null && !entity.IsDestroyed;
 
-        public static bool IsRealPlayer(this BasePlayer player) => player != null && player.UserIDString != null && player.UserIDString.Length > 0 && ulong.TryParse(player.UserIDString, out _);
+        /// <summary>Steam player check (EncryptedValue-safe). Oxide Convoy parity: userID.IsSteamId().</summary>
+        public static bool IsRealPlayer(this BasePlayer player)
+        {
+            if (player == null) return false;
+            // Cast EncryptedValue<ulong> before threshold check (Harmony_Mod_Execution_Framework §14).
+            return ((ulong)player.userID) >= 76561197960265728UL;
+        }
 
         /// <summary>Parse string like "(x, y, z)" or "x, y, z" to Vector3.</summary>
         public static Vector3 ToVector3(this string s)

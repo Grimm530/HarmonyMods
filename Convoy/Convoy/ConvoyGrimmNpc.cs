@@ -56,7 +56,7 @@ namespace Convoy
                 _grimmType = FindGrimmNpcType();
                 if (_grimmType == null)
                 {
-                    UnityEngine.Debug.LogWarning("[Convoy] GrimmNPC type not found. Load GrimmNPC before Convoy (harmony.load GrimmNPC).");
+                    UnityEngine.Debug.LogWarning("[Convoy] GrimmNPC type not found. Load 0GrimmNPC before Convoy (harmony.load 0GrimmNPC).");
                     return;
                 }
 
@@ -151,8 +151,9 @@ namespace Convoy
                     || name.StartsWith("Convoy_", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // HarmonyLoader renames to GrimmNPC_<guid>
-                if (!name.StartsWith("GrimmNPC", StringComparison.OrdinalIgnoreCase)
+                // HarmonyLoader renames to 0GrimmNPC_<guid> (legacy GrimmNPC_<guid> also matched)
+                if (!name.StartsWith("0GrimmNPC", StringComparison.OrdinalIgnoreCase)
+                    && !name.StartsWith("GrimmNPC", StringComparison.OrdinalIgnoreCase)
                     && name.IndexOf("GrimmNPC", StringComparison.OrdinalIgnoreCase) < 0)
                 {
                     // Still try GetType — assembly name may not contain GrimmNPC if renamed oddly
@@ -439,6 +440,40 @@ namespace Convoy
             catch (Exception ex)
             {
                 UnityEngine.Debug.LogWarning("[Convoy] EnableGroundCombat: " + ex.Message);
+            }
+        }
+
+        /// <summary>Immediate damage-aggro into GrimmNPC CurrentTarget + senses memory.</summary>
+        public static void ForceAggro(ScientistNPC npc, BasePlayer attacker)
+        {
+            if (npc == null || npc.IsDestroyed || attacker == null || attacker.IsDestroyed) return;
+            try
+            {
+                Type t = npc.GetType();
+                MethodInfo setKnown = t.GetMethod("SetKnown", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(BaseEntity) }, null);
+                setKnown?.Invoke(npc, new object[] { attacker });
+
+                PropertyInfo currentTarget = t.GetProperty("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
+                currentTarget?.SetValue(npc, attacker);
+
+                if (npc.Brain != null)
+                {
+                    var brain = npc.Brain;
+                    var sleepField = brain.GetType().GetField("sleeping", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                        ?? typeof(BaseAIBrain).GetField("sleeping", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    sleepField?.SetValue(brain, false);
+                    brain.Navigator?.Resume();
+                    if (brain.Senses?.Memory != null)
+                        brain.Senses.Memory.SetKnown(attacker, npc, brain.Senses);
+                }
+
+                npc.IsDormant = false;
+                if (npc.NavAgent != null)
+                    npc.NavAgent.enabled = true;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[Convoy] ForceAggro: " + ex.Message);
             }
         }
 

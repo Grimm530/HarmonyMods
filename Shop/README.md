@@ -15,12 +15,14 @@ Oxide-free Harmony port of **Shop 2.4.201** (Grimm530 / Mevent). Exact logic rep
 
 1. **0Permissions.dll**
 2. **Economics.dll** (balance Deposit / Withdraw / Balance hooks)
-3. **Kits.dll** (optional — kit item grants via `GiveKit`)
-4. **Shop.dll**
+3. **PlayerDLCAPI.dll** (strongly recommended for paid item/skin ownership)
+4. **Kits.dll** (optional — kit item grants via `GiveKit`)
+5. **Shop.dll**
 
 ```text
 harmony.load 0Permissions
 harmony.load Economics
+harmony.load PlayerDLCAPI
 harmony.load Kits
 harmony.load Shop
 ```
@@ -76,4 +78,7 @@ Copies only `Shop.dll` to `HarmonyMods/`.
 
 - CUI buttons are rewritten to `cui.endtest SHOP …` (same pattern as Kits).
 - Custom vending machines use `PlayerLoot.StartLootingEntity` prefix.
-- Optional Oxide plugins (ServerPanel, Notify, NoEscape, Duel, PlayerDLCAPI) are stubs unless a Harmony equivalent is wired later.
+- PlayerDLCAPI binds through `PlayerDlcApi_ApiType` and is refreshed on each
+  purchase ownership check, including after `harmony.reload PlayerDLCAPI`.
+- Other optional Oxide plugins (ServerPanel, Notify, NoEscape, Duel) remain
+  stubs unless a Harmony equivalent is wired later.

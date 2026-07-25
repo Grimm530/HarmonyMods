@@ -14,9 +14,11 @@ compatibility shim + Harmony patches drive it instead of the Oxide runtime.
 
 ## Requirements / Dependencies
 
-- **GrimmNPC** (hard requirement for NPCs). `NpcSpawn` calls are routed to GrimmNPC by reflection
-  (`ArmoredTrainGrimmNpc` / `NpcSpawnBridge`), mirroring the Convoy port. If GrimmNPC is missing the
+- **0GrimmNPC** (hard requirement for NPCs; DLL name). `NpcSpawn` calls are routed to GrimmNPC by reflection
+  (`ArmoredTrainGrimmNpc` / `NpcSpawnBridge`), mirroring the Convoy port. If 0GrimmNPC is missing the
   event still runs but train NPCs will not spawn.
+- **0PveMode** (optional, for `"PVE Mode Setting"`). Resolved lazily via AppDomain `PveMode_ApiType`;
+  ArmoredTrain registers a ready callback so it still binds if it loads before `0PveMode`.
 - **Krafs.Publicizer** (build-time only) publicizes `Assembly-CSharp` so the original plugin's use of
   internal game fields/methods (e.g. `TrainEngine.engineForce`, `HackableLockedCrate.hackSeconds`)
   compiles unchanged. This is a compile dependency only; nothing extra ships.

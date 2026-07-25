@@ -3,7 +3,7 @@ using HarmonyLib;
 namespace Convoy.Patches
 {
     /// <summary>
-    /// When the convoy event is locked to a team, only that team can start hacking convoy hackable locked crates.
+    /// Hack gates: PveMode owner rules when enabled; otherwise Convoy LockedTeamId fallback.
     /// </summary>
     [HarmonyPatch(typeof(HackableLockedCrate), nameof(HackableLockedCrate.RPC_Hack), new[] { typeof(BaseEntity.RPCMessage) })]
     public static class Patch_HackableLockedCrate_RPC_Hack
@@ -14,6 +14,15 @@ namespace Convoy.Patches
             if (__instance?.net == null || msg.player == null) return true;
             ulong netId = (ulong)__instance.net.ID.Value;
             if (!ConvoyState.IsConvoyEntity(netId)) return true;
+
+            if (PveModeManager.IsPveModeReady())
+            {
+                if (PveModeManager.IsPveModeBlockInteractByCooldown(msg.player)
+                    || PveModeManager.IsPveModeBlockNoOwnerLooting(msg.player)
+                    || PveModeManager.IsPveModDefaultBlockAction(msg.player))
+                    return false;
+                return true;
+            }
 
             var mod = ConvoyMod.Instance;
             if (mod?.Config?.LootSettings != null)

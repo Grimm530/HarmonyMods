@@ -160,6 +160,12 @@ public class TCUpgradeConfig
 			["TCUpgrade.vip"] = 1f
 		};
 
+		[JsonProperty("Item Category Filter (Resources, ResourcesAndComponents, All)")]
+		public string ItemCategoryFilter = "Resources";
+
+		[JsonProperty("Wallpaper Damage")]
+		public bool WallpaperDamage = true;
+
 		[JsonProperty("Allow Items in TC Inventory")]
 		public Dictionary<string, bool> AllowedItemsConfig = new Dictionary<string, bool>
 		{

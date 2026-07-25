@@ -73,7 +73,10 @@ namespace Convoy
             ConvoyGrimmNpc.ClearAll();
             ConvoyState.Clear();
             if (wasActive)
+            {
+                PveModeManager.OnEventEnd();
                 ConvoyNotifyStub.SendMessageToAll("Finish", ConvoyMod.Instance?.FullConfig?.Prefix ?? "[Convoy]");
+            }
         }
 
         public static EventController Active => _controller;
@@ -256,6 +259,7 @@ namespace Convoy
         private int _eventTime;
         private int _aggressiveTime;
         private int _stopTime;
+        private BasePlayer _lastAttacker;
 
         private float _netTimer;
         private BaseEntity _radiusMarker;
@@ -446,6 +450,8 @@ namespace Convoy
                 turret.SetFlag(BaseEntity.Flags.Busy, true);
                 turret.SetFlag(BaseEntity.Flags.Locked, true);
                 if (tc.TargetLossRange > 0) turret.sightRange = tc.TargetLossRange;
+                // Oxide TurretOptimizer: players-only targeting (prevents shooting Bradley / convoy vehicles).
+                ConvoyTurretOptimizer.Attach(turret, tc.TargetDetectionRange == 0 ? 30f : tc.TargetDetectionRange);
                 turret.SendNetworkUpdate();
                 _turrets.Add(turret);
                 if (turret.net != null) ConvoyState.RegisterConvoyCrate((ulong)turret.net.ID.Value);
@@ -565,8 +571,9 @@ namespace Convoy
                             if (mp == null || mp.mountable == null) continue;
                             var npc = ConvoyGrimmNpc.SpawnNpc(npcCfg, parent.transform.position + Vector3.up, parent.transform.rotation, mounted: true);
                             if (npc == null) continue;
-                            ConfigureConvoySeat(mp.mountable, vehicle);
+                            // Oxide: native vehicle seats are not marked isMobile / ignoreVehicleParent
                             mp.mountable.AttemptMount(npc, false);
+                            SyncMountedNpcLook(npc, mp.mountable);
                             AddNpcSlot(npc, mp.mountable, parent, vc.NpcPresetName, npcCfg, allowDismount: true);
                             count++;
                             if (count >= vc.NumberOfNpc) break;
@@ -603,6 +610,7 @@ namespace Convoy
                 {
                     ConfigureConvoySeat(seat, parent as BaseVehicle);
                     seat.AttemptMount(npc, false);
+                    SyncMountedNpcLook(npc, seat);
                 }
                 AddNpcSlot(npc, seat, parent, preset, poseCfg, allowDismount: pose.IsDismount);
             }
@@ -636,6 +644,40 @@ namespace Convoy
                     seat.dismountPositions = vehicle.dismountPositions;
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Oxide Convoy parity: NPC network facing uses viewAngles (world euler). When the vehicle
+        /// transform is driven kinematically, those angles go stale and NPCs appear to face backwards.
+        /// Re-apply mountAnchor rotation while passive (when aggressive, AI aims at targets).
+        /// </summary>
+        private static void SyncMountedNpcLook(ScientistNPC npc, BaseMountable seat)
+        {
+            if (npc == null || npc.IsDestroyed || seat == null || seat.IsDestroyed) return;
+            if (!npc.isMounted) return;
+            try
+            {
+                Transform anchor = seat.mountAnchor != null ? seat.mountAnchor : seat.transform;
+                Quaternion rot = anchor.rotation;
+                npc.OverrideViewAngles(rot.eulerAngles);
+                npc.ServerRotation = rot;
+                if (npc.eyes != null)
+                    npc.eyes.NetworkUpdate(rot);
+                npc.SendNetworkUpdate();
+            }
+            catch { }
+        }
+
+        private void UpdateAllMountedNpcLookRotation()
+        {
+            foreach (var slot in _npcSlots)
+            {
+                if (slot == null || slot.IsRoaming) continue;
+                var npc = slot.Npc;
+                if (npc == null || npc.IsDestroyed || !npc.isMounted) continue;
+                var seat = slot.Seat != null && !slot.Seat.IsDestroyed ? slot.Seat : npc.GetMounted();
+                SyncMountedNpcLook(npc, seat);
+            }
         }
 
         // -------- Movement --------
@@ -675,6 +717,9 @@ namespace Convoy
                     if (v?.Entity != null && !v.Entity.IsDestroyed)
                         v.Entity.SendNetworkUpdate();
                 }
+                // Keep mounted NPC facing aligned with seat while the convoy turns on rails.
+                if (!IsAggressive())
+                    UpdateAllMountedNpcLookRotation();
             }
         }
 
@@ -700,6 +745,10 @@ namespace Convoy
 
                 UpdateMarkers();
                 UpdateConvoyState();
+
+                // Oxide: UpdateAllMountedNpcLookRotation when not aggressive
+                if (!IsAggressive())
+                    UpdateAllMountedNpcLookRotation();
 
                 var timeNotify = Cfg?.NotifyConfig?.TimeNotifications;
                 if (timeNotify != null && timeNotify.Contains(_eventTime))
@@ -736,6 +785,9 @@ namespace Convoy
         {
             if (!_fullySpawned) return;
 
+            if (attacker != null && !(attacker is NPCPlayer))
+                _lastAttacker = attacker;
+
             // Announce only when transitioning into stop/aggro (Oxide parity — avoid spam every hit).
             var bc = Cfg?.BehaviorConfig;
             bool shouldAnnounce = attacker != null
@@ -745,6 +797,10 @@ namespace Convoy
             SwitchMoving(false);
             string who = attacker != null ? attacker.displayName : "?";
             UnityEngine.Debug.Log("[Convoy] Attacked by " + who + " — convoy stopped, NPCs dismounting.");
+
+            // Immediate aggro for any NPC still mounted (CombatStationary) before respawn finishes.
+            if (_lastAttacker != null)
+                AggroAllNpc(_lastAttacker);
 
             if (shouldAnnounce)
             {
@@ -784,6 +840,7 @@ namespace Convoy
                 if (_isStopped)
                 {
                     MountAllNpc();
+                    ConvoyZoneController.TryDeleteZone();
                     _isStopped = false;
                     _stopTime = 0;
                     _moving = true;
@@ -794,11 +851,27 @@ namespace Convoy
             {
                 if (!_isStopped)
                 {
+                    // Mark stopped BEFORE dismount/respawn so a RoamAllNpc failure cannot leave the convoy driving.
                     _stopTime = bc?.StopTime ?? 80;
                     if (_stopTime <= 0) _stopTime = 80;
-                    RoamAllNpc();
                     _isStopped = true;
                     _moving = false;
+                    UpdateConvoyState();
+                    try
+                    {
+                        RoamAllNpc();
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogWarning("[Convoy] RoamAllNpc failed: " + ex.Message);
+                    }
+                    // Oxide ZoneController.CreateZone — border spheres + optional PveMode ownership zone.
+                    BasePlayer zoneOwner = null;
+                    var pve = Cfg?.SupportedPluginsConfig?.PveMode;
+                    if (pve != null && pve.Enable && pve.OwnerIsStopper && _lastAttacker != null
+                        && !PveModeManager.IsPlayerHaveCooldown((ulong)_lastAttacker.userID))
+                        zoneOwner = _lastAttacker;
+                    ConvoyZoneController.CreateZone(zoneOwner);
                 }
                 else
                 {
@@ -811,21 +884,28 @@ namespace Convoy
             UpdateConvoyState();
         }
 
-        /// <summary>Dismount NPCs onto nearby ground and enable combat AI (Oxide RoamAllNpc equivalent).</summary>
+        /// <summary>
+        /// Oxide RoamAllNpc parity: kill mounted NPCs and respawn them on foot with full Chase/Combat states.
+        /// In-place DismountPlayer left them mounted / CombatStationary-only with ChaseRange=0.
+        /// </summary>
         private void RoamAllNpc()
         {
             Convoy.Patches.ConvoyDismountGuard.AllowCombatDismount = true;
             try
             {
-                foreach (var slot in _npcSlots)
+                for (int i = 0; i < _npcSlots.Count; i++)
                 {
+                    NpcSlot slot = _npcSlots[i];
                     if (slot == null || slot.IsRoaming || !slot.AllowDismount) continue;
-                    var npc = slot.Npc;
+                    ScientistNPC npc = slot.Npc;
                     if (npc == null || npc.IsDestroyed) continue;
 
                     Vector3 from = npc.transform.position;
                     if (!TryFindGroundNear(from, out Vector3 ground))
-                        continue;
+                        ground = from + Vector3.up * 0.35f;
+
+                    float healthFrac = Mathf.Clamp01(npc.healthFraction);
+                    Quaternion rot = npc.transform.rotation;
 
                     try
                     {
@@ -836,16 +916,70 @@ namespace Convoy
                     }
                     catch { }
 
-                    npc.MovePosition(ground);
-                    npc.transform.position = ground;
-                    npc.ServerPosition = ground;
-                    ConvoyGrimmNpc.EnableGroundCombat(npc, slot.Config);
+                    if (npc.net != null)
+                    {
+                        ulong oldId = (ulong)npc.net.ID.Value;
+                        ConvoyState.UnregisterNpc(oldId);
+                        ConvoyGrimmNpc.Unregister(oldId);
+                    }
+
+                    try { npc.Kill(); } catch { }
+
+                    ScientistNPC replacement = ConvoyGrimmNpc.SpawnNpc(slot.Config, ground, rot, mounted: false);
+                    if (replacement == null)
+                    {
+                        // Spawn failed — if Kill left us with no NPC, log; do not leave slot pointing at destroyed entity.
+                        UnityEngine.Debug.LogWarning("[Convoy] Failed to respawn dismounted NPC for preset " + slot.PresetName);
+                        if (npc != null && !npc.IsDestroyed)
+                        {
+                            try
+                            {
+                                npc.MovePosition(ground);
+                                npc.transform.position = ground;
+                                npc.ServerPosition = ground;
+                                ConvoyGrimmNpc.EnableGroundCombat(npc, slot.Config);
+                                slot.IsRoaming = true;
+                                if (_lastAttacker != null && !_lastAttacker.IsDestroyed)
+                                    ConvoyGrimmNpc.ForceAggro(npc, _lastAttacker);
+                            }
+                            catch { slot.Npc = null; }
+                        }
+                        else
+                            slot.Npc = null;
+                        continue;
+                    }
+
+                    try
+                    {
+                        float maxHp = replacement.MaxHealth();
+                        if (maxHp > 0f)
+                            replacement.SetHealth(maxHp * healthFrac);
+                    }
+                    catch { }
+
+                    slot.Npc = replacement;
                     slot.IsRoaming = true;
+                    if (replacement.net != null)
+                        ConvoyState.RegisterNpcPreset((ulong)replacement.net.ID.Value, slot.PresetName);
+
+                    if (_lastAttacker != null && !_lastAttacker.IsDestroyed)
+                        ConvoyGrimmNpc.ForceAggro(replacement, _lastAttacker);
                 }
             }
             finally
             {
                 Convoy.Patches.ConvoyDismountGuard.AllowCombatDismount = false;
+            }
+        }
+
+        private void AggroAllNpc(BasePlayer attacker)
+        {
+            if (attacker == null || attacker.IsDestroyed) return;
+            for (int i = 0; i < _npcSlots.Count; i++)
+            {
+                NpcSlot slot = _npcSlots[i];
+                if (slot?.Npc == null || slot.Npc.IsDestroyed) continue;
+                ConvoyGrimmNpc.ForceAggro(slot.Npc, attacker);
             }
         }
 
@@ -881,6 +1015,7 @@ namespace Convoy
 
                 ConfigureConvoySeat(slot.Seat, slot.Vehicle as BaseVehicle);
                 slot.Seat.AttemptMount(npc, false);
+                SyncMountedNpcLook(npc, slot.Seat);
                 slot.IsRoaming = false;
             }
         }
@@ -997,7 +1132,15 @@ namespace Convoy
             {
                 _vendingMarker.transform.position = pos;
                 var vm = _vendingMarker as VendingMachineMapMarker;
-                if (vm != null) vm.markerShopName = $"{EventConfig.DisplayName} ({FormatTime(_eventTime)})";
+                if (vm != null)
+                {
+                    string name = EventConfig.DisplayName ?? "Convoy";
+                    string ownerName = PveModeManager.GetOwnerDisplayNameForMarker();
+                    if (!string.IsNullOrEmpty(ownerName))
+                        vm.markerShopName = $"{name} ({FormatTime(_eventTime)}) [{ownerName}]";
+                    else
+                        vm.markerShopName = $"{name} ({FormatTime(_eventTime)})";
+                }
                 _vendingMarker.SendNetworkUpdate();
             }
         }
@@ -1032,6 +1175,7 @@ namespace Convoy
             if (_eventCo != null) ServerMgr.Instance.StopCoroutine(_eventCo);
             if (_spawnCo != null) ServerMgr.Instance.StopCoroutine(_spawnCo);
 
+            ConvoyZoneController.TryDeleteZone();
             KillConvoy();
 
             if (_radiusMarker != null && !_radiusMarker.IsDestroyed) _radiusMarker.Kill();
@@ -1039,6 +1183,60 @@ namespace Convoy
 
             if (Instance == this) Instance = null;
             if (gameObject != null) Destroy(gameObject);
+        }
+
+        public bool IsEventTurret(ulong netId)
+        {
+            foreach (var t in _turrets)
+            {
+                if (t != null && t.net != null && (ulong)t.net.ID.Value == netId)
+                    return true;
+            }
+            return false;
+        }
+
+        public HashSet<ulong> GetEventCratesNetIds()
+        {
+            var ids = new HashSet<ulong>();
+            foreach (var c in _crates)
+                if (c != null && !c.IsDestroyed && c.net != null)
+                    ids.Add((ulong)c.net.ID.Value);
+            return ids;
+        }
+
+        public HashSet<ulong> GetAliveTurretsNetIds()
+        {
+            var ids = new HashSet<ulong>();
+            foreach (var t in _turrets)
+                if (t != null && !t.IsDestroyed && t.net != null)
+                    ids.Add((ulong)t.net.ID.Value);
+            foreach (var s in _samSites)
+                if (s != null && !s.IsDestroyed && s.net != null)
+                    ids.Add((ulong)s.net.ID.Value);
+            return ids;
+        }
+
+        public HashSet<ulong> GetAllBradleyNetIds()
+        {
+            var ids = new HashSet<ulong>();
+            foreach (var v in _vehicles)
+            {
+                if (v?.Entity is BradleyAPC && v.Entity.net != null && !v.Entity.IsDestroyed)
+                    ids.Add((ulong)v.Entity.net.ID.Value);
+            }
+            return ids;
+        }
+
+        public HashSet<ulong> GetEventNpcNetIds()
+        {
+            var ids = new HashSet<ulong>();
+            foreach (var slot in _npcSlots)
+            {
+                var npc = slot?.Npc;
+                if (npc != null && !npc.IsDestroyed && npc.net != null)
+                    ids.Add((ulong)npc.net.ID.Value);
+            }
+            return ids;
         }
 
         private void KillConvoy()

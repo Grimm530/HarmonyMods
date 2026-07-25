@@ -607,6 +607,13 @@ namespace ShopHarmony
                     return bridge;
                 }
             }
+            if (name.Equals("PlayerDLCAPI", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("PlayerDlcApi", StringComparison.OrdinalIgnoreCase))
+            {
+                var t = AppDomain.CurrentDomain.GetData("PlayerDlcApi_ApiType") as Type;
+                if (t != null)
+                    return new PluginBridgeApi(t) { Name = "PlayerDLCAPI", IsLoaded = true };
+            }
             return null;
         }
     }

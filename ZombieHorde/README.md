@@ -11,7 +11,7 @@ Harmony port of **ZombieHorde** 0.6.351. Spawns via **GrimmNPC** reflection (`Sp
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
 | **Entry** | `ZombieHorde.ZombieHordeHarmonyEntry` |
 | **Config** | `HarmonyConfig/ZombieHorde.json` (migrates from `oxide/config/ZombieHorde.json`) |
-| **Requires** | `GrimmNPC.dll` loaded first |
+| **Requires** | `0GrimmNPC.dll` loaded first |
 
 ## Architecture
 
@@ -31,7 +31,7 @@ Harmony port of **ZombieHorde** 0.6.351. Spawns via **GrimmNPC** reflection (`Sp
 Copies **only** `ZombieHorde.dll` into server `HarmonyMods/`.
 
 ```text
-harmony.load GrimmNPC
+harmony.load 0GrimmNPC
 harmony.load ZombieHorde
 ```
 

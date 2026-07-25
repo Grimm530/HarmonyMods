@@ -265,7 +265,30 @@ public class LeaderboardMod : IHarmonyModHooks
 
         RegisterCommands();
         StartLocalImagesLoadCoroutine();
+        // Players already online when the mod loads never get PlayerInit again — start their sessions.
+        RegisterConnectedPlayers();
         UnityEngine.Debug.Log("[Leaderboard] Loaded. Commands: /leaderboard, /lb, /stats");
+    }
+
+    /// <summary>Start playtime sessions for everyone already in activePlayerList (mod load / reload).</summary>
+    private void RegisterConnectedPlayers()
+    {
+        try
+        {
+            var list = BasePlayer.activePlayerList;
+            if (list == null) return;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var p = list[i];
+                if (p == null || p.IsNpc) continue;
+                if (!SteamIdHelper.IsSteamId(p.userID)) continue;
+                OnPlayerConnected(p);
+            }
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] RegisterConnectedPlayers: {ex.Message}");
+        }
     }
 
     private void NextTick(Action action)
@@ -547,16 +570,21 @@ public class LeaderboardMod : IHarmonyModHooks
     public void OnPlayerDisconnected(BasePlayer player)
     {
         if (player == null) return;
-        if (TryGetStats(player.userID, out var stats))
-        {
-            stats.DisconnectTime = DateTime.UtcNow;
-            stats.TotalPlayTime += (DateTime.UtcNow - stats.ConnectTime).TotalSeconds;
-            stats.IsOnline = false;
-            stats.LastName = player.displayName ?? stats.LastName;
-            _storage?.SavePlayer(stats);
-            if (_config?.Relay?.Enabled == true)
-                FlushRelayBatch();
-        }
+        if (!TryGetStats(player.userID, out var stats)) return;
+        // Only accrue if we started a session (avoids inflating time when PlayerInit was missed).
+        if (!stats.IsOnline) return;
+
+        var session = (DateTime.UtcNow - stats.ConnectTime).TotalSeconds;
+        if (session > 0)
+            stats.TotalPlayTime += session;
+        stats.DisconnectTime = DateTime.UtcNow;
+        // Match UltimateLeaderboard: reset ConnectTime so a missed reconnect cannot re-add offline gaps.
+        stats.ConnectTime = DateTime.UtcNow;
+        stats.IsOnline = false;
+        stats.LastName = player.displayName ?? stats.LastName;
+        _storage?.SavePlayer(stats);
+        if (_config?.Relay?.Enabled == true)
+            FlushRelayBatch();
     }
 
     public void RecordStat(ulong userId, LootType type, string prefab, float value)

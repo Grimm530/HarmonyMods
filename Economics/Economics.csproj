@@ -10,8 +10,6 @@
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
     <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
-    <SqliteHint Condition="Exists('$(MSBuildThisFileDirectory)..\Rust-Server-Metrics-master\deps\windows\System.Data.SQLite.dll')">$(MSBuildThisFileDirectory)..\Rust-Server-Metrics-master\deps\windows\System.Data.SQLite.dll</SqliteHint>
-    <SqliteHint Condition="'$(SqliteHint)' == '' And Exists('$(MSBuildThisFileDirectory)..\..\Oxide.Plugins.Cant-Use\Oxide\Oxide.SQLite-master\src\Dependencies\System.Data.SQLite.dll')">$(MSBuildThisFileDirectory)..\..\Oxide.Plugins.Cant-Use\Oxide\Oxide.SQLite-master\src\Dependencies\System.Data.SQLite.dll</SqliteHint>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
@@ -58,12 +56,8 @@
       <HintPath>$(RustManaged)\System.Net.Http.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="System.Data">
-      <HintPath>$(RustManaged)\System.Data.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="System.Data.SQLite">
-      <HintPath>$(SqliteHint)</HintPath>
+    <Reference Include="Facepunch.Sqlite">
+      <HintPath>$(RustManaged)\Facepunch.Sqlite.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

@@ -13,7 +13,7 @@ namespace ZombieHorde
             _plugin = new ZombieHordePlugin();
             ZombieHordePlugin.Instance = _plugin;
             _plugin.Init();
-            Debug.Log("[ZombieHorde] Harmony mod loaded (v0.6.351). Requires GrimmNPC.");
+            Debug.Log("[ZombieHorde] Harmony mod loaded (v0.6.351). Requires 0GrimmNPC.");
         }
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)

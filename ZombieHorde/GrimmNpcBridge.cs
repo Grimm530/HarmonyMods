@@ -43,7 +43,7 @@ namespace ZombieHorde
                 _grimmType = FindGrimmNpcType();
                 if (_grimmType == null)
                 {
-                    UnityEngine.Debug.LogWarning("[ZombieHorde] GrimmNPC type not found. Load GrimmNPC before ZombieHorde (harmony.load GrimmNPC).");
+                    UnityEngine.Debug.LogWarning("[ZombieHorde] GrimmNPC type not found. Load 0GrimmNPC before ZombieHorde (harmony.load 0GrimmNPC).");
                     return;
                 }
 
@@ -579,6 +579,39 @@ namespace ZombieHorde
         {
             if (npc?.Brain?.states == null) return false;
             return npc.Brain.states.ContainsKey(AIState.Cooldown);
+        }
+
+        /// <summary>
+        /// GrimmNPC CustomScientistNpc.CurrentTarget — Events.Memory is unused by Grimm Think().
+        /// </summary>
+        public static BaseEntity GetCombatTarget(ScientistNPC npc)
+        {
+            if (npc == null || npc.IsDestroyed) return null;
+            try
+            {
+                PropertyInfo prop = npc.GetType().GetProperty("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
+                if (prop != null)
+                    return prop.GetValue(npc) as BaseEntity;
+            }
+            catch { }
+            return null;
+        }
+
+        public static void SetCombatTarget(ScientistNPC npc, BaseEntity target)
+        {
+            if (npc == null || npc.IsDestroyed) return;
+            try
+            {
+                PropertyInfo prop = npc.GetType().GetProperty("CurrentTarget", BindingFlags.Public | BindingFlags.Instance);
+                prop?.SetValue(npc, target);
+
+                MethodInfo setKnown = npc.GetType().GetMethod("SetKnown", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(BaseEntity) }, null);
+                if (setKnown != null && target != null)
+                    setKnown.Invoke(npc, new object[] { target });
+                else if (target != null && npc.Brain?.Senses?.Memory != null)
+                    npc.Brain.Senses.Memory.SetKnown(target, npc, npc.Brain.Senses);
+            }
+            catch { }
         }
 
         private static HashSet<BuildingBlock> CollectBuildingBlocks(BuildingPrivlidge priv)

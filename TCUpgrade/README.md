@@ -38,10 +38,10 @@ Standalone Harmony mod providing TC (tool cupboard) upgrade, repair, reskin, wal
 
 | Field | Purpose |
 |-------|---------|
-| `Version` | Schema version (currently "1.6.0") |
+| `Version` | Schema version (currently "1.6.5") |
 | `CustomWallpapers` | `Dictionary<string, HashSet<ulong>>` — category (Wall/Floor/Ceiling) → skin IDs |
 
-**Lifecycle:** Load on `OnLoaded`; Save when `addwp` adds a skin. No migration logic.
+**Lifecycle:** Load on `OnLoaded`; Save when `addwp` adds a skin or when data version is migrated to 1.6.5.
 
 ### TCConfig (runtime only, in `_buildingCupboard`)
 
@@ -60,6 +60,8 @@ Per-TC state for upgrade/repair/reskin/wallpaper work: `Id`, `Grade`, `SkinId`, 
 | Use RaidBlock Plugin | bool | true | When true, calls RaidBlock `IsRaidBlocked` via reflection |
 | Debug | bool | false | Verbose logging |
 | Force both sides including external sides | bool | true | No longer patches game `CheckWallpaper`; game may remove invalid wallpaper (e.g. after rotation). Option kept for compatibility; both internal/external wallpaper when valid. |
+| Item Category Filter (Resources, ResourcesAndComponents, All) | string | Resources | TC inventory category filter via `onlyAcceptCategory` and blocked items |
+| Wallpaper Damage | bool | true | When false, wallpaper blocks get full damage protection |
 | Wallpaper placement Cost (Cloth) | int | 5 | Cloth per wallpaper apply |
 | Deployables Repair | bool | true | Include deployables in repair |
 | Repair Cooldown After Recent Damage (seconds) | float | 30 | Skip repair if `SecondsSinceAttacked < cooldown` |
@@ -189,7 +191,7 @@ Permission model is **config-based** (no Oxide permission system). `HasPermissio
 | TCUpgrade.tcskin | TCSKIN | TCSKINSELECT, CLOSE2 | TC skin selection |
 | TCUpgrade.authlist | AUTH | CLOSE, REMOVEAUTH | Authorized players list |
 
-**Button commands:** All CUI buttons use `cui.endtest SENDCMD action [args]` (e.g. `cui.endtest SENDCMD MENU`, `cui.endtest SENDCMD REPAIR`). The vanilla `cui.endtest` command is always replicated to clients, so buttons work for **all players** including after mod reload and without relying on a custom replicated list. `Cui_Endtest_Patch` intercepts when args start with `SENDCMD` and runs the handler. The server also registers `SENDCMD` (and adds it to Replicated) for direct F1 use.
+**Button commands:** All CUI buttons use `cui.endtest TCUPGRADE action [args]` (AdminMenu/TeleportGUI pattern). Clients only forward ConsoleGen commands; `Cui_Endtest_Patch` intercepts the `TCUPGRADE` marker and runs the handler. Bare `SENDCMD` is not forwarded by the client. `CUIHelper.NormalizeButtonCommand` rewrites legacy `cui.endtest SENDCMD` / bare `SENDCMD` forms to the bridge. The server also registers `SENDCMD` for direct F1 use.
 
 **Throttling:** None. UI is driven by CUI commands and loot events. **Suppression:** RaidBlock/NoEscape blocks upgrade/repair/reskin/wallpaper actions; permissions gate menu visibility.
 

@@ -13,7 +13,12 @@ public static class CUIHelper
 
 	private const string PanelSprite = "assets/content/ui/ui.background.tile.psd";
 
-	private const string LegacyCommandPrefix = "cui.endtest SENDCMD";
+	/// <summary>AdminMenu/TeleportGUI-style bridge: clients only forward ConsoleGen (cui.endtest).</summary>
+	private const string CuiBridgePrefix = "cui.endtest TCUPGRADE";
+
+	private const string LegacyEndtestSendCmd = "cui.endtest SENDCMD";
+
+	private const string LegacyBareSendCmd = "SENDCMD";
 
 	private static CommunityEntity GetCommunityEntity()
 	{
@@ -562,14 +567,34 @@ public static class CUIHelper
 		return list2;
 	}
 
-	private static string NormalizeButtonCommand(string command)
+	/// <summary>
+	/// Ensures button commands use the vanilla replicated <c>cui.endtest</c> bridge with a unique
+	/// TCUPGRADE marker (same pattern as AdminMenu / TeleportGUI). Bare SENDCMD is not forwarded by clients.
+	/// </summary>
+	internal static string NormalizeButtonCommand(string command)
 	{
 		if (string.IsNullOrWhiteSpace(command))
+		{
 			return command;
-		if (!command.StartsWith(LegacyCommandPrefix, StringComparison.Ordinal))
+		}
+		if (command.StartsWith(CuiBridgePrefix, StringComparison.OrdinalIgnoreCase))
+		{
 			return command;
-
-		string args = command.Substring(LegacyCommandPrefix.Length).TrimStart();
-		return string.IsNullOrEmpty(args) ? "SENDCMD" : "SENDCMD " + args;
+		}
+		if (command.StartsWith(LegacyEndtestSendCmd, StringComparison.OrdinalIgnoreCase))
+		{
+			string args = command.Substring(LegacyEndtestSendCmd.Length).TrimStart();
+			return string.IsNullOrEmpty(args) ? CuiBridgePrefix : CuiBridgePrefix + " " + args;
+		}
+		if (command.Equals(LegacyBareSendCmd, StringComparison.OrdinalIgnoreCase))
+		{
+			return CuiBridgePrefix;
+		}
+		if (command.StartsWith(LegacyBareSendCmd + " ", StringComparison.OrdinalIgnoreCase))
+		{
+			string args = command.Substring(LegacyBareSendCmd.Length).TrimStart();
+			return string.IsNullOrEmpty(args) ? CuiBridgePrefix : CuiBridgePrefix + " " + args;
+		}
+		return command;
 	}
 }

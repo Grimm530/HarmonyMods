@@ -236,10 +236,12 @@ namespace RaidableBases
                     toast = tipText ?? string.Empty;
                 var style = config.EventMessages.RustStyle;
 
+                bool toastSent = false;
                 try
                 {
                     // Exact Facepunch path (same as TCUpgradeHelpers.ShowToast / BasePlayer.ShowToast).
                     p.ShowToast(style, new Translate.Phrase("raidablebases.tip", toast), false);
+                    toastSent = true;
                     messageWasSent = true;
                 }
                 catch
@@ -247,22 +249,29 @@ namespace RaidableBases
                     try
                     {
                         p.SendConsoleCommand("gametip.showtoast_translated", (int)style, "raidablebases.tip", toast, false, System.Array.Empty<string>());
+                        toastSent = true;
                         messageWasSent = true;
                     }
                     catch { }
                 }
 
-                // TCUpgrade CreateGameTip fallback (plain gametip banner).
-                try
+                // Plain banner fallback only when styled toast failed. Do not call hidegametip
+                // after a successful ShowToast -- it dismisses the styled tip immediately.
+                if (!toastSent)
                 {
-                    p.SendConsoleCommand("gametip.hidegametip");
-                    p.SendConsoleCommand("gametip.showgametip", toast);
-                    messageWasSent = true;
-                    var mgr = ServerMgr.Instance;
-                    if (mgr != null)
-                        mgr.StartCoroutine(HideGameTipDelayed(p, 8f));
+                    try
+                    {
+                        p.SendConsoleCommand("gametip.hidegametip");
+                        p.SendConsoleCommand("gametip.showgametip", toast);
+                        messageWasSent = true;
+                        ulong userId = (ulong)p.userID;
+                        int generation = NextGameTipGeneration(userId);
+                        var mgr = ServerMgr.Instance;
+                        if (mgr != null)
+                            mgr.StartCoroutine(HideGameTipDelayed(p, userId, generation, 3f));
+                    }
+                    catch { }
                 }
-                catch { }
             }
 
             if (!messageWasSent && !config.EventMessages.Message)
@@ -293,9 +302,24 @@ namespace RaidableBases
             return message;
         }
 
-        private static System.Collections.IEnumerator HideGameTipDelayed(BasePlayer player, float seconds)
+        private readonly Dictionary<ulong, int> _gameTipGenerations = new();
+
+        private int NextGameTipGeneration(ulong userId)
+        {
+            _gameTipGenerations.TryGetValue(userId, out int generation);
+            generation++;
+            _gameTipGenerations[userId] = generation;
+            return generation;
+        }
+
+        private System.Collections.IEnumerator HideGameTipDelayed(BasePlayer player, ulong userId, int generation, float seconds)
         {
             yield return CoroutineEx.waitForSeconds(seconds);
+
+            if (!_gameTipGenerations.TryGetValue(userId, out int currentGeneration) || currentGeneration != generation)
+                yield break;
+
+            _gameTipGenerations.Remove(userId);
             try
             {
                 if (player != null && player.IsConnected)
