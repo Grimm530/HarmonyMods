@@ -178,11 +178,11 @@ namespace TeleportGUI
                 new Dictionary<string, object> { ["type"] = "NeedsCursor" }
             }, PanelName);
 
-            // --- TOP: Tab bar (Teleport | Homes | Warps) - anchor 0 1 to 1 1 = top of panel
+            // --- TOP: Tab bar (Teleport | Homes | Warps) - top stretch; offsetMin.y below top, offsetMax.y at top
             AddElem(list, PanelName + "_tabbar", PanelName, new List<object>
             {
                 new Dictionary<string, object> { ["type"] = "UnityEngine.UI.Image", ["color"] = tabColor },
-                new Dictionary<string, object> { ["type"] = "RectTransform", ["anchormin"] = "0 1", ["anchormax"] = "1 1", ["offsetmin"] = "5 0", ["offsetmax"] = "-5 -28" }
+                new Dictionary<string, object> { ["type"] = "RectTransform", ["anchormin"] = "0 1", ["anchormax"] = "1 1", ["offsetmin"] = "5 -28", ["offsetmax"] = "-5 0" }
             });
             string activeTabColor = headerColor;
             // Tab 1: Players (left third) - button tab; highlight when active

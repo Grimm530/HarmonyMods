@@ -8,9 +8,12 @@ Oxide-free Harmony port of **Economics Extended 3.10.4** (SQLite balances, RP tr
 |------|------|
 | Config | `HarmonyConfig/Economics.json` |
 | Default data | `HarmonyData/Economics/` |
-| Custom data (this server) | `C:\!DataPersistence\oxide\data\Economics` (set in config) |
-| SQLite DB (this server) | `C:\!DataPersistence\economics_balances.db` |
+| Balance JSON (this server) | `C:\!DataPersistence\oxide\data\Economics\Economics.json` (`Balance storage mode` = `File`) |
+| SQLite DB (optional) | `C:\!DataPersistence\economics_balances.db` (only when mode = `Sqlite`) |
 | Logs | `HarmonyData/Economics/logs/` |
+
+**Import from Oxide:** copy `oxide/data/Economics.json` (`{ "Balances": { ... } }`) to  
+`C:\!DataPersistence\oxide\data\Economics\Economics.json`. On load, Economics imports Balances and rewrites the file to the Extended `Players` JSON shape (keeps LastSeen for purge).
 
 ## Dependencies
 

@@ -558,41 +558,63 @@ CREATE TABLE IF NOT EXISTS {Table} (
             }
         }
 
-        /// <summary>Loads Economics.json (StoredData) and legacy formats — same as pre-3.10 file-only behavior.</summary>
+        /// <summary>
+        /// Loads Economics.json. Supports:
+        /// - Extended format: { "Players": { steamId: { Balance, LastSeen, ... } } }
+        /// - Oxide Economics 3.9 format: { "Balances": { steamId: amount } } (+ optional LastSeen map)
+        /// - Very old: { steamIdulong: amount }
+        /// </summary>
         private void LoadOrMigrateBalanceDataFromJson()
         {
+            storedData = new StoredData();
+
+            if (string.IsNullOrEmpty(_balanceJsonPath) || !File.Exists(_balanceJsonPath))
+                return;
+
+            string jsonContent;
             try
             {
-                if (string.IsNullOrEmpty(_balanceJsonPath) || !File.Exists(_balanceJsonPath))
+                jsonContent = File.ReadAllText(_balanceJsonPath);
+            }
+            catch (Exception ex)
+            {
+                Puts($"Economics: failed to read {_balanceJsonPath}: {ex.Message}");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(jsonContent))
+                return;
+
+            // Prefer Oxide Balances / hybrid detection before Players deserialize
+            // (a Balances-only file deserializes to StoredData with empty Players).
+            if (TryLoadBalancesFormat(jsonContent, out int balancesCount) && balancesCount > 0)
+            {
+                MarkAllPlayersDirty();
+                Puts($"Economics: loaded {balancesCount} account(s) from Oxide Balances JSON ({_balanceJsonPath}).");
+                return;
+            }
+
+            try
+            {
+                var playersData = JsonConvert.DeserializeObject<StoredData>(jsonContent);
+                if (playersData?.Players != null && playersData.Players.Count > 0)
                 {
-                    storedData = new StoredData();
-                }
-                else
-                {
-                    storedData = JsonConvert.DeserializeObject<StoredData>(File.ReadAllText(_balanceJsonPath));
-                    if (storedData == null)
-                    {
-                        storedData = new StoredData();
-                    }
+                    storedData = playersData;
+                    Puts($"Economics: loaded {storedData.Players.Count} account(s) from Players JSON ({_balanceJsonPath}).");
+                    return;
                 }
             }
             catch
             {
-                storedData = new StoredData();
+                // Fall through to other legacy shapes.
             }
 
-            if (storedData.Players.Count == 0)
+            try
             {
-                try
+                Dictionary<ulong, double> temp =
+                    JsonConvert.DeserializeObject<Dictionary<ulong, double>>(jsonContent);
+                if (temp != null && temp.Count > 0)
                 {
-                    if (string.IsNullOrEmpty(_balanceJsonPath) || !File.Exists(_balanceJsonPath))
-                        throw new FileNotFoundException();
-
-                    Dictionary<ulong, double> temp =
-                        JsonConvert.DeserializeObject<Dictionary<ulong, double>>(File.ReadAllText(_balanceJsonPath));
-                    if (temp == null)
-                        throw new InvalidOperationException();
-
                     foreach (KeyValuePair<ulong, double> old in temp)
                     {
                         string playerId = old.Key.ToString();
@@ -603,59 +625,108 @@ CREATE TABLE IF NOT EXISTS {Table} (
                         };
                     }
                     MarkAllPlayersDirty();
-                    Puts("Migrated from very old format (ulong keys)");
-                }
-                catch
-                {
-                    try
-                    {
-                        if (string.IsNullOrEmpty(_balanceJsonPath) || !File.Exists(_balanceJsonPath))
-                            throw new FileNotFoundException();
-
-                        string jsonContent = File.ReadAllText(_balanceJsonPath);
-                        var oldData = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonContent);
-
-                        if (oldData != null && oldData.ContainsKey("Balances"))
-                        {
-                            Puts("Migrating from old format (separate Balances/LastSeen)...");
-
-                            var balances = oldData["Balances"] as Newtonsoft.Json.Linq.JObject;
-                            var lastSeen = oldData.ContainsKey("LastSeen") ? oldData["LastSeen"] as Newtonsoft.Json.Linq.JObject : new Newtonsoft.Json.Linq.JObject();
-
-                            if (balances != null)
-                            {
-                                int migratedCount = 0;
-                                foreach (var kvp in balances)
-                                {
-                                    string playerId = kvp.Key;
-                                    double balance = Convert.ToDouble(kvp.Value);
-                                    double lastSeenTime = 0.0;
-
-                                    if (lastSeen[playerId] != null)
-                                    {
-                                        lastSeenTime = Convert.ToDouble(lastSeen[playerId]);
-                                    }
-
-                                    storedData.Players[playerId] = new PlayerData
-                                    {
-                                        Balance = balance,
-                                        LastSeen = lastSeenTime,
-                                        LastSeenFormatted = lastSeenTime > 0 ? FormatTimestamp(lastSeenTime) : "Never"
-                                    };
-                                    migratedCount++;
-                                }
-
-                                MarkAllPlayersDirty();
-                                Puts($"Successfully migrated {migratedCount} player accounts to new format.");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Puts($"Migration failed: {ex.Message}");
-                    }
+                    Puts($"Economics: migrated {temp.Count} account(s) from very old ulong-key JSON.");
                 }
             }
+            catch (Exception ex)
+            {
+                Puts($"Economics: balance JSON load failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Oxide Economics.cs StoredData shape: { "Balances": { "steamId": double }, "LastSeen"?: { ... } }.
+        /// Returns true when the root has a Balances object (even if empty).
+        /// </summary>
+        private bool TryLoadBalancesFormat(string jsonContent, out int migratedCount)
+        {
+            migratedCount = 0;
+            try
+            {
+                var root = JObject.Parse(jsonContent);
+                var balances = root["Balances"] as JObject;
+                if (balances == null)
+                    return false;
+
+                var lastSeen = root["LastSeen"] as JObject ?? new JObject();
+
+                foreach (var kvp in balances)
+                {
+                    string playerId = kvp.Key;
+                    if (string.IsNullOrEmpty(playerId))
+                        continue;
+
+                    double balance = kvp.Value.Type == JTokenType.Null ? 0.0 : kvp.Value.Value<double>();
+                    double lastSeenTime = 0.0;
+                    if (lastSeen[playerId] != null && lastSeen[playerId].Type != JTokenType.Null)
+                        lastSeenTime = lastSeen[playerId].Value<double>();
+
+                    storedData.Players[playerId] = new PlayerData
+                    {
+                        Balance = balance,
+                        LastSeen = lastSeenTime,
+                        LastSeenFormatted = lastSeenTime > 0 ? FormatTimestamp(lastSeenTime) : "Never"
+                    };
+                    migratedCount++;
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Try read one player's balance from either Players or Oxide Balances JSON on disk.
+        /// </summary>
+        private bool TryReadPlayerBalanceFromJsonText(string jsonContent, string playerId, out PlayerData pd)
+        {
+            pd = null;
+            if (string.IsNullOrEmpty(jsonContent) || string.IsNullOrEmpty(playerId))
+                return false;
+
+            try
+            {
+                var root = JObject.Parse(jsonContent);
+
+                var players = root["Players"] as JObject;
+                if (players != null && players[playerId] != null)
+                {
+                    var token = players[playerId];
+                    pd = new PlayerData
+                    {
+                        Balance = token["Balance"]?.Value<double>() ?? 0.0,
+                        LastSeen = token["LastSeen"]?.Value<double>() ?? 0.0,
+                        LastSeenFormatted = token["LastSeenFormatted"]?.Value<string>() ?? ""
+                    };
+                    return true;
+                }
+
+                var balances = root["Balances"] as JObject;
+                if (balances != null && balances[playerId] != null)
+                {
+                    double lastSeenTime = 0.0;
+                    var lastSeen = root["LastSeen"] as JObject;
+                    if (lastSeen?[playerId] != null && lastSeen[playerId].Type != JTokenType.Null)
+                        lastSeenTime = lastSeen[playerId].Value<double>();
+
+                    pd = new PlayerData
+                    {
+                        Balance = balances[playerId].Value<double>(),
+                        LastSeen = lastSeenTime,
+                        LastSeenFormatted = lastSeenTime > 0 ? FormatTimestamp(lastSeenTime) : "Never"
+                    };
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignored — caller logs
+            }
+
+            return false;
         }
 
         private class StoredData
@@ -791,6 +862,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
 
         /// <summary>
         /// File mode: merge this player's balance from shared Economics.json (e.g. after transfer from another server).
+        /// Supports Extended Players format and Oxide Balances format.
         /// </summary>
         private void RefreshPlayerBalanceFromJsonFile(string playerId)
         {
@@ -800,16 +872,8 @@ CREATE TABLE IF NOT EXISTS {Table} (
 
             try
             {
-                var fromDisk = JsonConvert.DeserializeObject<StoredData>(File.ReadAllText(_balanceJsonPath));
-                if (fromDisk?.Players == null || !fromDisk.Players.TryGetValue(playerId, out var diskPd))
+                if (!TryReadPlayerBalanceFromJsonText(File.ReadAllText(_balanceJsonPath), playerId, out var pd) || pd == null)
                     return;
-
-                var pd = new PlayerData
-                {
-                    Balance = diskPd.Balance,
-                    LastSeen = diskPd.LastSeen,
-                    LastSeenFormatted = diskPd.LastSeenFormatted ?? ""
-                };
 
                 if (config.BalanceLimit > 0 && pd.Balance > config.BalanceLimit)
                     pd.Balance = config.BalanceLimit;
@@ -2252,7 +2316,9 @@ CREATE TABLE IF NOT EXISTS {Table} (
             // Purge inactive accounts if configured
             PurgeInactiveAccountsIfEnabled();
 
-            if (_sharedBalances != null && changed)
+            // File mode: rewrite Oxide Balances JSON into Players shape on first load.
+            // Sqlite mode: flush imported/dirty rows.
+            if (changed)
             {
                 SaveData();
             }

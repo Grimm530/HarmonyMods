@@ -14,9 +14,11 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-$dllPath = Join-Path $PSScriptRoot "TeleportGUI\bin\Release\net48\TeleportGUI.dll"
+# csproj sets AppendTargetFrameworkToOutputPath=false -> bin\Release\TeleportGUI.dll
+# Prefer that; only fall back to net48 if the primary output is missing.
+$dllPath = Join-Path $PSScriptRoot "TeleportGUI\bin\Release\TeleportGUI.dll"
 if (-not (Test-Path $dllPath)) {
-    $dllPath = Join-Path $PSScriptRoot "TeleportGUI\bin\Release\TeleportGUI.dll"
+    $dllPath = Join-Path $PSScriptRoot "TeleportGUI\bin\Release\net48\TeleportGUI.dll"
 }
 if (-not (Test-Path $dllPath)) {
     Write-Host "`nBuild succeeded but DLL not found." -ForegroundColor Red
