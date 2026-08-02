@@ -1306,6 +1306,8 @@ namespace RaidableBases
                 if (drop != null && container.OwnerID == 0uL)
                 {
                     drop.buryLeftoverItems = false;
+                    drop.onlyOwnerLoot = false;
+                    drop.playerSteamID = 0;
                     if (container switch
                     {
                         GunTrap or FlameTurret => config.Settings.Management.DropLoot.CanDespawnGreyWeaponBag(container),

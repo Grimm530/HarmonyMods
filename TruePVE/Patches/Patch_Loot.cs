@@ -1,6 +1,8 @@
 // Loot protection: CanLootEntity / CanLootPlayer / OnStartBeingLooted (block via prefix)
 // and OnLootEntity / OnLootPlayer notifications (postfix).
-// Target: PlayerLoot.StartLootingEntity(BaseEntity, bool). Non-null result cancels the loot.
+// Target: PlayerLoot.StartLootingEntity(BaseEntity, bool).
+// CanLootEntity / CanLootPlayer: non-null cancels loot (TruePVE returns true to block).
+// OnStartBeingLooted: true = force-allow (bypass onlyOwnerLoot), false = block, null = vanilla.
 using HarmonyLib;
 using UnityEngine;
 using TPVE = Oxide.Plugins.TruePVE;
@@ -26,8 +28,23 @@ namespace TruePVEHarmony.Patches
                 else
                 {
                     if (TPVE.Dispatch_CanLootEntity(player, targetEntity) != null) { __result = false; return false; }
-                    if (targetEntity is DroppedItemContainer dic &&
-                        TPVE.Dispatch_OnStartBeingLooted(dic, player) != null) { __result = false; return false; }
+                    if (targetEntity is DroppedItemContainer dic)
+                    {
+                        object started = TPVE.Dispatch_OnStartBeingLooted(dic, player);
+                        // true = TruePVE force-allowed (unowned bags / onlyOwnerLoot bypass).
+                        // Clear onlyOwnerLoot so vanilla DroppedItemContainer.OnStartBeingLooted
+                        // does not immediately re-block (playerSteamID==0 + onlyOwnerLoot blocks everyone).
+                        if (started is true)
+                        {
+                            dic.onlyOwnerLoot = false;
+                            return true;
+                        }
+                        if (started is false)
+                        {
+                            __result = false;
+                            return false;
+                        }
+                    }
                 }
             }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] CanLoot prefix: " + ex.Message); }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
@@ -223,7 +222,7 @@ namespace EconomicsHarmony
                     if (string.IsNullOrEmpty(cmd)) continue;
                     _chatCommandNames.Add(cmd);
                     _commandMethodMap[cmd] = entry.methodName;
-                    RegisterConsole(cmd, arg => DispatchCovalenceCommand(entry.methodName, arg), serverAdmin: false);
+                    RegisterConsole(cmd, arg => DispatchCovalenceCommand(entry.methodName, arg));
                 }
             }
         }
@@ -262,12 +261,22 @@ namespace EconomicsHarmony
                 if (!_commandMethodMap.ContainsKey(cmd) && methodByCmd.TryGetValue(cmd, out var method))
                     _commandMethodMap[cmd] = method;
 
-                if (!_registeredCommands.Any(c =>
-                        string.Equals(c.Name, cmd, StringComparison.OrdinalIgnoreCase) &&
-                        string.IsNullOrEmpty(c.Parent)))
+                bool alreadyRegistered = false;
+                for (int i = 0; i < _registeredCommands.Count; i++)
+                {
+                    var c = _registeredCommands[i];
+                    if (string.Equals(c.Name, cmd, StringComparison.OrdinalIgnoreCase) &&
+                        string.IsNullOrEmpty(c.Parent))
+                    {
+                        alreadyRegistered = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyRegistered)
                 {
                     var methodName = _commandMethodMap.TryGetValue(cmd, out var m) ? m : methodByCmd[cmd];
-                    RegisterConsole(cmd, arg => DispatchCovalenceCommand(methodName, arg), serverAdmin: false);
+                    RegisterConsole(cmd, arg => DispatchCovalenceCommand(methodName, arg));
                 }
             }
         }
@@ -301,19 +310,32 @@ namespace EconomicsHarmony
                 if (mi == null)
                 {
                     Debug.LogWarning($"[Economics Harmony] Method not found: {methodName}");
+                    arg.ReplyWith("[Economics] Method not found: " + methodName);
                     return;
                 }
-                mi.Invoke(_plugin, new object[] { player, methodName, args });
+
+                // Prefer the actual console/chat command name (e.g. "deposit"), not the method name.
+                string commandName = arg.cmd?.Name ?? methodName;
+                if (!string.IsNullOrEmpty(commandName) && commandName.StartsWith("/", StringComparison.Ordinal))
+                    commandName = commandName.Substring(1);
+
+                mi.Invoke(_plugin, new object[] { player, commandName, args });
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Economics Harmony] {methodName}: " + (ex.InnerException?.Message ?? ex.Message));
+                string msg = ex.InnerException?.Message ?? ex.Message;
+                Debug.LogWarning($"[Economics Harmony] {methodName}: " + msg);
+                try { arg.ReplyWith("[Economics] Error: " + msg); } catch { }
             }
         }
 
-        private void RegisterConsole(string name, Action<ConsoleSystem.Arg> handler, bool serverAdmin = false)
+        private void RegisterConsole(string name, Action<ConsoleSystem.Arg> handler)
         {
             var localName = name;
+            // Chat uses "/deposit"; server console users often type the same — register both.
+            if (localName.StartsWith("/", StringComparison.Ordinal))
+                localName = localName.Substring(1);
+
             bool hasDot = localName.Contains(".");
             string cmdParent = "";
             string cmdName = localName;
@@ -334,13 +356,16 @@ namespace EconomicsHarmony
                 dictKey = fullName;
             }
 
+            // ServerAdmin must be true for dedicated/RCON console (matches 0Permissions / TimedExecute).
+            // ServerAdmin=false registers the name but the server silently refuses to run it.
             var cmd = new ConsoleSystem.Command
             {
                 Name = cmdName,
                 Parent = cmdParent,
                 FullName = fullName,
                 Variable = false,
-                ServerAdmin = serverAdmin,
+                ServerAdmin = true,
+                ServerUser = false,
                 AllowRunFromServer = true,
                 Replicated = false,
                 Call = a =>
@@ -352,7 +377,12 @@ namespace EconomicsHarmony
 
             ConsoleSystem.Index.Server.Dict[dictKey] = cmd;
             if (!hasDot && ConsoleSystem.Index.Server.GlobalDict != null)
+            {
                 ConsoleSystem.Index.Server.GlobalDict[cmdName] = cmd;
+                // Alias with leading slash so "/deposit steamid amount" works in the dedicated console.
+                ConsoleSystem.Index.Server.GlobalDict["/" + cmdName] = cmd;
+                ConsoleSystem.Index.Server.Dict["global./" + cmdName] = cmd;
+            }
 
             _registeredCommands.Add(cmd);
         }
@@ -366,7 +396,11 @@ namespace EconomicsHarmony
                     string dictKey = string.IsNullOrEmpty(cmd.Parent) ? "global." + cmd.Name : cmd.FullName;
                     ConsoleSystem.Index.Server.Dict?.Remove(dictKey);
                     if (string.IsNullOrEmpty(cmd.Parent))
+                    {
                         ConsoleSystem.Index.Server.GlobalDict?.Remove(cmd.Name);
+                        ConsoleSystem.Index.Server.GlobalDict?.Remove("/" + cmd.Name);
+                        ConsoleSystem.Index.Server.Dict?.Remove("global./" + cmd.Name);
+                    }
                 }
                 catch { }
             }
@@ -386,7 +420,17 @@ namespace EconomicsHarmony
             if (!_chatCommandNames.Contains(name)) return false;
             if (!_commandMethodMap.TryGetValue(name, out var methodName)) return false;
 
-            var args = parts.Skip(1).ToArray();
+            string[] args;
+            if (parts.Length <= 1)
+            {
+                args = Array.Empty<string>();
+            }
+            else
+            {
+                args = new string[parts.Length - 1];
+                for (int i = 1; i < parts.Length; i++)
+                    args[i - 1] = parts[i];
+            }
             try
             {
                 var mi = typeof(Economics).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);

@@ -1528,6 +1528,7 @@ namespace RaidableBases
             _mod = new RaidableBases();
             host.ModInstance = _mod;
             _mod.InitMinimal();
+            RaidableBasesDamageApi.Publish();
             // Heavy init (InitRest + grid, etc.) runs in deferred soft-start coroutine so load/unload don't freeze the server.
             // Startup: ItemManager ready + ServerMgr_Update after world load. Late-load: same path next frames.
             DeferredServerInitPending = true;
@@ -1549,6 +1550,7 @@ namespace RaidableBases
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            RaidableBasesDamageApi.Unpublish();
             var mod = _mod;
             var hostToShutdown = RaidableBasesHost.Instance;
             var unloadGeneration = _generation;

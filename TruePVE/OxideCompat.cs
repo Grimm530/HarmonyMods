@@ -188,7 +188,8 @@ namespace Oxide.Core
         /// Harmony has no full Oxide hook bus. Most hooks return null ("not handled").
         /// CanEntityTakeDamage / CanEntityBeTargeted chain:
         /// 1) PveMode first (non-owner block must win)
-        /// 2) Convoy second (allow damage to convoy entities / event turrets target players)
+        /// 2) RaidableBases (allow damage inside active raid zones)
+        /// 3) Convoy (allow damage to convoy entities / event turrets target players)
         /// </summary>
         public static object CallHook(string hook, params object[] args)
         {
@@ -200,6 +201,9 @@ namespace Oxide.Core
                 object pve = TryAppDomainBool("PveMode_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage PveMode");
                 if (pve is bool) return pve;
 
+                object rb = TryAppDomainBool("RaidableBases_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage RaidableBases");
+                if (rb is bool) return rb;
+
                 object convoy = TryAppDomainBool("Convoy_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage Convoy");
                 if (convoy is bool) return convoy;
             }
@@ -208,6 +212,9 @@ namespace Oxide.Core
                 // CallHook args: [target, attacker] (matches TruePVE OnEntityEnterInternal).
                 object pve = TryAppDomainBool("PveMode_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted PveMode");
                 if (pve is bool) return pve;
+
+                object rb = TryAppDomainBool("RaidableBases_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted RaidableBases");
+                if (rb is bool) return rb;
 
                 object convoy = TryAppDomainBool("Convoy_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted Convoy");
                 if (convoy is bool) return convoy;

@@ -871,7 +871,10 @@ namespace RaidableBases
                 return;
             }
 
-            if (!Buildings.Profiles.Values.Exists(profile => profile.Options.Mode == mode && profile.Options.Permission.Has(player, RaidableType.Purchased)))
+            if (!Buildings.Profiles.Values.Exists(profile =>
+                    profile?.Options != null
+                    && string.Equals(profile.Options.Mode, mode, StringComparison.OrdinalIgnoreCase)
+                    && profile.Options.Permission.Has(player, RaidableType.Purchased)))
             {
                 Message(player, "No Permission To Buy");
                 return;

@@ -1375,7 +1375,11 @@ namespace RaidableBases
                 }
                 if (backpack.ShortPrefabName == "item_drop" || backpack.ShortPrefabName == "item_drop_buoyant")
                 {
+                    // Grey box/sacks from broken raid containers must be lootable by anyone.
+                    // onlyOwnerLoot + playerSteamID==0 makes vanilla OnStartBeingLooted reject every player.
                     backpack.buryLeftoverItems = false;
+                    backpack.onlyOwnerLoot = false;
+                    backpack.playerSteamID = 0;
                     return;
                 }
                 if (backpack.playerSteamID.IsSteamId())

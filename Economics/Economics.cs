@@ -2,7 +2,6 @@ using System;
 using System.Globalization;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -139,7 +138,7 @@ namespace EconomicsHarmony
                     throw new JsonException();
                 }
 
-                if (!config.ToDictionary().Keys.SequenceEqual(Config.ToDictionary().Keys))
+                if (!DictionaryKeysEqual(config.ToDictionary(), Config.ToDictionary()))
                 {
                     LogWarning("Configuration appears to be outdated; updating and saving");
                     SaveConfig();
@@ -809,9 +808,8 @@ CREATE TABLE IF NOT EXISTS {Table} (
             }
 
             var sortedData = new StoredData();
-            var sortedPlayers = storedData.Players
-                .OrderByDescending(kvp => kvp.Value.LastSeen)
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            var sortedPlayers = new List<KeyValuePair<string, PlayerData>>(storedData.Players);
+            sortedPlayers.Sort((a, b) => b.Value.LastSeen.CompareTo(a.Value.LastSeen));
 
             foreach (var kvp in sortedPlayers)
             {
@@ -905,8 +903,12 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 if (fromDisk.PlayerRPAcquisitions != null &&
                     fromDisk.PlayerRPAcquisitions.TryGetValue(playerId, out var acq) && acq != null)
                 {
-                    storedRPTrackingData.PlayerRPAcquisitions[playerId] = acq
-                        .Select(a => new RPAcquisition
+                    var cloned = new List<RPAcquisition>(acq.Count);
+                    for (int i = 0; i < acq.Count; i++)
+                    {
+                        var a = acq[i];
+                        if (a == null) continue;
+                        cloned.Add(new RPAcquisition
                         {
                             Amount = a.Amount,
                             Timestamp = a.Timestamp,
@@ -915,8 +917,9 @@ CREATE TABLE IF NOT EXISTS {Table} (
                                 : a.TimestampFormatted,
                             Source = a.Source ?? "Unknown",
                             FromPlayer = a.FromPlayer ?? ""
-                        })
-                        .ToList();
+                        });
+                    }
+                    storedRPTrackingData.PlayerRPAcquisitions[playerId] = cloned;
                 }
 
                 if (fromDisk.PlayerDailyRP != null &&
@@ -1035,14 +1038,18 @@ CREATE TABLE IF NOT EXISTS {Table} (
                     connected.Add(player.Id);
             }
 
-            foreach (var playerId in storedRPTrackingData.PlayerRPAcquisitions.Keys.ToList())
+            var acqKeys = new List<string>(storedRPTrackingData.PlayerRPAcquisitions.Keys);
+            for (int i = 0; i < acqKeys.Count; i++)
             {
+                var playerId = acqKeys[i];
                 if (!connected.Contains(playerId))
                     storedRPTrackingData.PlayerRPAcquisitions.Remove(playerId);
             }
 
-            foreach (var playerId in storedRPTrackingData.PlayerDailyRP.Keys.ToList())
+            var dailyKeys = new List<string>(storedRPTrackingData.PlayerDailyRP.Keys);
+            for (int i = 0; i < dailyKeys.Count; i++)
             {
+                var playerId = dailyKeys[i];
                 if (!connected.Contains(playerId))
                     storedRPTrackingData.PlayerDailyRP.Remove(playerId);
             }
@@ -1077,14 +1084,21 @@ CREATE TABLE IF NOT EXISTS {Table} (
             if (source == null)
                 return new List<RPAcquisition>();
 
-            return source.Select(a => new RPAcquisition
+            var list = new List<RPAcquisition>(source.Count);
+            for (int i = 0; i < source.Count; i++)
             {
-                Amount = a.Amount,
-                Timestamp = a.Timestamp,
-                TimestampFormatted = a.TimestampFormatted ?? "",
-                Source = a.Source ?? "Unknown",
-                FromPlayer = a.FromPlayer ?? ""
-            }).ToList();
+                var a = source[i];
+                if (a == null) continue;
+                list.Add(new RPAcquisition
+                {
+                    Amount = a.Amount,
+                    Timestamp = a.Timestamp,
+                    TimestampFormatted = a.TimestampFormatted ?? "",
+                    Source = a.Source ?? "Unknown",
+                    FromPlayer = a.FromPlayer ?? ""
+                });
+            }
+            return list;
         }
 
         private static DailyRPData CloneDailyRP(DailyRPData source)
@@ -1810,14 +1824,18 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 sb.AppendLine($"**Active Players:** {activePlayers}");
                 sb.AppendLine();
                 sb.AppendLine("🏆 **TOP RP ACCUMULATORS**");
-                foreach (var kv in playerTotals.OrderByDescending(x => x.Value.totalRP).Take(10))
+                var topPlayers = SortByTotalRpDesc(playerTotals, 10);
+                for (int i = 0; i < topPlayers.Count; i++)
                 {
+                    var kv = topPlayers[i];
                     var (rp, breakdown, name) = kv.Value;
                     sb.AppendLine($"**{name}** ({kv.Key}) - {rp:F0}");
                     if (breakdown != null && breakdown.Count > 0)
                     {
-                        foreach (var src in breakdown.OrderByDescending(x => x.Value))
+                        var sortedSources = SortDictByValueDesc(breakdown);
+                        for (int s = 0; s < sortedSources.Count; s++)
                         {
+                            var src = sortedSources[s];
                             string sourceName = src.Key == "Shop" ? "Shop" : src.Key == "Transfer" ? "Transfer" : src.Key == "Direct" ? "Direct Deposit" : src.Key;
                             sb.AppendLine($" - {sourceName} - {src.Value:F0}");
                         }
@@ -1927,7 +1945,9 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 
                 if (acquisitions.Count == 0) continue;
 
-                double playerTotalRP = acquisitions.Sum(rp => rp.Amount);
+                double playerTotalRP = 0;
+                for (int i = 0; i < acquisitions.Count; i++)
+                    playerTotalRP += acquisitions[i].Amount;
                 int playerTransactionCount = acquisitions.Count;
                 
                 totalRPEarned += playerTotalRP;
@@ -1945,12 +1965,12 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 return "🏦 **ECONOMICS WIPE SUMMARY**\n*No RP transactions found for wipe summary.*";
             }
 
-            // Sort players by total RP earned (highest first)
-            var sortedPlayers = playerTotals.OrderByDescending(kvp => kvp.Value.totalRP).ToList();
+            var sortedPlayers = SortByTotalRpAndTxDesc(playerTotals, 10);
 
             report.AppendLine("**💰 TOP RP EARNERS**");
-            foreach (var kvp in sortedPlayers.Take(10)) // Top 10 players
+            for (int i = 0; i < sortedPlayers.Count; i++)
             {
+                var kvp = sortedPlayers[i];
                 var (totalRP, transactionCount, playerName) = kvp.Value;
                 report.AppendLine($"**{playerName}** ({kvp.Key})");
                 report.AppendLine($"- Total RP Earned: {totalRP:F2}");
@@ -2460,12 +2480,12 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 return "📊 **ECONOMICS DAILY SUMMARY**\n*No RP activity found for today.*";
             }
 
-            // Sort players by total RP earned (highest first)
-            var sortedPlayers = playerTotals.OrderByDescending(kvp => kvp.Value.totalRP).ToList();
+            var sortedPlayers = SortByTotalRpDesc(playerTotals, 10);
 
             report.AppendLine("**💰 TOP RP EARNERS TODAY**");
-            foreach (var kvp in sortedPlayers.Take(10)) // Top 10 players
+            for (int i = 0; i < sortedPlayers.Count; i++)
             {
+                var kvp = sortedPlayers[i];
                 var (totalRP, sourceBreakdown, playerName) = kvp.Value;
                 report.AppendLine($"**{playerName}** ({kvp.Key})");
                 report.AppendLine($"- Total RP: {totalRP:F2}");
@@ -2474,8 +2494,10 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 if (sourceBreakdown.Count > 1)
                 {
                     report.AppendLine("- Sources:");
-                    foreach (var source in sourceBreakdown.OrderByDescending(x => x.Value))
+                    var sortedSources = SortDictByValueDesc(sourceBreakdown);
+                    for (int s = 0; s < sortedSources.Count; s++)
                     {
+                        var source = sortedSources[s];
                         string sourceName = source.Key switch
                         {
                             "Shop" => "🛒 Shop",
@@ -2533,16 +2555,20 @@ CREATE TABLE IF NOT EXISTS {Table} (
             else
             {
                 sb.AppendLine("**💰 TOP RP EARNERS TODAY**");
-                foreach (var kv in playerTotals.OrderByDescending(x => x.Value.totalRP).Take(10))
+                var topPlayers = SortByTotalRpDesc(playerTotals, 10);
+                for (int i = 0; i < topPlayers.Count; i++)
                 {
+                    var kv = topPlayers[i];
                     var (rp, breakdown, name) = kv.Value;
                     sb.AppendLine($"**{name}** ({kv.Key})");
                     sb.AppendLine($"- Total RP: {rp:F2}");
                     if (breakdown != null && breakdown.Count > 1)
                     {
                         sb.AppendLine("- Sources:");
-                        foreach (var s in breakdown.OrderByDescending(x => x.Value))
+                        var sortedSources = SortDictByValueDesc(breakdown);
+                        for (int si = 0; si < sortedSources.Count; si++)
                         {
+                            var s = sortedSources[si];
                             string srcName = s.Key == "Shop" ? "🛒 Shop" : s.Key == "Transfer" ? "💸 Transfer" : s.Key == "Direct" ? "💰 Direct" : $"📊 {s.Key}";
                             sb.AppendLine($"  {srcName}: {s.Value:F2}");
                         }
@@ -2573,8 +2599,10 @@ CREATE TABLE IF NOT EXISTS {Table} (
             {
                 sb.AppendLine();
                 sb.AppendLine("**Daily Source Breakdown:**");
-                foreach (var kv in sourceBreakdown.OrderByDescending(x => x.Value))
+                var sortedSources = SortDictByValueDesc(sourceBreakdown);
+                for (int i = 0; i < sortedSources.Count; i++)
                 {
+                    var kv = sortedSources[i];
                     string sourceName = kv.Key == "Shop" ? "🛒 Shop Sales" : kv.Key == "Transfer" ? "💸 Transfers" : kv.Key == "Direct" ? "💰 Direct Deposits" : $"📊 {kv.Key}";
                     sb.AppendLine($"{sourceName}: {kv.Value:F2} RP");
                 }
@@ -2697,20 +2725,22 @@ CREATE TABLE IF NOT EXISTS {Table} (
             report.AppendLine($"**Active Players:** {activePlayers}");
             report.AppendLine();
 
-            // Sort players by total RP earned (highest first)
-            var sortedPlayers = playerTotals.OrderByDescending(kvp => kvp.Value.totalRP).ToList();
+            var sortedPlayers = SortByTotalRpDesc(playerTotals, 10);
 
             report.AppendLine("🏆 **TOP RP ACCUMULATORS**");
-            foreach (var kvp in sortedPlayers.Take(10)) // Top 10 players
+            for (int i = 0; i < sortedPlayers.Count; i++)
             {
+                var kvp = sortedPlayers[i];
                 var (totalRP, sourceBreakdown, playerName) = kvp.Value;
                 report.AppendLine($"**{playerName}** ({kvp.Key}) - {totalRP:F0}");
                 
                 // Show source breakdown for each player
                 if (sourceBreakdown != null && sourceBreakdown.Count > 0)
                 {
-                    foreach (var source in sourceBreakdown.OrderByDescending(x => x.Value))
+                    var sortedSources = SortDictByValueDesc(sourceBreakdown);
+                    for (int s = 0; s < sortedSources.Count; s++)
                     {
+                        var source = sortedSources[s];
                         string sourceName = source.Key switch
                         {
                             "Shop" => "Shop",
@@ -3009,7 +3039,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
             double cutoff = DateTimeOffset.UtcNow.AddDays(-config.PurgeAfterDays).ToUnixTimeSeconds();
             List<string> accountsToRemove = new List<string>();
 
-            foreach (var kvp in storedData.Players.ToList())
+            foreach (var kvp in storedData.Players)
             {
                 string playerId = kvp.Key;
                 PlayerData playerData = kvp.Value;
@@ -3284,9 +3314,10 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 }
 
                 int receivers = 0;
-                foreach (string targetId in storedData.Players.Keys.ToList())
+                var depositTargets = new List<string>(storedData.Players.Keys);
+                for (int i = 0; i < depositTargets.Count; i++)
                 {
-                    if (Deposit(targetId, amount))
+                    if (Deposit(depositTargets[i], amount))
                     {
                         receivers++;
                     }
@@ -3348,9 +3379,10 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 }
 
                 int receivers = 0;
-                foreach (string targetId in storedData.Players.Keys.ToList())
+                var setTargets = new List<string>(storedData.Players.Keys);
+                for (int i = 0; i < setTargets.Count; i++)
                 {
-                    if (SetBalance(targetId, amount))
+                    if (SetBalance(setTargets[i], amount))
                     {
                         receivers++;
                     }
@@ -3417,7 +3449,9 @@ CREATE TABLE IF NOT EXISTS {Table} (
                     return;
                 }
 
-                int receivers = players.Connected.Count();
+                int receivers = 0;
+                foreach (IPlayer _ in players.Connected)
+                    receivers++;
                 double splitAmount = amount /= receivers;
 
                 foreach (IPlayer target in players.Connected)
@@ -3500,9 +3534,10 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 }
 
                 int receivers = 0;
-                foreach (string targetId in storedData.Players.Keys.ToList())
+                var withdrawTargets = new List<string>(storedData.Players.Keys);
+                for (int i = 0; i < withdrawTargets.Count; i++)
                 {
-                    if (Withdraw(targetId, amount))
+                    if (Withdraw(withdrawTargets[i], amount))
                     {
                         receivers++;
                     }
@@ -3575,7 +3610,12 @@ CREATE TABLE IF NOT EXISTS {Table} (
             }
 
             int totalAccounts = storedData.Players.Count;
-            int trackedAccounts = storedData.Players.Count(p => p.Value.LastSeen > 0);
+            int trackedAccounts = 0;
+            foreach (var p in storedData.Players)
+            {
+                if (p.Value.LastSeen > 0)
+                    trackedAccounts++;
+            }
             int untrackedAccounts = totalAccounts - trackedAccounts;
             
             double currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -3635,14 +3675,20 @@ CREATE TABLE IF NOT EXISTS {Table} (
 
         private IPlayer FindPlayer(string playerNameOrId, IPlayer player)
         {
-            IPlayer[] foundPlayers = players.FindPlayers(playerNameOrId).ToArray();
-            if (foundPlayers.Length > 1)
+            var foundPlayers = new List<IPlayer>();
+            foreach (var p in players.FindPlayers(playerNameOrId))
+                foundPlayers.Add(p);
+
+            if (foundPlayers.Count > 1)
             {
-                Message(player, "PlayersFound", string.Join(", ", foundPlayers.Select(p => p.Name).Take(10).ToArray()).Truncate(60));
+                var names = new List<string>();
+                for (int i = 0; i < foundPlayers.Count && i < 10; i++)
+                    names.Add(foundPlayers[i].Name);
+                Message(player, "PlayersFound", string.Join(", ", names).Truncate(60));
                 return null;
             }
 
-            IPlayer target = foundPlayers.Length == 1 ? foundPlayers[0] : null;
+            IPlayer target = foundPlayers.Count == 1 ? foundPlayers[0] : null;
             if (target == null)
             {
                 Message(player, "NoPlayersFound", playerNameOrId);
@@ -3650,6 +3696,45 @@ CREATE TABLE IF NOT EXISTS {Table} (
             }
 
             return target;
+        }
+
+        private static bool DictionaryKeysEqual(Dictionary<string, object> a, Dictionary<string, object> b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Count != b.Count) return false;
+            foreach (var key in a.Keys)
+            {
+                if (!b.ContainsKey(key))
+                    return false;
+            }
+            return true;
+        }
+
+        private static List<KeyValuePair<string, double>> SortDictByValueDesc(Dictionary<string, double> dict)
+        {
+            var list = new List<KeyValuePair<string, double>>(dict);
+            list.Sort((x, y) => y.Value.CompareTo(x.Value));
+            return list;
+        }
+
+        private static List<KeyValuePair<string, (double totalRP, Dictionary<string, double> sourceBreakdown, string playerName)>> SortByTotalRpDesc(
+            Dictionary<string, (double totalRP, Dictionary<string, double> sourceBreakdown, string playerName)> dict, int take)
+        {
+            var list = new List<KeyValuePair<string, (double totalRP, Dictionary<string, double> sourceBreakdown, string playerName)>>(dict);
+            list.Sort((x, y) => y.Value.totalRP.CompareTo(x.Value.totalRP));
+            if (take >= 0 && list.Count > take)
+                list.RemoveRange(take, list.Count - take);
+            return list;
+        }
+
+        private static List<KeyValuePair<string, (double totalRP, int transactionCount, string playerName)>> SortByTotalRpAndTxDesc(
+            Dictionary<string, (double totalRP, int transactionCount, string playerName)> dict, int take)
+        {
+            var list = new List<KeyValuePair<string, (double totalRP, int transactionCount, string playerName)>>(dict);
+            list.Sort((x, y) => y.Value.totalRP.CompareTo(x.Value.totalRP));
+            if (take >= 0 && list.Count > take)
+                list.RemoveRange(take, list.Count - take);
+            return list;
         }
 
         private void AddLocalizedCommand(string command)

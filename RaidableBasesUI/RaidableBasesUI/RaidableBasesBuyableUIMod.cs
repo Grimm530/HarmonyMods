@@ -36,8 +36,54 @@ namespace RaidableBasesBuyableUI
             AppDomain.CurrentDomain.SetData(ApiDataKey, typeof(RaidableBasesBuyableUIPlugin));
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
-            _hookPatchCoroutine = ServerMgr.Instance?.StartCoroutine(EnsureCallHookPatch());
+            // Harmony OnLoaded often runs before ServerMgr exists — defer like image loading.
+            if (ServerMgr.Instance != null)
+                _hookPatchCoroutine = ServerMgr.Instance.StartCoroutine(EnsureCallHookPatch());
+            else
+                StartDeferredHookPatch();
             Debug.Log("[RaidableBasesBuyableUI] Loaded. Config: HarmonyConfig/RaidableBasesBuyableUI.json");
+        }
+
+        private void StartDeferredHookPatch()
+        {
+            try
+            {
+                var go = new GameObject("RBBUI_HookPatchWait");
+                UnityEngine.Object.DontDestroyOnLoad(go);
+                go.AddComponent<HookPatchWaitBehaviour>().Begin(this);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[RaidableBasesBuyableUI] Defer hook patch failed: " + ex.Message);
+            }
+        }
+
+        private sealed class HookPatchWaitBehaviour : MonoBehaviour
+        {
+            private RaidableBasesBuyableUIMod _mod;
+
+            public void Begin(RaidableBasesBuyableUIMod mod)
+            {
+                _mod = mod;
+                StartCoroutine(Wait());
+            }
+
+            private IEnumerator Wait()
+            {
+                for (int i = 0; i < 120; i++)
+                {
+                    if (ServerMgr.Instance != null && _mod != null)
+                    {
+                        var mod = _mod;
+                        Destroy(gameObject);
+                        mod._hookPatchCoroutine = ServerMgr.Instance.StartCoroutine(mod.EnsureCallHookPatch());
+                        yield break;
+                    }
+                    yield return new WaitForSeconds(0.5f);
+                }
+                Destroy(gameObject);
+                Debug.LogWarning("[RaidableBasesBuyableUI] ServerMgr never became ready - RB CallHook patches not applied.");
+            }
         }
 
         private void OnPermissionsReady()

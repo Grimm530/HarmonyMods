@@ -6,7 +6,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Text;
@@ -86,10 +85,34 @@ namespace EconomicsHarmony
         public string Name => "Server";
         public bool IsAdmin => true;
         public bool IsServer => true;
-        public bool IsConnected => true;
+        // Match Oxide server console: not "connected", so Message() echoes via Puts.
+        public bool IsConnected => false;
         public void Reply(string message) => Debug.Log("[Economics] " + message);
         public void Message(string msg) => Reply(msg);
         public bool HasPermission(string perm) => true;
+    }
+
+    /// <summary>
+    /// Offline Steam account stub — Oxide covalence keeps these in allPlayers after join;
+    /// without that DB, we still need Steam64 targets for admin deposit/setbalance/withdraw.
+    /// </summary>
+    public class OfflinePlayerWrapper : IPlayer
+    {
+        public OfflinePlayerWrapper(string id, string name = null)
+        {
+            Id = id ?? "0";
+            Name = string.IsNullOrEmpty(name) ? Id : name;
+        }
+
+        public string Id { get; }
+        public object Object => null;
+        public string Name { get; }
+        public bool IsAdmin => false;
+        public bool IsServer => false;
+        public bool IsConnected => false;
+        public void Reply(string message) { }
+        public void Message(string msg) { }
+        public bool HasPermission(string perm) => false;
     }
 
     public class BasePlayerWrapper : IPlayer
@@ -491,7 +514,7 @@ namespace EconomicsHarmony
 
         public string GetLanguage(string userId) => "en";
 
-        public IEnumerable<string> GetLanguages(object plugin = null) => _byLang.Keys.ToList();
+        public IEnumerable<string> GetLanguages(object plugin = null) => new List<string>(_byLang.Keys);
 
         public Dictionary<string, string> GetMessages(string language, object plugin = null)
         {
@@ -535,7 +558,11 @@ namespace EconomicsHarmony
         {
             if (string.IsNullOrEmpty(id) || !ulong.TryParse(id, out var uid)) return null;
             var p = BasePlayer.FindByID(uid) ?? BasePlayer.FindSleeping(uid);
-            return p != null ? new BasePlayerWrapper(p) : null;
+            if (p != null) return new BasePlayerWrapper(p);
+            // Oxide: covalence allPlayers keeps offline accounts; Deposit/SetBalance accept any Steam64.
+            if (uid.IsSteamId())
+                return new OfflinePlayerWrapper(id);
+            return null;
         }
 
         public IEnumerable<IPlayer> FindPlayers(string nameOrId)

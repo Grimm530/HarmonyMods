@@ -117,12 +117,27 @@ namespace RaidableBasesBuyableUI
         public object HandleOnPurchaseTakePayments(object[] args)
         {
             // Harmony RB: (buyer, player, value, mode). Oxide BuyableUI used (buyer, player, baseName).
+            // value may be a difficulty name (Expert) when buying randomly — only block known paste filenames.
             var player = ResolvePlayerArg(args, 1) ?? ResolvePlayerArg(args, 0);
             var baseName = ResolveStringArg(args, 2);
             if (player == null || string.IsNullOrEmpty(baseName)) return null;
+            if (!IsTrackedPasteName(baseName)) return null;
             if (!players.TryGetValue(player.UserIDString, out var bases) || !bases.Contains(baseName))
                 return null;
-            return true; // already purchased - block repurchase (RB treats non-null as cancel)
+            // RB maps non-string non-null to lang key "No Permission" — return an explicit message instead.
+            return "You already purchased this base. Pick another, or finish the category to reset.";
+        }
+
+        /// <summary>True if name is a paste file listed under any loaded profile (not a difficulty label).</summary>
+        private bool IsTrackedPasteName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            foreach (var list in _PROFILES.Values)
+            {
+                if (list != null && list.Exists(b => string.Equals(b, name, StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+            return false;
         }
 
         public void HandleOnRaidableBasePurchased(object[] args)
@@ -294,10 +309,12 @@ namespace RaidableBasesBuyableUI
             }
 
             DestroyUI(player);
-            if (!players.TryGetValue(player.UserIDString, out var bases) || !bases.Contains(baseName))
+            if (players.TryGetValue(player.UserIDString, out var bases) && bases.Contains(baseName))
             {
-                RunUiBuyraid(player, baseName);
+                player.ChatMessage("<color=#FF9800>You already purchased this base. Pick another, or finish the category to reset.</color>");
+                return;
             }
+            RunUiBuyraid(player, baseName);
         }
 
         public void CmdBuyableChangePage(ConsoleSystem.Arg arg)
