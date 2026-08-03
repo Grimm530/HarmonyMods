@@ -21,6 +21,9 @@ internal class PlayerInventory_GetIdealPickupContainer_Patch
         var player = __instance.GetComponent<BasePlayer>();
         if (player == null || player.IsDead() || player.IsSleeping()) return;
 
+        var prefs = mod.GetOrCreatePrefs(player);
+        if (prefs == null || !prefs.ExistingEnabled) return;
+
         var backpack = __instance.GetBackpackWithInventory();
         if (backpack?.contents == null) return;
 

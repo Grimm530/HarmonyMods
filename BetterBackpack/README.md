@@ -28,7 +28,8 @@ Harmony mod that adds **Existing** and **Retrieval** buttons to vanilla Rust bac
 | `Patches/PlayerLoot_AddContainer_Patch.cs` | Show buttons when dropped backpack opened |
 | `Patches/PlayerLoot_Clear_Patch.cs` | Destroy buttons when loot closed |
 | `Patches/Cui_Endtest_Patch.cs` | Handle button clicks |
-| `Patches/PlayerInventory_OnItemAddedOrRemoved_Patch.cs` | Existing: stack to backpack when looting |
+| `Patches/PlayerInventory_OnItemAddedOrRemoved_Patch.cs` | Existing: stack pickup leftovers to backpack (external loot/world only) |
+| `Patches/Item_MoveToContainer_Patch.cs` | Existing: redirect external→main loot to backpack; mark pickups so inventory transfers are ignored |
 | `Patches/ItemCrafter_CollectIngredient_Patch.cs` | Retrieval: crafting from backpack |
 | `Patches/ItemCrafter_DoesHaveUsableItem_Patch.cs` | Retrieval: CanCraft check |
 | `Patches/ItemCrafter_DoesHaveOKConditionItem_Patch.cs` | Retrieval: condition check for crafting |
@@ -56,7 +57,8 @@ Harmony mod that adds **Existing** and **Retrieval** buttons to vanilla Rust bac
 | `PlayerLoot_AddContainer_Patch` | `PlayerLoot.AddContainer` | Postfix | Show buttons when backpack container added |
 | `PlayerLoot_Clear_Patch` | `PlayerLoot.Clear` | Prefix | Destroy buttons when closing loot |
 | `Cui_Endtest_Patch` | `cui.endtest` | Prefix | Handle BETTER_BACKPACK TOGGLE_* commands |
-| `PlayerInventory_OnItemAddedOrRemoved_Patch` | `PlayerInventory.OnItemAddedOrRemoved` | Postfix | Existing: auto-stack to backpack |
+| `PlayerInventory_OnItemAddedOrRemoved_Patch` | `PlayerInventory.OnItemAddedOrRemoved` | Postfix | Existing: auto-stack pickup leftovers (marked external only) |
+| `Item_MoveToContainer_Patch` | `Item.MoveToContainer` | Prefix/Postfix | Existing: redirect external loot to backpack; mark pickups |
 | `ItemCrafter_CollectIngredient_Patch` | `ItemCrafter.CollectIngredient` | Prefix/Postfix | Add backpack to craft sources when Retrieval on |
 | `ItemCrafter_DoesHaveUsableItem_Patch` | `ItemCrafter.DoesHaveUsableItem` | Postfix | Include backpack in ingredient count |
 | `ItemCrafter_DoesHaveOKConditionItem_Patch` | `ItemCrafter.DoesHaveOKConditionItem` | Postfix | Include backpack in condition check |
@@ -86,7 +88,7 @@ Harmony mod that adds **Existing** and **Retrieval** buttons to vanilla Rust bac
 
 - **Patch targets:** `PlayerLoot`, `ItemCrafter`, `PlayerInventory` method signatures may change by Rust version.
 - **SerializeForNetwork (ClientRPC patch):** Backpack contents are injected into the main container data sent to the client. The client receives items in invisible slots (24+). This is required because crafting UI and reload run **on the client** (vanilla, no mod) – server patches alone cannot change client behavior. Without this, the client would never "see" backpack items for crafting/reload.
-- **Existing logic:** Must skip when looting the backpack itself (avoids moving items back and forth).
+- **Existing logic:** Only acts on external pickups (world/loot). `Item_MoveToContainer` marks those moves; backpack↔main and other inventory transfers are ignored so items are not pulled back.
 - **CollectIngredient:** Backpack is inserted at index 0 and must be removed in Postfix; exception in Prefix could leave it in.
 
 ## Backpack command conflict

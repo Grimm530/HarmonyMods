@@ -7,9 +7,10 @@ using UnityEngine;
 namespace BetterBackpack;
 
 /// <summary>
-/// When an item is added to main or belt and Existing is enabled, try to stack it into the backpack
-/// if the backpack already has a matching stack with room. Moves are deferred to the next tick to
-/// avoid re-entrancy (e.g. when gathering with GatherManager causes NullRef in ItemContainer.Remove).
+/// Existing: when a pickup lands in main/belt and backpack already has a matching stack
+/// with room, move it into the backpack. Only runs for items marked as external pickups
+/// (world/loot) — never for backpack↔main or other player inventory transfers.
+/// Moves are deferred one tick to avoid re-entrancy during Insert.
 /// </summary>
 [HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.OnItemAddedOrRemoved))]
 internal class PlayerInventory_OnItemAddedOrRemoved_Patch
@@ -38,13 +39,14 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
         var parent = item.parent;
         if (parent != __instance.containerMain && parent != __instance.containerBelt) return;
 
+        // Pickup-only: ignore inventory transfers (backpack→main, belt↔main, etc.).
+        if (!Item_MoveToContainer_Patch.ConsumeExternalPickupMark(item)) return;
+
         if (!(BetterBackpackConfig.Config?.ExistingEnabled ?? true)) return;
         var mod = BetterBackpackMod.Instance;
         if (mod == null) return;
         var prefs = mod.GetOrCreatePrefs(player);
         if (prefs == null || !prefs.ExistingEnabled) return;
-
-        if (IsLootingBackpack(player)) return;
 
         var backpack = __instance.GetBackpackWithInventory();
         if (backpack?.contents == null) return;
@@ -103,13 +105,5 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
             else
                 Interlocked.Exchange(ref _deferredWorkHint, 0);
         }
-    }
-
-    private static bool IsLootingBackpack(BasePlayer player)
-    {
-        var loot = player?.inventory?.loot;
-        if (loot == null || loot.containers == null || loot.containers.Count == 0) return false;
-        var first = loot.containers[0];
-        return first?.parent?.info?.GetComponent<ItemModBackpack>() != null;
     }
 }

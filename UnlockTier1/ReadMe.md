@@ -12,7 +12,7 @@ Persistent reference for AI when modifying, extending, or debugging the **Unlock
 |-----------|-------|
 | **Name** | UnlockTier1 |
 | **Author** | nivex |
-| **Version** | 1.0.0.0 |
+| **Version** | 1.0.1.0 |
 | **Type** | Harmony mod |
 | **Purpose** | Unlocks all Tier 1 (workbench level ≤ 1) craftable blueprints for players on join and on mod load for already-connected players |
 
@@ -22,7 +22,7 @@ Persistent reference for AI when modifying, extending, or debugging the **Unlock
 - On BasePlayer.PlayerInit (Postfix): unlock Tier 1 blueprints for the connecting player
 - Expose `UnlockBlueprints(ulong userid, int itemid = 0)` for unlocking blueprints by user ID (e.g. from another mod or tooling)
 
-**Key behavior:** Only blueprints that are `userCraftable`, not `defaultBlueprint`, and have `workbenchLevelRequired <= maxTier` (default 1) are added to `PersistantPlayerInfo.unlockedItems`. DLC-only blueprints are excluded in `UnlockBlueprints` via `!blueprint.NeedsSteamDLC`.
+**Key behavior:** Only blueprints that are `userCraftable`, not `defaultBlueprint`, have `workbenchLevelRequired <= maxTier` (default 1), and are **not** steam-item / Steam DLC gated are added to `PersistantPlayerInfo.unlockedItems`. On each unlock pass the mod also **scrubs** any previously stored steam/DLC item ids from `unlockedItems` (older builds could write those and contribute to client `BlueprintInformationPanel` / `PlayerBlueprints` NREs when clicking inventory items). Network update + `UnlockedBlueprint` RPC are sent only when the unlock list actually changes.
 
 ---
 
@@ -68,16 +68,16 @@ None. Mod does not register console commands. `UnlockBlueprints(ulong, int)` is 
 | **Bootstrap.StartupShared** | Postfix | Call `Initialize()`: log "[Harmony] Loaded: UnlockTier1 1.0.0.0 by nivex", then for each `BasePlayer` in `BasePlayer.activePlayerList` call `BasePlayer_PlayerInit.UnlockTier(current)`. |
 | **BasePlayer.PlayerInit(Connection)** | Postfix | If `c != null` and `c.player` is `BasePlayer`, call `UnlockTier(player)`. Exceptions are swallowed. |
 
-**UnlockTier:** Iterates `ItemManager.GetBlueprints()`; for each blueprint with `userCraftable && !defaultBlueprint && blueprint.workbenchLevelRequired <= maxTier` and not already in `persistantPlayerInfo.unlockedItems`, adds `blueprint.targetItem.itemid`. Then assigns `PersistantPlayerInfo`, `SendNetworkUpdateImmediate`, and `ClientRPC(UnlockedBlueprint, 0)`.
+**UnlockTier:** Scrubs unsafe steam/DLC ids from `unlockedItems`, then iterates `ItemManager.GetBlueprints()` via `IsSafeToAutoUnlock` (`userCraftable`, not `defaultBlueprint`, not `NeedsSteamItem`, not DLC, non-null `targetItem`) and `workbenchLevelRequired <= maxTier`. Adds missing ids. Assigns `PersistantPlayerInfo` + network/RPC **only if changed**.
 
-**UnlockBlueprints:** Takes `userid` and optional `itemid` (0 = all). Uses `ItemManager.GetBlueprints()` with `userCraftable && !NeedsSteamDLC` and optional item filter; adds missing blueprints to `playerInfo.unlockedItems`. If the player had no unlocks before, calls `persistance.SetPlayerInfo`. If `BasePlayer.FindByID(userid)` is non-null, syncs and sends ClientRPC.
+**UnlockBlueprints:** Same safety filters as `UnlockTier` (plus optional `itemid` filter). Scrubs unsafe ids first. If the player had no unlocks before and something changed, calls `persistance.SetPlayerInfo`. If online, syncs and sends ClientRPC when changed.
 
 ---
 
 ## 7) Lifecycle & State Machine
 
 - **OnLoaded:** If `ConVar.Server.identity != "my_server_identity"`, call `Bootstrap_StartupShared.Initialize()` (log + unlock Tier 1 for all active players). No config load; no PatchAll in this mod (HarmonyLoader applies patches from the assembly).
-- **OnUnloaded:** Log "[Harmony] Unloaded: UnlockTier1 1.0.0.0 by nivex". No explicit entity or timer cleanup; unlocked blueprints remain in game persistence.
+- **OnUnloaded:** Log "[Harmony] Unloaded: UnlockTier1 1.0.1.0 by nivex". No explicit entity or timer cleanup; unlocked blueprints remain in game persistence.
 - **Runtime:** Each `BasePlayer.PlayerInit(Connection)` Postfix runs for new connections and calls `UnlockTier(player)`.
 
 ---
