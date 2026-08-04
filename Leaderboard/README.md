@@ -28,7 +28,7 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 
 ## Data & MySQL (Option 2: Relay to Bot)
 
-- **Local:** Stats stored in `HarmonyMods_Data/LeaderboardData/Players/<steamid>.json` (config: `DataFolder`, `StorageType`; default folder is `HarmonyMods_Data/LeaderboardData`).
+- **Local:** Stats stored in `HarmonyData/LeaderboardData/Players/<steamid>.json` (config: `DataFolder`, `StorageType`; default folder is `HarmonyData/LeaderboardData`).
 - **Relay:** If `Relay.Enabled` and `Relay.Url` are set, stat updates are batched and POSTed as JSON in **the same format as the Oxide plugin’s MySQL tables** so your endpoint can write to the same DB. Payload: `Updates` (UserId, LootType, ShortName, ItemValue = **total**) and `Players` (UserId, LastIP, LastName, ConnectTime, DisconnectTime, TotalPlayTime, Points, HiddenFromLeaderboard). See `RELAY_ENDPOINT.md`.
 - **Discord:** Optional `Discord.WebhookUrl` + `Discord.Enabled` + `Discord.AutoMessageIntervalSeconds` for periodic “Top 5 Kills” (or similar) embeds.
 
@@ -44,7 +44,7 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 
 ## Config
 
-- **Path:** `HarmonyConfig/Leaderboard.json` (next to server root). Player data is stored under `HarmonyMods_Data/LeaderboardData/Players/`.
+- **Path:** `HarmonyConfig/Leaderboard.json` (next to server root). Player data is stored under `HarmonyData/LeaderboardData/Players/`.
 - **Options:** `StorageType` (Json), `DataFolder`, `Commands`, `CooldownSeconds`, `Relay` (Enabled, Url, BatchIntervalSeconds), `Discord` (WebhookUrl, Enabled, AutoMessageIntervalSeconds), `TemplatePath`, `ImageBaseUrl`.
 - **For “mod → MySQL, bot → Discord” setups:** You only need **Relay** (Enabled, Url, BatchIntervalSeconds) so the mod sends data to your relay (e.g. the Discord bot), which writes to MySQL. The bot’s template and Discord posting are separate.
 - **TemplatePath / ImageBaseUrl:** Used only for the **in-game** leaderboard panel (CUI) in Rust (e.g. fullscreen template, stat icons). They do not affect Discord; the bot has its own template and image logic.

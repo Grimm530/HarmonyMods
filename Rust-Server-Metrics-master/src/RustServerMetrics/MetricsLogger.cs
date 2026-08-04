@@ -16,7 +16,7 @@ namespace RustServerMetrics
 {
     public class MetricsLogger : SingletonComponent<MetricsLogger>
     {
-        const string CONFIGURATION_PATH = "HarmonyMods_Data/ServerMetrics/Configuration.json";
+        const string CONFIGURATION_PATH = "HarmonyData/ServerMetrics/Configuration.json";
         readonly static Regex PLUGIN_NAME_REGEX = new Regex(@"_|[^\w\d]");
         readonly StringBuilder _stringBuilder = new();
         readonly Dictionary<ulong, Action> _playerStatsActions = new();

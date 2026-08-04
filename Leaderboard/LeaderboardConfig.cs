@@ -7,7 +7,7 @@ namespace Leaderboard;
 public class LeaderboardConfig
 {
     [JsonProperty("StorageType")] public string StorageType { get; set; } = "Json"; // Json | Sqlite
-    [JsonProperty("DataFolder")] public string DataFolder { get; set; } = "HarmonyMods_Data/LeaderboardData";
+    [JsonProperty("DataFolder")] public string DataFolder { get; set; } = "HarmonyData/LeaderboardData";
     [JsonProperty("Commands")] public string[] Commands { get; set; } = { "leaderboard", "lb", "stats" };
     [JsonProperty("CooldownSeconds")] public float CooldownSeconds { get; set; } = 0.2f;
     [JsonProperty("WipeDataOnNewSave")] public bool WipeDataOnNewSave { get; set; } = false;

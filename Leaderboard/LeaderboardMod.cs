@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using ConVar;
 using HarmonyLib;
@@ -16,6 +17,13 @@ namespace Leaderboard;
 public class LeaderboardMod : IHarmonyModHooks
 {
     public static LeaderboardMod Instance { get; private set; }
+
+    public const int VersionMajor = 1;
+    public const int VersionMinor = 0;
+    public const int VersionPatch = 0;
+    public const string AppDomainApiKey = "Leaderboard_ApiType";
+    public const string AppDomainPluginKey = "Leaderboard_Plugin";
+    public const string AppDomainUltimatePluginKey = "UltimateLeaderboard_Plugin";
 
     private readonly Dictionary<ulong, PlayerStats> _playerStats = new();
     private readonly Dictionary<ulong, float> _lastCommandTime = new();
@@ -32,9 +40,12 @@ public class LeaderboardMod : IHarmonyModHooks
     private readonly Dictionary<ulong, int> _openLeaderboardTop10Tab = new();
     /// <summary>When set, My Statistics shows this player's profile instead of the viewer's own (e.g. after clicking a Search card).</summary>
     private readonly Dictionary<ulong, ulong> _viewedProfileUserId = new();
+    /// <summary>Players currently viewing Leaderboard inside ServerPanel content.</summary>
+    private readonly HashSet<ulong> _openInServerPanel = new();
     private readonly object _uiLock = new();
     private GameObject _tickObject;
     private float _discordTimer;
+    private LeaderboardPluginWrapper _pluginWrapper;
     private const string UiLayer = "UI.Leaderboard";
 
     private static readonly Dictionary<string, string> _localImageIds = new();
@@ -60,7 +71,33 @@ public class LeaderboardMod : IHarmonyModHooks
             _openLeaderboardProfileTab.Remove(userId);
             _openLeaderboardTop10Tab.Remove(userId);
             _viewedProfileUserId.Remove(userId);
+            _openInServerPanel.Remove(userId);
         }
+    }
+
+    public bool IsOpenInServerPanel(ulong userId)
+    {
+        lock (_uiLock)
+            return _openInServerPanel.Contains(userId);
+    }
+
+    public void SetOpenInServerPanel(ulong userId, bool open)
+    {
+        lock (_uiLock)
+        {
+            if (open) _openInServerPanel.Add(userId);
+            else _openInServerPanel.Remove(userId);
+        }
+    }
+
+    /// <summary>Refresh open UI (Overlay fullscreen or ServerPanel embed).</summary>
+    public void RefreshLeaderboardUI(BasePlayer player)
+    {
+        if (player == null) return;
+        if (IsOpenInServerPanel(player.userID))
+            LeaderboardUI.RefreshInServerPanel(player);
+        else
+            LeaderboardUI.Show(player);
     }
 
     /// <summary>Whose stats to show in My Statistics: returns viewed target or the viewer's own id.</summary>
@@ -252,6 +289,8 @@ public class LeaderboardMod : IHarmonyModHooks
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
         Instance = this;
+        _pluginWrapper = new LeaderboardPluginWrapper(this);
+        RegisterApiType();
         _harmony = new HarmonyLib.Harmony("com.leaderboard.patches");
         _harmony.PatchAll(typeof(LeaderboardMod).Assembly);
 
@@ -267,7 +306,110 @@ public class LeaderboardMod : IHarmonyModHooks
         StartLocalImagesLoadCoroutine();
         // Players already online when the mod loads never get PlayerInit again — start their sessions.
         RegisterConnectedPlayers();
-        UnityEngine.Debug.Log("[Leaderboard] Loaded. Commands: /leaderboard, /lb, /stats");
+        UnityEngine.Debug.Log($"[Leaderboard] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}. Commands: /leaderboard, /lb, /stats");
+    }
+
+    private void RegisterApiType()
+    {
+        try
+        {
+            AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(LeaderboardMod));
+            AppDomain.CurrentDomain.SetData(AppDomainPluginKey, _pluginWrapper);
+            AppDomain.CurrentDomain.SetData(AppDomainUltimatePluginKey, _pluginWrapper);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] RegisterApiType: {ex.Message}");
+        }
+    }
+
+    private void UnregisterApiType()
+    {
+        try
+        {
+            AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
+            AppDomain.CurrentDomain.SetData(AppDomainPluginKey, null);
+            AppDomain.CurrentDomain.SetData(AppDomainUltimatePluginKey, null);
+        }
+        catch { }
+    }
+
+    /// <summary>Dispatch for ServerPanel / AppDomain consumers (Plugin.Call).</summary>
+    public object Call(string method, params object[] args)
+    {
+        if (string.IsNullOrEmpty(method)) return null;
+        try
+        {
+            var mi = typeof(LeaderboardMod).GetMethod(method,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (mi == null) return null;
+            var parameters = mi.GetParameters();
+            var invokeArgs = args ?? Array.Empty<object>();
+            if (parameters.Length == 0)
+                return mi.Invoke(this, null);
+            if (invokeArgs.Length < parameters.Length)
+            {
+                var padded = new object[parameters.Length];
+                Array.Copy(invokeArgs, padded, invokeArgs.Length);
+                invokeArgs = padded;
+            }
+            else if (invokeArgs.Length > parameters.Length)
+            {
+                var trimmed = new object[parameters.Length];
+                Array.Copy(invokeArgs, trimmed, parameters.Length);
+                invokeArgs = trimmed;
+            }
+            return mi.Invoke(this, invokeArgs);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] Call({method}): {ex.InnerException?.Message ?? ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// ServerPanel plugin page hook. Returns bracket-stripped CUI JSON parented under
+    /// UI.Server.Panel.Content (root name UI.Server.Panel.Content.Plugin).
+    /// Must be synchronous — ServerPanel mounts the return value immediately.
+    /// </summary>
+    public string API_OpenPlugin(BasePlayer player)
+    {
+        if (player == null) return null;
+        try
+        {
+            // Prefer ServerPanel embed; clear any leftover Overlay UI.
+            LeaderboardUI.Destroy(player);
+            SetOpenInServerPanel(player.userID, true);
+            // Ensure an in-memory row exists now so BuildForServerPanel never waits on disk I/O.
+            GetOrCreateStats(player.userID, player.displayName);
+            EnsurePlayerLoaded(player.userID, player.displayName, null);
+            var json = LeaderboardUI.BuildForServerPanel(player);
+            if (string.IsNullOrWhiteSpace(json))
+                UnityEngine.Debug.LogWarning("[Leaderboard] API_OpenPlugin produced empty UI JSON");
+            return json;
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning("[Leaderboard] API_OpenPlugin: " + (ex.InnerException?.Message ?? ex.Message));
+            return null;
+        }
+    }
+
+    public void OnServerPanelClosed(BasePlayer player)
+    {
+        if (player == null) return;
+        if (!IsOpenInServerPanel(player.userID)) return;
+        LeaderboardUI.DestroyServerPanel(player);
+        OnLeaderboardClosed(player.userID);
+    }
+
+    public void OnServerPanelCategoryPage(BasePlayer player, int category, int page)
+    {
+        if (player == null) return;
+        if (!IsOpenInServerPanel(player.userID)) return;
+        LeaderboardUI.DestroyServerPanel(player);
+        OnLeaderboardClosed(player.userID);
     }
 
     /// <summary>Start playtime sessions for everyone already in activePlayerList (mod load / reload).</summary>
@@ -377,6 +519,8 @@ public class LeaderboardMod : IHarmonyModHooks
         FlushRelayBatch();
         _harmony?.UnpatchAll("com.leaderboard.patches");
         UnregisterCommands();
+        UnregisterApiType();
+        _pluginWrapper = null;
         Instance = null;
         UnityEngine.Debug.Log("[Leaderboard] Unloaded.");
     }
@@ -498,6 +642,7 @@ public class LeaderboardMod : IHarmonyModHooks
         if (IsRateLimited(player.userID)) return;
         EnsurePlayerLoaded(player.userID, player.displayName, () =>
         {
+            SetOpenInServerPanel(player.userID, false);
             SetLeaderboardCategory(player.userID, 0);
             SetLeaderboardProfileTab(player.userID, 0);
             LeaderboardUI.Show(player);
@@ -759,5 +904,17 @@ public class LeaderboardMod : IHarmonyModHooks
         }
         if (fields.Count > 0)
             DiscordHelper.SendWebhook(url, "Leaderboard", fields);
+    }
+
+    /// <summary>Plugin-shaped wrapper for AppDomain consumers (ServerPanel Plugin Name Leaderboard / UltimateLeaderboard).</summary>
+    public sealed class LeaderboardPluginWrapper
+    {
+        private readonly LeaderboardMod _mod;
+        public LeaderboardPluginWrapper(LeaderboardMod mod) => _mod = mod;
+        public bool IsLoaded => _mod != null && Instance == _mod;
+        public string Name => "Leaderboard";
+        public string Version => $"{VersionMajor}.{VersionMinor}.{VersionPatch}";
+        public object Call(string method, params object[] args) => _mod?.Call(method, args);
+        public object API_OpenPlugin(BasePlayer player) => _mod?.API_OpenPlugin(player);
     }
 }

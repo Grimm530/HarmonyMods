@@ -444,18 +444,18 @@ if ($ConfigPath) {
 
 # Build list of potential config file paths
 # Script is at: .cursor\HarmonyMods\ps1scripts\generate-metrics-report.ps1
-# Config is at: HarmonyMods_Data\ServerMetrics\Configuration.json (workspace root)
+# Config is at: HarmonyData\ServerMetrics\Configuration.json (workspace root)
 $potentialPaths = @(
     # Go up 3 levels from ps1scripts to workspace root
-    (Join-Path $PSScriptRoot "..\..\..\HarmonyMods_Data\ServerMetrics\Configuration.json"),
+    (Join-Path $PSScriptRoot "..\..\..\HarmonyData\ServerMetrics\Configuration.json"),
     # Go up 2 levels (in case structure is different)
-    (Join-Path $PSScriptRoot "..\..\HarmonyMods_Data\ServerMetrics\Configuration.json"),
+    (Join-Path $PSScriptRoot "..\..\HarmonyData\ServerMetrics\Configuration.json"),
     # Relative to script directory
-    (Join-Path $PSScriptRoot "HarmonyMods_Data\ServerMetrics\Configuration.json"),
+    (Join-Path $PSScriptRoot "HarmonyData\ServerMetrics\Configuration.json"),
     # Relative to current working directory
-    "HarmonyMods_Data\ServerMetrics\Configuration.json",
+    "HarmonyData\ServerMetrics\Configuration.json",
     # Absolute path using Split-Path (chained to go up 3 levels)
-    (Join-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) "HarmonyMods_Data\ServerMetrics\Configuration.json")
+    (Join-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) "HarmonyData\ServerMetrics\Configuration.json")
 )
 
 # Resolve paths that exist

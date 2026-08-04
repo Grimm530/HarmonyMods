@@ -11715,6 +11715,7 @@ namespace ShopHarmony
 
         private void LoadServerPanel()
         {
+            ServerPanel = plugins?.Find("ServerPanel");
             _serverPanelCategory.spStatus = ServerPanel is {IsLoaded: true};
 
             ServerPanel?.Call("API_OnServerPanelProcessCategory", Name);
@@ -14311,68 +14312,89 @@ namespace ShopHarmony
             return PlayerData.GetOrCreate(playerID)?.SelectedEconomy ?? 0;
         }
 
-        private CuiElementContainer API_OpenPlugin(BasePlayer player)
+        /// <summary>
+        /// Returns bracket-stripped CUI JSON for ServerPanel (cross-assembly CuiElementContainer
+        /// type checks fail under Harmony; string mount is the reliable path).
+        /// </summary>
+        private string API_OpenPlugin(BasePlayer player)
         {
-            var container = new CuiElementContainer();
-
-            if (_initializedStatus.status is false)
+            try
             {
-                if (_initializedStatus.message == null)
+                if (_initializedStatus.status is false)
                 {
-                    _config?.Notifications?.ShowNotify(player, UIMsgShopInInitialization, 1);
-                    return container;
+                    if (_initializedStatus.message == null)
+                    {
+                        _config?.Notifications?.ShowNotify(player, UIMsgShopInInitialization, 1);
+                        return null;
+                    }
+
+                    _config?.Notifications?.ShowNotify(player, NoILError, 1);
+                    PrintError(ConvertInitializedStatus());
+                    return null;
                 }
 
-                _config?.Notifications?.ShowNotify(player, NoILError, 1);
+                if (_uiData is not {IsInMenuUISet: true} || _uiData.InMenuUI == null)
+                {
+                    var reason = _uiData == null ? "UI data is missing." : "Menu UI is not initialized.";
+                    var msg = $"Error: UI is unavailable for player {player.UserIDString}. Reason: {reason}";
+                    PrintError(msg);
+                    _config?.Notifications?.ShowNotify(player,
+                        player.IsAdmin ? msg : "The UI is currently unavailable. Please try again later.", 1);
+                    return null;
+                }
 
-                PrintError(ConvertInitializedStatus());
-                return container;
+                RemoveOpenedShop(player.userID);
+
+                var shop = GetShop(player, false);
+                var shopUI = shop.GetUI();
+                if (shopUI == null)
+                {
+                    PrintError($"API_OpenPlugin: InMenuUI null for {player.UserIDString}");
+                    return null;
+                }
+
+                var container = new CuiElementContainer();
+
+                #region Background
+
+                container.Add(new CuiPanel
+                {
+                    RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+                    Image = {Color = "0 0 0 0"}
+                }, "UI.Server.Panel.Content", "UI.Server.Panel.Content.Plugin", "UI.Server.Panel.Content.Plugin");
+
+                container.Add(new CuiPanel
+                {
+                    RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+                    Image = {Color = "0 0 0 0"}
+                }, "UI.Server.Panel.Content.Plugin", Layer + ".Background", Layer + ".Background");
+
+                #endregion
+
+                container.Add(
+                    shopUI.ShopContent.Background.GetImage(Layer + ".Background", Layer + ".Main", Layer + ".Main"));
+
+                ShopHeaderUI(player, container);
+                ShopContentUI(player, container);
+                ShopCategoriesUI(container, player);
+                ShopBasketUI(container, player);
+
+                return StripCuiArrayBrackets(CuiHelper.ToJson(container));
             }
-
-            if (_uiData is not {IsInMenuUISet: true})
+            catch (Exception ex)
             {
-                var reason = _uiData == null ? "UI data is missing." : "Menu UI is not initialized.";
-                var msg = $"Error: UI is unavailable for player {player.UserIDString}. Reason: {reason}";
-                PrintError(msg);
-                _config?.Notifications?.ShowNotify(player,
-                    player.IsAdmin ? msg : "The UI is currently unavailable. Please try again later.", 1);
-                return container;
+                PrintError("API_OpenPlugin failed: " + ex.Message);
+                return null;
             }
+        }
 
-            RemoveOpenedShop(player.userID);
-
-            var shop = GetShop(player, false);
-
-            var shopUI = shop.GetUI();
-
-            #region Background
-
-            container.Add(new CuiPanel
-            {
-                RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
-                Image = {Color = "0 0 0 0"}
-            }, "UI.Server.Panel.Content", "UI.Server.Panel.Content.Plugin", "UI.Server.Panel.Content.Plugin");
-
-            container.Add(new CuiPanel
-            {
-                RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
-                Image = {Color = "0 0 0 0"}
-            }, "UI.Server.Panel.Content.Plugin", Layer + ".Background", Layer + ".Background");
-
-            #endregion
-
-            container.Add(
-                shopUI.ShopContent.Background.GetImage(Layer + ".Background", Layer + ".Main", Layer + ".Main"));
-
-            ShopHeaderUI(player, container);
-
-            ShopContentUI(player, container);
-
-            ShopCategoriesUI(container, player);
-
-            ShopBasketUI(container, player);
-
-            return container;
+        private static string StripCuiArrayBrackets(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            json = json.Trim();
+            if (json.Length >= 2 && json[0] == '[' && json[json.Length - 1] == ']')
+                json = json.Substring(1, json.Length - 2);
+            return string.IsNullOrWhiteSpace(json) ? null : json;
         }
 
 #if TESTING

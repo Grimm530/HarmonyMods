@@ -4298,6 +4298,7 @@ namespace PersonalNPCHarmony
 
             private float _recoverTime = 6f;
             private float _lastTimeGathered, _lastTimeGUI, _nextShootTime, _lastConditionWhileGather, _lastTimeSwitchTarget, _lastTimeAIMovement, _lastTimeInput, _lastDoorOpenTime;
+            private float _lastNoWeaponNotifyTime;
             private float _nextCombatStrafeTime, _nextCoverCheckTime;
             private int _strafeLateralSign;
             private BaseEntity _recentAttacker;
@@ -5360,7 +5361,7 @@ namespace PersonalNPCHarmony
                             if (_lastTarget == _barrelTarget) _barrelTarget = null;
                             _lastTarget = null;
 
-                            SendMsg("Bot_Error_NoWeapon");
+                            NotifyNoWeapon();
                             _isFollowPlayer = true;
 
                             SetIcon(Icon.Follow);
@@ -7245,7 +7246,7 @@ namespace PersonalNPCHarmony
                                     {
                                         _lastTarget = null;
 
-                                        SendMsg("Bot_Error_NoWeapon");
+                                        NotifyNoWeapon();
                                         _isFollowPlayer = true;
 
                                         SetIcon(Icon.Follow);
@@ -9044,6 +9045,31 @@ namespace PersonalNPCHarmony
 
             private void SendMsg(string key, string[] args = null) => plugin.Call<string>("SendMsg", owner, key, args);
             internal string GetMsg(string key) => plugin.Call<string>("GetMsg", key, owner.UserIDString);
+
+            /// <summary>
+            /// One chat message + one 5s gametip. Cooldown matches tip duration so the AI tick cannot spam chat.
+            /// </summary>
+            private void NotifyNoWeapon()
+            {
+                if (owner == null || !owner.IsConnected) return;
+                if (Time.realtimeSinceStartup - _lastNoWeaponNotifyTime < 5f) return;
+                _lastNoWeaponNotifyTime = Time.realtimeSinceStartup;
+
+                SendMsg("Bot_Error_NoWeapon");
+
+                string text = GetMsg("Bot_Error_NoWeapon");
+                if (string.IsNullOrEmpty(text)) return;
+
+                BasePlayer player = owner;
+                player.SendConsoleCommand("gametip.hidegametip");
+                player.SendConsoleCommand("gametip.showgametip", text);
+
+                plugin.timer.Once(5f, () =>
+                {
+                    if (player != null && player.IsConnected)
+                        player.SendConsoleCommand("gametip.hidegametip");
+                });
+            }
 
             private bool IsAtClosestNavmeshPoint(Vector3 targetPosition, float maxDistance)
             {

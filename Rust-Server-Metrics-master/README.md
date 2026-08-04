@@ -15,14 +15,14 @@ A metrics gathering HarmonyMod for [Rust](https://playrust.com) game servers.
 7. Stop your Rust server, **see warning below**
 8. Download the latest version of [RustServerMetrics.dll](https://github.com/Pinkstink-Rust/Rust-Server-Metrics/releases/latest/download/RustServerMetrics.dll) from this projects [latest release](https://github.com/Pinkstink-Rust/Rust-Server-Metrics/releases/latest) and copy it to the `HarmonyMods` folder in your rust server directory
 9. Start your Rust Server, **see warning below**
-10. Once the server has started and the mod has loaded, setup your configuration file located `HarmonyMods_Data/ServerMetrics/Configuration.json`
+10. Once the server has started and the mod has loaded, setup your configuration file located `HarmonyData/ServerMetrics/Configuration.json`
 11. Reload the configuration file by issuing the command `servermetrics.reloadcfg`
 
 > **WARNING**: Never update or delete a HarmonyMod DLL file when the rust server is running, this can lead to your server throwing random Invalid IL exceptions and eventually crash
 
 # Configuration
 ## Sample
- `HarmonyMods_Data/ServerMetrics/Configuration.json`
+ `HarmonyData/ServerMetrics/Configuration.json`
 ```json
 {
   "Enabled": true,

@@ -23,8 +23,10 @@ namespace KitsHarmony
         public static readonly VersionNumber Version = new VersionNumber(VersionMajor, VersionMinor, VersionPatch);
 
         public const string AppDomainApiKey = "Kits_ApiType";
+        public const string AppDomainPluginKey = "Kits_Plugin";
 
         private Kits _plugin;
+        private KitsPluginWrapper _pluginWrapper;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -37,6 +39,7 @@ namespace KitsHarmony
             KitsHost.Init(root);
             _plugin = new Kits();
             KitsHost.Instance.Plugin = _plugin;
+            _pluginWrapper = new KitsPluginWrapper(this);
             RegisterApiType();
             _plugin.HarmonyInit();
             // Drop any stale replicated kits.* entries from older builds (causes client ERRORS overlay).
@@ -121,19 +124,45 @@ namespace KitsHarmony
             UnregisterApiType();
             KitsHost.Shutdown();
             _plugin = null;
+            _pluginWrapper = null;
             Instance = null;
         }
 
-        private static void RegisterApiType()
+        private void RegisterApiType()
         {
-            try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(KitsHarmonyMod)); }
+            try
+            {
+                AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(KitsHarmonyMod));
+                AppDomain.CurrentDomain.SetData(AppDomainPluginKey, _pluginWrapper);
+            }
             catch (Exception ex) { Debug.LogWarning("[Kits Harmony] RegisterApiType: " + ex.Message); }
         }
 
         private static void UnregisterApiType()
         {
-            try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
+            try
+            {
+                AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
+                AppDomain.CurrentDomain.SetData(AppDomainPluginKey, null);
+            }
             catch { }
+        }
+
+        public object Call(string method, params object[] args)
+        {
+            if (_plugin == null || string.IsNullOrEmpty(method)) return null;
+            try
+            {
+                var count = args?.Length ?? 0;
+                var mi = typeof(Kits).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .FirstOrDefault(m => m.Name == method && m.GetParameters().Length == count);
+                return mi?.Invoke(_plugin, args);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Kits Harmony] Call({method}): " + (ex.InnerException?.Message ?? ex.Message));
+                return null;
+            }
         }
 
         // ---- Static API ----
@@ -154,6 +183,16 @@ namespace KitsHarmony
         }
 
         public static bool isKit(string name) => IsKit(name);
+
+        public sealed class KitsPluginWrapper
+        {
+            private readonly KitsHarmonyMod _mod;
+            public KitsPluginWrapper(KitsHarmonyMod mod) => _mod = mod;
+            public bool IsLoaded => _mod?._plugin != null;
+            public string Name => "Kits";
+            public string Version => $"{VersionMajor}.{VersionMinor}.{VersionPatch}";
+            public object Call(string method, params object[] args) => _mod?.Call(method, args);
+        }
 
         // ---- Commands ----
 

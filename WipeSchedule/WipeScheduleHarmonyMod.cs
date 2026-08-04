@@ -1,0 +1,485 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using UnityEngine;
+
+namespace WipeScheduleHarmony
+{
+    /// <summary>
+    /// Harmony entry point for WipeSchedule 2.0.21. Hosts the ported plugin and registers commands.
+    /// </summary>
+    public class WipeScheduleHarmonyMod : IHarmonyModHooks
+    {
+        public static WipeScheduleHarmonyMod Instance { get; private set; }
+
+        public const int VersionMajor = 2;
+        public const int VersionMinor = 0;
+        public const int VersionPatch = 21;
+
+        public static readonly VersionNumber Version = new VersionNumber(VersionMajor, VersionMinor, VersionPatch);
+
+        public const string AppDomainApiKey = "WipeSchedule_ApiType";
+        public const string AppDomainPluginKey = "WipeSchedule_Plugin";
+
+        private WipeSchedule _plugin;
+        private WipeSchedulePluginWrapper _pluginWrapper;
+        private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
+        private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _commandMethodMap =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        public WipeSchedule Plugin => _plugin;
+
+        public void OnLoaded(OnHarmonyModLoadedArgs args)
+        {
+            Instance = this;
+            string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            WipeScheduleHost.Init(root);
+            _plugin = new WipeSchedule();
+            WipeScheduleHost.Instance.Plugin = _plugin;
+            _pluginWrapper = new WipeSchedulePluginWrapper(this);
+            RegisterApiType();
+            _plugin.HarmonyInit();
+            ScrubWipeScheduleFromReplicatedList();
+            RegisterCommands();
+            ScheduleServerInitialized();
+            Debug.Log($"[WipeSchedule Harmony] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
+            Debug.Log("[WipeSchedule Harmony] Chat: /wipe or /wipedata (from HarmonyConfig/WipeSchedule.json Commands)");
+        }
+
+        private void ScheduleServerInitialized(int attempt = 0)
+        {
+            if (_plugin == null) return;
+            try
+            {
+                bool itemsReady = ItemManager.itemList != null && ItemManager.itemList.Count > 0;
+                if (itemsReady && ServerMgr.Instance != null && attempt >= 2)
+                {
+                    _plugin.HarmonyServerInitialized();
+                    RefreshChatCommandsFromConfig();
+                    RegisterDeferredConsoleFromPlugin();
+                    Debug.Log($"[WipeSchedule Harmony] Server initialized (v{VersionMajor}.{VersionMinor}.{VersionPatch})");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[WipeSchedule Harmony] ScheduleServerInitialized: " + ex.Message);
+            }
+
+            if (attempt > 120)
+            {
+                Debug.LogWarning("[WipeSchedule Harmony] Timed out waiting for ItemManager; initializing anyway");
+                try
+                {
+                    _plugin.HarmonyServerInitialized();
+                    RefreshChatCommandsFromConfig();
+                    RegisterDeferredConsoleFromPlugin();
+                }
+                catch (Exception ex) { Debug.LogError("[WipeSchedule Harmony] Init failed: " + ex); }
+                return;
+            }
+
+            float delay = attempt < 10 ? 0.5f : 1f;
+            if (ServerMgr.Instance != null)
+                ServerMgr.Instance.Invoke(() => ScheduleServerInitialized(attempt + 1), delay);
+            else
+            {
+                try
+                {
+                    var go = new GameObject("WipeScheduleHarmony_InitWait");
+                    UnityEngine.Object.DontDestroyOnLoad(go);
+                    go.AddComponent<InitWaitBehaviour>().Begin(this, attempt);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[WipeSchedule Harmony] ScheduleServerInitialized: " + ex.Message);
+                }
+            }
+        }
+
+        private class InitWaitBehaviour : MonoBehaviour
+        {
+            private WipeScheduleHarmonyMod _mod;
+            private int _attempt;
+            public void Begin(WipeScheduleHarmonyMod mod, int attempt)
+            {
+                _mod = mod;
+                _attempt = attempt;
+                StartCoroutine(Wait());
+            }
+            private System.Collections.IEnumerator Wait()
+            {
+                yield return new WaitForSeconds(0.5f);
+                var mod = _mod;
+                var attempt = _attempt;
+                Destroy(gameObject);
+                mod?.ScheduleServerInitialized(attempt + 1);
+            }
+        }
+
+        public void OnUnloaded(OnHarmonyModUnloadedArgs args)
+        {
+            UnregisterCommands();
+            _plugin?.HarmonyUnload();
+            UnregisterApiType();
+            WipeScheduleHost.Shutdown();
+            _plugin = null;
+            _pluginWrapper = null;
+            Instance = null;
+        }
+
+        private void RegisterApiType()
+        {
+            try
+            {
+                AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(WipeScheduleHarmonyMod));
+                AppDomain.CurrentDomain.SetData(AppDomainPluginKey, _pluginWrapper);
+            }
+            catch (Exception ex) { Debug.LogWarning("[WipeSchedule Harmony] RegisterApiType: " + ex.Message); }
+        }
+
+        private void UnregisterApiType()
+        {
+            try
+            {
+                AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
+                AppDomain.CurrentDomain.SetData(AppDomainPluginKey, null);
+            }
+            catch { }
+        }
+
+        public object Call(string method, params object[] args)
+        {
+            if (_plugin == null || string.IsNullOrEmpty(method)) return null;
+            try
+            {
+                var mi = typeof(WipeSchedule).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (mi == null) return null;
+                return mi.Invoke(_plugin, args);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[WipeSchedule Harmony] Call({method}): " + ex.Message);
+                return null;
+            }
+        }
+
+        public object API_OpenPlugin(BasePlayer player) => Call(nameof(WipeSchedule.API_OpenPlugin), player);
+
+        // ---- Commands ----
+
+        private void RegisterCommands()
+        {
+            RegisterConsole("command.wipe.schedule", arg => InvokeConsoleMethod(nameof(WipeSchedule.CmdConsoleWipeSchedule), arg));
+            RegisterConsole("wipeschedule.time", arg => InvokeConsoleMethod(nameof(WipeSchedule.CmdCheckTime), arg), serverAdmin: true);
+
+            foreach (var name in new[] { "wipe", "wipedata" })
+            {
+                _chatCommandNames.Add(name);
+                _commandMethodMap[name] = nameof(WipeSchedule.CmdWipeSchedule);
+            }
+        }
+
+        private void RegisterDeferredConsoleFromPlugin()
+        {
+            if (_plugin == null) return;
+            try
+            {
+                foreach (var entry in _plugin.cmd.RegisteredConsoleCommands)
+                {
+                    if (string.IsNullOrEmpty(entry.name) || string.IsNullOrEmpty(entry.method)) continue;
+                    if (_registeredCommands.Any(c =>
+                            string.Equals(c.FullName, entry.name, StringComparison.OrdinalIgnoreCase) ||
+                            (string.IsNullOrEmpty(c.Parent) &&
+                             string.Equals(c.Name, entry.name, StringComparison.OrdinalIgnoreCase))))
+                        continue;
+                    var method = entry.method;
+                    RegisterConsole(entry.name, arg => InvokeConsoleMethod(method, arg));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[WipeSchedule Harmony] RegisterDeferredConsoleFromPlugin: " + ex.Message);
+            }
+        }
+
+        private void RefreshChatCommandsFromConfig()
+        {
+            if (_plugin == null) return;
+            try
+            {
+                foreach (var entry in _plugin.RegisteredCovalenceCommands)
+                {
+                    if (entry.commands == null || string.IsNullOrEmpty(entry.methodName)) continue;
+                    foreach (var c in entry.commands)
+                    {
+                        if (string.IsNullOrEmpty(c)) continue;
+                        _chatCommandNames.Add(c);
+                        _commandMethodMap[c] = entry.methodName;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[WipeSchedule Harmony] RefreshChatCommandsFromConfig: " + ex.Message);
+            }
+
+            foreach (var name in new[] { "wipe", "wipedata" })
+            {
+                _chatCommandNames.Add(name);
+                if (!_commandMethodMap.ContainsKey(name))
+                    _commandMethodMap[name] = nameof(WipeSchedule.CmdWipeSchedule);
+            }
+        }
+
+        private void InvokeConsoleMethod(string methodName, ConsoleSystem.Arg arg)
+        {
+            if (_plugin == null || arg == null || string.IsNullOrEmpty(methodName)) return;
+            try
+            {
+                var mi = typeof(WipeSchedule).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (mi == null)
+                {
+                    Debug.LogWarning($"[WipeSchedule Harmony] Method not found: {methodName}");
+                    return;
+                }
+                mi.Invoke(_plugin, new object[] { arg });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[WipeSchedule Harmony] {methodName}: " + (ex.InnerException?.Message ?? ex.Message));
+            }
+        }
+
+        private void DispatchCovalenceCommand(string methodName, BasePlayer player, string command, string[] args)
+        {
+            if (_plugin == null || string.IsNullOrEmpty(methodName)) return;
+            try
+            {
+                var mi = typeof(WipeSchedule).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (mi == null)
+                {
+                    Debug.LogWarning($"[WipeSchedule Harmony] Method not found: {methodName}");
+                    return;
+                }
+
+                var parameters = mi.GetParameters();
+                if (parameters.Length == 3 && parameters[0].ParameterType == typeof(IPlayer))
+                {
+                    mi.Invoke(_plugin, new object[] { player.ToIPlayer(), command, args ?? Array.Empty<string>() });
+                }
+                else if (parameters.Length == 3 && parameters[0].ParameterType == typeof(BasePlayer))
+                {
+                    mi.Invoke(_plugin, new object[] { player, command, args ?? Array.Empty<string>() });
+                }
+                else if (parameters.Length == 1 && parameters[0].ParameterType == typeof(ConsoleSystem.Arg))
+                {
+                    var sb = new StringBuilder(command);
+                    if (args != null)
+                    {
+                        for (int i = 0; i < args.Length; i++)
+                        {
+                            sb.Append(' ');
+                            string s = args[i] ?? "";
+                            if (s.IndexOfAny(new[] { ' ', '"' }) >= 0)
+                                sb.Append('"').Append(s.Replace("\"", "\\\"")).Append('"');
+                            else
+                                sb.Append(s);
+                        }
+                    }
+                    var opt = ConsoleSystem.Option.Server.Quiet();
+                    if (player?.net?.connection != null)
+                        opt = opt.FromConnection(player.net.connection);
+                    mi.Invoke(_plugin, new object[] { new ConsoleSystem.Arg(opt, sb.ToString()) });
+                }
+                else
+                {
+                    Debug.LogWarning($"[WipeSchedule Harmony] Unsupported signature for {methodName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[WipeSchedule Harmony] {methodName}: " + (ex.InnerException?.Message ?? ex.Message));
+            }
+        }
+
+        private void RegisterConsole(string name, Action<ConsoleSystem.Arg> handler, bool serverAdmin = false)
+        {
+            var localName = name;
+            bool hasDot = localName.Contains(".");
+            string cmdParent = "";
+            string cmdName = localName;
+            string fullName;
+            string dictKey;
+
+            if (hasDot)
+            {
+                var parts = localName.Split(new[] { '.' }, 2);
+                cmdParent = parts[0];
+                cmdName = parts[1];
+                fullName = localName;
+                dictKey = localName;
+            }
+            else
+            {
+                fullName = "global." + localName;
+                dictKey = fullName;
+            }
+
+            var cmd = new ConsoleSystem.Command
+            {
+                Name = cmdName,
+                Parent = cmdParent,
+                FullName = fullName,
+                Variable = false,
+                ServerAdmin = serverAdmin,
+                AllowRunFromServer = true,
+                Replicated = false,
+                Call = a =>
+                {
+                    try { handler(a); }
+                    catch (Exception ex) { Debug.LogWarning($"[WipeSchedule] command {localName}: " + ex.Message); }
+                }
+            };
+
+            ConsoleSystem.Index.Server.Dict[dictKey] = cmd;
+            if (hasDot)
+            {
+                if (!string.IsNullOrEmpty(fullName) &&
+                    !string.Equals(dictKey, fullName, StringComparison.OrdinalIgnoreCase))
+                    ConsoleSystem.Index.Server.Dict[fullName] = cmd;
+            }
+            else if (ConsoleSystem.Index.Server.GlobalDict != null)
+            {
+                ConsoleSystem.Index.Server.GlobalDict[cmdName] = cmd;
+            }
+
+            _registeredCommands.Add(cmd);
+        }
+
+        private static void ScrubWipeScheduleFromReplicatedList()
+        {
+            try
+            {
+                var replicated = typeof(ConsoleSystem.Index.Server)
+                    .GetField("Replicated", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as System.Collections.IList;
+                if (replicated == null)
+                {
+                    replicated = typeof(ConsoleSystem.Index.Server)
+                        .GetProperty("Replicated", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as System.Collections.IList;
+                }
+                if (replicated == null) return;
+
+                for (int i = replicated.Count - 1; i >= 0; i--)
+                {
+                    if (replicated[i] is not ConsoleSystem.Command cmd) continue;
+                    string full = cmd.FullName ?? string.Empty;
+                    string parent = cmd.Parent ?? string.Empty;
+                    string name = cmd.Name ?? string.Empty;
+
+                    bool isOurs =
+                        full.StartsWith("command.wipe.", StringComparison.OrdinalIgnoreCase) ||
+                        full.StartsWith("wipeschedule.", StringComparison.OrdinalIgnoreCase) ||
+                        full.Equals("command.wipe.schedule", StringComparison.OrdinalIgnoreCase) ||
+                        parent.Equals("command", StringComparison.OrdinalIgnoreCase) && name.StartsWith("wipe", StringComparison.OrdinalIgnoreCase) ||
+                        parent.Equals("wipeschedule", StringComparison.OrdinalIgnoreCase);
+
+                    if (isOurs)
+                    {
+                        cmd.Replicated = false;
+                        cmd.Variable = false;
+                        replicated.RemoveAt(i);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[WipeSchedule] ScrubWipeScheduleFromReplicatedList: " + ex.Message);
+            }
+        }
+
+        private void UnregisterCommands()
+        {
+            ScrubWipeScheduleFromReplicatedList();
+            foreach (var cmd in _registeredCommands)
+            {
+                try
+                {
+                    string dictKey = string.IsNullOrEmpty(cmd.Parent) ? "global." + cmd.Name : cmd.FullName;
+                    ConsoleSystem.Index.Server.Dict?.Remove(dictKey);
+                    if (string.IsNullOrEmpty(cmd.Parent))
+                        ConsoleSystem.Index.Server.GlobalDict?.Remove(cmd.Name);
+                }
+                catch { }
+            }
+            _registeredCommands.Clear();
+            _chatCommandNames.Clear();
+            _commandMethodMap.Clear();
+        }
+
+        public bool OnChatCommand(BasePlayer player, string message)
+        {
+            if (player == null || _plugin == null || string.IsNullOrWhiteSpace(message)) return false;
+            message = message.Trim();
+            if (message.StartsWith("/")) message = message.Substring(1).Trim();
+            string[] parts = message.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return false;
+            string name = parts[0];
+            if (!_chatCommandNames.Contains(name)) return false;
+
+            var args = parts.Skip(1).ToArray();
+
+            if (!_commandMethodMap.TryGetValue(name, out var methodName))
+                methodName = nameof(WipeSchedule.CmdWipeSchedule);
+
+            DispatchCovalenceCommand(methodName, player, name, args);
+            return true;
+        }
+
+        /// <summary>Route cui.endtest WIPESCHEDULE … to CmdConsoleWipeSchedule.</summary>
+        public void HandleCuiWipeSchedule(ConsoleSystem.Arg args, string[] a)
+        {
+            if (_plugin == null || a == null || a.Length < 1) return;
+            var player = args.Connection?.player as BasePlayer ?? args.Player();
+            if (player == null || player.IsDestroyed || !player.IsConnected) return;
+
+            var sb = new StringBuilder("command.wipe.schedule");
+            for (int i = 1; i < a.Length; i++)
+            {
+                sb.Append(' ');
+                string s = a[i].ToString() ?? string.Empty;
+                if (s.IndexOfAny(new[] { ' ', '"' }) >= 0)
+                    sb.Append('"').Append(s.Replace("\"", "\\\"")).Append('"');
+                else
+                    sb.Append(s);
+            }
+
+            try
+            {
+                var opt = ConsoleSystem.Option.Server.Quiet();
+                if (args.Connection != null)
+                    opt = opt.FromConnection(args.Connection);
+                _plugin.CmdConsoleWipeSchedule(new ConsoleSystem.Arg(opt, sb.ToString()));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[WipeSchedule] cui.endtest WIPESCHEDULE: " + ex);
+            }
+        }
+
+        public sealed class WipeSchedulePluginWrapper
+        {
+            private readonly WipeScheduleHarmonyMod _mod;
+            public WipeSchedulePluginWrapper(WipeScheduleHarmonyMod mod) => _mod = mod;
+            public bool IsLoaded => _mod?._plugin != null;
+            public string Name => "WipeSchedule";
+            public string Version => $"{VersionMajor}.{VersionMinor}.{VersionPatch}";
+            public object Call(string method, params object[] args) => _mod?.Call(method, args);
+            public object API_OpenPlugin(BasePlayer player) => _mod?.API_OpenPlugin(player);
+        }
+    }
+}

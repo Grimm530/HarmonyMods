@@ -19,6 +19,8 @@ namespace CustomMapGen.Patches
     {
         /// <summary>When we block compound/outpost not at center, we save its position so the next relocated small/large monument can use this slot.</summary>
         private static Vector3? _blockedOutpostPosition;
+        /// <summary>World position of the center outpost/compound after live swap or center placement. Custom outpost.map rows do not register as Path.Monuments, so PlaceMonuments distance checks miss this.</summary>
+        private static Vector3? _centerOutpostWorldPos;
         private static bool _spawningSwapRows;
         private static bool _liveOutpostSwapApplied;
         private static bool _centerOutpostPlaced;
@@ -30,6 +32,8 @@ namespace CustomMapGen.Patches
             _spawningSwapRows = false;
             _liveOutpostSwapApplied = false;
             _centerOutpostPlaced = false;
+            _centerOutpostWorldPos = null;
+            _blockedOutpostPosition = null;
         }
 
         private const float CenterOutpostThreshold = 80f;
@@ -122,6 +126,7 @@ namespace CustomMapGen.Patches
                         if (World.Serialization != null)
                             PostSaveSwap.MoveMonumentsAtCenterToNewPosition(World.Serialization, centerPos, config.MinMonumentDistance, config.DebugLogging, swapTargetPosition: null);
                         RemoveMonumentsAtCenter(centerPos, config.DebugLogging);
+                        _centerOutpostWorldPos = centerPos;
                         _centerOutpostPlaced = true;
                     }
                 }
@@ -172,6 +177,7 @@ namespace CustomMapGen.Patches
                             PostSaveSwap.MoveMonumentsAtCenterToNewPosition(World.Serialization, centerPos, config.MinMonumentDistance, config.DebugLogging, swapTargetPosition: position);
                         RemoveMonumentsAtCenter(centerPos, config.DebugLogging);
                         position = centerPos;
+                        _centerOutpostWorldPos = centerPos;
                         _centerOutpostPlaced = true;
                         if (config.DebugLogging)
                             UnityEngine.Debug.Log($"[CustomMapGen] [DEBUG] Outpost/bandit moved to map center: {position}");
@@ -180,27 +186,16 @@ namespace CustomMapGen.Patches
                         UnityEngine.Debug.Log("[CustomMapGen] [DEBUG] Outpost redirect skipped: TerrainMeta.Path or HeightMap is null");
                 }
 
-                // Large monuments (water treatment, airfield, etc.) that spawn at/near center — relocate to blocked outpost slot
-                // (Compound is placed at center when bandit is blocked; large monuments are placed AFTER, so they weren't caught by MoveMonumentsAtCenterToNewPosition.)
-                if (config.TrySpawningOutpostInCenter && config.UseBlockedOutpostSlotForRelocation && _blockedOutpostPosition.HasValue &&
+                // Large monuments vs center outpost / other larges: custom outpost.map does not add Path.Monuments,
+                // so PlaceMonuments MinDistanceDifferentType never sees the center outpost. Enforce clearance here.
+                if (config.TrySpawningOutpostInCenter &&
+                    PostSaveSwap.IsLargeMonument(nameLower) &&
+                    !nameLower.Contains("compound") && !nameLower.Contains("outpost") && !nameLower.Contains("bandit") &&
                     TerrainMeta.Path != null && TerrainMeta.HeightMap != null)
                 {
-                    if (PostSaveSwap.IsLargeMonument(nameLower) &&
-                        !nameLower.Contains("compound") && !nameLower.Contains("outpost") && !nameLower.Contains("bandit"))
+                    if (TryRelocateLargeMonumentTooCloseToCenterOutpost(ref position, prefab.Name, nameLower, config))
                     {
-                        Vector3 centerPos = TerrainMeta.Position + TerrainMeta.Size * 0.5f;
-                        float dx = Math.Abs(position.x - centerPos.x);
-                        float dz = Math.Abs(position.z - centerPos.z);
-                        const float centerThreshold = 150f; // Water treatment ~80m radius; use 150 to catch overlap
-                        if (dx <= centerThreshold && dz <= centerThreshold)
-                        {
-                            Vector3 newPos = _blockedOutpostPosition.Value;
-                            newPos.y = TerrainMeta.HeightMap.GetHeight(newPos);
-                            if (config.DebugLogging)
-                                UnityEngine.Debug.Log($"[CustomMapGen] Relocated large monument at center {prefab.Name} from ({position.x:F0},{position.z:F0}) to blocked outpost slot ({newPos.x:F0},{newPos.z:F0}).");
-                            position = newPos;
-                            _blockedOutpostPosition = null;
-                        }
+                        // position updated
                     }
                 }
 
@@ -308,6 +303,7 @@ namespace CustomMapGen.Patches
                     UnityEngine.Debug.Log("[CustomMapGen] Could not resolve compound prefab for center outpost placement.");
             }
 
+            _centerOutpostWorldPos = centerPos;
             _centerOutpostPlaced = true;
             return slotFilled;
         }
@@ -397,11 +393,28 @@ namespace CustomMapGen.Patches
 
                 int serializedOnly = 0;
                 int spawned = 0;
+                int skippedUnknown = 0;
+                var knownRows = new List<object>();
+                foreach (object row in created)
+                {
+                    if (row == null || !PostSaveSwap.TryGetPrefabId(row, out uint checkId) || checkId == 0)
+                        continue;
+                    string checkPath = StringPool.Get(checkId);
+                    if (string.IsNullOrEmpty(checkPath))
+                    {
+                        skippedUnknown++;
+                        if (config.DebugLogging)
+                            UnityEngine.Debug.LogWarning($"[CustomMapGen] Live outpost swap: skipping unknown prefab id={checkId} (not in server StringPool). Remove it from outpost.map.");
+                        continue;
+                    }
+                    knownRows.Add(row);
+                }
+
                 _spawningSwapRows = true;
-                SwapSpawnTracking.BeginTracking(Path.GetFileName(mapPath), created);
+                SwapSpawnTracking.BeginTracking(Path.GetFileName(mapPath), knownRows);
                 try
                 {
-                    foreach (object row in created)
+                    foreach (object row in knownRows)
                     {
                         if (row == null || !PostSaveSwap.TryGetPrefabId(row, out uint id) || id == 0)
                             continue;
@@ -415,7 +428,10 @@ namespace CustomMapGen.Patches
                         Prefab rowPrefab = Prefab.Load(id);
                         if (rowPrefab?.Object == null)
                         {
+                            // Serialize into the .map now; spawn GameObject LAST at DONE (after map finishes).
                             World.Serialization?.AddPrefab(rowCategory, id, rowPos, rowRot, rowScale);
+                            string deferredPath = StringPool.Get(id) ?? "";
+                            DeferredOutpostSpawn.Enqueue(rowCategory, id, deferredPath, rowPos, rowRot, rowScale);
                             serializedOnly++;
                             continue;
                         }
@@ -430,11 +446,17 @@ namespace CustomMapGen.Patches
                     SwapSpawnTracking.EndTrackingAndLog("LiveProcgenSwap");
                 }
 
-                _liveOutpostSwapApplied = true;
-                _centerOutpostPlaced = true;
+                bool applied = spawned > 0 || serializedOnly > 0;
+                if (applied)
+                {
+                    _liveOutpostSwapApplied = true;
+                    _centerOutpostPlaced = true;
+                }
+
                 if (config.DebugLogging)
-                    UnityEngine.Debug.Log($"[CustomMapGen] [DEBUG] Live outpost swap: spawned {spawned} prefab row(s), serializedOnly={serializedOnly}, source={mapPath}");
-                return true;
+                    UnityEngine.Debug.Log($"[CustomMapGen] [DEBUG] Live outpost swap: spawned={spawned}, deferredUntilDone={serializedOnly}, skippedUnknown={skippedUnknown}, source={mapPath}");
+
+                return applied;
             }
             catch (Exception ex)
             {
@@ -499,6 +521,327 @@ namespace CustomMapGen.Patches
             if (pathLower.IndexOf("roadside", StringComparison.OrdinalIgnoreCase) >= 0 && shortLower == "radtown_1")
                 return "Rad Town";
             return shortName;
+        }
+
+        /// <summary>
+        /// If a large monument is closer to the center outpost (or another monument) than radii + MinMonumentDistance,
+        /// relocate it to the blocked outpost slot or a searched dry position so terrain can blend.
+        /// Jungle-bound monuments (ziggurat / jungle ruins) stay in Jungle biome (nearby push-back).
+        /// Non-jungle larges (e.g. airfield) may take a jungle monument's roomy slot and push that monument
+        /// to a blank Jungle spot instead of swapping it onto non-jungle terrain.
+        /// </summary>
+        private static bool TryRelocateLargeMonumentTooCloseToCenterOutpost(ref Vector3 position, string prefabName, string nameLower, MapGenConfig config)
+        {
+            float myRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument(nameLower);
+            float gap = Math.Max(1, config.MinMonumentDistance);
+            float outpostRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument("outpost");
+            bool jungleBound = IsJungleBoundMonument(nameLower);
+
+            bool tooClose = false;
+            float closestDist = float.MaxValue;
+            float closestNeed = 0f;
+            string closestName = null;
+
+            if (_centerOutpostWorldPos.HasValue)
+            {
+                float d = HorizontalDistance(position, _centerOutpostWorldPos.Value);
+                float need = myRadius + outpostRadius + gap;
+                if (d < need)
+                {
+                    tooClose = true;
+                    closestDist = d;
+                    closestNeed = need;
+                    closestName = "center outpost";
+                }
+            }
+
+            // Path.Monuments distance: use each monument's own radius (tiny/water_well = 30m, not outpost 120m).
+            var pathMonuments = TerrainPathAccess.GetMonuments(TerrainMeta.Path);
+            if (pathMonuments != null)
+            {
+                foreach (MonumentInfo monument in pathMonuments)
+                {
+                    if (monument == null) continue;
+                    Vector3 otherPos = monument.transform.position;
+                    string otherLabel = monument.name ?? "monument";
+                    string otherLower = otherLabel.ToLowerInvariant();
+                    float otherRadius = PostSaveSwap.IsLargeMonument(otherLower)
+                        ? PostSaveSwap.GetEffectiveRadiusForLargeMonument(otherLower)
+                        : 30f;
+                    float d = HorizontalDistance(position, otherPos);
+                    float need = myRadius + otherRadius + gap;
+                    if (d < need && d < closestDist)
+                    {
+                        tooClose = true;
+                        closestDist = d;
+                        closestNeed = need;
+                        closestName = otherLabel;
+                    }
+                }
+            }
+
+            if (!tooClose)
+                return false;
+
+            Vector3 from = position;
+            Vector3? newPos = null;
+
+            // Blocked outpost slot: never send jungle-bound monuments there unless that slot is Jungle.
+            if (config.UseBlockedOutpostSlotForRelocation && _blockedOutpostPosition.HasValue)
+            {
+                Vector3 cand = _blockedOutpostPosition.Value;
+                cand.y = TerrainMeta.HeightMap.GetHeight(cand);
+                bool biomeOk = !jungleBound || IsJungleBiome(cand);
+                if (biomeOk && IsLargeMonumentPositionClear(cand, myRadius, gap, excludeNameLower: nameLower))
+                {
+                    newPos = cand;
+                    _blockedOutpostPosition = null;
+                }
+            }
+
+            if (!newPos.HasValue)
+                newPos = FindValidPositionForLargeMonument(myRadius, gap, nameLower, from, null, 0f);
+
+            // Airfield/etc.: if no blank slot, take a jungle monument's roomy spot and push it nearby in Jungle.
+            if (!newPos.HasValue && !jungleBound)
+                newPos = TryTakeJungleMonumentSlotForLarge(myRadius, gap, nameLower, config);
+
+            if (!newPos.HasValue)
+            {
+                if (config.DebugLogging)
+                    UnityEngine.Debug.LogWarning($"[CustomMapGen] Large monument {prefabName} too close to {closestName} (dist={closestDist:F0}m, need {closestNeed:F0}m) but no alternate slot found.");
+                return false;
+            }
+
+            position = newPos.Value;
+            if (config.DebugLogging)
+                UnityEngine.Debug.Log($"[CustomMapGen] Relocated large monument {prefabName} from ({from.x:F0},{from.z:F0}) to ({position.x:F0},{position.z:F0}) — was {closestDist:F0}m from {closestName} (need {closestNeed:F0}m for terrain blend).");
+            return true;
+        }
+
+        /// <summary>Jungle ziggurat / jungle ruins must stay in Jungle biome when relocated.</summary>
+        private static bool IsJungleBoundMonument(string nameLower)
+        {
+            if (string.IsNullOrEmpty(nameLower)) return false;
+            return nameLower.IndexOf("ziggurat", StringComparison.OrdinalIgnoreCase) >= 0
+                || nameLower.IndexOf("jungle_ruins", StringComparison.OrdinalIgnoreCase) >= 0
+                || nameLower.IndexOf("jungle_ziggurat", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsJungleBiome(Vector3 worldPos)
+        {
+            if (TerrainMeta.BiomeMap == null) return true;
+            return TerrainMeta.BiomeMap.GetBiomeMaxType(worldPos) == (int)TerrainBiome.Enum.Jungle;
+        }
+
+        private static float HorizontalDistance(Vector3 a, Vector3 b)
+        {
+            float dx = a.x - b.x;
+            float dz = a.z - b.z;
+            return (float)Math.Sqrt(dx * dx + dz * dz);
+        }
+
+        private static bool IsLargeMonumentPositionClear(Vector3 cand, float myRadius, float gap, string excludeNameLower, MonumentInfo excludeMonument = null)
+        {
+            if (TerrainMeta.HeightMap == null) return false;
+            cand.y = TerrainMeta.HeightMap.GetHeight(cand);
+            if (TerrainMeta.WaterMap != null && cand.y < TerrainMeta.WaterMap.GetHeight(cand) - 0.1f)
+                return false;
+
+            float outpostRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument("outpost");
+            if (_centerOutpostWorldPos.HasValue)
+            {
+                float need = myRadius + outpostRadius + gap;
+                if (HorizontalDistance(cand, _centerOutpostWorldPos.Value) < need)
+                    return false;
+            }
+
+            var pathMonuments = TerrainPathAccess.GetMonuments(TerrainMeta.Path);
+            if (pathMonuments != null)
+            {
+                foreach (MonumentInfo monument in pathMonuments)
+                {
+                    if (monument == null || monument == excludeMonument) continue;
+                    string otherLower = (monument.name ?? "").ToLowerInvariant();
+                    if (!string.IsNullOrEmpty(excludeNameLower) && otherLower.Contains(excludeNameLower))
+                        continue;
+                    float otherRadius = PostSaveSwap.IsLargeMonument(otherLower)
+                        ? PostSaveSwap.GetEffectiveRadiusForLargeMonument(otherLower)
+                        : 30f;
+                    float need = myRadius + otherRadius + gap;
+                    if (HorizontalDistance(cand, monument.transform.position) < need)
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Search for a clear dry slot. Jungle-bound monuments search near their original position and only accept Jungle biome
+        /// (push back locally). Other larges search rings from map center as before.
+        /// <paramref name="alsoAvoidPos"/> / <paramref name="alsoAvoidRadius"/> reserve a future occupant (e.g. airfield taking the old slot).
+        /// </summary>
+        private static Vector3? FindValidPositionForLargeMonument(float myRadius, float gap, string nameLower, Vector3 searchOrigin, Vector3? alsoAvoidPos, float alsoAvoidRadius)
+        {
+            if (TerrainMeta.HeightMap == null) return null;
+            Vector3 mapCenter = TerrainMeta.Position + TerrainMeta.Size * 0.5f;
+            float halfSize = TerrainMeta.Size.x * 0.5f;
+            float outpostRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument("outpost");
+            bool jungleBound = IsJungleBoundMonument(nameLower);
+            Vector3 origin = jungleBound ? searchOrigin : mapCenter;
+            float minRadius = jungleBound
+                ? Math.Max(40f, myRadius + gap)
+                : myRadius + outpostRadius + gap;
+            if (alsoAvoidPos.HasValue)
+                minRadius = Math.Max(minRadius, alsoAvoidRadius + myRadius + gap);
+            float stepRadius = jungleBound ? 40f : 80f;
+            const float angleStep = 45f;
+            Vector3? best = null;
+            float bestScore = jungleBound ? float.MaxValue : 0f;
+
+            for (float radius = minRadius; radius <= halfSize - 100f; radius += stepRadius)
+            {
+                int steps = Math.Max(8, (int)(2.0 * Math.PI * radius / angleStep));
+                for (int i = 0; i < steps; i++)
+                {
+                    float angle = (float)i / steps * 2f * (float)Math.PI;
+                    Vector3 cand = origin + new Vector3((float)Math.Cos(angle) * radius, 0f, (float)Math.Sin(angle) * radius);
+                    // Keep candidates on the mainland bounds.
+                    if (Math.Abs(cand.x - mapCenter.x) > halfSize - 100f || Math.Abs(cand.z - mapCenter.z) > halfSize - 100f)
+                        continue;
+                    cand.y = TerrainMeta.HeightMap.GetHeight(cand);
+                    if (jungleBound && !IsJungleBiome(cand))
+                        continue;
+                    if (alsoAvoidPos.HasValue && HorizontalDistance(cand, alsoAvoidPos.Value) < alsoAvoidRadius + myRadius + gap)
+                        continue;
+                    if (!IsLargeMonumentPositionClear(cand, myRadius, gap, excludeNameLower: nameLower))
+                        continue;
+                    if (jungleBound)
+                    {
+                        // Prefer nearest blank jungle spot (push back).
+                        if (radius < bestScore)
+                        {
+                            bestScore = radius;
+                            best = cand;
+                        }
+                    }
+                    else
+                    {
+                        float score = _centerOutpostWorldPos.HasValue
+                            ? HorizontalDistance(cand, _centerOutpostWorldPos.Value)
+                            : radius;
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            best = cand;
+                        }
+                    }
+                }
+                if (best.HasValue)
+                    break; // first ring with any valid candidate
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// When a large non-jungle monument needs a roomy slot, take a jungle-bound monument's position
+        /// (if that position is clear for the large) and push the jungle monument to a nearby Jungle blank spot.
+        /// </summary>
+        private static Vector3? TryTakeJungleMonumentSlotForLarge(float largeRadius, float gap, string largeNameLower, MapGenConfig config)
+        {
+            var pathMonuments = TerrainPathAccess.GetMonuments(TerrainMeta.Path);
+            if (pathMonuments == null || TerrainMeta.HeightMap == null)
+                return null;
+
+            MonumentInfo bestVictim = null;
+            Vector3 bestVictimPos = default;
+            Vector3 bestPushTo = default;
+            float bestVictimRadius = 0f;
+
+            foreach (MonumentInfo monument in pathMonuments)
+            {
+                if (monument == null) continue;
+                string otherLower = (monument.name ?? "").ToLowerInvariant();
+                if (!IsJungleBoundMonument(otherLower))
+                    continue;
+
+                Vector3 slot = monument.transform.position;
+                slot.y = TerrainMeta.HeightMap.GetHeight(slot);
+                if (!IsJungleBiome(slot))
+                    continue;
+                if (!IsLargeMonumentPositionClear(slot, largeRadius, gap, excludeNameLower: largeNameLower, excludeMonument: monument))
+                    continue;
+
+                float victimRadius = PostSaveSwap.IsLargeMonument(otherLower)
+                    ? PostSaveSwap.GetEffectiveRadiusForLargeMonument(otherLower)
+                    : 30f;
+                // Push far enough that the incoming large (airfield) at this slot can blend.
+                Vector3? pushTo = FindValidPositionForLargeMonument(victimRadius, gap, otherLower, slot, slot, largeRadius);
+                if (!pushTo.HasValue)
+                    continue;
+
+                // Prefer the smallest jungle monument (ziggurat) so we free the largest usable clearing.
+                if (bestVictim == null || victimRadius < bestVictimRadius)
+                {
+                    bestVictim = monument;
+                    bestVictimPos = slot;
+                    bestPushTo = pushTo.Value;
+                    bestVictimRadius = victimRadius;
+                }
+            }
+
+            if (bestVictim == null)
+                return null;
+
+            Vector3 oldPos = bestVictimPos;
+            bestVictim.transform.position = bestPushTo;
+            UpdateSerializedMonumentPositionNear(oldPos, bestPushTo, bestVictim.name ?? "");
+
+            if (config.DebugLogging)
+            {
+                UnityEngine.Debug.Log(
+                    $"[CustomMapGen] Took jungle monument slot for {largeNameLower}: moved {bestVictim.name} from ({oldPos.x:F0},{oldPos.z:F0}) to nearby jungle ({bestPushTo.x:F0},{bestPushTo.z:F0}) so large monument can fit.");
+            }
+            return oldPos;
+        }
+
+        /// <summary>Update World.Serialization prefab row that matches a relocated Path.Monument.</summary>
+        private static void UpdateSerializedMonumentPositionNear(Vector3 from, Vector3 to, string monumentObjectName)
+        {
+            if (World.Serialization == null)
+                return;
+            object worldObj = PostSaveSwap.GetWorldFromSerialization(World.Serialization);
+            IList prefabsList = worldObj != null ? PostSaveSwap.GetPrefabsListFromWorld(worldObj) : null;
+            if (prefabsList == null) return;
+
+            string shortName = GetShortMonumentName(monumentObjectName ?? "").ToLowerInvariant().Replace("(clone)", "");
+            if (string.IsNullOrEmpty(shortName))
+                return;
+
+            const float matchRadius = 40f;
+            for (int i = 0; i < prefabsList.Count; i++)
+            {
+                object p = prefabsList[i];
+                if (p == null) continue;
+                if (!PostSaveSwap.TryGetPrefabId(p, out uint pid)) continue;
+                string pname = pid != 0 ? StringPool.Get(pid) : null;
+                if (string.IsNullOrEmpty(pname)) continue;
+                string pShort = GetShortMonumentName(pname).ToLowerInvariant();
+                if (pShort != shortName && pname.IndexOf(shortName, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                float px = PostSaveSwap.GetPrefabPositionComponent(p, "x");
+                float pz = PostSaveSwap.GetPrefabPositionComponent(p, "z");
+                float dx = px - from.x;
+                float dz = pz - from.z;
+                if (dx * dx + dz * dz > matchRadius * matchRadius)
+                    continue;
+                object posObj = PostSaveSwap.GetPrefabMember(p, "position");
+                if (posObj == null) continue;
+                PostSaveSwap.SetVectorComponent(posObj, "x", to.x);
+                PostSaveSwap.SetVectorComponent(posObj, "y", to.y);
+                PostSaveSwap.SetVectorComponent(posObj, "z", to.z);
+                return;
+            }
         }
 
         /// <summary>True if position is valid for a small monument: dry and at least minFromLarge from large monuments (plus their radius), minFromOthers from all others.</summary>

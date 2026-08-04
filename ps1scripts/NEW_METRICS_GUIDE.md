@@ -3,7 +3,7 @@
 ## Data Flow
 
 1. **Rust Server Metrics** (HarmonyMod) collects metrics from your Rust server
-2. **InfluxDB** stores the metrics (configured in `HarmonyMods_Data/ServerMetrics/Configuration.json`)
+2. **InfluxDB** stores the metrics (configured in `HarmonyData/ServerMetrics/Configuration.json`)
 3. **Grafana Dashboard** queries InfluxDB to display the data
 
 **Important**: The actual data is stored in **InfluxDB**, not in the JSON file. The JSON file only contains the dashboard configuration (queries, panels, etc.).
@@ -161,7 +161,7 @@ You can add a new panel to show initialization times:
    - Look for the new fields in the results
 
 3. **Check Rust Server Logs**:
-   - Enable debug logging in `HarmonyMods_Data/ServerMetrics/Configuration.json`
+   - Enable debug logging in `HarmonyData/ServerMetrics/Configuration.json`
    - Look for `[ServerMetrics]` log messages
 
 ## Recommended Dashboard Updates

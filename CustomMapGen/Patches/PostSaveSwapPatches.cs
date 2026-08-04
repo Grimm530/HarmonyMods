@@ -770,13 +770,19 @@ namespace CustomMapGen.Patches
             string n = prefabName;
             if (n.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 120f;
-            if (n.IndexOf("water_treatment", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("airfield", StringComparison.OrdinalIgnoreCase) >= 0
+            // Airfield footprint is much larger than water treatment (runway + hangars).
+            if (n.IndexOf("airfield", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 150f;
+            if (n.IndexOf("water_treatment", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("powerplant", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("launch_site", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 80f;
             if (n.IndexOf("junkyard", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("trainyard", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("sewer", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("radtown", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("silo", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("sphere_tank", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 50f;
+            // Jungle ziggurat / ruins are compact; keep a modest blend radius so tiny monuments do not eject them from Jungle.
+            if (n.IndexOf("ziggurat", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("jungle_ruins", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 40f;
             return 30f;
         }
 

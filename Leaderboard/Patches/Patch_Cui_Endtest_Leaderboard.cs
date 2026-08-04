@@ -25,8 +25,12 @@ public static class Patch_Cui_Endtest_Leaderboard
 
         if (a[1] == "close")
         {
+            bool inPanel = mod.IsOpenInServerPanel(player.userID);
+            if (inPanel)
+                LeaderboardUI.DestroyServerPanel(player);
+            else
+                LeaderboardUI.Destroy(player);
             mod.OnLeaderboardClosed(player.userID);
-            LeaderboardUI.Destroy(player);
             return false;
         }
 
@@ -35,7 +39,7 @@ public static class Patch_Cui_Endtest_Leaderboard
             if (cat == 0)
                 mod.ClearViewedProfile(player.userID);
             mod.SetLeaderboardCategory(player.userID, cat);
-            LeaderboardUI.Show(player);
+            mod.RefreshLeaderboardUI(player);
             return false;
         }
 
@@ -44,7 +48,7 @@ public static class Patch_Cui_Endtest_Leaderboard
             mod.SetViewedProfile(player.userID, targetId);
             mod.SetLeaderboardCategory(player.userID, 0);
             mod.SetLeaderboardProfileTab(player.userID, 0); // show General (profile) tab, not e.g. Hitrate
-            LeaderboardUI.Show(player);
+            mod.RefreshLeaderboardUI(player);
             return false;
         }
 
@@ -55,7 +59,7 @@ public static class Patch_Cui_Endtest_Leaderboard
                 mod.SetLeaderboardTop10Tab(player.userID, tab);
             else
                 mod.SetLeaderboardProfileTab(player.userID, tab);
-            LeaderboardUI.Show(player);
+            mod.RefreshLeaderboardUI(player);
             return false;
         }
 

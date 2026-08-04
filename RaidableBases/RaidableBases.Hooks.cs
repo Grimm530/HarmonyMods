@@ -2242,7 +2242,7 @@ namespace RaidableBases
             brain.SetSleeping(false);
             }
 
-            // Damage agro: force target even if Vanish left limitNetworking stuck; skip converge-networking gate.
+            // Damage agro (converge:false). SetTarget no-ops when attacker is vanished (limitNetworking).
             brain.SetTarget(attacker, converge: false);
 
             return DamageResult.Allowed;

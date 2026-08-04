@@ -3729,13 +3729,12 @@ namespace RaidableBases
                     return false;
                 }
 
-                if (player.IsKilled())
+                // Oxide parity: Vanish sets limitNetworking — do not lock agro on vanished players.
+                if (player.IsKilled() || player.limitNetworking)
                 {
                     return false;
                 }
 
-                // No Vanish on this server — do not treat limitNetworking as a hard block.
-                // (Still skip re-converge spam if already locked on this player.)
                 if (AttackTarget == player)
                 {
                     AttackTransform = player.transform;
@@ -4500,7 +4499,8 @@ namespace RaidableBases
 
             private bool ShouldForgetTarget(BasePlayer target)
             {
-                if (target.IsKilled() || target.health <= 0f || target.IsDead() || target.skinID == RB_SKIN_ID)
+                // limitNetworking = Vanish (Oxide parity) — drop agro immediately when they vanish.
+                if (target.IsKilled() || target.health <= 0f || target.limitNetworking || target.IsDead() || target.skinID == RB_SKIN_ID)
                     return true;
                 float engage = Mathf.Max(SenseRange, raid != null ? raid.ProtectionRadius : SenseRange);
                 if (InRange2D(ServerPosition, target.transform.position, engage))
@@ -5301,7 +5301,7 @@ namespace RaidableBases
                     {
                         continue;
                     }
-                    // converge:false — do not drop agro if Vanish left limitNetworking stuck.
+                    // converge:false avoids Converge() spam; SetTarget still rejects vanished (limitNetworking).
                     if (brain.attackType == HumanoidBrain.AttackType.None)
                         brain.IdentifyWeapon();
                     brain.SetTarget(target, converge: false);

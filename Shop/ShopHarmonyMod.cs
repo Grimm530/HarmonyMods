@@ -157,13 +157,20 @@ namespace ShopHarmony
             if (_plugin == null || string.IsNullOrEmpty(method)) return null;
             try
             {
-                var mi = typeof(Shop).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (mi == null) return null;
+                args ??= Array.Empty<object>();
+                var count = args.Length;
+                var mi = typeof(Shop).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .FirstOrDefault(m => m.Name == method && m.GetParameters().Length == count);
+                if (mi == null)
+                {
+                    Debug.LogWarning($"[Shop Harmony] Call({method}): method not found for {count} arg(s)");
+                    return null;
+                }
                 return mi.Invoke(_plugin, args);
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Shop Harmony] Call({method}): " + ex.Message);
+                Debug.LogWarning($"[Shop Harmony] Call({method}): " + (ex.InnerException?.Message ?? ex.Message));
                 return null;
             }
         }

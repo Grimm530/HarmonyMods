@@ -154,68 +154,190 @@ namespace PlatformSync
 
         #endregion
 
-        #region Permission (Oxide reflection + local fallback)
+        #region Permission (0Permissions bridge + local fallback)
 
+        /// <summary>
+        /// Group add/remove for Discord link/nitro. Prefers 0Permissions (Permissions_ApiType)
+        /// with generation rebind; falls back to HarmonyData/PlatformSync/groups.json only if
+        /// Permissions is not loaded.
+        /// </summary>
         public sealed class PermissionHelper
         {
-            private object _oxidePerm;
+            private Type _permType;
             private MethodInfo _userHasGroup;
             private MethodInfo _addUserGroup;
             private MethodInfo _removeUserGroup;
             private MethodInfo _groupExists;
             private MethodInfo _createGroup;
-            private bool _resolved;
+            private MethodInfo _registerReady;
+            private int _boundGen = -1;
+            private bool _resolveAttempted;
+            private bool _loggedLink;
+            private bool _localFallbackLogged;
+            private Action _readyCallback;
+            private bool _localLoaded;
             private readonly Dictionary<string, HashSet<string>> _localGroups =
                 new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             private string LocalGroupsPath => Path.Combine(DataDirectory, "PlatformSync", "groups.json");
 
-            private void Resolve()
+            public bool IsPermissionsBound
             {
-                if (_resolved) return;
-                _resolved = true;
+                get
+                {
+                    EnsureBound();
+                    return _permType != null && _addUserGroup != null;
+                }
+            }
+
+            /// <summary>Call from plugin Init so we link early and rebind on 0Permissions reload.</summary>
+            public void EnsureLinked()
+            {
+                EnsureBound();
+                EnsureReadyCallback();
+            }
+
+            private static int ReadGeneration()
+            {
                 try
                 {
-                    foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                    if (AppDomain.CurrentDomain.GetData("Permissions_Generation") is int g)
+                        return g;
+                }
+                catch { }
+                return 0;
+            }
+
+            private static object ReadLiveInstance(Type type)
+            {
+                if (type == null) return null;
+                try
+                {
+                    return type.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                }
+                catch { return null; }
+            }
+
+            private static Type ResolveLivePermType()
+            {
+                var fromDomain = AppDomain.CurrentDomain.GetData("Permissions_ApiType") as Type;
+                if (fromDomain != null && ReadLiveInstance(fromDomain) != null)
+                    return fromDomain;
+
+                Type fallback = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
                     {
-                        Type iface = asm.GetType("Oxide.Core.Interface");
-                        if (iface == null) continue;
-                        object oxide = iface.GetProperty("Oxide", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-                        if (oxide == null) continue;
-                        MethodInfo getLib = oxide.GetType().GetMethod("GetLibrary", new[] { typeof(string) });
-                        if (getLib != null)
-                            _oxidePerm = getLib.Invoke(oxide, new object[] { "Permission" });
-                        if (_oxidePerm == null)
+                        var t = asm.GetType("PermissionsHarmony.PermissionsMod");
+                        if (t == null) continue;
+                        if (ReadLiveInstance(t) != null)
+                            return t;
+                        fallback ??= t;
+                    }
+                    catch { }
+                }
+                return fromDomain ?? fallback;
+            }
+
+            private void ClearBind()
+            {
+                _permType = null;
+                _userHasGroup = _addUserGroup = _removeUserGroup = _groupExists = _createGroup = _registerReady = null;
+            }
+
+            private void EnsureBound()
+            {
+                int gen = ReadGeneration();
+                object live = ReadLiveInstance(_permType);
+                if (_permType != null && _boundGen == gen && live != null && _addUserGroup != null)
+                    return;
+
+                try
+                {
+                    ClearBind();
+                    _permType = ResolveLivePermType();
+                    live = ReadLiveInstance(_permType);
+                    if (_permType == null || live == null)
+                    {
+                        if (!_resolveAttempted)
                         {
-                            foreach (MethodInfo m in oxide.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
-                            {
-                                if (m.Name != "GetLibrary" || !m.IsGenericMethodDefinition) continue;
-                                try
-                                {
-                                    Type permType = asm.GetType("Oxide.Core.Libraries.Permission");
-                                    if (permType == null) continue;
-                                    _oxidePerm = m.MakeGenericMethod(permType).Invoke(oxide, new object[] { null });
-                                    if (_oxidePerm != null) break;
-                                }
-                                catch { }
-                            }
+                            _resolveAttempted = true;
+                            Debug.LogWarning("[PlatformSync] 0Permissions not loaded yet — Discord groups will use local groups.json until Permissions is ready.");
                         }
-                        if (_oxidePerm == null) continue;
-                        Type t = _oxidePerm.GetType();
-                        _userHasGroup = t.GetMethod("UserHasGroup", new[] { typeof(string), typeof(string) });
-                        _addUserGroup = t.GetMethod("AddUserGroup", new[] { typeof(string), typeof(string) });
-                        _removeUserGroup = t.GetMethod("RemoveUserGroup", new[] { typeof(string), typeof(string) });
-                        _groupExists = t.GetMethod("GroupExists", new[] { typeof(string) });
-                        _createGroup = t.GetMethod("CreateGroup", new[] { typeof(string), typeof(string), typeof(int) });
-                        Puts("Using Oxide Permission library for groups.");
+                        EnsureLocalLoaded();
                         return;
                     }
+
+                    _resolveAttempted = false;
+                    const BindingFlags sf = BindingFlags.Public | BindingFlags.Static;
+                    _userHasGroup = _permType.GetMethod("UserHasGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
+                    _addUserGroup = _permType.GetMethod("AddUserGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
+                    _removeUserGroup = _permType.GetMethod("RemoveUserGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
+                    _groupExists = _permType.GetMethod("GroupExists", sf, null, new[] { typeof(string) }, null);
+                    _createGroup = _permType.GetMethod("CreateGroup", sf, null, new[] { typeof(string), typeof(string), typeof(int) }, null);
+                    _registerReady = _permType.GetMethod("RegisterReadyCallback", sf, null, new[] { typeof(Action) }, null);
+                    _boundGen = gen;
+
+                    if (!_loggedLink)
+                    {
+                        _loggedLink = true;
+                        Puts("Linked to Permissions Harmony mod for Discord/nitro groups.");
+                    }
+                    else
+                        Puts("Re-linked to Permissions Harmony mod (gen=" + gen + ").");
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning("[PlatformSync] Oxide permission resolve: " + ex.Message);
+                    ClearBind();
+                    Debug.LogWarning("[PlatformSync] Permissions bind failed: " + ex.Message);
+                    EnsureLocalLoaded();
                 }
+            }
+
+            private void EnsureReadyCallback()
+            {
+                if (_readyCallback != null) return;
+                _readyCallback = () =>
+                {
+                    EnsureBound();
+                };
+                try
+                {
+                    if (_registerReady != null)
+                    {
+                        _registerReady.Invoke(null, new object[] { _readyCallback });
+                        return;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var list = AppDomain.CurrentDomain.GetData("Permissions_ReadyCallbacks") as IList;
+                    if (list == null)
+                    {
+                        list = new List<Action>();
+                        AppDomain.CurrentDomain.SetData("Permissions_ReadyCallbacks", list);
+                    }
+                    lock (list)
+                    {
+                        if (!list.Contains(_readyCallback))
+                            list.Add(_readyCallback);
+                    }
+                }
+                catch { }
+            }
+
+            private void EnsureLocalLoaded()
+            {
+                if (_localLoaded) return;
+                _localLoaded = true;
                 LoadLocalGroups();
-                Puts("Oxide Permission not found — using HarmonyData/PlatformSync/groups.json fallback.");
+                if (!_localFallbackLogged)
+                {
+                    _localFallbackLogged = true;
+                    Puts("Using HarmonyData/PlatformSync/groups.json fallback until 0Permissions is available.");
+                }
             }
 
             private void LoadLocalGroups()
@@ -258,78 +380,100 @@ namespace PlatformSync
                 }
             }
 
+            private bool InvokeBool(MethodInfo mi, params object[] args)
+            {
+                if (mi == null) return false;
+                try
+                {
+                    var result = mi.Invoke(null, args);
+                    return result is bool b && b;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[PlatformSync] Permissions invoke " + mi.Name + ": " + ex.Message);
+                    return false;
+                }
+            }
+
+            private void MirrorLocalAdd(string userId, string groupName)
+            {
+                EnsureLocalLoaded();
+                if (!_localGroups.TryGetValue(userId, out var set))
+                    _localGroups[userId] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (set.Add(groupName))
+                    SaveLocalGroups();
+            }
+
+            private void MirrorLocalRemove(string userId, string groupName)
+            {
+                if (!_localLoaded && !File.Exists(LocalGroupsPath)) return;
+                EnsureLocalLoaded();
+                if (_localGroups.TryGetValue(userId, out var set) && set.Remove(groupName))
+                    SaveLocalGroups();
+            }
+
             public bool GroupExists(string groupName)
             {
-                Resolve();
+                EnsureBound();
                 if (string.IsNullOrWhiteSpace(groupName)) return false;
-                if (_oxidePerm != null && _groupExists != null)
-                {
-                    try { return (bool)_groupExists.Invoke(_oxidePerm, new object[] { groupName }); }
-                    catch { }
-                }
+                if (_groupExists != null)
+                    return InvokeBool(_groupExists, groupName);
                 return true;
             }
 
             public void CreateGroup(string groupName, string title, int rank)
             {
-                Resolve();
+                EnsureBound();
                 if (string.IsNullOrWhiteSpace(groupName)) return;
-                if (_oxidePerm != null && _createGroup != null)
+                if (_createGroup != null)
                 {
-                    try { _createGroup.Invoke(_oxidePerm, new object[] { groupName, title ?? groupName, rank }); }
+                    try { _createGroup.Invoke(null, new object[] { groupName, title ?? groupName, rank }); }
                     catch (Exception ex) { Debug.LogWarning("[PlatformSync] CreateGroup: " + ex.Message); }
-                    return;
                 }
-                try { ConsoleSystem.Run(ConsoleSystem.Option.Server, "o.group add " + groupName); }
-                catch { }
             }
 
             public bool UserHasGroup(string userId, string groupName)
             {
-                Resolve();
+                EnsureBound();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(groupName)) return false;
-                if (_oxidePerm != null && _userHasGroup != null)
-                {
-                    try { return (bool)_userHasGroup.Invoke(_oxidePerm, new object[] { userId, groupName }); }
-                    catch { }
-                }
+                if (_userHasGroup != null)
+                    return InvokeBool(_userHasGroup, userId, groupName);
+                EnsureLocalLoaded();
                 return _localGroups.TryGetValue(userId, out var set) && set.Contains(groupName);
             }
 
             public void AddUserGroup(string userId, string groupName)
             {
-                Resolve();
+                EnsureBound();
+                EnsureReadyCallback();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(groupName)) return;
-                if (_oxidePerm != null && _addUserGroup != null)
+                if (_addUserGroup != null)
                 {
-                    try { _addUserGroup.Invoke(_oxidePerm, new object[] { userId, groupName }); return; }
-                    catch (Exception ex) { Debug.LogWarning("[PlatformSync] AddUserGroup: " + ex.Message); }
+                    InvokeBool(_addUserGroup, userId, groupName);
+                    MirrorLocalAdd(userId, groupName);
+                    return;
                 }
+                EnsureLocalLoaded();
                 if (!_localGroups.TryGetValue(userId, out var set))
                     _localGroups[userId] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (set.Add(groupName))
-                {
                     SaveLocalGroups();
-                    try { ConsoleSystem.Run(ConsoleSystem.Option.Server, "o.usergroup add " + userId + " " + groupName); }
-                    catch { }
-                }
             }
 
             public void RemoveUserGroup(string userId, string groupName)
             {
-                Resolve();
+                EnsureBound();
+                EnsureReadyCallback();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(groupName)) return;
-                if (_oxidePerm != null && _removeUserGroup != null)
+                if (_removeUserGroup != null)
                 {
-                    try { _removeUserGroup.Invoke(_oxidePerm, new object[] { userId, groupName }); return; }
-                    catch (Exception ex) { Debug.LogWarning("[PlatformSync] RemoveUserGroup: " + ex.Message); }
+                    InvokeBool(_removeUserGroup, userId, groupName);
+                    MirrorLocalRemove(userId, groupName);
+                    return;
                 }
+                EnsureLocalLoaded();
                 if (_localGroups.TryGetValue(userId, out var set) && set.Remove(groupName))
-                {
                     SaveLocalGroups();
-                    try { ConsoleSystem.Run(ConsoleSystem.Option.Server, "o.usergroup remove " + userId + " " + groupName); }
-                    catch { }
-                }
             }
         }
 

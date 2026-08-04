@@ -9,7 +9,7 @@ Harmony mod that filters inappropriate language in chat. Replaces or blocks bad 
 | **Purpose** | Word filter for global/team chat with replacement, whitelist, offenses |
 | **Entry point** | `ChatFilterMod` implements `IHarmonyModHooks` |
 | **Config** | `HarmonyConfig/ChatFilter.json` (or `oxide/config/ChatFilter.json`) |
-| **Data** | `HarmonyMods_Data/ChatFilter_Offenses.json` (offense counts per Steam ID) |
+| **Data** | `HarmonyData/ChatFilter_Offenses.json` (offense counts per Steam ID) |
 
 ## Project Structure
 

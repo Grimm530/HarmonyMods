@@ -13,6 +13,6 @@ public class ProdigyConfig
     /// <summary>Steam IDs allowed to use MLRS repair (prodigy.mlrs equivalent).</summary>
     public List<ulong> AllowedMlrsSteamIds { get; set; } = new();
 
-    /// <summary>Data folder name under server root (e.g. HarmonyMods_Data/Prodigy).</summary>
-    public string DataFolder { get; set; } = "HarmonyMods_Data/Prodigy";
+    /// <summary>Data folder name under server root (e.g. HarmonyData/Prodigy).</summary>
+    public string DataFolder { get; set; } = "HarmonyData/Prodigy";
 }

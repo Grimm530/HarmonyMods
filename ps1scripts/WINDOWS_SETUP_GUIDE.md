@@ -218,7 +218,7 @@ Fill in the following settings:
 
 ### Check Your Configuration File
 
-Your configuration file at `D:\!RustServer\HarmonyMods_Data\ServerMetrics\Configuration.json` should match:
+Your configuration file at `D:\!RustServer\HarmonyData\ServerMetrics\Configuration.json` should match:
 
 ```json
 {

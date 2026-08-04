@@ -18,7 +18,7 @@ public class ConfigManager
 
 	public ConfigManager()
 	{
-		ConfigPath = "HarmonyMods_Data/FullRangeAutoturrets/Configuration.json";
+		ConfigPath = "HarmonyData/FullRangeAutoturrets/Configuration.json";
 	}
 
 	public object Get(string propName, object src = null)

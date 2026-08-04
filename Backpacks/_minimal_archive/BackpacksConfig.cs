@@ -48,8 +48,8 @@ namespace Backpacks
             [JsonProperty("Button offsetmax (pixels, e.g. -200 78 = 60px wide, 60px tall)")]
             public string ButtonOffsetsMax { get; set; } = "-200 78";
 
-            [JsonProperty("Data folder path (relative to server root; empty = HarmonyMods_Data/BackpacksData)")]
-            public string DataFolderPath { get; set; } = "HarmonyMods_Data/BackpacksData";
+            [JsonProperty("Data folder path (relative to server root; empty = HarmonyData/BackpacksData)")]
+            public string DataFolderPath { get; set; } = "HarmonyData/BackpacksData";
 
             [JsonProperty("Log backpack load path and item count (for debugging)")]
             public bool LogLoadPath { get; set; } = true;

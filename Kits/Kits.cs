@@ -13637,6 +13637,7 @@ MainKitsContentUI(player, container); });
 
         private void LoadServerPanel()
         {
+            ServerPanel = plugins?.Find("ServerPanel");
             _serverPanelCategory.spStatus = ServerPanel is {IsLoaded: true};
 
             ServerPanel?.Call("API_OnServerPanelProcessCategory", Name);
@@ -14882,55 +14883,72 @@ MainKitsContentUI(player, container); });
                 yield return kitItem.BuildItem();
         }
 
-        private CuiElementContainer API_OpenPlugin(BasePlayer player)
+        /// <summary>
+        /// Returns bracket-stripped CUI JSON for ServerPanel (cross-assembly CuiElementContainer
+        /// type checks fail under Harmony; string mount is the reliable path).
+        /// </summary>
+        private string API_OpenPlugin(BasePlayer player)
         {
-            RemoveOpenedKits(player.userID);
-
-            TryCreateOpenedKits(player, out _, false);
-
-            var container = new CuiElementContainer();
-
-            #region Background
-
-            container.Add(new CuiPanel
+            try
             {
-                RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
-                Image = {Color = "0 0 0 0"}
-            }, "UI.Server.Panel.Content", "UI.Server.Panel.Content.Plugin", "UI.Server.Panel.Content.Plugin");
+                RemoveOpenedKits(player.userID);
+                TryCreateOpenedKits(player, out _, false);
 
-            container.Add(new CuiPanel
-            {
-                RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
-                Image = {Color = "0 0 0 0"}
-            }, "UI.Server.Panel.Content.Plugin", Layer + ".Background", Layer + ".Background");
+                var container = new CuiElementContainer();
 
-            #endregion
+                #region Background
 
-            #region Main
-
-            container.Add(new CuiPanel
-            {
-                RectTransform =
+                container.Add(new CuiPanel
                 {
-                    AnchorMin = "0 0", AnchorMax = "1 1"
-                },
-                Image =
+                    RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+                    Image = {Color = "0 0 0 0"}
+                }, "UI.Server.Panel.Content", "UI.Server.Panel.Content.Plugin", "UI.Server.Panel.Content.Plugin");
+
+                container.Add(new CuiPanel
                 {
-                    Color = "0 0 0 0"
-                }
-            }, Layer + ".Background", Layer + ".Main", Layer + ".Main");
+                    RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
+                    Image = {Color = "0 0 0 0"}
+                }, "UI.Server.Panel.Content.Plugin", Layer + ".Background", Layer + ".Background");
 
-            MainKitsHeader(player, container);
+                #endregion
 
-            MainKitsCategories(player, container);
+                #region Main
 
-            MainKitsContentUI(player, container, true);
+                container.Add(new CuiPanel
+                {
+                    RectTransform =
+                    {
+                        AnchorMin = "0 0", AnchorMax = "1 1"
+                    },
+                    Image =
+                    {
+                        Color = "0 0 0 0"
+                    }
+                }, Layer + ".Background", Layer + ".Main", Layer + ".Main");
 
-            MainKitsDescriptionUI(player, ref container);
+                MainKitsHeader(player, container);
+                MainKitsCategories(player, container);
+                MainKitsContentUI(player, container, true);
+                MainKitsDescriptionUI(player, ref container);
 
-            #endregion
+                #endregion
 
-            return container;
+                return StripCuiArrayBrackets(CuiHelper.ToJson(container));
+            }
+            catch (Exception ex)
+            {
+                PrintError("API_OpenPlugin failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        private static string StripCuiArrayBrackets(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            json = json.Trim();
+            if (json.Length >= 2 && json[0] == '[' && json[json.Length - 1] == ']')
+                json = json.Substring(1, json.Length - 2);
+            return string.IsNullOrWhiteSpace(json) ? null : json;
         }
 
         #endregion

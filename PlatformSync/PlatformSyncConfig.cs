@@ -33,7 +33,7 @@ namespace PlatformSync
             public string LocalVerifyDiscordRole { get; set; } = "Verified";
 
             [JsonProperty("LocalVerifyOxideGroup")]
-            public string LocalVerifyOxideGroup { get; set; } = "discord";
+            public string LocalVerifyOxideGroup { get; set; } = "verified";
         }
 
         public static ConfigData Config { get; private set; }

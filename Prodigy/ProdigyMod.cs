@@ -39,7 +39,7 @@ public class ProdigyMod : IHarmonyModHooks
         _configPath = Path.Combine(Environment.CurrentDirectory, "HarmonyConfig", "Prodigy.json");
         LoadConfig();
 
-        var dataDir = Path.Combine(Environment.CurrentDirectory, _config?.DataFolder ?? "HarmonyMods_Data/Prodigy");
+        var dataDir = Path.Combine(Environment.CurrentDirectory, _config?.DataFolder ?? "HarmonyData/Prodigy");
         if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
         _dataPath = Path.Combine(dataDir, "ProdigyData.json");
         LoadData();

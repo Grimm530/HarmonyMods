@@ -49,7 +49,31 @@ namespace KitsHarmony
         public string Name { get; set; } = "";
         public string Title { get; set; } = "";
         public bool IsLoaded { get; set; }
-        public object Call(string method, params object[] args) => null;
+        public virtual object Call(string method, params object[] args) => null;
+    }
+
+    public sealed class PluginBridge : Plugin
+    {
+        private readonly object _wrapped;
+        private readonly MethodInfo _call;
+
+        public PluginBridge(object wrapped)
+        {
+            _wrapped = wrapped;
+            _call = wrapped?.GetType().GetMethod("Call", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            IsLoaded = wrapped != null;
+        }
+
+        public override object Call(string method, params object[] args)
+        {
+            if (_call == null || string.IsNullOrEmpty(method)) return null;
+            try { return _call.Invoke(_wrapped, new object[] { method, args ?? Array.Empty<object>() }); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Kits] Plugin call " + method + ": " + (ex.InnerException?.Message ?? ex.Message));
+                return null;
+            }
+        }
     }
 
     #endregion
@@ -483,7 +507,17 @@ namespace KitsHarmony
 
     public class PluginsHelper
     {
-        public Plugin Find(string name) => null;
+        public Plugin Find(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            if (name.Equals("ServerPanel", StringComparison.OrdinalIgnoreCase))
+            {
+                var wrapper = AppDomain.CurrentDomain.GetData("ServerPanel_Plugin");
+                if (wrapper != null)
+                    return new PluginBridge(wrapper) { Name = "ServerPanel", IsLoaded = true };
+            }
+            return null;
+        }
     }
 
     public class ServerHelper

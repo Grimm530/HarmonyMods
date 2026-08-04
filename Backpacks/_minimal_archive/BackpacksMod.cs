@@ -337,7 +337,7 @@ namespace Backpacks
         {
             var serverRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             var cfg = BackpacksConfig.Config;
-            var relative = (cfg != null && !string.IsNullOrWhiteSpace(cfg.DataFolderPath)) ? cfg.DataFolderPath.Trim() : "HarmonyMods_Data/BackpacksData";
+            var relative = (cfg != null && !string.IsNullOrWhiteSpace(cfg.DataFolderPath)) ? cfg.DataFolderPath.Trim() : "HarmonyData/BackpacksData";
             if (Path.IsPathRooted(relative)) return relative;
             return Path.Combine(serverRoot, relative);
         }

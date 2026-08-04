@@ -282,7 +282,7 @@ namespace ChatFilter
             try
             {
                 var serverRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                var path = Path.Combine(serverRoot, "HarmonyMods_Data", DataFileName + ".json");
+                var path = Path.Combine(serverRoot, "HarmonyData", DataFileName + ".json");
                 var dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     return;
@@ -302,7 +302,7 @@ namespace ChatFilter
             try
             {
                 var serverRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                var path = Path.Combine(serverRoot, "HarmonyMods_Data", DataFileName + ".json");
+                var path = Path.Combine(serverRoot, "HarmonyData", DataFileName + ".json");
                 var dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);

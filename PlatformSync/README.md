@@ -11,7 +11,8 @@ Harmony port of **Platform Sync server plugin** 1.1.01 (`PlatformSync | Grimm530
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
 | **Entry** | `PlatformSync.PlatformSyncHarmonyEntry` |
 | **Config** | `HarmonyConfig/PlatformSync.json` (migrates from `oxide/config/PlatformSync.json` if present) |
-| **Data** | `HarmonyData/PlatformSync/` (`links.json`, optional `groups.json` fallback) |
+| **Data** | `HarmonyData/PlatformSync/` (`links.json`, optional `groups.json` mirror/fallback) |
+| **Permissions** | **0Permissions** — Discord link / nitro groups (`verified`, `nitro`, …) via `Permissions_ApiType` + generation rebind |
 
 ## What changed vs Oxide PlatformSync (Harmony necessities only)
 
@@ -21,7 +22,8 @@ Harmony port of **Platform Sync server plugin** 1.1.01 (`PlatformSync | Grimm530
 - Chat commands `/link`, `/testlink`, `/testurl` → Harmony prefix on `ConVar.Chat.say`
 - Console commands registered via `ConsoleSystem` (`ps.testlink`, `ps.testurl`, `localverify`, `localverifycheck`, `localverifyroles`)
 - `timer` / `webrequest` / `lang` / `permission` / `PluginReference` → `Compat` shims
-- Permission groups: Oxide `Permission` library via reflection when present; otherwise `HarmonyData/PlatformSync/groups.json` + best-effort `o.usergroup` console commands
+- Permission groups: **0Permissions** (`PermissionsHarmony.PermissionsMod`) with §10a generation rebind; mirrors membership to `HarmonyData/PlatformSync/groups.json`; falls back to that file only if Permissions is not loaded
+- On Discord unlink / nitro loss: removes the API/config group from 0Permissions (e.g. `verified` / `nitro`)
 - Rustcord: resolves Oxide Rustcord plugin, or Harmony `RustcordMod` if it exposes `DiscordUserHasRole` / `GetDiscordUserRoleNames`
 
 **Unchanged:** validate API URLs, link/nitro group logic, local verify flow, link log format, lang strings, debug commands.
@@ -48,11 +50,13 @@ Uses existing `HarmonyConfig/PlatformSync.json`:
   "EnableNitro": true,
   "GuildID": "...",
   "LocalVerifyDiscordRole": "...",
-  "LocalVerifyOxideGroup": "discord"
+  "LocalVerifyOxideGroup": "verified"
 }
 ```
 
 Optional: `LogLinks` (default `true`).
+
+`LocalVerifyOxideGroup` and the Platform Sync API `discord_oxide_group` / `nitro_oxide_group` must match group names in `HarmonyData/Permissions/groups.json` (this server uses `verified` for Discord link).
 
 ## Build / deploy
 

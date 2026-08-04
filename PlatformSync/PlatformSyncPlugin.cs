@@ -80,11 +80,14 @@ namespace PlatformSync
             Instance = this;
             Compat.EnsureDataFolders();
             PlatformSyncConfig.LoadConfig();
+            Compat.Permission.EnsureLinked();
             Rustcord = Compat.PluginRef.Find("Rustcord");
             LoadDefaultMessages();
             LoadLinksData();
             RegisterCommands();
-            Puts("Loaded. Config: " + (PlatformSyncConfig.ConfigPath ?? "n/a"));
+            Puts("Loaded. Config: " + (PlatformSyncConfig.ConfigPath ?? "n/a")
+                 + " LocalVerifyGroup=" + LocalVerifyOxideGroup
+                 + " PermissionsBound=" + Compat.Permission.IsPermissionsBound);
         }
 
         public void Shutdown()
@@ -298,7 +301,7 @@ namespace PlatformSync
         }
 
         private string LocalVerifyDiscordRole => GetConfigString("LocalVerifyDiscordRole", "Verified");
-        private string LocalVerifyOxideGroup => GetConfigString("LocalVerifyOxideGroup", "discord");
+        private string LocalVerifyOxideGroup => GetConfigString("LocalVerifyOxideGroup", "verified");
 
         private bool IsLocalLinkedAction(string action)
         {

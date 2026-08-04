@@ -31,10 +31,10 @@ if ($ConfigPath) {
 }
 
 $potentialPaths = @(
-    (Join-Path $PSScriptRoot "..\..\..\HarmonyMods_Data\ServerMetrics\Configuration.json"),
-    (Join-Path $PSScriptRoot "..\..\HarmonyMods_Data\ServerMetrics\Configuration.json"),
-    (Join-Path $PSScriptRoot "HarmonyMods_Data\ServerMetrics\Configuration.json"),
-    "HarmonyMods_Data\ServerMetrics\Configuration.json"
+    (Join-Path $PSScriptRoot "..\..\..\HarmonyData\ServerMetrics\Configuration.json"),
+    (Join-Path $PSScriptRoot "..\..\HarmonyData\ServerMetrics\Configuration.json"),
+    (Join-Path $PSScriptRoot "HarmonyData\ServerMetrics\Configuration.json"),
+    "HarmonyData\ServerMetrics\Configuration.json"
 )
 
 foreach ($potentialPath in $potentialPaths) {

@@ -614,6 +614,12 @@ namespace ShopHarmony
                 if (t != null)
                     return new PluginBridgeApi(t) { Name = "PlayerDLCAPI", IsLoaded = true };
             }
+            if (name.Equals("ServerPanel", StringComparison.OrdinalIgnoreCase))
+            {
+                var wrapper = AppDomain.CurrentDomain.GetData("ServerPanel_Plugin");
+                if (wrapper != null)
+                    return new PluginBridge(wrapper) { Name = "ServerPanel", IsLoaded = true };
+            }
             return null;
         }
     }

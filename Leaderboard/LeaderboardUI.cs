@@ -11,7 +11,9 @@ namespace Leaderboard;
 public static class LeaderboardUI
 {
     public const string PanelName = "Leaderboard_Main";
-    private const string Parent = "Overlay";
+    public const string ServerPanelRoot = "UI.Server.Panel.Content.Plugin";
+    private const string OverlayParent = "Overlay";
+    private const string ServerPanelParent = "UI.Server.Panel.Content";
     private const string BgSprite = "assets/content/ui/UI.Background.TileTex.psd";
     private const string BlurMat = "assets/content/ui/uibackgroundblur.mat";
     private const string BlurBgMat = "assets/content/ui/uibackgroundblur-ingamemenu.mat";
@@ -32,9 +34,35 @@ public static class LeaderboardUI
         var subTab = category == 0
             ? (LeaderboardMod.Instance?.GetLeaderboardProfileTab(player.userID) ?? 0)
             : (LeaderboardMod.Instance?.GetLeaderboardTop10Tab(player.userID) ?? 0);
-        var elements = BuildFullPanel(player, category, subTab);
+        var elements = BuildFullPanel(player, category, subTab, inServerPanel: false);
         var json = elements.ToString();
         try { ce.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json); }
+        catch (System.Exception) { }
+    }
+
+    /// <summary>
+    /// Build CUI JSON for ServerPanel embedding (parent UI.Server.Panel.Content).
+    /// Returns bracket-stripped element list for ShowContentUISerialized merge.
+    /// </summary>
+    public static string BuildForServerPanel(BasePlayer player)
+    {
+        if (player == null) return null;
+        var category = LeaderboardMod.Instance?.GetLeaderboardCategory(player.userID) ?? 0;
+        var subTab = category == 0
+            ? (LeaderboardMod.Instance?.GetLeaderboardProfileTab(player.userID) ?? 0)
+            : (LeaderboardMod.Instance?.GetLeaderboardTop10Tab(player.userID) ?? 0);
+        return StripArrayBrackets(BuildFullPanel(player, category, subTab, inServerPanel: true).ToString());
+    }
+
+    /// <summary>Rebuild and AddUI while already embedded under ServerPanel content.</summary>
+    public static void RefreshInServerPanel(BasePlayer player)
+    {
+        if (player?.net?.connection == null) return;
+        var ce = CommunityEntity.ServerInstance;
+        if (ce == null || ce.IsDestroyed) return;
+        var body = BuildForServerPanel(player);
+        if (string.IsNullOrWhiteSpace(body)) return;
+        try { ce.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), "[" + body + "]"); }
         catch (System.Exception) { }
     }
 
@@ -47,40 +75,90 @@ public static class LeaderboardUI
         catch (System.Exception) { }
     }
 
-    private static JArray BuildFullPanel(BasePlayer player, int categoryIndex, int subTab)
+    public static void DestroyServerPanel(BasePlayer player)
+    {
+        if (player?.net?.connection == null) return;
+        var ce = CommunityEntity.ServerInstance;
+        if (ce == null || ce.IsDestroyed) return;
+        try { ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), ServerPanelRoot); }
+        catch (System.Exception) { }
+    }
+
+    private static string StripArrayBrackets(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        json = json.Trim();
+        if (json.Length >= 2 && json[0] == '[' && json[json.Length - 1] == ']')
+            json = json.Substring(1, json.Length - 2);
+        return string.IsNullOrWhiteSpace(json) ? null : json;
+    }
+
+    private static JArray BuildFullPanel(BasePlayer player, int categoryIndex, int subTab, bool inServerPanel = false)
     {
         var list = new JArray();
 
-        // --- Root: fullscreen dimmed background (destroyUi clears this and all children) ---
-        list.Add(new JObject
+        if (inServerPanel)
         {
-            ["name"] = PanelName,
-            ["parent"] = Parent,
-            ["destroyUi"] = PanelName,
-            ["components"] = new JArray
+            // --- Root fills ServerPanel content area ---
+            list.Add(new JObject
             {
-                new JObject { ["type"] = "UnityEngine.UI.Image", ["sprite"] = BgSprite, ["color"] = "0.098 0.098 0.098 0.9", ["material"] = BlurBgMat },
-                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1" },
-                new JObject { ["type"] = "NeedsCursor" },
-                new JObject { ["type"] = "NeedsKeyboard" }
-            }
-        });
+                ["name"] = ServerPanelRoot,
+                ["parent"] = ServerPanelParent,
+                ["destroyUi"] = ServerPanelRoot,
+                ["components"] = new JArray
+                {
+                    new JObject { ["type"] = "UnityEngine.UI.Image", ["color"] = "0 0 0 0" },
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1" },
+                    new JObject { ["type"] = "NeedsCursor" },
+                    new JObject { ["type"] = "NeedsKeyboard" }
+                }
+            });
 
-        // --- Main panel: centered 600x300, blur ---
-        list.Add(new JObject
-        {
-            ["name"] = PanelName + "_Main",
-            ["parent"] = PanelName,
-            ["components"] = new JArray
+            // --- Main panel fills content (no separate Overlay fullscreen) ---
+            list.Add(new JObject
             {
-                new JObject { ["type"] = "UnityEngine.UI.Image", ["color"] = "0.098 0.098 0.098 0.5", ["material"] = BlurMat },
-                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0.5 0.5", ["anchormax"] = "0.5 0.5", ["offsetmin"] = "-600 -300", ["offsetmax"] = "600 300" }
-            }
-        });
+                ["name"] = PanelName + "_Main",
+                ["parent"] = ServerPanelRoot,
+                ["components"] = new JArray
+                {
+                    new JObject { ["type"] = "UnityEngine.UI.Image", ["color"] = "0.098 0.098 0.098 0.5", ["material"] = BlurMat },
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1", ["offsetmin"] = "0 0", ["offsetmax"] = "0 0" }
+                }
+            });
+        }
+        else
+        {
+            // --- Root: fullscreen dimmed background (destroyUi clears this and all children) ---
+            list.Add(new JObject
+            {
+                ["name"] = PanelName,
+                ["parent"] = OverlayParent,
+                ["destroyUi"] = PanelName,
+                ["components"] = new JArray
+                {
+                    new JObject { ["type"] = "UnityEngine.UI.Image", ["sprite"] = BgSprite, ["color"] = "0.098 0.098 0.098 0.9", ["material"] = BlurBgMat },
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1" },
+                    new JObject { ["type"] = "NeedsCursor" },
+                    new JObject { ["type"] = "NeedsKeyboard" }
+                }
+            });
+
+            // --- Main panel: centered 600x300, blur ---
+            list.Add(new JObject
+            {
+                ["name"] = PanelName + "_Main",
+                ["parent"] = PanelName,
+                ["components"] = new JArray
+                {
+                    new JObject { ["type"] = "UnityEngine.UI.Image", ["color"] = "0.098 0.098 0.098 0.5", ["material"] = BlurMat },
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0.5 0.5", ["anchormax"] = "0.5 0.5", ["offsetmin"] = "-600 -300", ["offsetmax"] = "600 300" }
+                }
+            });
+        }
 
         var main = PanelName + "_Main";
 
-        // --- Header bar (50px top) ---
+        // --- Header bar (50px top); fullscreen leaves room for close button ---
         list.Add(new JObject
         {
             ["name"] = PanelName + "_Header",
@@ -88,7 +166,7 @@ public static class LeaderboardUI
             ["components"] = new JArray
             {
                 new JObject { ["type"] = "UnityEngine.UI.Image", ["sprite"] = HeaderSprite, ["color"] = "0.286 0.286 0.286 1" },
-                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 1", ["anchormax"] = "1 1", ["offsetmin"] = "0 -50", ["offsetmax"] = "-50 0" }
+                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 1", ["anchormax"] = "1 1", ["offsetmin"] = "0 -50", ["offsetmax"] = inServerPanel ? "0 0" : "-50 0" }
             }
         });
 
@@ -105,26 +183,29 @@ public static class LeaderboardUI
             }
         });
 
-        list.Add(new JObject
+        if (!inServerPanel)
         {
-            ["name"] = PanelName + "_Close",
-            ["parent"] = header,
-            ["components"] = new JArray
+            list.Add(new JObject
             {
-                new JObject { ["type"] = "UnityEngine.UI.Button", ["command"] = "cui.endtest LEADERBOARD close", ["color"] = "0.894 0.251 0.157 1", ["sprite"] = TileSprite },
-                new JObject { ["type"] = "RectTransform", ["anchormin"] = "1 1", ["anchormax"] = "1 1", ["offsetmin"] = "0 -50", ["offsetmax"] = "50 0" }
-            }
-        });
-        list.Add(new JObject
-        {
-            ["name"] = PanelName + "_CloseIcon",
-            ["parent"] = PanelName + "_Close",
-            ["components"] = new JArray
+                ["name"] = PanelName + "_Close",
+                ["parent"] = header,
+                ["components"] = new JArray
+                {
+                    new JObject { ["type"] = "UnityEngine.UI.Button", ["command"] = "cui.endtest LEADERBOARD close", ["color"] = "0.894 0.251 0.157 1", ["sprite"] = TileSprite },
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "1 1", ["anchormax"] = "1 1", ["offsetmin"] = "0 -50", ["offsetmax"] = "50 0" }
+                }
+            });
+            list.Add(new JObject
             {
-                new JObject { ["type"] = "UnityEngine.UI.Image", ["sprite"] = CloseIcon, ["color"] = "1 1 1 1" },
-                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0.5 0.5", ["anchormax"] = "0.5 0.5", ["offsetmin"] = "-9 -9", ["offsetmax"] = "9 9" }
-            }
-        });
+                ["name"] = PanelName + "_CloseIcon",
+                ["parent"] = PanelName + "_Close",
+                ["components"] = new JArray
+                {
+                    new JObject { ["type"] = "UnityEngine.UI.Image", ["sprite"] = CloseIcon, ["color"] = "1 1 1 1" },
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0.5 0.5", ["anchormax"] = "0.5 0.5", ["offsetmin"] = "-9 -9", ["offsetmax"] = "9 9" }
+                }
+            });
+        }
 
         // --- Category bar (under header): 0.5 1, offset -580 -105 to 580 -70 ---
         const float catW = 168f;

@@ -242,7 +242,7 @@ ReportUploader Coroutine
 
 ## Configuration
 
-**File**: `HarmonyMods_Data/ServerMetrics/Configuration.json`
+**File**: `HarmonyData/ServerMetrics/Configuration.json`
 
 **Structure** (see `ConfigData.cs`):
 ```json

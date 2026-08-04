@@ -35,12 +35,17 @@ namespace RaidableBasesBuyableUI
         private const double baseButtonSpaceX = 35.0;
         private const double baseButtonSpaceY = 30.0;
         private const string Name = "RaidableBasesBuyableUI";
+        private const string OverlayParent = "Overlay";
+        private const string ServerPanelContentParent = "UI.Server.Panel.Content";
+        private const string ServerPanelPluginParent = "UI.Server.Panel.Content.Plugin";
         private SortedDictionary<string, List<string>> _PROFILES = new();
         private Dictionary<string, string> _COSTS = new();
         private Dictionary<string, List<string>> players = new();
         private Dictionary<string, string> _playerColors = new(); // Player UI color preference
         private Dictionary<string, float> _playerTransparency = new(); // Player UI transparency (0-100)
         private readonly HashSet<ulong> _pnpcBuilderMode = new HashSet<ulong>();
+        /// <summary>Players whose gallery is mounted inside ServerPanel Content (not Overlay).</summary>
+        private readonly HashSet<ulong> _serverPanelPlayers = new HashSet<ulong>();
         private const float DEFAULT_TRANSPARENCY = 100f; // Default: 100% opacity
 
         public void Initialize()
@@ -106,13 +111,71 @@ namespace RaidableBasesBuyableUI
             }
 
             CuiHelper.DestroyUi(buyer, "RB_UI_Buyable");
+            // Standalone RB purchase path always uses Overlay.
+            ExitServerPanelMode(buyer);
             var opened = SEND_BUYABLE_MODES(buyer);
             // Non-null stops RaidableBases from showing its own panel (even if opened==false).
             return opened ? (object)true : (object)"RaidableBasesBuyableUI";
         }
 
-        /// <summary>Public entry used by ShowBuyableUi redirect patch.</summary>
-        public void OpenBuyableModes(BasePlayer player) => SEND_BUYABLE_MODES(player);
+        /// <summary>Public entry used by ShowBuyableUi redirect patch / /buyraid (Overlay).</summary>
+        public void OpenBuyableModes(BasePlayer player)
+        {
+            ExitServerPanelMode(player);
+            SEND_BUYABLE_MODES(player);
+        }
+
+        /// <summary>
+        /// ServerPanel Plugin page entry. Returns a container mounted under
+        /// UI.Server.Panel.Content.Plugin (ServerPanel serializes and AddUi's it).
+        /// </summary>
+        public CuiElementContainer API_OpenPlugin(BasePlayer player)
+        {
+            var container = new CuiElementContainer();
+            if (player == null) return container;
+
+            EnterServerPanelMode(player);
+
+            container.Add(new CuiPanel
+            {
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" },
+                Image = { Color = "0 0 0 0" }
+            }, ServerPanelContentParent, ServerPanelPluginParent, ServerPanelPluginParent);
+
+            // Build gallery into the returned container; ServerPanel mounts it (no AddUi here).
+            SEND_BUYABLE_MODES(player, target: container);
+            return container;
+        }
+
+        public void OnServerPanelClosed(BasePlayer player)
+        {
+            if (player == null) return;
+            DestroyUI(player);
+        }
+
+        public void OnServerPanelCategoryPage(BasePlayer player, int category, int page)
+        {
+            if (player == null) return;
+            DestroyUI(player);
+        }
+
+        private bool IsServerPanelMode(BasePlayer player) =>
+            player != null && _serverPanelPlayers.Contains((ulong)player.userID);
+
+        private string GetUiParent(BasePlayer player) =>
+            IsServerPanelMode(player) ? ServerPanelPluginParent : OverlayParent;
+
+        private void EnterServerPanelMode(BasePlayer player)
+        {
+            if (player != null)
+                _serverPanelPlayers.Add((ulong)player.userID);
+        }
+
+        private void ExitServerPanelMode(BasePlayer player)
+        {
+            if (player != null)
+                _serverPanelPlayers.Remove((ulong)player.userID);
+        }
 
         public object HandleOnPurchaseTakePayments(object[] args)
         {
@@ -180,6 +243,7 @@ namespace RaidableBasesBuyableUI
                 return false;
             }
 
+            ExitServerPanelMode(player);
             _pnpcBuilderMode.Add((ulong)player.userID);
             return SEND_BUYABLE_MODES(player, "CHOOSE A BASE TO BUILD");
         }
@@ -279,7 +343,8 @@ namespace RaidableBasesBuyableUI
             if (player == null) return;
 
             _pnpcBuilderMode.Remove((ulong)player.userID);
-            
+            ExitServerPanelMode(player);
+
             CuiHelper.DestroyUi(player, "BUYABLE_UI_COLORPICKER");
             CuiHelper.DestroyUi(player, "BUYABLE_UI_TRANSPARENCY");
             CuiHelper.DestroyUi(player, "BUYABLE_UI_HEADER_BACKGROUND");
@@ -287,11 +352,12 @@ namespace RaidableBasesBuyableUI
             CuiHelper.DestroyUi(player, "BUYABLE_UI_HEADER_BOY");
             CuiHelper.DestroyUi(player, "BUYABLE_UI_BUYHEADER_BACKGROUND");
             CuiHelper.DestroyUi(player, "BUYABLE_UI_BACKGROUND_IMAGE");
-            
+
             CuiHelper.DestroyUi(player, BUYABLE_UI_OPTIONS);
             CuiHelper.DestroyUi(player, BUYABLE_UI_MAIN);
             CuiHelper.DestroyUi(player, BUYABLE_UI_BACKGROUND);
             CuiHelper.DestroyUi(player, BUYABLE_UI_HEADER);
+            CuiHelper.DestroyUi(player, ServerPanelPluginParent);
         }
 
         public void CmdBuyablePurchase(ConsoleSystem.Arg arg)
@@ -440,10 +506,17 @@ namespace RaidableBasesBuyableUI
             SEND_BUYABLE_MODES(player);
         }
 
-        private bool SEND_BUYABLE_MODES(BasePlayer player, string text = "BUY A RAID BASE", int fontSize = 26, string fontName = "robotocondensed-bold.ttf", TextAnchor align = TextAnchor.MiddleCenter, string color = "1 1 1 1", double spacing = menuButtonSize + menuButtonDist)
+        /// <param name="target">
+        /// When non-null (ServerPanel API_OpenPlugin), elements are appended to this container and
+        /// CuiHelper.AddUi is skipped so ServerPanel can mount the result.
+        /// </param>
+        private bool SEND_BUYABLE_MODES(BasePlayer player, string text = "BUY A RAID BASE", int fontSize = 26, string fontName = "robotocondensed-bold.ttf", TextAnchor align = TextAnchor.MiddleCenter, string color = "1 1 1 1", double spacing = menuButtonSize + menuButtonDist, CuiElementContainer target = null)
         {
             if (IsPNPCBuilderMode(player) && text == "BUY A RAID BASE")
                 text = "CHOOSE A BASE TO BUILD";
+
+            var parent = GetUiParent(player);
+            bool mountLocally = target == null;
 
             // CLEANUP FIRST: remove any previous UI to prevent overlapping elements
             CuiHelper.DestroyUi(player, "RB_UI_Buyable");
@@ -458,8 +531,8 @@ namespace RaidableBasesBuyableUI
             CuiHelper.DestroyUi(player, "BUYABLE_UI_HEADER_TEXT");
             CuiHelper.DestroyUi(player, "BUYABLE_UI_HEADER_BOY");
             CuiHelper.DestroyUi(player, "BUYABLE_UI_BUYHEADER_BACKGROUND");
-            
-            var container = new CuiElementContainer();
+
+            var container = target ?? new CuiElementContainer();
             var buttons = new List<string>();
             var count = 0;
 
@@ -539,7 +612,7 @@ namespace RaidableBasesBuyableUI
                         CursorEnabled = false, // Don't block clicks on child elements
                         Image = { Color = "1 1 1 0", Sprite = PanelSprite }, // Fully transparent - gradient image will show
                         RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "46.376 38.908", OffsetMax = "-46.384 -38.891" }
-                    }, "Overlay", "BUYABLE_UI_BACKGROUND");
+                    }, parent, "BUYABLE_UI_BACKGROUND");
 
                     container.Add(new CuiElement
                     {
@@ -558,7 +631,7 @@ namespace RaidableBasesBuyableUI
                         CursorEnabled = false, 
                         Image = { Color = "1 1 1 0", Sprite = PanelSprite }, 
                         RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "46.376 38.908", OffsetMax = "-46.384 -38.891" }
-                    }, "Overlay", "BUYABLE_UI_BACKGROUND");
+                    }, parent, "BUYABLE_UI_BACKGROUND");
 
                     var backdropImage = UiHandler.GetImage("backdrop");
                     if (IsValidPng(backdropImage))
@@ -594,7 +667,7 @@ namespace RaidableBasesBuyableUI
                     CursorEnabled = false, 
                     Image = { Color = $"{backgroundColor} {transparencyAlpha}", Sprite = PanelSprite },
                     RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "46.376 38.908", OffsetMax = "-46.384 -38.891" }
-                }, "Overlay", "BUYABLE_UI_BACKGROUND");
+                }, parent, "BUYABLE_UI_BACKGROUND");
 
                 var backdropImage = UiHandler.GetImage("backdrop");
                 if (IsValidPng(backdropImage))
@@ -628,7 +701,7 @@ namespace RaidableBasesBuyableUI
                 CursorEnabled = false,
                 Image = { Color = "1 1 1 0" },
                 RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-551.004 202.33", OffsetMax = "550.996 302.33" }
-            }, "Overlay", BUYABLE_UI_MAIN);
+            }, parent, BUYABLE_UI_MAIN);
 
             container.Add(new CuiPanel
             {
@@ -682,7 +755,7 @@ namespace RaidableBasesBuyableUI
                 CursorEnabled = true, // Enable cursor for clickable buttons
                 Image = { Color = $"0.08235294 0.07843138 0.07450981 {headerBgAlpha}", Sprite = PanelSprite },
                 RectTransform = { AnchorMin = "0 0.5", AnchorMax = "1 0.5", OffsetMin = "46.376 210", OffsetMax = "-46.384 290" }
-            }, "Overlay", "BUYABLE_UI_HEADER");
+            }, parent, "BUYABLE_UI_HEADER");
 
             if (playerColor != "default")
             {
@@ -730,10 +803,13 @@ namespace RaidableBasesBuyableUI
             
             DebugPuts($"[DEBUG] UI structure complete - Header and color picker added last");
 
-            CuiHelper.DestroyUi(player, BUYABLE_UI_BACKGROUND);
-            CuiHelper.DestroyUi(player, BUYABLE_UI_HEADER);
-            CuiHelper.DestroyUi(player, BUYABLE_UI_MAIN);
-            CuiHelper.AddUi(player, container);
+            if (mountLocally)
+            {
+                CuiHelper.DestroyUi(player, BUYABLE_UI_BACKGROUND);
+                CuiHelper.DestroyUi(player, BUYABLE_UI_HEADER);
+                CuiHelper.DestroyUi(player, BUYABLE_UI_MAIN);
+                CuiHelper.AddUi(player, container);
+            }
 
             return true;
         }
@@ -889,6 +965,8 @@ namespace RaidableBasesBuyableUI
                 return;
             }
 
+            var parent = GetUiParent(player);
+
             // CLEANUP FIRST: remove old header / color picker / options to prevent overlapping elements
             CuiHelper.DestroyUi(player, BUYABLE_UI_OPTIONS);
             CuiHelper.DestroyUi(player, BUYABLE_UI_HEADER);
@@ -902,7 +980,7 @@ namespace RaidableBasesBuyableUI
                 CursorEnabled = false,
                 Image = { Color = "1 1 1 0" },
                 RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-350.21 56.72", OffsetMax = "-250.21 176.72" }
-            }, "Overlay", BUYABLE_UI_OPTIONS);
+            }, parent, BUYABLE_UI_OPTIONS);
 
             if (indexToStartFrom < 0 || indexToStartFrom > baseNames.Count - 1)
             {
@@ -1009,7 +1087,7 @@ namespace RaidableBasesBuyableUI
                 CursorEnabled = true, // Enable cursor for clickable buttons
                 Image = { Color = $"0.08235294 0.07843138 0.07450981 {headerBgAlpha}", Sprite = PanelSprite },
                 RectTransform = { AnchorMin = "0 0.5", AnchorMax = "1 0.5", OffsetMin = "46.376 210", OffsetMax = "-46.384 290" }
-            }, "Overlay", "BUYABLE_UI_HEADER");
+            }, parent, "BUYABLE_UI_HEADER");
             
             // Add gradient background FIRST (so buttons appear on top)
             if (playerColor != "default")

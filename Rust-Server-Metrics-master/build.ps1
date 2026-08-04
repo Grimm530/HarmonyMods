@@ -33,7 +33,8 @@ Write-Host ""
 $SolutionPath = Join-Path $PSScriptRoot "RustServerMetrics.sln"
 $ProjectPath = Join-Path $PSScriptRoot "src\RustServerMetrics\RustServerMetrics.csproj"
 $OutputPath = Join-Path $PSScriptRoot "src\RustServerMetrics\bin\$Configuration\net48\RustServerMetrics.dll"
-$TargetPath = "D:\!2XRUST\HarmonyMods\RustServerMetrics.dll"
+$workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+$TargetPath = Join-Path $workspaceRoot "HarmonyMods\RustServerMetrics.dll"
 $Platform = "Any CPU"
 
 # Check if solution exists

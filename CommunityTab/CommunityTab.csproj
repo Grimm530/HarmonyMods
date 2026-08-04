@@ -18,5 +18,8 @@
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

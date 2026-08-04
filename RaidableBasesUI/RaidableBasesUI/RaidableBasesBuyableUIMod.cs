@@ -17,6 +17,7 @@ namespace RaidableBasesBuyableUI
         public const string HarmonyId = "com.facepunch.rust_dedicated.RaidableBasesBuyableUI";
         public const string CuiMarker = "RBBUI";
         public const string ApiDataKey = "RaidableBasesBuyableUI_ApiType";
+        public const string PluginDataKey = "RaidableBasesBuyableUI_Plugin";
 
         public static RaidableBasesBuyableUIMod Instance { get; private set; }
         public static RaidableBasesBuyableUIPlugin Plugin { get; private set; }
@@ -25,6 +26,7 @@ namespace RaidableBasesBuyableUI
         private readonly Dictionary<string, ConsoleSystem.Command> _commands = new(StringComparer.OrdinalIgnoreCase);
         private Coroutine _hookPatchCoroutine;
         private Action _permissionsReadyCallback;
+        private RaidableBasesBuyableUIPluginWrapper _pluginWrapper;
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
@@ -33,7 +35,9 @@ namespace RaidableBasesBuyableUI
             Plugin = new RaidableBasesBuyableUIPlugin();
             Plugin.Initialize();
             RegisterCommands();
+            _pluginWrapper = new RaidableBasesBuyableUIPluginWrapper(this);
             AppDomain.CurrentDomain.SetData(ApiDataKey, typeof(RaidableBasesBuyableUIPlugin));
+            AppDomain.CurrentDomain.SetData(PluginDataKey, _pluginWrapper);
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
             // Harmony OnLoaded often runs before ServerMgr exists — defer like image loading.
@@ -120,10 +124,39 @@ namespace RaidableBasesBuyableUI
             try { _manualHarmony?.UnpatchAll(HarmonyId + ".hooks"); } catch { }
             _manualHarmony = null;
 
+            AppDomain.CurrentDomain.SetData(PluginDataKey, null);
             AppDomain.CurrentDomain.SetData(ApiDataKey, null);
+            _pluginWrapper = null;
             Plugin = null;
             Instance = null;
             Debug.Log("[RaidableBasesBuyableUI] Unloaded.");
+        }
+
+        /// <summary>Oxide-style Call dispatcher for ServerPanel PluginBridge and other consumers.</summary>
+        public object Call(string method, params object[] args)
+        {
+            if (Plugin == null || string.IsNullOrEmpty(method)) return null;
+            try
+            {
+                args ??= Array.Empty<object>();
+                MethodInfo mi = null;
+                foreach (var candidate in typeof(RaidableBasesBuyableUIPlugin).GetMethods(
+                             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                {
+                    if (!string.Equals(candidate.Name, method, StringComparison.Ordinal)) continue;
+                    if (candidate.GetParameters().Length != args.Length) continue;
+                    mi = candidate;
+                    break;
+                }
+                if (mi == null) return null;
+                return mi.Invoke(Plugin, args);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[RaidableBasesBuyableUI] Call(" + method + "): " +
+                                 (ex.InnerException?.Message ?? ex.Message));
+                return null;
+            }
         }
 
         private IEnumerator EnsureCallHookPatch()
@@ -369,6 +402,20 @@ namespace RaidableBasesBuyableUI
                 catch { }
             }
             _commands.Clear();
+        }
+
+        /// <summary>
+        /// AppDomain key RaidableBasesBuyableUI_Plugin — ServerPanel PluginBridge resolves this
+        /// for Plugin Name RaidableBasesBuyableUI / RaidableBasesUI.
+        /// </summary>
+        public sealed class RaidableBasesBuyableUIPluginWrapper
+        {
+            private readonly RaidableBasesBuyableUIMod _mod;
+            public RaidableBasesBuyableUIPluginWrapper(RaidableBasesBuyableUIMod mod) => _mod = mod;
+            public bool IsLoaded => RaidableBasesBuyableUIMod.Plugin != null;
+            public string Name => "RaidableBasesBuyableUI";
+            public object Call(string method, params object[] args) => _mod?.Call(method, args);
+            public object API_OpenPlugin(BasePlayer player) => RaidableBasesBuyableUIMod.Plugin?.API_OpenPlugin(player);
         }
     }
 }

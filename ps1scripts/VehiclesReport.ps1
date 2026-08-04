@@ -615,9 +615,9 @@ if ($ConfigPath) {
     $configSearchPaths += $ConfigPath
 }
 $configSearchPaths += @(
-    (Join-Path $PSScriptRoot "..\..\HarmonyMods_Data\ServerMetrics\Configuration.json"),
-    (Join-Path $PSScriptRoot "HarmonyMods_Data\ServerMetrics\Configuration.json"),
-    "HarmonyMods_Data\ServerMetrics\Configuration.json"
+    (Join-Path $PSScriptRoot "..\..\HarmonyData\ServerMetrics\Configuration.json"),
+    (Join-Path $PSScriptRoot "HarmonyData\ServerMetrics\Configuration.json"),
+    "HarmonyData\ServerMetrics\Configuration.json"
 )
 
 foreach ($path in $configSearchPaths | Select-Object -Unique) {

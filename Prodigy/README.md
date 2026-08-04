@@ -29,7 +29,7 @@ Prodigy is a Harmony mod that provides detailed entity information (“prod” i
 
 ## Persistent data model
 
-- **File:** `HarmonyMods_Data/Prodigy/ProdigyData.json` (path from config `DataFolder`).
+- **File:** `HarmonyData/Prodigy/ProdigyData.json` (path from config `DataFolder`).
 - **Contents:** `Blocks` (per-user build logs by position), `TC` (per-user TC logs), `Offsets` (per-user UI position/size), `WipeId`.
 - **New wipe:** On load, if `SaveRestore.WipeId` != stored `WipeId`, `Blocks` and `TC` are cleared and `WipeId` is updated.
 - **Save:** Every 300 seconds and on unload; only when `Changed` is true.
@@ -55,7 +55,7 @@ Then press **P** while looking at an entity to run prodigy. Use `bind p "chat.sa
 | `AdminOnly` | If true, only admins can use prodigy; else `AllowedSteamIds` apply (admins always allowed). |
 | `AllowedSteamIds` | Steam IDs allowed when `AdminOnly` is false. |
 | `AllowedMlrsSteamIds` | Steam IDs allowed to use MLRS repair (hammer on MLRS). |
-| `DataFolder` | Folder under server root for `ProdigyData.json` (e.g. `HarmonyMods_Data/Prodigy`). |
+| `DataFolder` | Folder under server root for `ProdigyData.json` (e.g. `HarmonyData/Prodigy`). |
 
 ## Patches
 

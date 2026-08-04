@@ -285,7 +285,7 @@ if ($rustMetricsDS -and $rustMetricsDS.database) {
 
 # 8. Check Configuration File
 Write-Host "[8/8] Checking Rust Server Metrics configuration..." -ForegroundColor Yellow
-$configPath = "HarmonyMods_Data\ServerMetrics\Configuration.json"
+$configPath = "HarmonyData\ServerMetrics\Configuration.json"
 if (Test-Path $configPath) {
     try {
         $config = Get-Content $configPath -Raw | ConvertFrom-Json

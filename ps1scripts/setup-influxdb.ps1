@@ -159,6 +159,6 @@ Write-Host "   User: $Username" -ForegroundColor Gray
 Write-Host "   Password: $Password" -ForegroundColor Gray
 Write-Host ""
 Write-Host "3. Update your Rust server config:" -ForegroundColor White
-Write-Host "   HarmonyMods_Data/ServerMetrics/Configuration.json" -ForegroundColor Gray
+Write-Host "   HarmonyData/ServerMetrics/Configuration.json" -ForegroundColor Gray
 Write-Host ""
 
