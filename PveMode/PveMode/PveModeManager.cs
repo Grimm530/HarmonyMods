@@ -331,6 +331,24 @@ namespace PveModeHarmony
             return Events.Any(x => x.Turrets.Contains(id));
         }
 
+        /// <summary>
+        /// True when the entity is a combat target registered with an active PveMode event
+        /// (NPC / animal / Bradley / heli / turret). Used so TruePVE gets an explicit allow
+        /// instead of falling through to rules like "players cannot hurt traps".
+        /// </summary>
+        public static bool IsEventCombatEntity(BaseEntity entity)
+        {
+            if (entity == null || entity.net == null || Events.Count == 0) return false;
+            ulong id = (ulong)entity.net.ID.Value;
+            foreach (ControllerEvent ev in Events)
+            {
+                if (ev.Npc.Contains(id) || ev.Tanks.Contains(id) ||
+                    ev.Helicopters.Contains(id) || ev.Turrets.Contains(id))
+                    return true;
+            }
+            return false;
+        }
+
         // ---- Owner callbacks (for other mods, e.g. Convoy) -------------------
 
         public const string AppDomainOwnerCallbacksKey = "PveMode_OwnerCallbacks";
@@ -628,13 +646,21 @@ namespace PveModeHarmony
         // ---- AppDomain bridge functions (published for TruePVE) ------------
 
         /// <summary>Func&lt;BaseEntity, HitInfo, object&gt; published as PveMode_CanEntityTakeDamage.
-        /// false = block, true = explicitly allow (event turret damaging a non-owner), null = not handled.</summary>
+        /// false = block, true = explicitly allow (override TruePVE rules for event entities), null = not handled.</summary>
         public static object CanEntityTakeDamageApi(BaseEntity entityObj, HitInfo info)
         {
             if (Events.Count == 0 || !(entityObj is BaseCombatEntity entity) || info == null) return null;
 
             object result = OnEventEntityTakeDamage(entity, info, false, false);
-            return result is bool blocked && blocked ? (object)false : null;
+            if (result is bool blocked && blocked)
+                return false;
+
+            // Event-tagged entity and damage not blocked → explicitly allow so TruePVE does not
+            // apply "players cannot hurt traps" / defaultAllowDamage:false to ArmoredTrain turrets, etc.
+            if (IsEventCombatEntity(entity))
+                return true;
+
+            return null;
         }
 
         /// <summary>Func&lt;BaseEntity, BaseEntity, object&gt; published as PveMode_CanEntityBeTargeted.

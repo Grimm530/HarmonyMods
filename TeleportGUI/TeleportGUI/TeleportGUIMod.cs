@@ -99,7 +99,13 @@ namespace TeleportGUI
             UnregisterCuiCommand();
             UnregisterCommands();
             foreach (var p in BasePlayer.activePlayerList)
-                if (p != null && p.IsConnected) DestroyTeleportUI(p);
+            {
+                if (p == null || !p.IsConnected) continue;
+                DestroyTeleportUI(p);
+                StopPopupDestroy(p);
+                ChaosUI.Destroy(p, TPR_POPUP);
+                ChaosUI.Destroy(p, TPP_POPUP);
+            }
             _uiState.Clear();
             SaveData();
             Instance = null;
@@ -928,10 +934,10 @@ namespace TeleportGUI
 
             if (!_uiState.TryGetValue(player.userID, out var state))
                 _uiState[player.userID] = (mode, 0, string.Empty);
-            else if (string.IsNullOrEmpty(state.mode))
+            else
                 _uiState[player.userID] = (mode, state.page, state.search);
 
-            ShowTeleportUI(player, _uiState[player.userID].mode);
+            ShowTeleportUI(player, mode);
         }
 
         private string GetDailyLimitOrCooldownText(BasePlayer player, string mode)
@@ -1350,6 +1356,7 @@ namespace TeleportGUI
             if (delay > 0)
             {
                 SendMessage(player, "Teleporting home in " + delay + " seconds...");
+                ShowPendingPositionPopup(player, delay, "Popup.Outgoing.TP.Home", homeName);
                 ServerMgr.Instance?.StartCoroutine(DelayedTeleport(player, dest, delay, () =>
                 {
                     user.HomeUsesToday++;
@@ -1438,6 +1445,7 @@ namespace TeleportGUI
             if (delay > 0)
             {
                 SendMessage(player, "Warping in " + delay + " seconds...");
+                ShowPendingPositionPopup(player, delay, "Popup.Outgoing.TP.Warp", name);
                 ServerMgr.Instance?.StartCoroutine(DelayedTeleport(player, dest, delay, () =>
                 {
                     user.WarpUsesToday++;
@@ -1569,7 +1577,7 @@ namespace TeleportGUI
             catch { return false; }
         }
 
-        private System.Collections.IEnumerator DelayedTeleport(BasePlayer player, Vector3 position, int delaySeconds, Action onDone, string mode = "teleport", PaymentReceipt receipt = default)
+        private System.Collections.IEnumerator DelayedTeleport(BasePlayer player, Vector3 position, int delaySeconds, Action onDone, string mode = "teleport", PaymentReceipt receipt = default, BasePlayer[] clearPendingPopupsFor = null)
         {
             if (player == null) yield break;
             _playersInDelayedTeleport[player.userID] = mode;
@@ -1625,6 +1633,18 @@ namespace TeleportGUI
                     _playersInDelayedTeleport.Remove(player.userID);
                     _cancelTeleportRequested.Remove(player.userID);
                 }
+                DestroyPendingPopups(clearPendingPopupsFor ?? new[] { player });
+            }
+        }
+
+        private void DestroyPendingPopups(IEnumerable<BasePlayer> players)
+        {
+            if (players == null) return;
+            foreach (var p in players)
+            {
+                if (p == null) continue;
+                StopPopupDestroy(p);
+                ChaosUI.Destroy(p, TPP_POPUP);
             }
         }
 
@@ -1985,12 +2005,13 @@ namespace TeleportGUI
             if (delay > 0)
             {
                 SendMessage(mover, "Teleporting in " + delay + " seconds...");
+                ShowPendingTeleportPopups(from, to, delay, req.TpHere);
                 ServerMgr.Instance?.StartCoroutine(DelayedTeleport(mover, dest, delay, () =>
                 {
                     user.TPUsesToday++;
                     user.TPCooldownUntil = CurrentTime() + GetTPCooldown(from);
                     SaveData();
-                }, "teleport", receipt));
+                }, "teleport", receipt, clearPendingPopupsFor: new[] { from, to }));
             }
             else
             {
@@ -2016,8 +2037,16 @@ namespace TeleportGUI
             if (req.Timer != null) { try { ServerMgr.Instance?.StopCoroutine(req.Timer); } catch { } req.Timer = null; }
             if (req.From != null) _outgoingRequests.Remove(req.From.userID);
             if (req.To != null) _incomingRequests.Remove(req.To.userID);
-            if (req.From != null) ChaosUI.Destroy(req.From, TPR_POPUP);
-            if (req.To != null) ChaosUI.Destroy(req.To, TPR_POPUP);
+            if (req.From != null)
+            {
+                StopPopupDestroy(req.From);
+                ChaosUI.Destroy(req.From, TPR_POPUP);
+            }
+            if (req.To != null)
+            {
+                StopPopupDestroy(req.To);
+                ChaosUI.Destroy(req.To, TPR_POPUP);
+            }
             if (refund && req.Receipt.WasCharged)
             {
                 RefundPayment(req.From, req.Receipt);
@@ -2028,25 +2057,68 @@ namespace TeleportGUI
         private void ShowRequestPopups(PendingRequest req)
         {
             if (req?.From == null || req.To == null) return;
-            string incomingHeading = req.TpHere
-                ? "Teleport-here request expires in %TIME_LEFT%"
-                : "Teleport request expires in %TIME_LEFT%";
-            TeleportGUIUI.Show(req.To, TeleportGUIUI.BuildRequestPopup(new TeleportGUIUI.RequestPopup
-            {
-                Heading = incomingHeading,
-                DisplayName = req.From.displayName,
-                SecondsRemaining = req.TimeRemaining,
-                CanAccept = true,
-                CanDecline = true
-            }, _config.UI?.RequestPopup, _config.UI?.Colors));
-            TeleportGUIUI.Show(req.From, TeleportGUIUI.BuildRequestPopup(new TeleportGUIUI.RequestPopup
-            {
-                Heading = incomingHeading,
-                DisplayName = req.To.displayName,
-                SecondsRemaining = req.TimeRemaining,
-                CanAccept = false,
-                CanDecline = true
-            }, _config.UI?.RequestPopup, _config.UI?.Colors));
+            string toName = req.To.displayName?.StripTags() ?? "player";
+            string fromName = req.From.displayName?.StripTags() ?? "player";
+            string incomingKey = req.TpHere ? "Popup.Incoming.TPHere" : "Popup.Incoming.TPR";
+            string outgoingKey = req.TpHere ? "Popup.Outgoing.TPHere" : "Popup.Outgoing.TPR";
+
+            CreateTeleportRequestPopup(req.To, TPR_POPUP, req.TimeRemaining, incomingKey, fromName,
+                isReceiver: true, canAccept: true, canCancel: true,
+                onAccept: () =>
+                {
+                    if (_incomingRequests.TryGetValue(req.To.userID, out var current) && ReferenceEquals(current, req))
+                        AcceptRequest(req);
+                },
+                onDeclineOrCancel: () =>
+                {
+                    if (_incomingRequests.TryGetValue(req.To.userID, out var current) && ReferenceEquals(current, req))
+                        CmdTpDecline(req.To);
+                });
+
+            CreateTeleportRequestPopup(req.From, TPR_POPUP, req.TimeRemaining, outgoingKey, toName,
+                isReceiver: false, canAccept: false, canCancel: true,
+                onAccept: null,
+                onDeclineOrCancel: () =>
+                {
+                    if (_outgoingRequests.TryGetValue(req.From.userID, out var current) && ReferenceEquals(current, req))
+                        CmdTpCancel(req.From);
+                });
+        }
+
+        private void ShowPendingTeleportPopups(BasePlayer from, BasePlayer to, int delay, bool tpHere)
+        {
+            if (from == null || to == null || delay <= 0) return;
+            string fromName = from.displayName?.StripTags() ?? "player";
+            string toName = to.displayName?.StripTags() ?? "player";
+            bool fromCanCancel = HasPerm(from, "teleportgui.tp.tpcancel");
+            BasePlayer mover = tpHere ? to : from;
+
+            CreateTeleportRequestPopup(to, TPP_POPUP, delay, "Popup.Incoming.TP", fromName,
+                isReceiver: true, canAccept: false, canCancel: false,
+                onAccept: null, onDeclineOrCancel: null);
+
+            CreateTeleportRequestPopup(from, TPP_POPUP, delay, "Popup.Outgoing.TP", toName,
+                isReceiver: false, canAccept: false, canCancel: fromCanCancel,
+                onAccept: null,
+                onDeclineOrCancel: () =>
+                {
+                    if (mover != null && _playersInDelayedTeleport.ContainsKey(mover.userID))
+                        _cancelTeleportRequested.Add(mover.userID);
+                    DestroyPendingPopups(new[] { from, to });
+                });
+        }
+
+        private void ShowPendingPositionPopup(BasePlayer player, int delay, string langKey, string displayName)
+        {
+            if (player == null || delay <= 0) return;
+            CreateTeleportRequestPopup(player, TPP_POPUP, delay, langKey, displayName ?? string.Empty,
+                isReceiver: false, canAccept: false, canCancel: true,
+                onAccept: null,
+                onDeclineOrCancel: () =>
+                {
+                    if (_playersInDelayedTeleport.ContainsKey(player.userID))
+                        _cancelTeleportRequested.Add(player.userID);
+                });
         }
 
         private System.Collections.IEnumerator RequestTimeout(PendingRequest req)

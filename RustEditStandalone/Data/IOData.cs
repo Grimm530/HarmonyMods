@@ -3,16 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-namespace RustEditStandalone;
+namespace RustEditStandalone.Data;
 
 /// <summary>
-/// RustEdit IO layer data - plain DTOs matching Oxide.Ext.RustEdit.IO schema.
-/// Deserialized manually from ProtoBuf wire format to avoid loading protobuf-net at runtime.
+/// RustEdit IO layer DTOs + manual ProtoBuf deserializer (no protobuf-net dependency).
 /// </summary>
-
 public class SerializedIOData
 {
-    public List<SerializedIOEntity> entities { get; set; } = new List<SerializedIOEntity>();
+    public List<SerializedIOEntity> entities { get; set; } = new();
 }
 
 public class SerializedIOEntity
@@ -48,16 +46,9 @@ public class SerializedConnectionData
 public struct IOVectorData
 {
     public float x, y, z;
-
-    public Vector3 ToVector3() => new Vector3(x, y, z);
-
-    public static IOVectorData FromVector3(Vector3 v) =>
-        new IOVectorData { x = v.x, y = v.y, z = v.z };
+    public Vector3 ToVector3() => new(x, y, z);
 }
 
-/// <summary>
-/// Manual ProtoBuf deserializer for SerializedIOData (no protobuf-net dependency at runtime).
-/// </summary>
 public static class IODataDeserializer
 {
     private const int WireVarint = 0;
@@ -110,16 +101,12 @@ public static class IODataDeserializer
             switch (fieldNumber)
             {
                 case 1:
-                    if (wireType == WireLengthDelimited)
-                        ReadField1LengthDelimited(ms, e);
-                    else
-                        SkipField(ms, wireType);
+                    if (wireType == WireLengthDelimited) ReadField1LengthDelimited(ms, e);
+                    else SkipField(ms, wireType);
                     break;
                 case 2:
-                    if (wireType == WireLengthDelimited)
-                        ReadField2LengthDelimited(ms, e);
-                    else
-                        SkipField(ms, wireType);
+                    if (wireType == WireLengthDelimited) ReadField2LengthDelimited(ms, e);
+                    else SkipField(ms, wireType);
                     break;
                 case 3: var inp = ReadConnection(ms, wireType); if (inp != null) inputs.Add(inp); break;
                 case 4: var outp = ReadConnection(ms, wireType); if (outp != null) outputs.Add(outp); break;
@@ -144,26 +131,20 @@ public static class IODataDeserializer
         return e;
     }
 
-    /// <summary>Field 1 can be fullPath (string) or position (message) depending on map format.</summary>
     private static void ReadField1LengthDelimited(Stream s, SerializedIOEntity e)
     {
         var chunk = ReadLengthDelimited(s);
         if (chunk == null) return;
-        if (TryParseAsVector(chunk, out var pos))
-            e.position = pos;
-        else
-            e.fullPath = System.Text.Encoding.UTF8.GetString(chunk);
+        if (TryParseAsVector(chunk, out var pos)) e.position = pos;
+        else e.fullPath = System.Text.Encoding.UTF8.GetString(chunk);
     }
 
-    /// <summary>Field 2 can be position (message) or fullPath (string) depending on map format.</summary>
     private static void ReadField2LengthDelimited(Stream s, SerializedIOEntity e)
     {
         var chunk = ReadLengthDelimited(s);
         if (chunk == null) return;
-        if (TryParseAsVector(chunk, out var pos))
-            e.position = pos;
-        else
-            e.fullPath = System.Text.Encoding.UTF8.GetString(chunk);
+        if (TryParseAsVector(chunk, out var pos)) e.position = pos;
+        else e.fullPath = System.Text.Encoding.UTF8.GetString(chunk);
     }
 
     private static bool TryParseAsVector(byte[] chunk, out IOVectorData v)
@@ -184,10 +165,7 @@ public static class IODataDeserializer
             v = new IOVectorData { x = x, y = y, z = z };
             return true;
         }
-        catch
-        {
-            return false;
-        }
+        catch { return false; }
     }
 
     private static SerializedConnectionData ReadConnection(Stream s, int wireType)

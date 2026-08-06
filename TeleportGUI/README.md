@@ -18,8 +18,8 @@ Exact-replica Harmony port of k1lly0u TeleportGUI **2.0.481**. No Oxide dependen
 | `TeleportGUIMod.cs` | Lifecycle, commands, TPR/TPA flow, teleport sequence, CUI carrier handler, public API |
 | `TeleportGUIConfig.cs` | Full Oxide-compatible config schema (VIP maps, purchase, monuments, conditions, UI) |
 | `TeleportGUIData.cs` | userdata / warpdata models + legacy `TeleportGUI_Data.json` migration |
-| `TeleportGUI.UI.cs` | Main `/tp` UI — ChaosUI port matching Oxide (tabs, grid, settings) |
-| `TeleportGUIUI.cs` | Legacy/manual CUI helpers (request popups); actions via `cui.endtest TELEPORTGUI ...` |
+| `TeleportGUI.UI.cs` | Main `/tp` UI + request/pending popups — ChaosUI port matching Oxide |
+| `TeleportGUIUI.cs` | Legacy/manual CUI helpers (unused by runtime UI path) |
 | `PermissionsBridge.cs` | Soft-bind to `0Permissions` with generation rebind |
 | `Patches/Cui_Endtest_Patch.cs` | Routes `TELEPORTGUI` marker into `HandleCuiEndtest` |
 | `Patches/Chat_Say_Patch.cs` | Chat command intercept |

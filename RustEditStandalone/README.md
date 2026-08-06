@@ -1,90 +1,107 @@
 # RustEditStandalone
 
-A **Harmony mod** that replicates Oxide.Ext.RustEdit functionality for **vending machines** and **IO (electrical) connections** on servers **without Oxide**.
+A **Harmony mod** that provides full behavioral parity with **Oxide.Ext.RustEdit** on servers **without Oxide**.
 
-## Purpose
+Custom maps from [RustEdit](https://www.rustedit.io) store extra layers (IO, vending, loot, NPC, APC, ocean path, vehicles). This mod reads those layers and applies the same runtime behavior as the Oxide extension.
 
-If you use custom maps made with [RustEdit](https://rustedit.io) but run your server **without Oxide**, vending machines (and other custom entities) placed in the editor will spawn but stay **empty**. RustEdit relies on Oxide.Ext.RustEdit to:
-
-- Read RustEdit data from the map
-- Populate vending machines with items from vending profiles
-- Restore IO (electrical) connections between switches, doors, lights, etc.
-- Set up loot, resources, spawn handlers, etc.
-
-This mod implements **vending machine population** and **IO connection restoration** using Harmony patching and the game’s built-in `World.GetMap()` API, with no Oxide dependencies.
+**AutoUpdater is omitted** (it targeted Oxide’s Managed folder). Update this mod by rebuilding/redeploying `RustEditStandalone.dll`.
 
 ## Requirements
 
-- Rust dedicated server with **Harmony mod support** (e.g. Rust.Harmony)
-- Custom map created and saved in **RustEdit** (with vending profiles configured)
-- No Oxide/uMod required
+- Rust dedicated server with Harmony mod support
+- Custom map saved in RustEdit
+- **No Oxide/uMod required**
 
-## Installation
+## Install
 
-1. **Build the mod**
-   ```bash
-   cd .cursor/HarmonyMods/RustEditStandalone
-   dotnet build
+1. Build:
+   ```powershell
+   cd .cursor\HarmonyMods\RustEditStandalone
+   powershell -File build.ps1
    ```
+2. Deployed automatically to `<server_root>/HarmonyMods/RustEditStandalone.dll`
+3. Restart the server, or `harmony.load RustEditStandalone`
 
-2. **Copy the DLL** into your server’s Harmony mods folder:
-   ```
-   RustEditStandalone.dll → <server_root>/HarmonyMods/
-   ```
-   (Same folder where CustomMapGen and other Harmony mods go.)
+## Config
 
-3. **Restart the server** (or reload: `harmony.unload RustEditStandalone` then `harmony.load RustEditStandalone`).
+`HarmonyConfig/RustEdit.json` (created on first load):
 
-## Supported Features
+```json
+{
+  "Automatic Updates": { "Enabled": false },
+  "Spawn Handlers": {
+    "Enable loot container spawn handlers": true,
+    "Enable resource spawn handlers": true,
+    "Enable NPC spawn handlers": true,
+    "Enable APC spawn handlers": true
+  },
+  "Respawn Times": {
+    "Default loot containers": { "Minimum (minutes)": 30, "Maximum (minutes)": 60 },
+    "Desk keycard": { "Minimum (minutes)": 15, "Maximum (minutes)": 20 },
+    "Diesel Collectable": { "Minimum (minutes)": 30, "Maximum (minutes)": 45 },
+    "Junk piles": { "Minimum (minutes)": 20, "Maximum (minutes)": 45 },
+    "Resources": { "Minimum (minutes)": 20, "Maximum (minutes)": 45 },
+    "Traps/Barricades (Respawn/Re-Arm)": { "Minimum (minutes)": 25, "Maximum (minutes)": 40 },
+    "Vehicles": { "Minimum (minutes)": 45, "Maximum (minutes)": 60 }
+  }
+}
+```
 
-- **Vending machines**  
-  Populates NPC vending machines using the vending profiles defined in RustEdit when the map was saved.
+## Features
 
-- **IO (electrical) connections**  
-  Restores wiring between IO entities (switches, door controllers, lights, timers, RF receivers/broadcasters, power counters, branches, card readers, etc.) from the RustEdit IO map layer. Connections are applied a few seconds after world spawn so all prefabs exist before wiring.
+- IO connections + CardReaderMonitor / AutoTurretManager / WheelSwitch bridge; map IO protection
+- Vending profile populate + restock
+- Loot / Resource / JunkPile spawn handlers + respawn
+- Desk keycard + excavator diesel collectable respawn
+- Custom spawn points (`spawn_point.prefab`) override player respawn
+- Custom ocean patrol path
+- Custom APC paths + spawners
+- Vehicle spawn/respawn handlers
+- NPC spawners (config gated)
+- Excavator arm rotation fix for rotated monuments
+- Custom topology layers (`custom_topology_*`)
+- NPCShopKeeper ↔ InvisibleVendingMachine linking
+- Map deployable immortality (no GroundWatch / decay / stability / damage)
 
-## Not Implemented (vs full Oxide.Ext.RustEdit)
+## Commands (admin / RCON)
 
-- Custom loot containers + respawn
-- Resource respawn handlers
-- Junk pile respawn
-- NPC spawners
-- Vehicle spawn handlers
-- Ocean patrol paths
-- Custom APC paths
-- Desk keycard spawners
-- Damage/decay overrides
+| Command | Description |
+|---------|-------------|
+| `rustedit` | Help |
+| `rustedit.apc.status` / `killall` / `respawn` | Custom APCs |
+| `rustedit.io.reset` | Rewire from map IO layer |
+| `rustedit.vending.restock` / `restockall` | Restock vending |
+| `rustedit.resource.respawnall` / `info` | Resources |
+| `rustedit.loot.respawnall` / `info` | Loot |
+| `rustedit.junkpile.respawnall` / `info` | Junk piles |
+| `rustedit.desk.populate` | Force desk keycards |
+| `rustedit.spawns.show [time]` | Draw spawn points |
+| `rustedit.ocean.show [time]` | Draw ocean path |
+| `rustedit.checkupdate` / `downloadupdate` | Stub (unsupported) |
 
-These would require additional Harmony patches and logic, but the same pattern could be extended.
+Chat aliases like `/rustedit.spawns.show` work through the same console command names when used as chat commands with admin.
 
-## Data Format
+## API
 
-RustEdit stores data in the map file as custom map layers. This mod:
+`AppDomain.CurrentDomain.GetData("RustEdit_ApiType")` → `typeof(RustEditApi)`
 
-**Vending**
-1. Reads data via `World.GetMap("rustedit_vending")` or scans all map layers.
-2. Deserializes XML into vending profiles.
-3. Matches each vending machine to its profile by prefab filename.
-4. Populates machines with up to 7 random items from the profile.
+```csharp
+RustEditApi.GetAllMapEntities(ref list);
+RustEditApi.GetMapEntitiesOfType<T>(ref list);
+RustEditApi.GetActiveNPCs(ref list);
+RustEditApi.GetActiveAPCs(ref list);
+RustEditApi.GetSpawnpoints(ref list);
+RustEditApi.GetTopologyMapNames();
+RustEditApi.TryGetTopologyMap(name, out map);
 
-**IO (electrical)**
-1. Reads the IO layer via `World.GetMap("rustedit_io")` or by scanning map layers for ProtoBuf `SerializedIOData`.
-2. After prefabs have spawned, matches each serialized entity by prefab path + position and restores input/output connections and entity settings (timer length, frequency, access level, etc.).
+// Events
+RustEditApi.NPCSpawned;
+RustEditApi.APCSpawned;
+RustEditApi.MapDataProcessed;
+```
 
-If vending machines remain empty:
+## Notes
 
-- Confirm the map was saved in RustEdit with vending profiles assigned.
-- RustEdit may use obfuscated or different map keys; the mod also tries non-standard map layers.
-- Check server logs for errors during world load.
-
-If custom electrics/IO still don’t work:
-
-- Ensure the map was saved in RustEdit with IO connections defined (wires between entities).
-- The IO layer may use a different key; the mod tries `rustedit_io`, `io`, and scans other map layers for valid ProtoBuf IO data.
-- Processing runs once, 5 seconds after the first prefab is tracked; if the world is still loading, increase the delay in `RustEditIOProcessor.cs` if needed.
-
-## Compatibility
-
-- Works with **CustomMapGen** and other Harmony mods.
-- Does **not** require or conflict with Oxide.
-- Safe to run on servers that may have Oxide installed; it simply runs independently.
+- Assembly name is **`RustEditStandalone`** → DLL `RustEditStandalone.dll`
+- Map keys are resolved via XOR(prefabCount) + optional AES + layer scan
+- IO protobuf manual deserializer preserved from the prior standalone port

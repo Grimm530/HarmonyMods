@@ -863,7 +863,9 @@ namespace Oxide.Plugins
             if (!_eventController.IsTrainTurret(autoTurret.net.ID.Value))
                 return null;
 
-            if (_config.SupportedPluginsConfig.PveMode.Enable)
+            // Defer to PveMode only while its zone is active (train stopped) — same gate as CanEntityBeTargeted.
+            // While the train is moving, we must return true so TruePVE does not apply "players cannot hurt traps".
+            if (_config.SupportedPluginsConfig.PveMode.Enable && _eventController.IsStopped())
                 return null;
 
             if (!info.InitiatorPlayer.IsRealPlayer())
@@ -882,7 +884,7 @@ namespace Oxide.Plugins
             if (!_eventController.IsTrainSamSite(samSite.net.ID.Value))
                 return null;
 
-            if (_config.SupportedPluginsConfig.PveMode.Enable)
+            if (_config.SupportedPluginsConfig.PveMode.Enable && _eventController.IsStopped())
                 return null;
 
             if (!info.InitiatorPlayer.IsRealPlayer())
@@ -903,9 +905,14 @@ namespace Oxide.Plugins
                 if (info.InitiatorPlayer.IsRealPlayer() && ZoneController.IsPlayerInZone(info.InitiatorPlayer.userID) && ZoneController.IsPlayerInZone(victim.userID))
                     return true;
             }
-            
-            if (!_config.SupportedPluginsConfig.PveMode.Enable && info.Initiator is AutoTurret && _eventController.IsTrainTurret(info.Initiator.net.ID.Value))
-                return true;
+
+            // Allow train turrets to hurt players despite TruePVE "traps cannot hurt players".
+            // Defer to PveMode only while its zone is active (same gate as CanEntityBeTargeted).
+            if (info.Initiator is AutoTurret && _eventController.IsTrainTurret(info.Initiator.net.ID.Value))
+            {
+                if (!_config.SupportedPluginsConfig.PveMode.Enable || !_eventController.IsStopped())
+                    return true;
+            }
 
             return null;
         }
@@ -929,7 +936,7 @@ namespace Oxide.Plugins
             if (_eventController == null || info == null || !info.InitiatorPlayer.IsRealPlayer() || bradleyApc.net == null)
                 return null;
 
-            if (_config.SupportedPluginsConfig.PveMode.Enable)
+            if (_config.SupportedPluginsConfig.PveMode.Enable && _eventController.IsStopped())
                 return null;
 
             if (_eventController.IsTrainBradley(bradleyApc.net.ID.Value))

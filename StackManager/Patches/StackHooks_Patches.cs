@@ -35,6 +35,8 @@ namespace StackManagerHarmony.Patches
     [HarmonyPatch(typeof(Item), nameof(Item.MaxStackable))]
     public static class Item_MaxStackable_Patch
     {
+        private static float _nextErrorLogAt;
+
         [HarmonyPrefix]
         public static bool Prefix(Item __instance, ref int __result)
         {
@@ -52,7 +54,21 @@ namespace StackManagerHarmony.Patches
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[StackManager] OnMaxStackable: " + ex.Message);
+                // MaxStackable is called heavily during map spawn — rate-limit to avoid console floods.
+                float now = Time.realtimeSinceStartup;
+                if (now >= _nextErrorLogAt)
+                {
+                    _nextErrorLogAt = now + 5f;
+                    string itemLabel = __instance == null
+                        ? "item=null"
+                        : (__instance.info == null
+                            ? $"itemuid={__instance.uid} info=null"
+                            : $"item={__instance.info.shortname} amount={__instance.amount}");
+                    string parentLabel = __instance?.parent == null
+                        ? "parent=null"
+                        : $"parentFlags={(int)__instance.parent.flags} owner={__instance.parent.entityOwner?.ShortPrefabName ?? "none"}";
+                    Debug.LogWarning($"[StackManager] OnMaxStackable failed ({ex.GetType().Name}): {ex.Message} | {itemLabel} | {parentLabel}\n{ex.StackTrace}");
+                }
             }
             return true;
         }

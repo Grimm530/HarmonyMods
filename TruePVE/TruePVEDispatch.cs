@@ -32,6 +32,15 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[TruePVE] Init failed: " + ex); }
         }
 
+        /// <summary>
+        /// Harmony OxideCompat defaults every hook to subscribed. Gate damage until Init/OnServerInitialized
+        /// so AllowDamage cannot run with a null currentRuleSet during the load wait.
+        /// </summary>
+        public void GateDamageHookUntilInit()
+        {
+            Unsubscribe(nameof(OnEntityTakeDamage));
+        }
+
         public void CallOnServerInitialized(bool initial = true)
         {
             try { OnServerInitialized(initial); }
@@ -85,7 +94,28 @@ namespace Oxide.Plugins
             return inst != null && inst.IsSubscribed(hookName);
         }
 
-        private static void Warn(string hook, Exception ex) => Debug.LogWarning("[TruePVE] " + hook + ": " + ex.Message);
+        private static float _nextWarnAt;
+
+        private static void Warn(string hook, Exception ex, BaseEntity entity = null, HitInfo info = null)
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextWarnAt) return;
+            _nextWarnAt = now + 5f;
+
+            string target = entity == null
+                ? "entity=null"
+                : $"{entity.ShortPrefabName} net={entity.net?.ID.Value ?? 0} type={entity.GetType().Name}";
+            string atk = info?.Initiator == null
+                ? "initiator=null"
+                : $"{info.Initiator.ShortPrefabName} type={info.Initiator.GetType().Name}";
+            string weapon = info?.WeaponPrefab != null
+                ? info.WeaponPrefab.ShortPrefabName
+                : (info?.Weapon != null ? info.Weapon.ShortPrefabName : "weapon=none");
+            string dmg = info?.damageTypes != null ? $"major={info.damageTypes.GetMajorityDamageType()}" : "damage=n/a";
+
+            Debug.LogWarning(
+                $"[TruePVE] {hook} failed ({ex.GetType().Name}): {ex.Message} | target={target} | {atk} | {weapon} | {dmg}\n{ex.StackTrace}");
+        }
 
         // ---- Damage / Death -----------------------------------------------
 
@@ -98,7 +128,7 @@ namespace Oxide.Plugins
                 if (entity is ResourceEntity re) return inst.OnEntityTakeDamage(re, info);
                 return inst.OnEntityTakeDamage(entity, info);
             }
-            catch (Exception ex) { Warn(nameof(OnEntityTakeDamage), ex); return null; }
+            catch (Exception ex) { Warn(nameof(OnEntityTakeDamage), ex, entity, info); return null; }
         }
 
         public static void Dispatch_OnEntityDeath(BaseCombatEntity entity, HitInfo info)

@@ -5,6 +5,7 @@ using System.Linq;
 using Facepunch;
 using Network;
 using UnityEngine;
+using UnityEngine.UI;
 using Oxide.Ext.Chaos.UIFramework;
 using Color = Oxide.Ext.Chaos.UIFramework.Color;
 using Font = Oxide.Ext.Chaos.UIFramework.Font;
@@ -48,27 +49,32 @@ namespace TeleportGUI
         
         private CommandCallbackHandler m_CallbackHandler;
 
+        private readonly Dictionary<ulong, Coroutine> m_PopupDestroyRoutines = new Dictionary<ulong, Coroutine>();
+
         private void SetupUIComponents()
         {
             if (m_CallbackHandler == null)
                 m_CallbackHandler = new CommandCallbackHandler(this);
 
-            var colors = _config?.UI?.Colors;
-            if (colors == null) return;
+            var colors = _config?.UI?.Colors ?? new TeleportGUIConfig.UIOptions.UIColors();
+            string BgHex(TeleportGUIConfig.UIOptions.UIColorEntry c, string fallback) =>
+                string.IsNullOrWhiteSpace(c?.Hex) ? fallback : c.Hex;
+            float BgAlpha(TeleportGUIConfig.UIOptions.UIColorEntry c, float fallback) =>
+                c == null ? fallback : Mathf.Clamp01(c.Alpha);
 
             m_StylePreset = new StylePreset
             {
                 Background = new Style(ChaosStyle.Background)
                 {
-                    ImageColor = new Color(colors.Background.Hex, colors.Background.Alpha)
+                    ImageColor = new Color(BgHex(colors.Background, "151515"), BgAlpha(colors.Background, 0.94f))
                 },
                 Panel = new Style(ChaosStyle.Panel)
                 {
-                    ImageColor = new Color(colors.Panel.Hex, colors.Panel.Alpha)
+                    ImageColor = new Color(BgHex(colors.Panel, "FFFFFF"), BgAlpha(colors.Panel, 0.165f))
                 },
                 Header = new Style(ChaosStyle.Header)
                 {
-                    ImageColor = new Color(colors.Header.Hex, colors.Header.Alpha),
+                    ImageColor = new Color(BgHex(colors.Header, "C4FF00"), BgAlpha(colors.Header, 0.314f)),
                     Sprite = Sprites.Background_Rounded_top,
                     FontSize = 14,
                     Font = Font.PermanentMarker,
@@ -76,11 +82,11 @@ namespace TeleportGUI
                 },
                 Button = new Style(ChaosStyle.Button)
                 {
-                    ImageColor = new Color(colors.Button.Hex, colors.Button.Alpha)
+                    ImageColor = new Color(BgHex(colors.Button, "2A2E32"), BgAlpha(colors.Button, 1f))
                 },
                 DisabledButton = new Style(ChaosStyle.DisabledButton)
                 {
-                    ImageColor = new Color(colors.Button.Hex, Mathf.Min(colors.Button.Alpha, 0.8f)),
+                    ImageColor = new Color(BgHex(colors.Button, "2A2E32"), Mathf.Min(BgAlpha(colors.Button, 1f), 0.8f)),
                     FontColor = new Color(1f, 1f, 1f, 0.2f),
                 },
                 Close = new Style(ChaosStyle.Close)
@@ -89,12 +95,12 @@ namespace TeleportGUI
                 },
                 Toggle = new Style(ChaosStyle.Toggle)
                 {
-                    ImageColor = new Color(colors.Highlight.Hex, colors.Highlight.Alpha)
+                    ImageColor = new Color(BgHex(colors.Highlight, "C4FF00"), BgAlpha(colors.Highlight, 1f))
                 }
             };
 
-            m_OutlineClose = new OutlineComponent(new Color(colors.Close.Hex, colors.Close.Alpha));
-            m_OutlineHighlight = new OutlineComponent(new Color(colors.Highlight.Hex, colors.Highlight.Alpha));
+            m_OutlineClose = new OutlineComponent(new Color(BgHex(colors.Close, "CE422B"), BgAlpha(colors.Close, 1f)));
+            m_OutlineHighlight = new OutlineComponent(new Color(BgHex(colors.Highlight, "C4FF00"), BgAlpha(colors.Highlight, 1f)));
             
             if (ImageLibrary.IsLoaded)
             {
@@ -103,6 +109,152 @@ namespace TeleportGUI
                     m_MagnifyImage = ImageLibrary.GetImage("teleportgui.search");
                 });
             }
+        }
+
+        private UIAnchor GetRequestUiAnchor()
+        {
+            var anchor = _config?.UI?.RequestPopup?.Anchor
+                         ?? TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.CenterRight;
+            return anchor switch
+            {
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.TopLeft => UIAnchor.TopLeft,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.TopCenter => UIAnchor.TopCenter,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.TopRight => UIAnchor.TopRight,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.CenterLeft => UIAnchor.CenterLeft,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.Center => UIAnchor.Center,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.BottomLeft => UIAnchor.BottomLeft,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.BottomCenter => UIAnchor.BottomCenter,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.BottomRight => UIAnchor.BottomRight,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.FullStretch => UIAnchor.FullStretch,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.TopStretch => UIAnchor.TopStretch,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.HorizontalCenterStretch => UIAnchor.HorizontalCenterStretch,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.BottomStretch => UIAnchor.BottomStretch,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.LeftStretch => UIAnchor.LeftStretch,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.VerticalCenterStretch => UIAnchor.VerticalCenterStretch,
+                TeleportGUIConfig.UIOptions.RequestPopupOptions.AnchorEnum.RightStretch => UIAnchor.RightStretch,
+                _ => UIAnchor.CenterRight
+            };
+        }
+
+        private Offset GetRequestUiOffset()
+        {
+            var o = _config?.UI?.RequestPopup?.Offset
+                    ?? new TeleportGUIConfig.UIOptions.RequestPopupOptions.UIOffset(-137.5f, -22.5f, 12.5f, 22.5f);
+            return new Offset(o.XMin, o.YMin, o.XMax, o.YMax);
+        }
+
+        /// <summary>Oxide-identical request/pending popup (Chaos UI).</summary>
+        private void CreateTeleportRequestPopup(BasePlayer player, string panel, int timeRemaining, string key,
+            string displayName, bool isReceiver, bool canAccept, bool canCancel,
+            Action onAccept, Action onDeclineOrCancel)
+        {
+            if (player == null || m_StylePreset == null) return;
+
+            var padding = _config?.UI?.RequestPopup?.Padding
+                          ?? new TeleportGUIConfig.UIOptions.RequestPopupOptions.HorizontalPadding { Left = 0f, Right = 10f };
+            int seconds = Math.Max(0, timeRemaining);
+
+            BaseContainer root = ImageContainer.Create(panel, Layer.Hud, GetRequestUiAnchor(), GetRequestUiOffset())
+                .WithStyle(m_StylePreset.Background)
+                .WithFadeIn(0.25f)
+                .WithFadeOut(0.25f)
+                .WithChildren(parent =>
+                {
+                    ImageContainer.Create(parent, UIAnchor.FullStretch, new Offset(5f, 5f, -5f, -5f))
+                        .WithStyle(m_StylePreset.Panel)
+                        .WithChildren(contents =>
+                        {
+                            ImageContainer.Create(contents, UIAnchor.TopStretch, new Offset(0f, -15f, 0f, 0f))
+                                .WithStyle(m_StylePreset.Header)
+                                .WithChildren(header =>
+                                {
+                                    TextContainer.Create(header, UIAnchor.FullStretch, new Offset(padding.Left, 0f, -padding.Right, 0f))
+                                        .WithSize(12)
+                                        .WithText(Lang(key, player))
+                                        .WithAlignment(TextAnchor.MiddleCenter)
+                                        .WithCountdown(new CountdownComponent(seconds));
+                                });
+
+                            TextContainer.Create(contents, UIAnchor.FullStretch, new Offset(5f + padding.Left, 0f, -40f - padding.Right, -15f))
+                                .WithText(displayName ?? string.Empty)
+                                .WithSize(12)
+                                .WithAlignment(TextAnchor.MiddleLeft);
+
+                            if (isReceiver && canAccept)
+                            {
+                                ImageContainer.Create(contents, UIAnchor.CenterRight, new Offset(-37.5f - padding.Right, -15f, -22.5f - padding.Right, 0f))
+                                    .WithStyle(m_StylePreset.Button)
+                                    .WithOutline(m_OutlineHighlight)
+                                    .WithChildren(accept =>
+                                    {
+                                        TextContainer.Create(accept, UIAnchor.FullStretch, Offset.zero)
+                                            .WithSize(10)
+                                            .WithText("✔")
+                                            .WithAlignment(TextAnchor.MiddleCenter)
+                                            .WithWrapMode(VerticalWrapMode.Overflow);
+
+                                        ButtonContainer.Create(accept, UIAnchor.FullStretch, Offset.zero)
+                                            .WithColor(Color.Clear)
+                                            .WithCallback(m_CallbackHandler, arg =>
+                                            {
+                                                StopPopupDestroy(player);
+                                                ChaosUI.Destroy(player, panel);
+                                                onAccept?.Invoke();
+                                            }, $"{player.UserIDString}.tprpopup.accept");
+                                    });
+                            }
+
+                            if (canCancel)
+                            {
+                                ImageContainer.Create(contents, UIAnchor.CenterRight, new Offset(-17.5f - padding.Right, -15f, -2.5f - padding.Right, 0f))
+                                    .WithStyle(m_StylePreset.Button)
+                                    .WithOutline(m_OutlineClose)
+                                    .WithChildren(decline =>
+                                    {
+                                        TextContainer.Create(decline, UIAnchor.FullStretch, Offset.zero)
+                                            .WithSize(12)
+                                            .WithText("✘")
+                                            .WithAlignment(TextAnchor.MiddleCenter)
+                                            .WithWrapMode(VerticalWrapMode.Overflow);
+
+                                        ButtonContainer.Create(decline, UIAnchor.FullStretch, Offset.zero)
+                                            .WithColor(Color.Clear)
+                                            .WithCallback(m_CallbackHandler, arg =>
+                                            {
+                                                StopPopupDestroy(player);
+                                                ChaosUI.Destroy(player, panel);
+                                                onDeclineOrCancel?.Invoke();
+                                            }, $"{player.UserIDString}.tprpopup.decline");
+                                    });
+                            }
+                        });
+                })
+                .DestroyExisting();
+
+            StopPopupDestroy(player);
+            if (ServerMgr.Instance != null && seconds > 0)
+                m_PopupDestroyRoutines[player.userID] = ServerMgr.Instance.StartCoroutine(DestroyPopupAfter(player, panel, seconds));
+
+            ChaosUI.Show(player, root);
+        }
+
+        private System.Collections.IEnumerator DestroyPopupAfter(BasePlayer player, string panel, int seconds)
+        {
+            yield return new WaitForSeconds(seconds);
+            if (player != null && player.IsConnected)
+                ChaosUI.Destroy(player, panel);
+            if (player != null)
+                m_PopupDestroyRoutines.Remove(player.userID);
+        }
+
+        private void StopPopupDestroy(BasePlayer player)
+        {
+            if (player == null) return;
+            if (m_PopupDestroyRoutines.TryGetValue(player.userID, out var routine) && routine != null && ServerMgr.Instance != null)
+            {
+                try { ServerMgr.Instance.StopCoroutine(routine); } catch { }
+            }
+            m_PopupDestroyRoutines.Remove(player.userID);
         }
         
         #region Teleport
@@ -136,6 +288,16 @@ namespace TeleportGUI
 
         private void ShowTeleportUI(BasePlayer player, UiMode mode)
         {
+            if (m_StylePreset == null)
+                SetupUIComponents();
+            if (m_StylePreset == null) return;
+
+            string modeKey = UiModeToKey(mode);
+            if (!_uiState.TryGetValue(player.userID, out var state))
+                _uiState[player.userID] = (modeKey, 0, string.Empty);
+            else
+                _uiState[player.userID] = (modeKey, state.page, state.search);
+
             TeleportGUIData.UserData userData = GetOrCreateUser(player);
 
             BaseContainer root = ChaosPrefab.Background(TPUI, Layer.Hud, UIAnchor.Center, new Offset(-225f, -265f, 225f, 265f), m_StylePreset)
@@ -927,7 +1089,7 @@ namespace TeleportGUI
                                             }, $"{player.UserIDString}.settings.aaclan");
                                     }
 
-                                    TextContainer.Create(autoaccept, UIAnchor.HoriztonalCenterStretch, new Offset(25f, -10f, 170f, 10f))
+                                    TextContainer.Create(autoaccept, UIAnchor.HorizontalCenterStretch, new Offset(25f, -10f, 170f, 10f))
                                         .WithText(Lang("UI.AA.Clan", player))
                                         .WithStyle(canToggleAutoAccept ? m_StylePreset.Button : m_StylePreset.DisabledButton)
                                         .WithAlignment(TextAnchor.MiddleLeft);
@@ -958,7 +1120,7 @@ namespace TeleportGUI
                                             }, $"{player.UserIDString}.settings.aafriend");
                                     }
 
-                                    TextContainer.Create(autoaccept, UIAnchor.HoriztonalCenterStretch, new Offset(25f, -10f, 170f, 10f))
+                                    TextContainer.Create(autoaccept, UIAnchor.HorizontalCenterStretch, new Offset(25f, -10f, 170f, 10f))
                                         .WithText(Lang("UI.AA.Friend", player))
                                         .WithStyle(canToggleAutoAccept ? m_StylePreset.Button : m_StylePreset.DisabledButton)
                                         .WithAlignment(TextAnchor.MiddleLeft);
@@ -989,7 +1151,7 @@ namespace TeleportGUI
                                             }, $"{player.UserIDString}.settings.aateam");
                                     }
 
-                                    TextContainer.Create(autoaccept, UIAnchor.HoriztonalCenterStretch, new Offset(25f, -10f, 170f, 10f))
+                                    TextContainer.Create(autoaccept, UIAnchor.HorizontalCenterStretch, new Offset(25f, -10f, 170f, 10f))
                                         .WithText(Lang("UI.AA.Team", player))
                                         .WithStyle(canToggleAutoAccept ? m_StylePreset.Button : m_StylePreset.DisabledButton)
                                         .WithAlignment(TextAnchor.MiddleLeft);
@@ -1020,7 +1182,7 @@ namespace TeleportGUI
                                             }, $"{player.UserIDString}.settings.aaall");
                                     }
 
-                                    TextContainer.Create(autoaccept, UIAnchor.HoriztonalCenterStretch, new Offset(25f, -10f, 170f, 10f))
+                                    TextContainer.Create(autoaccept, UIAnchor.HorizontalCenterStretch, new Offset(25f, -10f, 170f, 10f))
                                         .WithText(Lang("UI.AA.All", player))
                                         .WithStyle(canToggleAutoAccept ? m_StylePreset.Button : m_StylePreset.DisabledButton)
                                         .WithAlignment(TextAnchor.MiddleLeft);
@@ -1049,7 +1211,7 @@ namespace TeleportGUI
                                             }, $"{player.UserIDString}.settings.sleepers");
                                     }
 
-                                    TextContainer.Create(showSleepers, UIAnchor.HoriztonalCenterStretch, new Offset(25f, -10f, 170f, 10f))
+                                    TextContainer.Create(showSleepers, UIAnchor.HorizontalCenterStretch, new Offset(25f, -10f, 170f, 10f))
                                         .WithText(Lang("UI.ShowSleepers", player))
                                         .WithStyle(canToggleSleepers ? m_StylePreset.Button : m_StylePreset.DisabledButton)
                                         .WithAlignment(TextAnchor.MiddleLeft);
@@ -1078,6 +1240,18 @@ namespace TeleportGUI
 
         private void TeardownUIComponents()
         {
+            if (ServerMgr.Instance != null)
+            {
+                foreach (var kv in m_PopupDestroyRoutines)
+                {
+                    if (kv.Value != null)
+                    {
+                        try { ServerMgr.Instance.StopCoroutine(kv.Value); } catch { }
+                    }
+                }
+            }
+            m_PopupDestroyRoutines.Clear();
+
             if (m_CallbackHandler == null) return;
             m_CallbackHandler.Clear();
             m_CallbackHandler.Unregister();

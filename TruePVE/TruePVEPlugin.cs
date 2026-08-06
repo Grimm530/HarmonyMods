@@ -2427,7 +2427,7 @@ namespace Oxide.Plugins
 
         private object OnEntityTakeDamage(ResourceEntity entity, HitInfo info)
         {
-            if (info == null || info.Initiator == null)
+            if (info == null || info.Initiator == null || currentRuleSet == null)
             {
                 return null;
             }
@@ -2457,12 +2457,17 @@ namespace Oxide.Plugins
             }
             else ruleSet = currentRuleSet;
 
+            if (ruleSet == null)
+            {
+                return null;
+            }
+
             return EvaluateRules(entity, info.Initiator, ruleSet) != DamageResult.Block ? (object)null : true;
         }
 
         private object OnEntityTakeDamage(BaseEntity entity, HitInfo info)
         {
-            if (info == null || entity == null || entity.IsDestroyed)
+            if (info == null || entity == null || entity.IsDestroyed || currentRuleSet == null)
             {
                 return null;
             }
@@ -4275,6 +4280,12 @@ namespace Oxide.Plugins
                 ruleSet = GetRuleSet(entityLocations, initiatorLocations);
             }
 
+            // Harmony loads with hooks subscribed by default; currentRuleSet is null until OnServerInitialized.
+            if (ruleSet == null)
+            {
+                return true;
+            }
+
             if (trace) Trace("No exclusion found - looking up RuleSet...", 1);
 
             // process location rules
@@ -4384,10 +4395,11 @@ namespace Oxide.Plugins
             }
 
             // LockedVehiclesImmortal flag with modular car
-            if (((_flags & RuleFlags.LockedVehiclesImmortal) != 0) && entity.PrefabName.Contains("modular"))
+            // CarLock is created during ModularCar.ServerInit and can be null on early collision damage.
+            if (((_flags & RuleFlags.LockedVehiclesImmortal) != 0) && entity.PrefabName != null && entity.PrefabName.Contains("modular"))
             {
                 ModularCar car = entity.HasParent() ? entity.GetParentEntity() as ModularCar : entity as ModularCar;
-                if (car != null && car.CarLock.HasALock)
+                if (car != null && car.CarLock != null && car.CarLock.HasALock)
                 {
                     if (trace) Trace($"Initiator is {weapon}; Target is locked {car}; block and return (LockedVehiclesImmortal)", 1);
                     return false;
@@ -4396,9 +4408,13 @@ namespace Oxide.Plugins
 
             if (isVictim)
             {
-                if (config.PreventRagdolling && isVicId && damageType == DamageType.Collision)
+                // Game update moved lastAdminCheatTime onto AntiHack.PlayerStates (TruePVE 2.4.21).
+                // Isolated so TypeLoadException on older Assembly-CSharp (no AntiHack.PlayerState)
+                // cannot poison OnEntityTakeDamage / AllowDamage JIT on mismatched server builds.
+                if (config.PreventRagdolling && isVicId && damageType == DamageType.Collision
+                    && victim != null && victim.ActivePlayerInd != -1)
                 {
-                    victim.lastAdminCheatTime = UnityEngine.Time.realtimeSinceStartup + 1.9f;
+                    TryPreventCollisionRagdoll(victim);
                 }
 
                 double secondsLeft = 0;
@@ -6101,6 +6117,26 @@ namespace Oxide.Plugins
             }
         }
 
+        /// <summary>
+        /// Sets AntiHack.PlayerStates[].LastAdminCheatTime to suppress vehicle collision ragdoll.
+        /// NoInlining + catch: servers without AntiHack.PlayerState must not fail AllowDamage JIT.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void TryPreventCollisionRagdoll(BasePlayer victim)
+        {
+            try
+            {
+                if (!AntiHack.PlayerStates.IsCreated)
+                    return;
+                var playerState = AntiHack.PlayerStates[victim.ActivePlayerInd];
+                playerState.LastAdminCheatTime = UnityEngine.Time.realtimeSinceStartup + 1.9f;
+                AntiHack.PlayerStates[victim.ActivePlayerInd] = playerState;
+            }
+            catch (TypeLoadException) { }
+            catch (MissingFieldException) { }
+            catch (MissingMemberException) { }
+        }
+
 #if OXIDE_PUBLICIZED || CARBON
         private void OnEntitySpawned(RidableHorse horse)
         {
@@ -6494,7 +6530,8 @@ namespace Oxide.Plugins
         {
             if (vm == null || vm.IsDestroyed || sellOrderId < 0 || sellOrderId >= vm.sellOrders.sellOrders.Count) return null;
             var sellOrder = vm.sellOrders.sellOrders[sellOrderId];
-            var key = ApartmentDoor.MasterKeyDef;
+            // Resolve by shortname — Managed Assembly-CSharp on this server may not expose ApartmentDoor.MasterKeyDef.
+            var key = ItemManager.FindItemDefinition("apartment.master_key");
             if (key == null || key.itemid != sellOrder.itemToSellID) return null;
             if (Interface.CallHook("CanPurchaseMasterKey", vm, buyer, sellOrderId, numberOfTransactions, targetContainer) is true) return null;
             if (buyer != null) Message(buyer, "Error_MasterKeyDisabled");

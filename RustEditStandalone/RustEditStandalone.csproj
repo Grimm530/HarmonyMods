@@ -1,42 +1,83 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AssemblyName>RustEditStandalone</AssemblyName>
+    <RootNamespace>RustEditStandalone</RootNamespace>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-  </PropertyGroup>
-  <PropertyGroup>
     <LangVersion>12.0</LangVersion>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
       <HintPath>..\..\..\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Facepunch.System">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Facepunch.Network">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Facepunch.Console">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Facepunch.Unity">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\Facepunch.Unity.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Xml">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\System.Xml.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Rust.Data">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Rust.World">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Rust.World.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Rust.Global">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>..\..\..\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\UnityEngine.AIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
     </Reference>
   </ItemGroup>
 </Project>

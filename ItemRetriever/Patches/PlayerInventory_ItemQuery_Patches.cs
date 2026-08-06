@@ -3,12 +3,12 @@ using HarmonyLib;
 
 namespace ItemRetrieverHarmony
 {
-    /// <summary>Oxide OnInventoryItemsCount -> PlayerInventory.GetAmount(int, bool)</summary>
-    [HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.GetAmount), typeof(int), typeof(bool))]
+    /// <summary>Oxide OnInventoryItemsCount -> PlayerInventory.GetAmount(int, bool, bool)</summary>
+    [HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.GetAmount), typeof(int), typeof(bool), typeof(bool))]
     internal static class PlayerInventory_GetAmount_Patch
     {
         [HarmonyPrefix]
-        private static bool Prefix(PlayerInventory __instance, int itemid, bool includeBackpack, ref int __result)
+        private static bool Prefix(PlayerInventory __instance, int itemid, bool includeBackpack, bool redirectAllowed, ref int __result)
         {
             var plugin = ItemRetrieverHost.Instance?.Plugin;
             if (plugin == null || itemid == 0)

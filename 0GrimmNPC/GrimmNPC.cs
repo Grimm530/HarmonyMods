@@ -139,25 +139,36 @@ namespace GrimmNPC
                 _config.Prefab = "assets/rust.ai/agents/npcplayer/humannpc/scientist/scientistnpc_heavy.prefab";
                 configChanged = true;
             }
-            // Old Harmony GrimmNPC.json / partial configs often lack Weapons maps — required by EquipWeapon.
-            if (_config.Weapons == null || _config.Weapons.Count == 0 || _config.WeaponsParameters == null || _config.WeaponsParameters.Count == 0)
+            // Partial Harmony GrimmNPC.json often keeps a few WeaponsParameters (krieg/lr300.space)
+            // but drops crossbow/bow/bolt etc. Per-key merge so single-shot NPCs get attackLengthMin=-1.
             {
                 PluginConfig defaults = PluginConfig.DefaultConfig();
-                if (_config.Weapons == null || _config.Weapons.Count == 0)
-                    _config.Weapons = defaults.Weapons;
-                if (_config.WeaponsParameters == null || _config.WeaponsParameters.Count == 0)
-                    _config.WeaponsParameters = defaults.WeaponsParameters;
-                configChanged = true;
-            }
-            else
-            {
-                // Ensure category keys 0-4 exist so GetTypeWeaponItem never KeyNotFound.
-                PluginConfig defaults = PluginConfig.DefaultConfig();
-                for (int i = 0; i <= 4; i++)
+                if (_config.Weapons == null)
+                    _config.Weapons = new Dictionary<int, HashSet<string>>();
+                if (_config.Weapons.Count == 0)
                 {
-                    if (!_config.Weapons.ContainsKey(i) || _config.Weapons[i] == null)
+                    _config.Weapons = defaults.Weapons;
+                    configChanged = true;
+                }
+                else
+                {
+                    for (int i = 0; i <= 4; i++)
                     {
-                        _config.Weapons[i] = defaults.Weapons.ContainsKey(i) ? defaults.Weapons[i] : new HashSet<string>();
+                        if (!_config.Weapons.ContainsKey(i) || _config.Weapons[i] == null)
+                        {
+                            _config.Weapons[i] = defaults.Weapons.ContainsKey(i) ? defaults.Weapons[i] : new HashSet<string>();
+                            configChanged = true;
+                        }
+                    }
+                }
+
+                if (_config.WeaponsParameters == null)
+                    _config.WeaponsParameters = new Dictionary<string, DefaultSettings>();
+                foreach (KeyValuePair<string, DefaultSettings> kvp in defaults.WeaponsParameters)
+                {
+                    if (!_config.WeaponsParameters.ContainsKey(kvp.Key))
+                    {
+                        _config.WeaponsParameters[kvp.Key] = kvp.Value;
                         configChanged = true;
                     }
                 }
@@ -7312,7 +7323,9 @@ namespace GrimmNPC
             internal static void PushModelState(ScientistNPC npc)
             {
                 if (npc == null) return;
-                BasePlayerUpdateModelState?.Invoke(npc, null);
+                // UpdateModelState(ModelState ms) — must pass modelState (0-arg Invoke caused TargetParameterCountException after game update).
+                if (npc.modelState != null && BasePlayerUpdateModelState != null)
+                    BasePlayerUpdateModelState.Invoke(npc, new object[] { npc.modelState });
                 npc.SendModelState(force: true);
             }
 

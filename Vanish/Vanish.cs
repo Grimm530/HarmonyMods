@@ -464,7 +464,7 @@ namespace HarmonyMods.RustGame.Vanish
                 if (note == null) return;
                 var pos = note.worldPosition + new Vector3(0f, 1f, 0f);
                 if (__instance.IsFlying) pos.y = Mathf.Max(pos.y, __instance.transform.position.y);
-                __instance.flyhackPauseTime = 10f;
+                __instance.PauseFlyHackDetection(10f);
                 __instance.Teleport(pos);
             }
         }
@@ -1240,7 +1240,7 @@ namespace HarmonyMods.RustGame.Vanish
             {
                 if (!IsDestroyed)
                 {
-                    player.lastAdminCheatTime = Time.realtimeSinceStartup;
+                    SetLastAdminCheatTime(player, Time.realtimeSinceStartup);
                     player.transform.localScale = new(1f, 1f, 1f);
                 }
                 StopNetworkGroupsUpdate();
@@ -1429,7 +1429,7 @@ namespace HarmonyMods.RustGame.Vanish
                 player.transform.localScale = Vector3.zero;
                 col = child.AddComponent<SphereCollider>();
                 col.isTrigger = true;
-                player.lastAdminCheatTime = float.MaxValue;
+                SetLastAdminCheatTime(player, float.MaxValue);
             }
 
             private void OnTriggerEnter(Collider collider)
@@ -1673,6 +1673,15 @@ namespace HarmonyMods.RustGame.Vanish
                 else Puts(RemoveFormatting(string.Format(Get("DisabledOther"), player.displayName, player.UserIDString)));
             }
             Interface_CallHook("OnPlayerUnvanished", player);
+        }
+
+        /// <summary>Game update moved BasePlayer.lastAdminCheatTime onto AntiHack.PlayerStates.</summary>
+        private static void SetLastAdminCheatTime(BasePlayer player, float value)
+        {
+            if (player == null || player.ActivePlayerInd < 0 || !AntiHack.PlayerStates.IsCreated)
+                return;
+            ref AntiHack.PlayerState state = ref ((Span<AntiHack.PlayerState>)AntiHack.PlayerStates)[player.ActivePlayerInd];
+            state.LastAdminCheatTime = value;
         }
 
         private static void MetabolismPause(BasePlayer player)

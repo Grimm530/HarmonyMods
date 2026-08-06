@@ -525,11 +525,9 @@ public class AlphaLootMod : IHarmonyModHooks
 
 	internal static bool AreSkinDefinitionsReady()
 	{
-		if (TryGetItemSkinDirectorySkins(out _))
-		{
-			return GetSteamInventoryDefinitionCount() > 0;
-		}
-		return false;
+		// ItemSkinDirectory is enough to build the DLC block list.
+		// SteamInventory.Definitions often stay empty on dedicated servers and must not block startup forever.
+		return TryGetItemSkinDirectorySkins(out _);
 	}
 
 	private static bool TryGetItemSkinDirectorySkins(out ItemSkinDirectory.Skin[] skins, bool logWarning = false)

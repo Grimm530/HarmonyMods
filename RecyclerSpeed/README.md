@@ -17,7 +17,7 @@ Harmony mod that reduces recycler recycle time. Default: 2x speed (half the vani
 | `HarmonyConfig.cs` | JSON config load; multiplier, overlay toggle, anchors |
 | `HarmonyHooks.cs` | Lifecycle; loads config on `OnLoaded` |
 | `RecyclerSpeedUI.cs` | CUI overlay (container + text) to cover static efficiency display |
-| `Recycler_GetRecycleThinkDuration_Patch.cs` | Postfix on `Recycler.GetRecycleThinkDuration` |
+| `Recycler_GetRecyclerStats_Patch.cs` | Postfix on `Recycler.GetRecyclerStats` |
 | `StorageContainer_PlayerOpenLoot_Patch.cs` | Postfix; when Recycler opened, send overlay |
 | `PlayerLoot_Clear_Patch.cs` | Prefix; when loot closed, destroy overlay |
 
@@ -45,16 +45,18 @@ Example:
 
 ## Vanilla vs Modded
 
-| Recycler Type | Vanilla Interval | Default (2x) |
-|---------------|------------------|--------------|
-| radtown | 5s | 2.5s |
-| safezone | 8s | 4s |
+Duration/efficiency now come from `Recycler.GetRecyclerStats` (zone config + powergrid buffs). Multiplier divides the resolved duration.
+
+| Example | Vanilla Interval | Default (2x) |
+|---------|------------------|--------------|
+| typical radtown config | ~5s | ~2.5s |
+| typical safezone config | ~8s | ~4s |
 
 ## Harmony Patches
 
 | Patch | Target | Type | Purpose |
 |-------|--------|------|---------|
-| `Recycler_GetRecycleThinkDuration_Patch` | `Recycler.GetRecycleThinkDuration` | Postfix | Divide return value by `RecyclerSpeedMultiplier` |
+| `Recycler_GetRecyclerStats_Patch` | `Recycler.GetRecyclerStats` | Postfix | Divide `duration` by `RecyclerSpeedMultiplier` |
 
 ## Lifecycle
 
@@ -63,7 +65,7 @@ Example:
 
 ## What NOT to Touch
 
-- **Patch target:** `Recycler.GetRecycleThinkDuration` signature may change by Rust version.
+- **Patch target:** `Recycler.GetRecyclerStats` signature/behavior may change by Rust version.
 - **Config path:** `HarmonyConfig` directory is standard; changing breaks auto-create.
 
 ## Build & Deploy

@@ -1,5 +1,5 @@
 # Build script for BetterBackpack Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\BetterBackpack.dll
+# Output: <server root>\HarmonyMods\BetterBackpack.dll
 
 Write-Host "Building BetterBackpack..." -ForegroundColor Cyan
 
@@ -7,7 +7,12 @@ $projectPath = Join-Path $PSScriptRoot "BetterBackpack\BetterBackpack.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $root = $env:RUST_SERVER_ROOT
+    if (-not $root) {
+        $candidate = Join-Path $PSScriptRoot "..\..\.."
+        $root = [System.IO.Path]::GetFullPath($candidate)
+    }
+    $harmonyModsPath = Join-Path $root "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

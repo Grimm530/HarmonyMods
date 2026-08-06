@@ -2,12 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Xml.Serialization;
 
-namespace RustEditStandalone;
+namespace RustEditStandalone.Data;
 
-/// <summary>
-/// RustEdit vending data - must match format written by RustEdit editor.
-/// Uses XML serialization (same as Oxide.Ext.RustEdit).
-/// </summary>
 [Serializable]
 [XmlRoot("SerializedVendingContainerData")]
 public class SerializedVendingContainerData

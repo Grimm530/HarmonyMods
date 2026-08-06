@@ -42,6 +42,7 @@ namespace ArmoredTrain
             }
 
             ArmoredTrainGrimmNpc.Bind();
+            ArmoredTrainDamageApi.Publish();
 
             // Facepunch HarmonyLoader already PatchAll's this assembly before OnLoaded.
             // Only apply the Find fallback with a separate ID (same pattern as Convoy).
@@ -91,6 +92,7 @@ namespace ArmoredTrain
             try { Plugin?.CallUnload(); }
             catch (Exception ex) { Debug.LogWarning("[ArmoredTrain] Unload failed: " + ex.Message); }
 
+            ArmoredTrainDamageApi.Unpublish();
             UnregisterCommands();
 
             try { _harmony?.UnpatchAll(_harmony.Id); }

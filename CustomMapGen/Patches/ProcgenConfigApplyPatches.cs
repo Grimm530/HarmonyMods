@@ -19,6 +19,7 @@ namespace CustomMapGen.Patches
             CustomMapGen.UpdateIsLoadingExistingMap(World.SaveFolderName, World.MapFileName);
             ConfigAppliedThisGen = false;
             PlaceMonumentsCompound_Patch.ClearDeferredList();
+            DeferredOutpostSpawn.Clear();
             World_AddPrefab_Patch.ResetLiveOutpostSwapState();
             GenerateErosion_ShoreFlatten_Patch.ResetInvocationCount();
         }

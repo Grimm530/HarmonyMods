@@ -5,12 +5,13 @@ namespace BetterBackpack;
 
 /// <summary>
 /// When Retrieval is enabled, include backpack in GetAmount so crafting UI and ingredient checks see backpack items.
+/// Signature (game update): GetAmount(int itemid, bool includeBackpack = false, bool redirectAllowed = false).
 /// </summary>
-[HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.GetAmount), typeof(int), typeof(bool))]
+[HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.GetAmount), typeof(int), typeof(bool), typeof(bool))]
 internal class PlayerInventory_GetAmount_Patch
 {
     [HarmonyPostfix]
-    private static void Postfix(PlayerInventory __instance, int itemid, bool includeBackpack, ref int __result)
+    private static void Postfix(PlayerInventory __instance, int itemid, bool includeBackpack, bool redirectAllowed, ref int __result)
     {
         if (includeBackpack) return; // Caller already asked for backpack
         if (itemid == 0) return;
@@ -25,6 +26,6 @@ internal class PlayerInventory_GetAmount_Patch
         var backpack = __instance.GetBackpackWithInventory();
         if (backpack?.contents == null) return;
 
-        __result += backpack.contents.GetAmount(itemid, onlyUsableAmounts: true);
+        __result += backpack.contents.GetAmount(itemid, onlyUsableAmounts: true, redirectAllowed);
     }
 }

@@ -52,6 +52,33 @@ namespace Oxide.Plugins
             return null;
         }
 
+        /// <summary>
+        /// TruePVE CanEntityTakeDamage bridge. true = allow, false = block, null = not handled.
+        /// </summary>
+        public static object Dispatch_CanEntityTakeDamage(BaseEntity entity, HitInfo info)
+        {
+            if (!Ready || entity == null || info == null) return null;
+            if (entity is AutoTurret at) return _ins.CanEntityTakeDamage(at, info);
+            if (entity is SamSite ss) return _ins.CanEntityTakeDamage(ss, info);
+            if (entity is BasePlayer bp) return _ins.CanEntityTakeDamage(bp, info);
+            if (entity is PlayerHelicopter heli) return _ins.CanEntityTakeDamage(heli, info);
+            if (entity is CustomBradley bradley) return _ins.CanEntityTakeDamage(bradley, info);
+            return null;
+        }
+
+        /// <summary>
+        /// TruePVE CanEntityBeTargeted bridge. CallHook args: [target, attacker].
+        /// </summary>
+        public static object Dispatch_CanEntityBeTargeted(BaseEntity target, BaseEntity attacker)
+        {
+            if (!Ready || target == null || attacker == null) return null;
+            if (target is BasePlayer player && attacker is AutoTurret turret)
+                return _ins.CanEntityBeTargeted(player, turret);
+            if (target is PlayerHelicopter heli && attacker is SamSite sam)
+                return _ins.CanEntityBeTargeted(heli, sam);
+            return null;
+        }
+
         // ----- death (BaseCombatEntity.Die) -----
         public static void Dispatch_Die(BaseCombatEntity entity, HitInfo info)
         {

@@ -19,6 +19,9 @@ compatibility shim + Harmony patches drive it instead of the Oxide runtime.
   event still runs but train NPCs will not spawn.
 - **0PveMode** (optional, for `"PVE Mode Setting"`). Resolved lazily via AppDomain `PveMode_ApiType`;
   ArmoredTrain registers a ready callback so it still binds if it loads before `0PveMode`.
+- **TruePVE** (optional): publishes `ArmoredTrain_CanEntityTakeDamage` /
+  `ArmoredTrain_CanEntityBeTargeted` so TruePVE allows player damage to train turrets/sams
+  (overrides `"players cannot hurt traps"`) — same AppDomain bridge pattern as Convoy.
 - **Krafs.Publicizer** (build-time only) publicizes `Assembly-CSharp` so the original plugin's use of
   internal game fields/methods (e.g. `TrainEngine.engineForce`, `HackableLockedCrate.hackSeconds`)
   compiles unchanged. This is a compile dependency only; nothing extra ships.

@@ -187,9 +187,10 @@ namespace Oxide.Core
         /// <summary>
         /// Harmony has no full Oxide hook bus. Most hooks return null ("not handled").
         /// CanEntityTakeDamage / CanEntityBeTargeted chain:
-        /// 1) PveMode first (non-owner block must win)
+        /// 1) PveMode first (non-owner block; explicit allow for event NPCs/tanks/helis/turrets)
         /// 2) RaidableBases (allow damage inside active raid zones)
         /// 3) Convoy (allow damage to convoy entities / event turrets target players)
+        /// 4) ArmoredTrain (allow damage to train turrets/sams; turrets hurt/target players)
         /// </summary>
         public static object CallHook(string hook, params object[] args)
         {
@@ -206,6 +207,9 @@ namespace Oxide.Core
 
                 object convoy = TryAppDomainBool("Convoy_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage Convoy");
                 if (convoy is bool) return convoy;
+
+                object train = TryAppDomainBool("ArmoredTrain_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage ArmoredTrain");
+                if (train is bool) return train;
             }
             else if (hook == "CanEntityBeTargeted")
             {
@@ -218,6 +222,9 @@ namespace Oxide.Core
 
                 object convoy = TryAppDomainBool("Convoy_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted Convoy");
                 if (convoy is bool) return convoy;
+
+                object train = TryAppDomainBool("ArmoredTrain_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted ArmoredTrain");
+                if (train is bool) return train;
             }
 
             return null;

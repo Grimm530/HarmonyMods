@@ -83,6 +83,8 @@ namespace TruePVEHarmony
                 OxidePlugin.SetInstance(plugin);
                 plugin.HarmonyLoadDefaultMessages();
                 plugin.HarmonyLoadConfig();
+                // Hooks default to subscribed under Harmony; keep damage gated until Init re-subscribes after ruleset is ready.
+                plugin.GateDamageHookUntilInit();
             }
             catch (Exception ex)
             {

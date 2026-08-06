@@ -568,6 +568,9 @@ namespace StackManagerHarmony
 
         public object OnMaxStackable(Item item)
         {
+            if (item?.info == null || Configuration?.Exclude == null || Configuration.Player == null)
+                return null;
+
             if (Configuration.Exclude.IsExcluded(item))
                 return null;
             
@@ -583,19 +586,23 @@ namespace StackManagerHarmony
 
         private int GetMaxStackable(Item item, ItemContainer container)
         {
+            if (item?.info == null || container == null)
+                return 1;
+
             int maxStackable = 0;
 
             if ((int)container.flags == 1 || (int)container.flags == 5)
             {
                 if (Configuration.Player.UseDefaultBeltStacks && (int)container.flags == 5)
                 {
-                    maxStackable = m_DefaultItemStackSizes[item.info.shortname];
+                    if (!m_DefaultItemStackSizes.TryGetValue(item.info.shortname, out maxStackable))
+                        maxStackable = item.info.stackable;
                 }
                 else
                 {
                     maxStackable = Configuration.Player.InventoryStackLimit;
 
-                    if (m_PlayerLimits.Data.TryGetValue(item.info.shortname, out StackLimit stackLimit))
+                    if (m_PlayerLimits?.Data != null && m_PlayerLimits.Data.TryGetValue(item.info.shortname, out StackLimit stackLimit))
                         maxStackable = stackLimit.GetStackSize();
                 }
             }
@@ -608,11 +615,13 @@ namespace StackManagerHarmony
                     
                     StorageLimit storageLimit;
 
-                    if (container.entityOwner.OwnerID != 0UL)
+                    if (container.entityOwner.OwnerID != 0UL && m_VIPLimits?.Data != null)
                     {
                         foreach (KeyValuePair<string, VIPLimits> kvp in m_VIPLimits.Data)
                         {
-                            if (container.entityOwner.OwnerID.HasPermission(kvp.Key) && kvp.Value.StorageOverrides.TryGetValue(container.entityOwner.PrefabName, out storageLimit))
+                            if (kvp.Value?.StorageOverrides != null
+                                && container.entityOwner.OwnerID.HasPermission(kvp.Key)
+                                && kvp.Value.StorageOverrides.TryGetValue(container.entityOwner.PrefabName, out storageLimit))
                             {
                                 maxStackable = storageLimit.GetMaxStackable(item);
                                 goto SKIP_BASIC;
@@ -620,7 +629,7 @@ namespace StackManagerHarmony
                         }
                     }
 
-                    if (m_StorageLimits.Data.TryGetValue(container.entityOwner.PrefabName, out storageLimit))
+                    if (m_StorageLimits?.Data != null && m_StorageLimits.Data.TryGetValue(container.entityOwner.PrefabName, out storageLimit))
                         maxStackable = storageLimit.GetMaxStackable(item);
                     else maxStackable = container.maxStackSize;
                 }
@@ -2829,21 +2838,29 @@ namespace StackManagerHarmony
             public class ExcludeOptions
             {
                 [JsonProperty("Items to be excluded from stack changes")]
-                public HashSet<string> ExcludedItems { get; set; }
+                public HashSet<string> ExcludedItems { get; set; } = new HashSet<string>();
                 
                 [JsonProperty("Skins to be excluded from stack changes")]
-                public HashSet<ulong> ExcludedSkins { get; set; }
+                public HashSet<ulong> ExcludedSkins { get; set; } = new HashSet<ulong>();
 
                 [JsonProperty("Containers to be excluded from stack changes (prefab shortname)")]
                 public HashSet<string> ExcludedContainers { get; set; } = new HashSet<string>();
 
-                public bool IsExcluded(Item item) => ExcludedSkins.Contains(item.skin) || ExcludedItems.Contains(item.info.shortname);
+                public bool IsExcluded(Item item)
+                {
+                    if (item?.info == null)
+                        return true;
+                    if (ExcludedSkins != null && ExcludedSkins.Contains(item.skin))
+                        return true;
+                    return ExcludedItems != null && ExcludedItems.Contains(item.info.shortname);
+                }
 
-                public bool IsExcluded(string shortname) => ExcludedItems.Contains(shortname);
+                public bool IsExcluded(string shortname) =>
+                    !string.IsNullOrEmpty(shortname) && ExcludedItems != null && ExcludedItems.Contains(shortname);
 
                 public bool IsExcluded(ItemContainer container)
                 {
-                    if (container == null)
+                    if (container == null || ExcludedContainers == null)
                         return false;
                     
                     BaseEntity entity = container.entityOwner;

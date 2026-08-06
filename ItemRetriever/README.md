@@ -31,7 +31,7 @@
 |------------|-------------|
 | `OnEntitySaved` | `BasePlayer.Save` (Postfix) |
 | `OnInventoryNetworkUpdate` | `PlayerInventory.SendUpdatedInventoryInternal` (Prefix reimpl) |
-| `OnInventoryItemsCount` | `PlayerInventory.GetAmount(int, bool)` |
+| `OnInventoryItemsCount` | `PlayerInventory.GetAmount(int, bool, bool)` |
 | `OnInventoryItemsTake` | `PlayerInventory.Take(List, int, int)` |
 | `OnInventoryItemsFind` | `PlayerInventory.FindItemsByItemID` |
 | `OnInventoryItemFind` | `PlayerInventory.FindItemByItemID(int)` |

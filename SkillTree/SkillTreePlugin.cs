@@ -7726,29 +7726,19 @@ namespace Oxide.Plugins
         Dictionary<ulong, RecyclerEfficiency> ModifiedRecyclers = new Dictionary<ulong, RecyclerEfficiency>();
         public class RecyclerEfficiency
         {
-            public Recycler recycler;
-            public float radtownRecycleEfficiency;
-            public float safezoneRecycleEfficiency;
-            public RecyclerEfficiency(float radtownRecycleEfficiency, float safezoneRecycleEfficiency, Recycler recycler)
+            public float EfficiencyBonus;
+            public float SpeedDecrease;
+            public RecyclerEfficiency(float efficiencyBonus, float speedDecrease)
             {
-                this.safezoneRecycleEfficiency = safezoneRecycleEfficiency;
-                this.radtownRecycleEfficiency = radtownRecycleEfficiency;
-                this.recycler = recycler;
+                EfficiencyBonus = efficiencyBonus;
+                SpeedDecrease = speedDecrease;
             }
         }
 
         public void ResetRecyclerEfficiency(ulong id, RecyclerEfficiency data = null, bool remove = false)
         {
-            if (data == null && !ModifiedRecyclers.TryGetValue(id, out data)) return;
-            if (data.recycler != null)
-            {
-                data.recycler.radtownRecycleEfficiency = data.radtownRecycleEfficiency;
-                data.recycler.safezoneRecycleEfficiency = data.safezoneRecycleEfficiency;
-            }
-            if (remove)
-            {
-                ModifiedRecyclers.Remove(id);
-            }
+            if (!remove) return;
+            ModifiedRecyclers.Remove(id);
         }
 
         private void OnRecyclerToggle(Recycler recycler, BasePlayer player)
@@ -7757,26 +7747,20 @@ namespace Oxide.Plugins
             if (Convert.ToBoolean(VirtualRecycler?.Call("IsVirtualRecycler", recycler))) return;
             if (!GetBuffDetails(player.userID, out var bd)) return;
 
-            if (bd.GetBuff(Buff.Recycler_Efficiency, out var value))
-            {
-                if (ModifiedRecyclers.TryGetValue(recycler.net.ID.Value, out var existingData))
-                {
-                    ResetRecyclerEfficiency(recycler.net.ID.Value, existingData, true);
-                }
-                ModifiedRecyclers.Add(recycler.net.ID.Value, new RecyclerEfficiency(recycler.radtownRecycleEfficiency, recycler.safezoneRecycleEfficiency, recycler));
+            float efficiencyBonus = 0f;
+            float speedDecrease = 0f;
+            bool hasEfficiency = bd.GetBuff(Buff.Recycler_Efficiency, out efficiencyBonus);
+            bool hasSpeed = bd.GetBuff(Buff.Recycler_Speed, out speedDecrease);
+            if (!hasEfficiency && !hasSpeed) return;
 
-                recycler.radtownRecycleEfficiency += recycler.radtownRecycleEfficiency * value;
-                recycler.safezoneRecycleEfficiency += recycler.safezoneRecycleEfficiency * value;
+            ModifiedRecyclers[recycler.net.ID.Value] = new RecyclerEfficiency(
+                hasEfficiency ? efficiencyBonus : 0f,
+                hasSpeed ? speedDecrease : 0f);
 
-                recycler.SendNetworkUpdate();
-                if (config.notification_settings.chatMessageNotificationSettings.Recycler_Efficiency_Proc && NotificationsOn(player)) Player.Message(player, string.Format(lang.GetMessage("SetRecyclerEfficiency", this, player.UserIDString), (recycler.IsSafezoneRecycler() ? recycler.safezoneRecycleEfficiency : recycler.radtownRecycleEfficiency) * 100), config.misc_settings.ChatID);
-            }
-            if (bd.GetBuff(Buff.Recycler_Speed, out var speedDecrease))
+            if (hasEfficiency && config.notification_settings.chatMessageNotificationSettings.Recycler_Efficiency_Proc && NotificationsOn(player))
             {
-                recycler.CancelInvoke(nameof(recycler.RecycleThink));
-                var recycler_speed = recycler.GetRecycleThinkDuration() - speedDecrease;
-                if (recycler_speed <= 0.1) recycler_speed = 0.1f;
-                ServerMgr.Instance.Invoke(() => recycler.InvokeRepeating(recycler.RecycleThink, recycler_speed - 0.1f, recycler_speed), 0.1f);
+                recycler.GetRecyclerStats(out var efficiency, out _);
+                Player.Message(player, string.Format(lang.GetMessage("SetRecyclerEfficiency", this, player.UserIDString), efficiency * 100), config.misc_settings.ChatID);
             }
         }
 
@@ -15731,8 +15715,14 @@ namespace Oxide.Plugins
                 moveDir.y = Mathf.Clamp(moveDir.y, -0.3f, 0.3f);
                 moveDir.Normalize();
                 player.ApplyInheritedVelocity(moveDir * swimVelocity);
-                player.speedhackDistance = 0;
-                if (player.speedhackPauseTime <= 0f) player.PauseSpeedHackDetection(float.MaxValue);
+                if (player.ActivePlayerInd >= 0 && AntiHack.PlayerSpeedhackStates.IsCreated)
+                {
+                    var speedState = AntiHack.PlayerSpeedhackStates[player.ActivePlayerInd];
+                    speedState.Distance = 0f;
+                    AntiHack.PlayerSpeedhackStates[player.ActivePlayerInd] = speedState;
+                    if (speedState.PauseTime <= 0f)
+                        player.PauseSpeedHackDetection(float.MaxValue);
+                }
             }
 
             private void OnDestroy()
@@ -15750,7 +15740,7 @@ namespace Oxide.Plugins
 
             try
             {
-                player.ResetAntiHack(player.ActivePlayerInd, AntiHack.PlayerSpeedhackStates, AntiHack.PlayerFlyhackStates);
+                BasePlayer.ResetAntiHack(player, AntiHack.PlayerStates, AntiHack.PlayerNoclipStates, AntiHack.PlayerSpeedhackStates, AntiHack.PlayerFlyhackStates);
             }
             catch
             {
@@ -19729,8 +19719,29 @@ namespace Oxide.Plugins
             [HarmonyPostfix]
             private static void Postfix(Recycler __instance)
             {
-                if (__instance == null) return;
+                if (__instance == null || __instance.net == null) return;
                 Instance.ResetRecyclerEfficiency(__instance.net.ID.Value, null, true);
+            }
+        }
+
+        /// <summary>
+        /// Game update removed per-recycler radtown/safezone efficiency fields and GetRecycleThinkDuration.
+        /// Apply SkillTree buffs through GetRecyclerStats instead (used by StartRecycling).
+        /// </summary>
+        [HarmonyPatch(typeof(Recycler), nameof(Recycler.GetRecyclerStats))]
+        internal class GetRecyclerStats_Patch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(Recycler __instance, ref float efficiency, ref float duration)
+            {
+                if (__instance == null || __instance.net == null || Instance == null) return;
+                if (!Instance.ModifiedRecyclers.TryGetValue(__instance.net.ID.Value, out var data)) return;
+
+                if (data.EfficiencyBonus > 0f)
+                    efficiency = Mathf.Clamp01(efficiency + efficiency * data.EfficiencyBonus);
+
+                if (data.SpeedDecrease > 0f)
+                    duration = Mathf.Max(0.1f, duration - data.SpeedDecrease);
             }
         }
 
