@@ -605,9 +605,14 @@ namespace RaidableBases
                         return;
                     }
 
-                    foreach (var ia in block.BuildCost())
+                    // Game update: BuildCost() returns EntityBuildCost { Items, CraftAmount }, not IEnumerable.
+                    var buildCost = block.BuildCost();
+                    if (buildCost.Items != null)
                     {
-                        player.GiveItem(ItemManager.Create(ia.itemDef, (int)ia.amount));
+                        foreach (var ia in buildCost.Items)
+                        {
+                            player.GiveItem(ItemManager.Create(ia.itemDef, (int)ia.amount));
+                        }
                     }
 
                     block.SafelyKill();

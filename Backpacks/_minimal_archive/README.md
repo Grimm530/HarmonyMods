@@ -28,7 +28,7 @@ Standalone Harmony mod that gives each player an **extra-inventory backpack**: o
 ## Persistent Data Model
 
 - **Config:** `HarmonyConfig/Backpacks.json` (or `oxide/config/Backpacks.json`, `Config/Backpacks.json`, server root `Backpacks.json`). Options: Drop on death, Erase on death, Capacity (slots), Minimum despawn time; **Show backpack button**, **Button image path** (e.g. `HarmonyImages/Backpack/backpackgz.png`), **Button image URL** (optional override), **Button position** (anchormin/anchormax).
-- **Per-player data:** `HarmonyData/BackpacksData/<steamid>.json` (default; configurable via **Data folder path**) — list of `BackpackItemEntry` (itemid, amount, slot, condition, maxCondition, blueprint, skin, contents for nested items). The mod **only** reads/writes these JSON files; it does **not** write to the server save or to FileStorage (sv.files.*.db).
+- **Per-player data:** `HarmonyMods_Data/BackpacksData/<steamid>.json` (default; configurable via **Data folder path**) — list of `BackpackItemEntry` (itemid, amount, slot, condition, maxCondition, blueprint, skin, contents for nested items). The mod **only** reads/writes these JSON files; it does **not** write to the server save or to FileStorage (sv.files.*.db).
 
 ## Harmony Patches
 
@@ -59,7 +59,7 @@ Standalone Harmony mod that gives each player an **extra-inventory backpack**: o
 
 ## FileStorage / server save
 
-- **Backpack data:** Stored only in external JSON files under `HarmonyData/BackpacksData/` (or your configured **Data folder path**). The mod does **not** write backpack data to the server save.
+- **Backpack data:** Stored only in external JSON files under `HarmonyMods_Data/BackpacksData/` (or your configured **Data folder path**). The mod does **not** write backpack data to the server save.
 - **Button image:** The mod loads `HarmonyImages/Backpack/backpackgz.png` (or config path) into FileStorage on load, caches the texture ID, and uses it for the on-screen button (CUI RawImage → client receives via CL_ReceiveFilePng). Load is deferred to NextTick + 5s retry so FileStorage is ready. Use **Button image URL** to skip FileStorage and use a hosted URL instead.
 - **Patch_ServerMgr_Initialize:** Optionally creates `server/<identity>/` before the game opens FileStorage, so other game code (e.g. NPC vending machines) can open the database. Keep Backpacks loaded if you rely on that safeguard.
 

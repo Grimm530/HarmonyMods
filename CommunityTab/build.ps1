@@ -1,5 +1,5 @@
 # Build script for CommunityTab Harmony Mod
-# Output: C:\!2XRUST\HarmonyMods\CommunityTab.dll
+# Output: <server root>\HarmonyMods\CommunityTab.dll
 # Strips modded/oxide/carbon browser tags so server lists in Community tab
 #
 Write-Host "Building CommunityTab Harmony mod..." -ForegroundColor Cyan
@@ -8,7 +8,12 @@ $projectPath = Join-Path $PSScriptRoot "CommunityTab.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "C:\!2XRUST\HarmonyMods"
+    $root = $env:RUST_SERVER_ROOT
+    if (-not $root) {
+        $candidate = Join-Path $PSScriptRoot "..\..\.."
+        $root = [System.IO.Path]::GetFullPath($candidate)
+    }
+    $harmonyModsPath = Join-Path $root "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
