@@ -16264,6 +16264,7 @@ namespace Oxide.Plugins
         void OnRocketLaunched(BasePlayer player, TimedExplosive entity) => HandleRocket(player, entity);
         void HandleExplosionRadius(BasePlayer player, TimedExplosive timedExplosive)
         {
+            if (player == null || timedExplosive == null) return;
             if (config.buff_settings.raid_perk_settings.Explosion_Radius_settings.blacklist.Contains(timedExplosive.ShortPrefabName)) return;
             BuffDetails bd;
             float value;

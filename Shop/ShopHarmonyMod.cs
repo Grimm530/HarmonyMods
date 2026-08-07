@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using HarmonyChat;
 using UnityEngine;
 
 namespace ShopHarmony
@@ -27,6 +28,12 @@ namespace ShopHarmony
         private Shop _plugin;
         private ShopPluginWrapper _pluginWrapper;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
+        /// <summary>
+        /// Chat open aliases (s/shops) registered as replicated console commands so the client
+        /// recognizes /s in chat. Without this, Facepunch shows "unknown command" and never
+        /// sends chat.say — matching Leaderboard/Radar/AdminAlias.
+        /// </summary>
+        private readonly List<ConsoleSystem.Command> _chatAliasCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _commandMethodMap =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -45,6 +52,7 @@ namespace ShopHarmony
             _plugin.HarmonyInit();
             ScrubShopFromReplicatedList();
             RegisterCommands();
+            ChatSayBridge.Register("Shop", OnChatCommand);
             ScheduleServerInitialized();
             Debug.Log($"[Shop Harmony] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
             Debug.Log("[Shop Harmony] Chat: /s or /shops (from HarmonyConfig/Shop.json Commands)");
@@ -123,6 +131,7 @@ namespace ShopHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            ChatSayBridge.Unregister("Shop");
             UnregisterCommands();
             _plugin?.HarmonyUnload();
             UnregisterApiType();
@@ -213,7 +222,10 @@ namespace ShopHarmony
 
             // Default chat aliases until config RegisterCommands runs
             foreach (var name in new[] { "s", "shop", "shops", "shop.setvm", "shop.setnpc", "shop.install" })
+            {
                 _chatCommandNames.Add(name);
+                RegisterChatAliasConsole(name);
+            }
 
             _commandMethodMap["shop.setvm"] = nameof(Shop.CmdSetCustomVM);
             _commandMethodMap["shop.setnpc"] = nameof(Shop.CmdSetShopNPC);
@@ -256,6 +268,7 @@ namespace ShopHarmony
                         if (string.IsNullOrEmpty(c)) continue;
                         _chatCommandNames.Add(c);
                         _commandMethodMap[c] = entry.methodName;
+                        RegisterChatAliasConsole(c);
                     }
                 }
             }
@@ -273,6 +286,106 @@ namespace ShopHarmony
                 _commandMethodMap["shop.setnpc"] = nameof(Shop.CmdSetShopNPC);
             if (!_commandMethodMap.ContainsKey("shop.install"))
                 _commandMethodMap["shop.install"] = nameof(Shop.CmdChatShopInstaller);
+        }
+
+        /// <summary>
+        /// Register an undotted chat alias (e.g. s, shops) as a server console command for F1/RCON.
+        /// Do NOT set Variable/Replicated or add to Index.Server.Replicated — clients have no ConsoleGen
+        /// entry and spam "Replicated convar not found on client". Player chat /s is handled by
+        /// ChatSayBridge (same pattern as Kits / SkillTree).
+        /// </summary>
+        private void RegisterChatAliasConsole(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            name = name.Trim();
+            if (name.IndexOf('.') >= 0) return;
+
+            if (_chatAliasCommands.Any(c =>
+                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            string localName = name;
+            // Never overwrite another mod's console command (e.g. SkillTree /st).
+            if (ConsoleSystem.Index.Server.Dict != null &&
+                ConsoleSystem.Index.Server.Dict.ContainsKey("global." + localName))
+                return;
+
+            var cmd = new ConsoleSystem.Command
+            {
+                Name = localName,
+                Parent = string.Empty,
+                FullName = "global." + localName,
+                Variable = false,
+                ServerAdmin = false,
+                ServerUser = true,
+                AllowRunFromServer = true,
+                Replicated = false,
+                Call = a =>
+                {
+                    try
+                    {
+                        var player = a?.Player();
+                        if (player == null) return;
+                        var sb = new StringBuilder(localName);
+                        var raw = a.Args;
+                        if (raw != null)
+                        {
+                            for (int i = 0; i < raw.Length; i++)
+                            {
+                                sb.Append(' ');
+                                sb.Append(raw[i].ToString() ?? string.Empty);
+                            }
+                        }
+                        OnChatCommand(player, sb.ToString());
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Shop] chat alias {localName}: " + ex.Message);
+                    }
+                }
+            };
+
+            try
+            {
+                ConsoleSystem.Index.Server.Dict["global." + localName] = cmd;
+                if (ConsoleSystem.Index.Server.GlobalDict != null)
+                    ConsoleSystem.Index.Server.GlobalDict[localName] = cmd;
+                _chatAliasCommands.Add(cmd);
+                _registeredCommands.Add(cmd);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Shop Harmony] RegisterChatAliasConsole({localName}): " + ex.Message);
+            }
+        }
+
+        private static System.Collections.IList GetReplicatedList()
+        {
+            try
+            {
+                var serverType = typeof(ConsoleSystem.Index.Server);
+                var list = serverType.GetField("Replicated", BindingFlags.Public | BindingFlags.Static)
+                    ?.GetValue(null) as System.Collections.IList;
+                if (list != null) return list;
+                return serverType.GetProperty("Replicated", BindingFlags.Public | BindingFlags.Static)
+                    ?.GetValue(null) as System.Collections.IList;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void RemoveFromReplicatedList(ConsoleSystem.Command cmd)
+        {
+            if (cmd == null) return;
+            try
+            {
+                var list = GetReplicatedList();
+                list?.Remove(cmd);
+            }
+            catch { }
         }
 
         private void InvokeConsoleMethod(string methodName, ConsoleSystem.Arg arg)
@@ -423,10 +536,16 @@ namespace ShopHarmony
 
                     bool isShop =
                         full.StartsWith("shop.", StringComparison.OrdinalIgnoreCase) ||
+                        full.Equals("global.s", StringComparison.OrdinalIgnoreCase) ||
+                        full.Equals("global.shop", StringComparison.OrdinalIgnoreCase) ||
+                        full.Equals("global.shops", StringComparison.OrdinalIgnoreCase) ||
                         full.Equals("global.UI_Shop", StringComparison.OrdinalIgnoreCase) ||
                         full.Equals("global.UI_Shop_Installer", StringComparison.OrdinalIgnoreCase) ||
                         full.Equals("global.openshopUI", StringComparison.OrdinalIgnoreCase) ||
                         parent.Equals("shop", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("s", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("shop", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("shops", StringComparison.OrdinalIgnoreCase) ||
                         name.Equals("UI_Shop", StringComparison.OrdinalIgnoreCase) ||
                         name.Equals("UI_Shop_Installer", StringComparison.OrdinalIgnoreCase) ||
                         name.Equals("openshopUI", StringComparison.OrdinalIgnoreCase);
@@ -447,6 +566,18 @@ namespace ShopHarmony
 
         private void UnregisterCommands()
         {
+            foreach (var cmd in _chatAliasCommands)
+            {
+                try
+                {
+                    cmd.Replicated = false;
+                    cmd.Variable = false;
+                    RemoveFromReplicatedList(cmd);
+                }
+                catch { }
+            }
+            _chatAliasCommands.Clear();
+
             ScrubShopFromReplicatedList();
             foreach (var cmd in _registeredCommands)
             {

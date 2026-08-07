@@ -18,7 +18,7 @@ namespace BackpacksHarmony
 
         public const int VersionMajor = 3;
         public const int VersionMinor = 17;
-        public const int VersionPatch = 41;
+        public const int VersionPatch = 42;
 
         public static readonly VersionNumber Version = new VersionNumber(VersionMajor, VersionMinor, VersionPatch);
 
@@ -28,6 +28,9 @@ namespace BackpacksHarmony
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _chatToMethod =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>All IPlayer console commands (including UI-only). Used by cui.endtest — ConsoleSystem.Dict can be wiped by Facepunch index rebuilds.</summary>
+        private readonly Dictionary<string, string> _consoleToMethod =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         public Backpacks Plugin => _plugin;
@@ -184,6 +187,7 @@ namespace BackpacksHarmony
             RegisterIPlayerCommand("backpack.previous", "BackpackPreviousCommand");
             RegisterIPlayerCommand("backpack.fetch", "BackpackFetchCommand");
             RegisterIPlayerCommand("backpack.erase", "EraseBackpackCommand", serverAdmin: true);
+            RegisterIPlayerCommand("backpack.wipeall", "WipeAllBackpacksCommand", serverAdmin: true);
             RegisterIPlayerCommand("viewbackpack", "ViewBackpackCommand");
             RegisterIPlayerCommand("backpack.addsize", "AddBackpackCapacityCommand", serverAdmin: true);
             RegisterIPlayerCommand("backpack.setsize", "SetBackpackCapacityCommand", serverAdmin: true);
@@ -223,6 +227,8 @@ namespace BackpacksHarmony
 
         private void RegisterIPlayerCommand(string name, string methodName, bool serverAdmin = false)
         {
+            if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(methodName))
+                _consoleToMethod[name] = methodName;
             RegisterConsole(name, arg => InvokeIPlayerMethod(methodName, name, arg), serverAdmin);
         }
 
@@ -246,6 +252,50 @@ namespace BackpacksHarmony
             catch (Exception ex)
             {
                 Debug.LogWarning("[Backpacks Harmony] RefreshChatCommandsFromConfig: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Route cui.endtest BP &lt;cmd&gt; … straight to the IPlayer handler.
+        /// Do not use ConsoleSystem.Dict — Facepunch may rebuild the index and drop custom dotted commands
+        /// (log symptom: "command not registered: backpack.open" while chat /backpack still works).
+        /// </summary>
+        public void HandleCuiEndtest(ConsoleSystem.Arg args, Array a)
+        {
+            if (_plugin == null || a == null || a.Length < 2) return;
+            var player = args.Connection?.player as BasePlayer ?? args.Player();
+            if (player == null || player.IsDestroyed || !player.IsConnected) return;
+
+            string cmdName = a.GetValue(1)?.ToString() ?? "";
+            if (string.IsNullOrEmpty(cmdName)) return;
+
+            if (!_consoleToMethod.TryGetValue(cmdName, out var methodName)
+                && !_chatToMethod.TryGetValue(cmdName, out methodName))
+            {
+                Debug.LogWarning("[Backpacks] cui.endtest BP: command not registered: " + cmdName);
+                return;
+            }
+
+            var cmdArgs = a.Length <= 2
+                ? Array.Empty<string>()
+                : new string[a.Length - 2];
+            for (int i = 2; i < a.Length; i++)
+                cmdArgs[i - 2] = a.GetValue(i)?.ToString() ?? "";
+
+            try
+            {
+                var mi = typeof(Backpacks).GetMethod(methodName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (mi == null)
+                {
+                    Debug.LogWarning("[Backpacks] cui.endtest BP: missing method " + methodName);
+                    return;
+                }
+                mi.Invoke(_plugin, new object[] { player.ToIPlayer(), cmdName, cmdArgs });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Backpacks] cui.endtest BP: " + ex.Message);
             }
         }
 
@@ -383,7 +433,7 @@ namespace BackpacksHarmony
             {
                 "global.backpack", "global.backpackgui", "global.viewbackpack",
                 "backpack.open", "backpack.next", "backpack.prev", "backpack.previous",
-                "backpack.fetch", "backpack.erase", "backpack.addsize", "backpack.setsize",
+                "backpack.fetch", "backpack.erase", "backpack.wipeall", "backpack.addsize", "backpack.setsize",
                 "backpack.resetgui", "backpack.setgathermode",
                 "backpack.ui.togglegather", "backpack.ui.toggleretrieve",
                 "backpack.debug.size", "backpack.debug.capacity", "backpack.debug.gather"

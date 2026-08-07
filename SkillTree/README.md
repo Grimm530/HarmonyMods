@@ -56,6 +56,8 @@ RoadRunner needs `MovementSpeed.dll` present; if it is missing, those buffs soft
 | `/score` `/scoreboard` | Open XP scoreboard |
 | Various config-driven commands | See config `chat_commands` section |
 
+Undotted chat aliases (`st`, `skilltree`, `skills`, `score`, `scoreboard`, plus config-driven names) are registered as **unreplicated** server console commands. Player chat (`/st`, `/setgenes`, …) is handled by `ChatSayBridge` on `chat.say`. They must **not** be added to `Index.Server.Replicated` — clients have no ConsoleGen entries and spam `Replicated convar not found on client: global.setgenes` (etc.) on join. UI/console handlers stay unreplicated.
+
 ### Console (admin)
 | Command | Description |
 |---|---|

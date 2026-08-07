@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using HarmonyChat;
 using UnityEngine;
 using OxidePlugin = Oxide.Plugins.SkillTree;
 
@@ -65,6 +66,12 @@ namespace SkillTreeHarmony
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
+        /// <summary>
+        /// Chat open aliases (st/skills/score…) registered as unreplicated server console commands.
+        /// Chat /st is handled by ChatSayBridge — do not put these on Index.Server.Replicated
+        /// (clients spam "Replicated convar not found on client: global.setgenes" etc.). Same as Kits.
+        /// </summary>
+        private readonly List<ConsoleSystem.Command> _chatAliasCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         /// <summary>Exact CUI command names (original casing) for cui.endtest rewrite. Longer names first.</summary>
         private readonly List<string> _uiConsoleCommands = new List<string>();
@@ -101,11 +108,18 @@ namespace SkillTreeHarmony
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(SkillTreeMod)); }
             catch { }
 
-            // Seed basic chat commands (config-independent defaults).
-            foreach (var cmd in new[] { "st", "skilltree", "skills" })
+            // Drop stale replicated SkillTree chat aliases from older builds (client ERRORS overlay).
+            ScrubSkillTreeFromReplicatedList();
+
+            // Seed basic chat commands (config-independent defaults). Chat routing = ChatSayBridge.
+            foreach (var cmd in new[] { "st", "skilltree", "skills", "score", "scoreboard" })
+            {
                 _chatCommandNames.Add(cmd);
-            foreach (var cmd in new[] { "score", "scoreboard" })
-                _chatCommandNames.Add(cmd);
+                RegisterChatAliasConsole(cmd);
+            }
+
+            // Shared chat.say bridge — coexist with Shop (/s) regardless of Harmony prefix order.
+            ChatSayBridge.Register("SkillTree", OnChatCommand);
 
             // Register [ConsoleCommand] handlers + ST_UI immediately (CUI needs them before players open /st).
             RegisterConsoleCommands();
@@ -195,6 +209,8 @@ namespace SkillTreeHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            ChatSayBridge.Unregister("SkillTree");
+
             if (_permissionsReadyCallback != null)
             {
                 PermissionsBridge.UnregisterReadyCallback(_permissionsReadyCallback);
@@ -410,8 +426,10 @@ namespace SkillTreeHarmony
             {
                 foreach (var reg in plugin.cmd.RegisteredChatCommands)
                 {
-                    if (!string.IsNullOrEmpty(reg.name))
-                        _chatCommandNames.Add(reg.name.ToLowerInvariant());
+                    if (string.IsNullOrEmpty(reg.name)) continue;
+                    var chatName = reg.name.ToLowerInvariant();
+                    _chatCommandNames.Add(chatName);
+                    RegisterChatAliasConsole(chatName);
                 }
 
                 foreach (var reg in plugin.cmd.RegisteredConsoleCommands)
@@ -419,7 +437,7 @@ namespace SkillTreeHarmony
                     if (string.IsNullOrEmpty(reg.name)) continue;
                     var name = reg.name.Trim();
                     TrackUiConsoleCommand(name);
-                    // Avoid double-registration.
+                    // Avoid double-registration (including chat aliases already registered).
                     if (_registeredCommands.Any(c => string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase) ||
                                                      string.Equals(c.FullName, name, StringComparison.OrdinalIgnoreCase) ||
                                                      string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
@@ -428,10 +446,185 @@ namespace SkillTreeHarmony
                     RegisterConsole(name, arg => InvokeConsoleMethod(captured.method, arg), serverAdmin: false);
                 }
                 SortUiConsoleCommands();
+                // Config-driven aliases may have been left on Replicated by older DLLs.
+                ScrubSkillTreeFromReplicatedList();
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[SkillTree] RefreshDynamicCommands: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Register an undotted chat alias (e.g. st, skills) as a server console command for F1/RCON.
+        /// Do NOT set Variable/Replicated or add to Index.Server.Replicated — clients have no ConsoleGen
+        /// entry and spam "Replicated convar not found on client: global.setgenes" (etc.) on join.
+        /// Player chat /st is handled by ChatSayBridge (same pattern as Kits).
+        /// </summary>
+        private void RegisterChatAliasConsole(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            name = name.Trim();
+            if (name.IndexOf('.') >= 0) return;
+
+            if (_chatAliasCommands.Any(c =>
+                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            // Do not overwrite an existing UI/console registration for the same short name.
+            if (_registeredCommands.Any(c =>
+                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            string localName = name;
+            // Never overwrite another mod's console command (e.g. Shop /s).
+            if (ConsoleSystem.Index.Server.Dict != null &&
+                ConsoleSystem.Index.Server.Dict.ContainsKey("global." + localName))
+                return;
+
+            var cmd = new ConsoleSystem.Command
+            {
+                Name = localName,
+                Parent = string.Empty,
+                FullName = "global." + localName,
+                Variable = false,
+                ServerAdmin = false,
+                ServerUser = true,
+                AllowRunFromServer = true,
+                Replicated = false,
+                Call = a =>
+                {
+                    try
+                    {
+                        var player = a?.Player();
+                        if (player == null) return;
+                        var sb = new StringBuilder(localName);
+                        var raw = a.Args;
+                        if (raw != null)
+                        {
+                            for (int i = 0; i < raw.Length; i++)
+                            {
+                                sb.Append(' ');
+                                sb.Append(raw[i].ToString() ?? string.Empty);
+                            }
+                        }
+                        OnChatCommand(player, sb.ToString());
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[SkillTree] chat alias " + localName + ": " + ex.Message);
+                    }
+                }
+            };
+
+            try
+            {
+                ConsoleSystem.Index.Server.Dict["global." + localName] = cmd;
+                if (ConsoleSystem.Index.Server.GlobalDict != null)
+                    ConsoleSystem.Index.Server.GlobalDict[localName] = cmd;
+                _chatAliasCommands.Add(cmd);
+                _registeredCommands.Add(cmd);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SkillTree] RegisterChatAliasConsole(" + localName + "): " + ex.Message);
+            }
+        }
+
+        private static System.Collections.IList GetReplicatedList()
+        {
+            try
+            {
+                var serverType = typeof(ConsoleSystem.Index.Server);
+                var list = serverType.GetField("Replicated", BindingFlags.Public | BindingFlags.Static)
+                    ?.GetValue(null) as System.Collections.IList;
+                if (list != null) return list;
+                return serverType.GetProperty("Replicated", BindingFlags.Public | BindingFlags.Static)
+                    ?.GetValue(null) as System.Collections.IList;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void RemoveFromReplicatedList(ConsoleSystem.Command cmd)
+        {
+            if (cmd == null) return;
+            try
+            {
+                GetReplicatedList()?.Remove(cmd);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Remove SkillTree chat aliases from Index.Server.Replicated (including leftovers from
+        /// older DLL builds that incorrectly set Replicated=true / Variable=true).
+        /// </summary>
+        private void ScrubSkillTreeFromReplicatedList()
+        {
+            try
+            {
+                var replicated = GetReplicatedList();
+                if (replicated == null) return;
+
+                for (int i = replicated.Count - 1; i >= 0; i--)
+                {
+                    if (replicated[i] is not ConsoleSystem.Command cmd) continue;
+                    string full = cmd.FullName ?? string.Empty;
+                    string name = cmd.Name ?? string.Empty;
+
+                    bool isOurs = false;
+                    if (full.StartsWith("global.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var shortName = full.Substring("global.".Length);
+                        if (_chatCommandNames.Contains(shortName) ||
+                            _chatAliasCommands.Any(c =>
+                                string.Equals(c.FullName, full, StringComparison.OrdinalIgnoreCase)))
+                            isOurs = true;
+                    }
+                    if (!isOurs && _chatCommandNames.Contains(name))
+                        isOurs = true;
+                    // Defaults always scrubbed even before _chatCommandNames is fully seeded.
+                    if (!isOurs && IsDefaultSkillTreeChatAlias(name))
+                        isOurs = true;
+                    if (!isOurs && full.StartsWith("global.", StringComparison.OrdinalIgnoreCase) &&
+                        IsDefaultSkillTreeChatAlias(full.Substring("global.".Length)))
+                        isOurs = true;
+
+                    if (!isOurs) continue;
+                    cmd.Replicated = false;
+                    cmd.Variable = false;
+                    replicated.RemoveAt(i);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SkillTree] ScrubSkillTreeFromReplicatedList: " + ex.Message);
+            }
+        }
+
+        private static bool IsDefaultSkillTreeChatAlias(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            switch (name.ToLowerInvariant())
+            {
+                case "st":
+                case "skilltree":
+                case "skills":
+                case "score":
+                case "scoreboard":
+                case "setgenes":
+                case "locatenodes":
+                case "turbo":
+                case "crates":
+                case "traps":
+                    return true;
+                default:
+                    return false;
             }
         }
 
@@ -552,6 +745,19 @@ namespace SkillTreeHarmony
 
         private void UnregisterConsoleCommands()
         {
+            foreach (var cmd in _chatAliasCommands)
+            {
+                try
+                {
+                    cmd.Replicated = false;
+                    cmd.Variable = false;
+                    RemoveFromReplicatedList(cmd);
+                }
+                catch { }
+            }
+            _chatAliasCommands.Clear();
+            ScrubSkillTreeFromReplicatedList();
+
             try
             {
                 var dict       = ConsoleSystem.Index.Server.Dict;

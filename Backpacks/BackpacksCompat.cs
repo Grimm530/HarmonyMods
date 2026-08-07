@@ -597,6 +597,18 @@ namespace BackpacksHarmony
             {
                 try { _register?.Invoke(null, new object[] { perm }); } catch { }
             }
+
+            // Permissions reloads (file merge / harmony.load) must refresh GUI:
+            // OnGroupPermission* is not patched under Harmony, so already-online
+            // players would keep a stale "no gui perm" state until reconnect.
+            try
+            {
+                BackpacksHost.Instance?.Plugin?.RefreshGuiButtonsAfterPermissionsReady();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Backpacks] Permissions-ready GUI refresh: " + ex.Message);
+            }
         }
 
         public void RegisterPermission(string perm, object plugin)

@@ -1,6 +1,6 @@
 # Backpacks Harmony Mod (Oxide-parity port)
 
-Full port of **WhiteThunder Backpacks 3.17.41** (Oxide `CovalencePlugin`) to a standalone Harmony mod. Logic matches the Oxide plugin; hosting uses Harmony shims instead of Oxide/Carbon.
+Full port of **WhiteThunder Backpacks** (Oxide `CovalencePlugin`) to a standalone Harmony mod, with **3.17.6 game-update fixes** (loot `entitySource`, arctic spawn position, `decay = null`, network subscribe) plus Harmony CUI/`cui.endtest` bridging. Hosting uses Harmony shims instead of Oxide/Carbon.
 
 ## Build / load
 
@@ -74,7 +74,8 @@ Chat / console (IPlayer covalence style):
 - **ItemRetriever** — Harmony mod (`HarmonyMods/ItemRetriever.dll`). Backpacks binds via AppDomain ready callback — **no load-order requirement**. Auto-start is typically alphabetical (`Backpacks` then `ItemRetriever` then `Permissions`); that is fine.
 - **OnNetworkSubscriptionsUpdate** — not patched (no clean Harmony target yet).
 - **Arena / EventManager / BackpackButton** — PluginReferences stubbed null (same as Oxide when those plugins are absent).
-- **OnGroupPermission / OnUserPermission** hooks — not patched yet (capacity refresh on grant/revoke may need a Permissions event bridge later).
+- **OnGroupPermission / OnUserPermission** hooks — not patched yet (capacity refresh on grant/revoke may need a Permissions event bridge later). GUI buttons are refreshed on Permissions ready/rebind so file merges / `harmony.load 0Permissions` update online players.
+- **CUI buttons** — rewritten to `cui.endtest BP …` (clients only forward ConsoleGen commands).
 
 ## Startup order (auto)
 

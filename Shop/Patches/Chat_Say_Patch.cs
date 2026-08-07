@@ -1,8 +1,12 @@
+using HarmonyChat;
 using HarmonyLib;
-using UnityEngine;
 
 namespace ShopHarmony.Patches
 {
+    /// <summary>
+    /// Routes chat.say through the shared <see cref="ChatSayBridge"/> so Shop and SkillTree
+    /// (and any other registered Harmony mods) all get a chance before the original is skipped.
+    /// </summary>
     [HarmonyPatch(typeof(ConVar.Chat), nameof(ConVar.Chat.say))]
     public static class Chat_Say_Patch
     {
@@ -12,11 +16,10 @@ namespace ShopHarmony.Patches
             if (arg == null) return true;
             string message = arg.GetString(0, "text")?.Trim();
             if (string.IsNullOrEmpty(message)) return true;
-            var mod = ShopHarmonyMod.Instance;
-            if (mod == null) return true;
-            var player = arg.Player();
+            var player = arg.Connection?.player as BasePlayer;
             if (player == null) return true;
-            bool handled = mod.OnChatCommand(player, message);
+
+            bool handled = ChatSayBridge.Dispatch(player, message);
             return !handled;
         }
     }

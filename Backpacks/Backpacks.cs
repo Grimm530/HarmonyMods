@@ -65,6 +65,7 @@ namespace BackpacksHarmony
         private const string ResizableLootPanelName = "generic_resizable";
 
         private const int SaddleBagItemId = 1400460850;
+        private const float BackpackContainerHeight = -500f;
 
         private readonly object False = false;
 
@@ -75,6 +76,7 @@ namespace BackpacksHarmony
         private ProtectionProperties _immortalProtection;
         private Effect _reusableEffect = new();
         private string _cachedButtonUi;
+        private Vector3 _backpackContainerPosition = new Vector3(0f, BackpackContainerHeight, 0f);
 
         public readonly ApiInstance Api;
         private Configuration _config;
@@ -91,7 +93,7 @@ namespace BackpacksHarmony
 
         public Backpacks()
         {
-            Version = new VersionNumber(3, 17, 41);
+            Version = new VersionNumber(3, 17, 42);
             _backpackManager = new BackpackManager(this);
             _capacityManager = new CapacityManager(this, _backpackManager);
             _readonlyBackpackViewers = new DynamicHookSubscriber<BasePlayer>(this, nameof(CanMoveItem), nameof(OnItemAction));
@@ -347,6 +349,17 @@ namespace BackpacksHarmony
 
         internal void OnServerInitialized()
         {
+            // 3.17.6: spawn storage outside Arctic so food spoiling works with the new biome rules.
+            if (TryFindBackpackContainerPositionNotInArcticBiome(out var position, out var sampleCount))
+            {
+                _backpackContainerPosition = position;
+            }
+            else
+            {
+                LogWarning($"Warning: All backpacks will be exempt from food spoiling because the plugin failed to locate a map position outside of the Arctic Biome out of [{sampleCount}] samples.");
+                _backpackContainerPosition = new Vector3(0f, BackpackContainerHeight, 0f);
+            }
+
             _immortalProtection = ScriptableObject.CreateInstance<ProtectionProperties>();
             _immortalProtection.name = "BackpacksProtection";
             _immortalProtection.Add(1);
@@ -429,6 +442,12 @@ namespace BackpacksHarmony
 
         internal void OnNewSave(string filename)
         {
+            PerformBackpackWipe("New save created");
+        }
+
+        /// <summary>3.17.6: shared wipe path for OnNewSave and backpack.wipeall.</summary>
+        private void PerformBackpackWipe(string reason)
+        {
             if (_config.BackpackSize.DynamicSize is { Enabled: true, CapacityResetOptions.Enabled: true })
             {
                 _capacityData.Clear();
@@ -438,85 +457,75 @@ namespace BackpacksHarmony
                 }
             }
 
-            if (_config.ClearOnWipe.Enabled)
+            if (!_config.ClearOnWipe.Enabled)
             {
-                _backpackManager.ClearCache();
-
-                IEnumerable<string> backpackFileNameList;
-                try
-                {
-                    backpackFileNameList = UsesCustomBackpackDataDirectory
-                        ? EnumerateCustomBackpackPlayerIdFileStems()
-                        : Interface.Oxide.DataFileSystem.GetFiles(Name)
-                            .Select(fn => fn.Split(Path.DirectorySeparatorChar).Last()
-                                .Replace(".json", string.Empty));
-                }
-                catch (DirectoryNotFoundException)
-                {
-                    // No backpacks to clear.
-                    return;
-                }
-
-                var retainedDueToContents = 0;
-                var retainedDueToPreferences = 0;
-                var deletedBackpackFiles = 0;
-
-                foreach (var backpackFileName in backpackFileNameList)
-                {
-                    if (!ulong.TryParse(backpackFileName, out var userId))
-                        continue;
-
-                    var backpack = _backpackManager.GetBackpackIfExists(userId);
-                    if (backpack == null)
-                        continue;
-
-                    backpack.EraseContents(_config.ClearOnWipe.GetForPlayer(backpackFileName));
-
-                    // Only delete the backpack data file if it's empty and has no saved preferences.
-                    if (backpack.HasItems || backpack.HasPreferences)
-                    {
-                        backpack.SaveIfChanged();
-
-                        if (backpack.HasItems)
-                        {
-                            retainedDueToContents++;
-                        }
-                        else if (backpack.HasPreferences)
-                        {
-                            retainedDueToPreferences++;
-                        }
-                    }
-                    else
-                    {
-                        _backpackManager.DeleteBackpackFile(userId);
-                        deletedBackpackFiles++;
-                    }
-                }
-
-                _backpackManager.ClearCache();
-
-                var logMessage =
-                    "New save created. Backpacks were wiped according to the config and player permissions.";
-                if (deletedBackpackFiles > 0)
-                {
-                    logMessage +=
-                        $"\n- {deletedBackpackFiles} file(s) were deleted because those backpacks are now empty.";
-                }
-
-                if (retainedDueToContents > 0)
-                {
-                    logMessage +=
-                        $"\n- {retainedDueToContents} file(s) were retained because those backpacks were not empty after applying the player's wipe ruleset.";
-                }
-
-                if (retainedDueToPreferences > 0)
-                {
-                    logMessage +=
-                        $"\n- {retainedDueToPreferences} file(s) were retained even though those backpacks are empty because they contain player gather/retrieve preferences.";
-                }
-
-                LogWarning(logMessage);
+                LogWarning("Backpack wipe on wipe is not enabled in the config.");
+                return;
             }
+
+            // Save pending changes since some items may need to be retained according to wipe rulesets.
+            RestartSaveRoutine(async: false, keepInUseBackpacks: false);
+
+            _backpackManager.ClearCache();
+
+            IEnumerable<string> backpackFileNameList;
+            try
+            {
+                backpackFileNameList = UsesCustomBackpackDataDirectory
+                    ? EnumerateCustomBackpackPlayerIdFileStems()
+                    : Interface.Oxide.DataFileSystem.GetFiles(Name)
+                        .Select(fn => fn.Split(Path.DirectorySeparatorChar).Last()
+                            .Replace(".json", string.Empty));
+            }
+            catch (DirectoryNotFoundException)
+            {
+                LogWarning("No backpacks to wipe.");
+                return;
+            }
+
+            var retainedDueToContents = 0;
+            var retainedDueToPreferences = 0;
+            var deletedBackpackFiles = 0;
+
+            foreach (var backpackFileName in backpackFileNameList)
+            {
+                if (!ulong.TryParse(backpackFileName, out var userId))
+                    continue;
+
+                var backpack = _backpackManager.GetBackpackIfExists(userId);
+                if (backpack == null)
+                    continue;
+
+                backpack.EraseContents(_config.ClearOnWipe.GetForPlayer(backpackFileName));
+
+                if (backpack.HasItems || backpack.HasPreferences)
+                {
+                    backpack.SaveIfChanged();
+
+                    if (backpack.HasItems)
+                        retainedDueToContents++;
+                    else if (backpack.HasPreferences)
+                        retainedDueToPreferences++;
+                }
+                else
+                {
+                    _backpackManager.DeleteBackpackFile(userId);
+                    deletedBackpackFiles++;
+                }
+            }
+
+            _backpackManager.ClearCache();
+
+            var logMessage =
+                $"{reason}. Backpacks were wiped according to the config and player permissions.";
+            if (deletedBackpackFiles > 0)
+                logMessage += $"\n- {deletedBackpackFiles} file(s) were deleted because those backpacks are now empty.";
+            if (retainedDueToContents > 0)
+                logMessage += $"\n- {retainedDueToContents} file(s) were retained because those backpacks were not empty after applying the player's wipe ruleset.";
+            if (retainedDueToPreferences > 0)
+                logMessage += $"\n- {retainedDueToPreferences} file(s) were retained even though those backpacks are empty because they contain player gather/retrieve preferences.";
+
+            LogWarning(logMessage);
         }
 
         internal void OnServerSave()
@@ -1436,6 +1445,14 @@ namespace BackpacksHarmony
             ReplyToPlayer(player, LangEntry.ItemsFetched, amountTransferred, itemLocalizedName);
         }
 
+        internal void WipeAllBackpacksCommand(IPlayer player, string cmd, string[] args)
+        {
+            if (!player.IsServer)
+                return;
+
+            PerformBackpackWipe("All backpacks wiped by command");
+        }
+
         internal void EraseBackpackCommand(IPlayer player, string cmd, string[] args)
         {
             if (!player.IsServer)
@@ -1847,11 +1864,6 @@ namespace BackpacksHarmony
                    ?? ResizableLootPanelName;
         }
 
-        private static void ClosePlayerInventory(BasePlayer player)
-        {
-            player.ClientRPC(RpcTarget.Player("OnRespawnInformation", player));
-        }
-
         private static float CalculateOpenDelay(ItemContainer currentContainer, int nextContainerCapacity, bool isKeyBind = false)
         {
             if (currentContainer != null)
@@ -1885,6 +1897,7 @@ namespace BackpacksHarmony
             {
                 player.inventory.loot.AddContainer(container);
                 player.inventory.loot.SendImmediate();
+                // 3.17.6 RPCUtils.OpenLootPanel
                 player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), entitySource.panelName);
             }
         }
@@ -1907,6 +1920,43 @@ namespace BackpacksHarmony
         {
             var parentItem = container?.parent;
             return parentItem != null ? GetRootContainer(parentItem) : container;
+        }
+
+        private static bool IsPositionInArcticBiome(Vector3 position)
+        {
+            return TerrainMeta.BiomeMap != null
+                && TerrainMeta.BiomeMap.GetBiome(position, TerrainBiome.ARCTIC) > 0f;
+        }
+
+        // Best effort grid-based sampling to find a map position outside the Arctic biome (3.17.6).
+        private static bool TryFindBackpackContainerPositionNotInArcticBiome(out Vector3 position, out int sampleCount)
+        {
+            var gridSize = 10;
+            sampleCount = gridSize * gridSize;
+
+            position = new Vector3(0, BackpackContainerHeight, 0);
+            if (!IsPositionInArcticBiome(position))
+                return true;
+
+            var worldSize = TerrainMeta.Size.x;
+            var step = worldSize / gridSize;
+
+            for (var x = 0; x < gridSize; x++)
+            {
+                for (var z = 0; z < gridSize; z++)
+                {
+                    position = new Vector3(
+                        x * step - worldSize / 2,
+                        BackpackContainerHeight,
+                        z * step - worldSize / 2
+                    );
+
+                    if (!IsPositionInArcticBiome(position))
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         private bool HasBackpackEditPermission(string userIdString)
@@ -2134,9 +2184,8 @@ namespace BackpacksHarmony
                     {
                         if (!wrapAround)
                         {
-                            // Close the backpack.
+                            // Close the backpack (3.17.6: EndLooting only — ClosePlayerInventory RPC removed).
                             looter.EndLooting();
-                            ClosePlayerInventory(looter);
                         }
                         return;
                     }
@@ -2412,6 +2461,28 @@ namespace BackpacksHarmony
             else
             {
                 DestroyButtonUi(player);
+            }
+        }
+
+        /// <summary>
+        /// Called when the Permissions Harmony mod (re)binds. Recreates or removes the
+        /// inventory GUI button for every online player based on current grants.
+        /// </summary>
+        internal void RefreshGuiButtonsAfterPermissionsReady()
+        {
+            if (!_config.GUI.Enabled)
+                return;
+
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (player == null || player.IsNpc)
+                    continue;
+
+                // Destroy first so a previously denied viewer can be re-added cleanly.
+                if (_uiViewers.Contains(player.userID))
+                    DestroyButtonUi(player);
+
+                CreateOrDestroyButtonUi(player);
             }
         }
 
@@ -5062,14 +5133,22 @@ namespace BackpacksHarmony
                         LogError($"Error when saving player backpack {backpack.OwnerIdString}:\n{ex}");
                     }
 
-                    // Kill the backpack to free up space, if no admins are viewing it and its owner is disconnected.
-                    if (!keepInUseBackpacks || (!backpack.HasLooters && BasePlayer.FindByID(backpack.OwnerId) == null))
+                    try
                     {
-                        backpack.Kill();
-                        _cachedBackpacks.Remove(backpack.OwnerId);
-                        _backpackPathCache.Remove(backpack.OwnerId);
-                        var backpackToFree = backpack;
-                        CustomPool.Free(ref backpackToFree);
+                        // Kill the backpack to free up space, if no admins are viewing it and its owner is disconnected.
+                        if (!keepInUseBackpacks
+                            || (!backpack.HasLooters && BasePlayer.FindByID(backpack.OwnerId) == null))
+                        {
+                            backpack.Kill();
+                            _cachedBackpacks.Remove(backpack.OwnerId);
+                            _backpackPathCache.Remove(backpack.OwnerId);
+                            var backpackToFree = backpack;
+                            CustomPool.Free(ref backpackToFree);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError($"Error when killing player backpack {backpack.OwnerIdString}:\n{ex}");
                     }
 
                     if (didSave && async)
@@ -5336,22 +5415,8 @@ namespace BackpacksHarmony
                     }
                 }
 
-                // Register the client with the group and the group with the client.
-                // Subscriber.Subscribe() handles both: adds group to subscriber.subscribed
-                // and calls group.AddSubscriber(connection).
-                var subscriber = player.net?.subscriber;
-                if (subscriber != null)
-                {
-                    if (!subscriber.IsSubscribed(NetworkGroup))
-                    {
-                        subscriber.Subscribe(NetworkGroup);
-                    }
-                }
-                else
-                {
-                    // Fallback if subscriber not yet initialized
-                    NetworkGroup.AddSubscriber(player.Connection);
-                }
+                // 3.17.6: register client with the group so ShouldNetworkTo() returns true.
+                player.net.subscriber?.Subscribe(NetworkGroup);
             }
 
             public void Unsubscribe(BasePlayer player)
@@ -5362,18 +5427,8 @@ namespace BackpacksHarmony
                 if (player.Connection == null)
                     return;
 
-                // Unregister the client from the group so they don't get future entity updates.
-                // Subscriber.Unsubscribe() handles both: removes group from subscriber.subscribed
-                // and calls group.RemoveSubscriber(connection).
-                var subscriber = player.net?.subscriber;
-                if (subscriber != null)
-                {
-                    subscriber.Unsubscribe(NetworkGroup);
-                }
-                else
-                {
-                    NetworkGroup.RemoveSubscriber(player.Connection);
-                }
+                // 3.17.6: unregister so they don't get future entity updates.
+                player.net.subscriber?.Unsubscribe(NetworkGroup);
 
                 // Send the client a message so they kill all client-side entities in the group.
                 ServerMgr.OnLeaveVisibility(player.Connection, NetworkGroup);
@@ -6846,6 +6901,9 @@ namespace BackpacksHarmony
             private bool _canGather;
             private bool _canRetrieve;
             private float _foodSpoilingMultiplier;
+            private bool _isInArcticBiome;
+            private float _arcticBiomeLastCheckTime;
+            private const float ArcticBiomeCacheDurationSeconds = 10f;
             private DynamicConfigFile _dataFile;
             private string _customPlayerDataPath;
             private BasePlayer _owner;
@@ -6879,10 +6937,7 @@ namespace BackpacksHarmony
                             }
                         }
 
-                        if (_owner == null)
-                        {
-                            _owner = BasePlayer.FindByID(OwnerId);
-                        }
+                        _owner ??= BasePlayer.FindByID(OwnerId);
                     }
 
                     return _owner;
@@ -6967,6 +7022,13 @@ namespace BackpacksHarmony
                         _foodSpoilingMultiplier = Plugin.permission.UserHasPermission(OwnerIdString, NoFoodSpoilingPermission) ? 0 : 1f;
                         SetFlag(Flag.FoodSpoilingCached, true);
                     }
+
+                    // 3.17.6: arctic biome / permission disable spoiling.
+                    if (_foodSpoilingMultiplier == 0)
+                        return 0;
+
+                    if (IsOwnerInArcticBiome())
+                        return 0;
 
                     return _foodSpoilingMultiplier;
                 }
@@ -7153,6 +7215,21 @@ namespace BackpacksHarmony
                 return _flags.HasFlag(flag);
             }
 
+            private bool IsOwnerInArcticBiome()
+            {
+                var currentTime = Time.time;
+                if (currentTime - _arcticBiomeLastCheckTime < ArcticBiomeCacheDurationSeconds)
+                    return _isInArcticBiome;
+
+                var player = Owner;
+                if (player == null)
+                    return _isInArcticBiome;
+
+                _isInArcticBiome = IsPositionInArcticBiome(player.transform.position);
+                _arcticBiomeLastCheckTime = currentTime;
+                return _isInArcticBiome;
+            }
+
             public void MarkDirty()
             {
                 SetFlag(Flag.Dirty, true);
@@ -7252,7 +7329,8 @@ namespace BackpacksHarmony
 
             public bool TryGatherItem(Item item, ref GatherModeStats stats)
             {
-                if (!CanGather)
+                // 3.17.6: confirm plugin still loaded in case anything goes wrong while unloading.
+                if (!CanGather || Plugin is not { IsLoaded: true })
                 {
                     GatherModeByPage.Clear();
                     SetFlag(Flag.Dirty, true);
@@ -7645,6 +7723,8 @@ namespace BackpacksHarmony
                 }
 
                 playerLoot.containers.Clear();
+                // 3.17.6: required for loot UI after game loot-source changes.
+                playerLoot.entitySource = itemContainer.entityOwner;
                 Interface.CallHook("OnLootEntity", looter, itemContainer.entityOwner);
                 playerLoot.AddContainer(itemContainer);
                 playerLoot.SendImmediate();
@@ -8308,7 +8388,7 @@ namespace BackpacksHarmony
 
             private StorageContainer SpawnStorageContainer(int capacity)
             {
-                var storageEntity = GameManager.server.CreateEntity(CoffinPrefab, new Vector3(0, -500, 0));
+                var storageEntity = GameManager.server.CreateEntity(CoffinPrefab, Plugin._backpackContainerPosition);
                 if (storageEntity == null)
                     return null;
 
@@ -8338,7 +8418,8 @@ namespace BackpacksHarmony
                     UnityEngine.Object.Destroy(collider);
                 }
 
-                containerEntity.CancelInvoke(containerEntity.DecayTick);
+                // 3.17.6: null decay instead of CancelInvoke(DecayTick) — DecayTick signature changed.
+                containerEntity.decay = null;
 
                 BackpackComponent.AddToBackpackStorage(Plugin, containerEntity, this);
 

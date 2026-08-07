@@ -92,14 +92,29 @@ namespace Oxide.Game.Rust.Cui
         }
 
         /// <summary>
-        /// Oxide plugins use custom console commands (UI_Kits) on CUI buttons. Under Harmony those
-        /// never leave the client. Bridge through cui.endtest with a KITS marker.
+        /// Clients only forward ConsoleGen commands. Custom Harmony commands on CUI buttons
+        /// never leave the client — rewrite them through cui.endtest with a marker.
         /// </summary>
         private static string RewriteHarmonyButtonCommands(string json)
         {
-            if (string.IsNullOrEmpty(json) || json.IndexOf("UI_Kits", StringComparison.Ordinal) < 0)
+            if (string.IsNullOrEmpty(json))
                 return json;
-            return json.Replace("\"command\":\"UI_Kits", "\"command\":\"cui.endtest KITS");
+
+            // Legacy Kits marker (shared RustCui copy).
+            if (json.IndexOf("UI_Kits", StringComparison.Ordinal) >= 0)
+                json = json.Replace("\"command\":\"UI_Kits", "\"command\":\"cui.endtest KITS");
+
+            // Backpacks: backpack.open / backpack.prev / backpack.ui.* etc.
+            if (json.IndexOf("\"command\":\"backpack.", StringComparison.Ordinal) >= 0)
+                json = json.Replace("\"command\":\"backpack.", "\"command\":\"cui.endtest BP backpack.");
+            if (json.IndexOf("\"command\": \"backpack.", StringComparison.Ordinal) >= 0)
+                json = json.Replace("\"command\": \"backpack.", "\"command\": \"cui.endtest BP backpack.");
+            if (json.IndexOf("\"command\":\"backpack\"", StringComparison.Ordinal) >= 0)
+                json = json.Replace("\"command\":\"backpack\"", "\"command\":\"cui.endtest BP backpack\"");
+            if (json.IndexOf("\"command\": \"backpack\"", StringComparison.Ordinal) >= 0)
+                json = json.Replace("\"command\": \"backpack\"", "\"command\": \"cui.endtest BP backpack\"");
+
+            return json;
         }
 
         public static bool DestroyUi(BasePlayer player, string elem)

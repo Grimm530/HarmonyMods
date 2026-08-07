@@ -40,6 +40,8 @@ Chat (from config `Commands`, this server uses `s` / `shops`):
 - `/shop.setvm`, `/shop.setnpc` — admin NPC/VM bind
 - `/shop.install` — installer UI
 
+Undotted chat aliases (`s`, `shops`, `shop`) are registered as **unreplicated** server console commands. Player chat (`/s`) is handled by `ChatSayBridge` on `chat.say`. They must **not** be added to `Index.Server.Replicated` — that causes client `Replicated convar not found` spam on join. Dotted admin commands stay unreplicated.
+
 Console: `UI_Shop`, `shop.item`, `shop.wipe`, `shop.reset`, `shop.manage`, `shop.discordtest`, `shop.horse`, …
 
 ## Horse spawn / ownership limit

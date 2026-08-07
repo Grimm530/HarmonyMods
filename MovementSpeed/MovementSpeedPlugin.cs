@@ -163,6 +163,7 @@ namespace Oxide.Plugins
 
             foreach (var player in BasePlayer.activePlayerList)
 			{
+                DisableStaleRunBehaviours(player);
 				SetupSpeedBoosts(player);
             }
 
@@ -430,14 +431,56 @@ namespace Oxide.Plugins
 
         void Unload()
         {
+            // Do not Destroy RunBehaviour on unload: a pre-update RunBehaviour.OnDestroy still
+            // calls the removed ResetAntiHack(int, speed, fly) overload and throws MissingMethodException
+            // (Unity defers OnDestroy until after the replacement mod has already loaded).
             foreach (var player in BasePlayer.activePlayerList)
-                RemoveSpeedComponent(player.userID, false);
+                DetachSpeedComponentsSafe(player);
+
+            foreach (var sleeping in BasePlayer.sleepingPlayerList)
+                DetachSpeedComponentsSafe(sleeping);
 
             cmd.RemoveChatCommand(config.commands.toggleRunCMD, this);
             cmd.RemoveChatCommand(config.commands.toggleSwimCMD, this);
 
             Components.Clear();
             PluginMods.Clear();
+        }
+
+        /// <summary>
+        /// Disables and strips MovementSpeed behaviours without invoking fragile OnDestroy antihack resets.
+        /// </summary>
+        static void DetachSpeedComponentsSafe(BasePlayer player)
+        {
+            if (player == null || player.IsDestroyed) return;
+            try
+            {
+                player.ApplyInheritedVelocity(Vector3.zero);
+                player.PauseSpeedHackDetection(0.01f);
+            }
+            catch { }
+
+            MonoBehaviour[] behaviours;
+            try { behaviours = player.GetComponents<MonoBehaviour>(); }
+            catch { return; }
+
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                var mb = behaviours[i];
+                if (mb == null) continue;
+                if (mb.GetType().Name != "RunBehaviour" && mb.name != "MovementSpeedMod") continue;
+                try
+                {
+                    if (mb is RunBehaviour rb)
+                        rb.SuppressAntiHackReset = true;
+                    mb.enabled = false;
+                    // DestroyImmediate runs OnDestroy now (with suppress flag for current assembly).
+                    // Stale foreign RunBehaviour types: DestroyImmediate still hits old OnDestroy — skip Destroy for those.
+                    if (mb is RunBehaviour)
+                        UnityEngine.Object.DestroyImmediate(mb);
+                }
+                catch { }
+            }
         }
 
         #endregion
@@ -449,17 +492,34 @@ namespace Oxide.Plugins
 		void AddSpeedComponent(BasePlayer player, float swim, float run)
 		{
             Puts($"Setting up behaviour for {player.displayName} [{player.userID}] - Run: {run} - Swim: {swim}");
-			if (!Components.TryGetValue(player.userID, out var component))
+            DisableStaleRunBehaviours(player);
+			if (!Components.TryGetValue(player.userID, out var component) || component == null)
             {
                 component = player.gameObject.AddComponent<RunBehaviour>();
                 component.name = "MovementSpeedMod";
                 component.Interval = config.BehaviourInterval;
                 if (InSpeedLimitZone(player)) component.PauseSpeed(true);
-                Components.Add(player.userID, component);
+                Components[player.userID] = component;
             }
             component.SetRunVelocity(run);
 
             component.SetSwimVelocity(swim);
+        }
+
+        /// <summary>Disable leftover RunBehaviour instances from a previously loaded MovementSpeed assembly.</summary>
+        static void DisableStaleRunBehaviours(BasePlayer player)
+        {
+            if (player == null) return;
+            MonoBehaviour[] behaviours;
+            try { behaviours = player.GetComponents<MonoBehaviour>(); }
+            catch { return; }
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                var mb = behaviours[i];
+                if (mb == null || mb is RunBehaviour) continue;
+                if (mb.GetType().Name != "RunBehaviour") continue;
+                try { mb.enabled = false; } catch { }
+            }
         }
 
         bool InSpeedLimitZone(BasePlayer player)
@@ -497,7 +557,8 @@ namespace Oxide.Plugins
 
         void SetRunspeed(BasePlayer player, float mod)
         {
-            if (!Components.TryGetValue(player.userID, out var component))
+            DisableStaleRunBehaviours(player);
+            if (!Components.TryGetValue(player.userID, out var component) || component == null)
             {
                 component = player.gameObject.AddComponent<RunBehaviour>();
                 component.name = "MovementSpeedMod";
@@ -514,7 +575,8 @@ namespace Oxide.Plugins
 
         void SetSwimspeed(BasePlayer player, float mod)
         {
-            if (!Components.TryGetValue(player.userID, out var component))
+            DisableStaleRunBehaviours(player);
+            if (!Components.TryGetValue(player.userID, out var component) || component == null)
             {
                 component = player.gameObject.AddComponent<RunBehaviour>();
                 component.name = "MovementSpeedMod";
@@ -533,7 +595,11 @@ namespace Oxide.Plugins
         void RemoveSpeedComponent(ulong id)
 		{
 			if (!Components.TryGetValue(id, out var component)) return;
-			GameObject.Destroy(component);
+            if (component != null)
+            {
+                component.SuppressAntiHackReset = false;
+                GameObject.Destroy(component);
+            }
 			Components.Remove(id);
 		}
 
@@ -622,6 +688,9 @@ namespace Oxide.Plugins
 
             public bool allowWounded;
 
+            /// <summary>Set before Destroy on unload so OnDestroy skips antihack reset.</summary>
+            public bool SuppressAntiHackReset;
+
             public void PauseSpeed(bool pause)
             {
                 Paused = pause;
@@ -654,7 +723,7 @@ namespace Oxide.Plugins
                 player = GetComponent<BasePlayer>();
 				NextUpdate = Time.time + Interval;
 				player.PauseSpeedHackDetection(float.MaxValue);
-                player.ResetAntiHack(player.ActivePlayerInd, AntiHack.PlayerSpeedhackStates, AntiHack.PlayerFlyhackStates);
+                ClearPlayerAntiHackState(player);
                 runEnabled = true;
                 swimEnabled = true;
                 allowWounded = Instance.config.Allow_Wounded;
@@ -732,11 +801,42 @@ namespace Oxide.Plugins
 
             void OnDestroy()
 			{
-                player.ResetAntiHack(player.ActivePlayerInd, AntiHack.PlayerSpeedhackStates, AntiHack.PlayerFlyhackStates);
-                player.PauseSpeedHackDetection(0.01f);
-                player.ApplyInheritedVelocity(Vector3.zero);
+                if (!SuppressAntiHackReset)
+                    ClearPlayerAntiHackState(player);
+                if (player != null)
+                {
+                    player.PauseSpeedHackDetection(0.01f);
+                    player.ApplyInheritedVelocity(Vector3.zero);
+                }
             }
 		}
+
+        /// <summary>
+        /// Clears antihack buckets without calling BasePlayer.ResetAntiHack (signature changed across updates;
+        /// a compile-time call to a removed overload becomes an uncatchable MissingMethodException at JIT).
+        /// </summary>
+        private static void ClearPlayerAntiHackState(BasePlayer player)
+        {
+            if (player == null || player.ActivePlayerInd < 0)
+                return;
+
+            try
+            {
+                int ind = player.ActivePlayerInd;
+                if (AntiHack.PlayerStates.IsCreated)
+                    AntiHack.PlayerStates[ind] = default;
+                if (AntiHack.PlayerNoclipStates.IsCreated)
+                    AntiHack.PlayerNoclipStates[ind] = default;
+                if (AntiHack.PlayerSpeedhackStates.IsCreated)
+                    AntiHack.PlayerSpeedhackStates[ind] = default;
+                if (AntiHack.PlayerFlyhackStates.IsCreated)
+                    AntiHack.PlayerFlyhackStates[ind] = default;
+                player.rpcHistory?.Clear();
+            }
+            catch
+            {
+            }
+        }
 
         #endregion
 

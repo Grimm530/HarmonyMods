@@ -54,6 +54,9 @@
     <Reference Include="Rust.Global">
       <HintPath>$(RustManaged)\Rust.Global.dll</HintPath>
     </Reference>
+    <Reference Include="Rust.World">
+      <HintPath>$(RustManaged)\Rust.World.dll</HintPath>
+    </Reference>
     <Reference Include="Rust.Data">
       <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
     </Reference>

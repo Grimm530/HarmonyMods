@@ -7,13 +7,18 @@ Oxide-free Harmony port of **Economics Extended 3.10.4** (SQLite balances, RP tr
 | Kind | Path |
 |------|------|
 | Config | `HarmonyConfig/Economics.json` |
-| Default data | `HarmonyData/Economics/` |
-| Balance JSON (this server) | `C:\!DataPersistence\oxide\data\Economics\Economics.json` (`Balance storage mode` = `File`) |
-| SQLite DB (optional) | `C:\!DataPersistence\economics_balances.db` (only when mode = `Sqlite`) |
-| Logs | `HarmonyData/Economics/logs/` |
+| Local runtime data / logs | `HarmonyData/Economics/` |
+| Shared balance + RP JSON | `C:\!DataPersistence\harmony\Economics\` (`Balance storage mode` = `File`) |
+| SQLite DB (optional) | `C:\!DataPersistence\harmony\Economics\economics_balances.db` (only when mode = `Sqlite`) |
 
-**Import from Oxide:** copy `oxide/data/Economics.json` (`{ "Balances": { ... } }`) to  
-`C:\!DataPersistence\oxide\data\Economics\Economics.json`. On load, Economics imports Balances and rewrites the file to the Extended `Players` JSON shape (keeps LastSeen for purge).
+Shared files under that folder:
+
+- `Economics.json` — player balances (`Players` map)
+- `Economics_RPTracking.json` — RP acquisition / daily RP monitoring
+- `economics_balances.db` (+ `-wal`/`-shm`) — optional Sqlite mode
+
+**Import / merge tool:** `.cursor/HarmonyMods/Economics/tools/merge_economics_to_harmony.py`  
+Merges legacy `oxide/data/Economics.json`, old `C:\!DataPersistence\oxide\data\Economics\`, and the root `economics_balances.db` into the harmony folder. Shared JSON wins for existing steamIds; sqlite/legacy only add missing accounts.
 
 ## Dependencies
 

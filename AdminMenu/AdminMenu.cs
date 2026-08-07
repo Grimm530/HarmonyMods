@@ -336,6 +336,31 @@ namespace AdminMenuHarmony
 		    string result = name.StripTags();
 		    return string.IsNullOrEmpty(result) ? name : result;
 	    }
+
+	    /// <summary>
+	    /// Oxide GetUsersInGroup format is "steamid (Nickname)". 0Permissions may return a bare id.
+	    /// Never assume a fixed steamid length (Substring(18) crashes on bare 17-char ids).
+	    /// </summary>
+	    private static string GetPermissionUserDisplayName(string userEntry)
+	    {
+		    if (string.IsNullOrEmpty(userEntry))
+			    return string.Empty;
+
+		    int space = userEntry.IndexOf(' ');
+		    if (space >= 0 && space + 1 < userEntry.Length)
+			    return userEntry.Substring(space + 1).TrimStart('(').TrimEnd(')');
+
+		    return userEntry;
+	    }
+
+	    private static string GetPermissionUserId(string userEntry)
+	    {
+		    if (string.IsNullOrEmpty(userEntry))
+			    return string.Empty;
+
+		    int space = userEntry.IndexOf(' ');
+		    return space > 0 ? userEntry.Substring(0, space) : userEntry;
+	    }
 	    #endregion
 	    
 	    #region Types
@@ -3448,14 +3473,14 @@ namespace AdminMenuHarmony
 						        .WithChildren(template =>
 						        {
 							        TextContainer.Create(template, UIAnchor.FullStretch, Offset.zero)
-								        .WithText(t.Substring(18).TrimStart('(').TrimEnd(')'))
+								        .WithText(GetPermissionUserDisplayName(t))
 								        .WithAlignment(TextAnchor.MiddleCenter);
 
 							        ChaosPrefab.TextButton(template, UIAnchor.CenterRight, new Offset(-45f, -10f, -5f, 10f),
 									        GetString("Button.Remove", uiUser.Player), m_GroupDeleteButton)
 								        .WithCallback(m_CallbackHandler, arg =>
 									        {
-										        string id = t.Split(' ')?[0];
+										        string id = GetPermissionUserId(t);
 										        if (!string.IsNullOrEmpty(id))
 										        {
 											        LogToDiscord(uiUser.Player, $"Removed {t} from usergroup {uiUser.PermissionTarget}");
@@ -3481,7 +3506,7 @@ namespace AdminMenuHarmony
 						        {
 							        TextContainer.Create(template, UIAnchor.FullStretch, new Offset(5f, 5f, -5f, -5f))
 								        .WithColor(m_RustHeaderStyle.FontColor)
-								        .WithText(t.Substring(18).TrimStart('(').TrimEnd(')'))
+								        .WithText(GetPermissionUserDisplayName(t))
 								        .WithAlignment(TextAnchor.MiddleLeft);
 
 							        ImageContainer.Create(template, UIAnchor.RightStretch, new Offset(-50f, 4f, -4f, -4f))
@@ -3498,7 +3523,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        string id = t.Split(' ')?[0];
+												        string id = GetPermissionUserId(t);
 												        if (!string.IsNullOrEmpty(id))
 												        {
 													        LogToDiscord(uiUser.Player, $"Removed {t} from usergroup {uiUser.PermissionTarget}");

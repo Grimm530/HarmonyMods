@@ -45,12 +45,12 @@ public static class IoFeature
 
     public static bool IsMapIo(BaseNetworkable entity)
     {
-        return entity != null && MapIoIds.Contains(entity.net.ID);
+        return entity != null && entity.net != null && MapIoIds.Contains(entity.net.ID);
     }
 
     public static bool IsUnlimitedTurret(BaseNetworkable entity)
     {
-        return entity != null && UnlimitedTurrets.Contains(entity.net.ID);
+        return entity != null && entity.net != null && UnlimitedTurrets.Contains(entity.net.ID);
     }
 
     public static void ResetConnections()

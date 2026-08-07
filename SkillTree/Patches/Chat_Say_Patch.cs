@@ -1,4 +1,6 @@
-// Patch_Chat_Say.cs -- Routes chat commands starting with / to SkillTreeMod.OnChatCommand.
+// Routes chat.say through the shared ChatSayBridge so Shop (/s) and SkillTree (/st)
+// both work regardless of which mod's Chat.say prefix runs first.
+using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
 
@@ -18,12 +20,9 @@ namespace SkillTreeHarmony.Patches
             var player = arg.Player();
             if (player == null || !player.IsConnected) return true;
 
-            var mod = SkillTreeMod.Instance;
-            if (mod == null) return true;
-
             try
             {
-                if (mod.OnChatCommand(player, message))
+                if (ChatSayBridge.Dispatch(player, message))
                     return false; // consumed — do not forward to default chat
             }
             catch (System.Exception ex)

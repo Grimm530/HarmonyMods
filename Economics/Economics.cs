@@ -86,8 +86,7 @@ namespace EconomicsHarmony
             public int PeriodicReportIntervalHours = 6;
 
             /// <summary>
-            /// File = oxide/data/Economics/Economics.json via Oxide data directory (junction data root for shared paths across zones),
-            /// or the same two filenames under "Custom economics data directory" when that setting is set.
+            /// File = Economics.json under the custom/harmony data directory (default C:\!DataPersistence\harmony\Economics).
             /// Sqlite = Facepunch.Sqlite (RustDedicated_Data/Managed/Facepunch.Sqlite.dll + game sqlite3).
             /// With Sqlite: each connect reloads from the DB; each disconnect upserts so the next zone sees the latest balance.
             /// RP tracking: Economics_RPTracking.json next to Economics.json.
@@ -95,19 +94,19 @@ namespace EconomicsHarmony
             [JsonProperty("Balance storage mode (File | Sqlite)")]
             public string BalanceStorageMode = "File";
 
-            /// <summary>Absolute path recommended, same path on all server instances (e.g. C:/rust/shared/economics_balances.db).</summary>
+            /// <summary>Absolute path recommended, same path on all server instances.</summary>
             [JsonProperty("SQLite database file path")]
-            public string BalanceSqlitePath = @"C:\!DataPersistence\economics_balances.db";
+            public string BalanceSqlitePath = @"C:\!DataPersistence\harmony\Economics\economics_balances.db";
 
             [JsonProperty("Enable Data Persistence Debug")]
             public bool EnableDataPersistenceDebug = false;
 
             /// <summary>
-            /// When set, balance and RP tracking JSON are read/written under this folder as Economics.json and
-            /// Economics_RPTracking.json (same layout as oxide/data/Economics/). Empty keeps default Oxide data files.
+            /// Balance and RP tracking JSON live under this folder as Economics.json and Economics_RPTracking.json.
+            /// Empty uses the Harmony default: C:\!DataPersistence\harmony\Economics.
             /// </summary>
-            [JsonProperty("Custom economics data directory (absolute path, empty = default oxide/data/Economics)")]
-            public string CustomEconomicsDataDirectory = "";
+            [JsonProperty("Custom economics data directory (absolute path, empty = default C:/!DataPersistence/harmony/Economics)")]
+            public string CustomEconomicsDataDirectory = @"C:\!DataPersistence\harmony\Economics";
 
             public class NotificationThrottlingSettings
             {
@@ -161,9 +160,7 @@ namespace EconomicsHarmony
 
         #region Stored Data
 
-        private DynamicConfigFile data;
         private StoredData storedData;
-        private DynamicConfigFile rpTrackingData;
         private RPTrackingData storedRPTrackingData;
         private bool changed;
         private readonly HashSet<string> _dirtyPlayerIds = new HashSet<string>();
@@ -171,15 +168,17 @@ namespace EconomicsHarmony
         private string _balanceJsonPath;
         private string _rpTrackingJsonPath;
 
-        private bool UsesCustomEconomicsDataDirectory =>
-            !string.IsNullOrWhiteSpace(config?.CustomEconomicsDataDirectory);
+        private const string DefaultHarmonyEconomicsDirectory = @"C:\!DataPersistence\harmony\Economics";
+        private const string LegacyOxideSharedEconomicsDirectory = @"C:\!DataPersistence\oxide\data\Economics";
+        private const string LegacySqlitePath = @"C:\!DataPersistence\economics_balances.db";
 
         private string CustomEconomicsDataDirectoryFull =>
-            UsesCustomEconomicsDataDirectory
-                ? Path.GetFullPath(config.CustomEconomicsDataDirectory.Trim())
-                : null;
+            Path.GetFullPath(
+                !string.IsNullOrWhiteSpace(config?.CustomEconomicsDataDirectory)
+                    ? config.CustomEconomicsDataDirectory.Trim()
+                    : DefaultHarmonyEconomicsDirectory);
 
-        /// <summary>Oxide keys under oxide/data/Economics/ (e.g. shared junction to C:\!DataPersistence\oxide\data).</summary>
+        /// <summary>Legacy Oxide data keys (migration source only).</summary>
         private string BalanceDataKey => $"{Name}/{Name}";
 
         private string RpTrackingDataKey => $"{Name}/{Name}_RPTracking";
@@ -463,95 +462,140 @@ CREATE TABLE IF NOT EXISTS {Table} (
             changed = true;
         }
 
-        /// <summary>One-time copy from legacy oxide/data/Economics.json to oxide/data/Economics/Economics.json or custom directory.</summary>
+        /// <summary>
+        /// One-time copy into the Harmony data directory from legacy Oxide paths
+        /// (flat oxide/data/Economics.json, oxide/data/Economics/*, and C:\!DataPersistence\oxide\data\Economics).
+        /// Does not overwrite an existing target file.
+        /// </summary>
         private void MigrateLegacyEconomicsDataFilesIfNeeded()
         {
-            if (UsesCustomEconomicsDataDirectory)
+            var root = CustomEconomicsDataDirectoryFull;
+            if (!string.IsNullOrEmpty(root))
+                Directory.CreateDirectory(root);
+
+            var targetBalancePath = Path.Combine(root, $"{Name}.json");
+            var targetRpPath = Path.Combine(root, $"{Name}_RPTracking.json");
+
+            TryCopyMissingDataFile(targetBalancePath, FindLegacyBalanceSources(), "balances");
+            TryCopyMissingDataFile(targetRpPath, FindLegacyRpTrackingSources(), "RP tracking");
+
+            // Relocate legacy root SQLite DB beside harmony Economics data when the configured path is empty.
+            try
             {
-                var root = CustomEconomicsDataDirectoryFull;
-                if (!string.IsNullOrEmpty(root))
-                    Directory.CreateDirectory(root);
+                string sqlitePath = config?.BalanceSqlitePath;
+                if (!string.IsNullOrWhiteSpace(sqlitePath))
+                {
+                    string destDb = Path.GetFullPath(sqlitePath.Trim());
+                    string legacyDb = Path.GetFullPath(LegacySqlitePath);
+                    if (!File.Exists(destDb) && File.Exists(legacyDb) &&
+                        !string.Equals(destDb, legacyDb, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string destDir = Path.GetDirectoryName(destDb);
+                        if (!string.IsNullOrEmpty(destDir))
+                            Directory.CreateDirectory(destDir);
+                        File.Copy(legacyDb, destDb);
+                        foreach (var suffix in new[] { "-wal", "-shm" })
+                        {
+                            string side = legacyDb + suffix;
+                            if (File.Exists(side))
+                                File.Copy(side, destDb + suffix, overwrite: false);
+                        }
+                        Puts($"Economics: copied legacy SQLite DB to {destDb}.");
+                    }
+                }
             }
-
-            var nestedBalance = Interface.Oxide.DataFileSystem.GetFile(BalanceDataKey);
-            var targetBalancePath = UsesCustomEconomicsDataDirectory
-                ? Path.Combine(CustomEconomicsDataDirectoryFull, $"{Name}.json")
-                : nestedBalance.Filename;
-
-            var oldBalance = Interface.Oxide.DataFileSystem.GetFile(Name);
-            if (oldBalance.Exists() && !File.Exists(targetBalancePath))
+            catch (Exception ex)
             {
-                string dir = Path.GetDirectoryName(targetBalancePath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-
-                File.Copy(oldBalance.Filename, targetBalancePath);
-                Puts(UsesCustomEconomicsDataDirectory
-                    ? "Economics: migrated balances from legacy flat file into custom economics directory (Economics.json)."
-                    : "Economics: migrated balances to oxide/data/Economics/Economics.json (legacy flat file left in place; you may delete it after verifying).");
+                PrintWarning($"Economics: SQLite relocate skipped: {ex.Message}");
             }
-            else if (UsesCustomEconomicsDataDirectory && nestedBalance.Exists() && !File.Exists(targetBalancePath))
-            {
-                string dir = Path.GetDirectoryName(targetBalancePath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
+        }
 
-                File.Copy(nestedBalance.Filename, targetBalancePath);
-                Puts("Economics: copied balances from default oxide/data/Economics/Economics.json to custom economics directory.");
+        private IEnumerable<string> FindLegacyBalanceSources()
+        {
+            var paths = new List<string>();
+            try
+            {
+                var oldBalance = Interface.Oxide.DataFileSystem.GetFile(Name);
+                if (oldBalance.Exists())
+                    paths.Add(oldBalance.Filename);
             }
+            catch { /* Harmony stub may not mirror Oxide paths */ }
 
-            var nestedRp = Interface.Oxide.DataFileSystem.GetFile(RpTrackingDataKey);
-            var targetRpPath = UsesCustomEconomicsDataDirectory
-                ? Path.Combine(CustomEconomicsDataDirectoryFull, $"{Name}_RPTracking.json")
-                : nestedRp.Filename;
-
-            var oldRp = Interface.Oxide.DataFileSystem.GetFile($"{Name}_RPTracking");
-            if (oldRp.Exists() && !File.Exists(targetRpPath))
+            try
             {
-                string dir = Path.GetDirectoryName(targetRpPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
-
-                File.Copy(oldRp.Filename, targetRpPath);
-                Puts(UsesCustomEconomicsDataDirectory
-                    ? "Economics: migrated RP tracking into custom economics directory (Economics_RPTracking.json)."
-                    : "Economics: migrated RP tracking to oxide/data/Economics/Economics_RPTracking.json.");
+                var nestedBalance = Interface.Oxide.DataFileSystem.GetFile(BalanceDataKey);
+                if (nestedBalance.Exists())
+                    paths.Add(nestedBalance.Filename);
             }
-            else if (UsesCustomEconomicsDataDirectory && nestedRp.Exists() && !File.Exists(targetRpPath))
-            {
-                string dir = Path.GetDirectoryName(targetRpPath);
-                if (!string.IsNullOrEmpty(dir))
-                    Directory.CreateDirectory(dir);
+            catch { }
 
-                File.Copy(nestedRp.Filename, targetRpPath);
-                Puts("Economics: copied RP tracking from default oxide path to custom economics directory.");
+            paths.Add(Path.Combine(LegacyOxideSharedEconomicsDirectory, $"{Name}.json"));
+            return paths;
+        }
+
+        private IEnumerable<string> FindLegacyRpTrackingSources()
+        {
+            var paths = new List<string>();
+            try
+            {
+                var oldRp = Interface.Oxide.DataFileSystem.GetFile($"{Name}_RPTracking");
+                if (oldRp.Exists())
+                    paths.Add(oldRp.Filename);
+            }
+            catch { }
+
+            try
+            {
+                var nestedRp = Interface.Oxide.DataFileSystem.GetFile(RpTrackingDataKey);
+                if (nestedRp.Exists())
+                    paths.Add(nestedRp.Filename);
+            }
+            catch { }
+
+            paths.Add(Path.Combine(LegacyOxideSharedEconomicsDirectory, $"{Name}_RPTracking.json"));
+            return paths;
+        }
+
+        private void TryCopyMissingDataFile(string targetPath, IEnumerable<string> sources, string label)
+        {
+            if (string.IsNullOrEmpty(targetPath) || File.Exists(targetPath) || sources == null)
+                return;
+
+            foreach (var src in sources)
+            {
+                if (string.IsNullOrEmpty(src) || !File.Exists(src))
+                    continue;
+                if (string.Equals(Path.GetFullPath(src), Path.GetFullPath(targetPath), StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                try
+                {
+                    string dir = Path.GetDirectoryName(targetPath);
+                    if (!string.IsNullOrEmpty(dir))
+                        Directory.CreateDirectory(dir);
+                    File.Copy(src, targetPath);
+                    Puts($"Economics: migrated {label} from {src} -> {targetPath}.");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    PrintWarning($"Economics: failed copying {label} from {src}: {ex.Message}");
+                }
             }
         }
 
         private void InitializeEconomicsDataPaths()
         {
-            if (UsesCustomEconomicsDataDirectory)
-            {
-                var root = CustomEconomicsDataDirectoryFull;
-                if (!string.IsNullOrEmpty(root))
-                    Directory.CreateDirectory(root);
+            var root = CustomEconomicsDataDirectoryFull;
+            if (!string.IsNullOrEmpty(root))
+                Directory.CreateDirectory(root);
 
-                _balanceJsonPath = Path.GetFullPath(Path.Combine(root, $"{Name}.json"));
-                _rpTrackingJsonPath = Path.GetFullPath(Path.Combine(root, $"{Name}_RPTracking.json"));
-                data = null;
-                rpTrackingData = null;
-            }
-            else
-            {
-                data = Interface.Oxide.DataFileSystem.GetFile(BalanceDataKey);
-                rpTrackingData = Interface.Oxide.DataFileSystem.GetFile(RpTrackingDataKey);
-                _balanceJsonPath = Path.GetFullPath(data.Filename);
-                _rpTrackingJsonPath = Path.GetFullPath(rpTrackingData.Filename);
-            }
+            _balanceJsonPath = Path.GetFullPath(Path.Combine(root, $"{Name}.json"));
+            _rpTrackingJsonPath = Path.GetFullPath(Path.Combine(root, $"{Name}_RPTracking.json"));
 
             if (config.EnableDataPersistenceDebug)
             {
-                DataPersistenceDebug($"Uses custom economics directory: {UsesCustomEconomicsDataDirectory}");
+                DataPersistenceDebug($"Economics data directory: {root}");
                 DataPersistenceDebug($"Balance JSON: {_balanceJsonPath} (exists: {File.Exists(_balanceJsonPath)})");
                 DataPersistenceDebug($"RP tracking JSON: {_rpTrackingJsonPath} (exists: {File.Exists(_rpTrackingJsonPath)})");
             }

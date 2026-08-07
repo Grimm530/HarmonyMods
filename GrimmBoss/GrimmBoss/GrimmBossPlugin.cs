@@ -6197,8 +6197,9 @@ namespace Oxide.Plugins
                 }
                 foreach (string name in Interface.Oxide.DataFileSystem.GetFiles($"{dataRoot}/{DataSubCustomMap}/"))
                 {
-                    string fileName = name.Split('/').Last().Split('.').First();
-                    if (loadedCustomMapStems.Contains(fileName)) continue;
+                    // GetFiles returns full OS paths (Windows uses '\'); Path.GetFileNameWithoutExtension is required.
+                    string fileName = Path.GetFileNameWithoutExtension(name);
+                    if (string.IsNullOrEmpty(fileName) || loadedCustomMapStems.Contains(fileName)) continue;
                     CustomMapConfig config = Interface.Oxide.DataFileSystem.ReadObject<CustomMapConfig>($"{dataRoot}/{DataSubCustomMap}/{fileName}");
                     if (config == null)
                     {

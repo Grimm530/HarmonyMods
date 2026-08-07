@@ -164,17 +164,20 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    // ---- Explosive throw -------------------------------------------------
+    // ---- Explosive throw / drop ------------------------------------------
+    // Both DoThrowImpl and DoDrop call SetUpThrownWeapon(ent) after Spawn.
+    // Old ServerThrow patch passed null TimedExplosive and NRE'd in HandleExplosionRadius.
 
-    [HarmonyPatch(typeof(ThrownWeapon), "ServerThrow", new[] { typeof(Vector3) })]
-    public static class ThrownWeapon_ServerThrow_Patch
+    [HarmonyPatch(typeof(ThrownWeapon), "SetUpThrownWeapon")]
+    public static class ThrownWeapon_SetUpThrownWeapon_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(ThrownWeapon __instance)
+        public static void Postfix(ThrownWeapon __instance, BaseEntity ent)
         {
-            var player = __instance?.GetOwnerPlayer();
+            if (__instance == null || ent is not TimedExplosive timed) return;
+            var player = __instance.GetOwnerPlayer();
             if (player == null) return;
-            try { STPlugin.Dispatch_OnExplosiveThrown(player, null, __instance); }
+            try { STPlugin.Dispatch_OnExplosiveThrown(player, timed, __instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnExplosiveThrown: " + ex.Message); }
         }
     }

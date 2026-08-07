@@ -678,12 +678,21 @@ namespace PermissionsHarmony
         public UserData GetUserData(string playerId) =>
             _users.TryGetValue(playerId, out var u) ? u : null;
 
+        /// <summary>
+        /// Oxide-compatible: returns "steamid (LastSeenNickname)" entries so UI consumers
+        /// (e.g. AdminMenu Substring/Split parsing) match stock Oxide.Permission.
+        /// </summary>
         public IEnumerable<string> GetUsersInGroup(string groupName)
         {
             foreach (var kv in _users)
             {
                 if (kv.Value.Groups.Contains(groupName))
-                    yield return kv.Key;
+                {
+                    string nick = string.IsNullOrEmpty(kv.Value.LastSeenNickname)
+                        ? "Unnamed"
+                        : kv.Value.LastSeenNickname;
+                    yield return $"{kv.Key} ({nick})";
+                }
             }
         }
 
