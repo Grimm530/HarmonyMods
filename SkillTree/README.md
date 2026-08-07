@@ -1,6 +1,6 @@
 # SkillTree Harmony Mod
 
-Port of SkillTree 1.7.122 (imthenewguy / Grimm530) to the Oxide-free Harmony-first stack.
+Port of SkillTree 1.7.14 (imthenewguy / Grimm530) to the Oxide-free Harmony-first stack.
 
 ## Identity
 
@@ -43,9 +43,7 @@ Facepunch loads `HarmonyMods/*.dll` alphabetically (filesystem order). Typical o
 **Do not rely on a manual load sequence.** SkillTree binds via ready callbacks:
 
 - `Permissions_ReadyCallbacks` → re-register skilltree.* permissions
-- `MovementSpeed_ReadyCallbacks` → rebind RoadRunner / swim `PluginReference`
-
-RoadRunner needs `MovementSpeed.dll` present; if it is missing, those buffs soft-fail (null checks).
+- `MovementSpeed_ReadyCallbacks` → re-resolve optional plugin refs (no RoadRunner in 1.7.14)
 
 ## Commands
 
@@ -83,9 +81,18 @@ SkillTree.dll
 
 ImageLibrary, Economics, ServerRewards, RaidableBases, ZoneManager, and other optional plugins are resolved via AppDomain at runtime. If absent, SkillTree degrades gracefully (no images, no economy respec, etc.).
 
+## 1.7.14 highlights (vs 1.7.12 / prior Harmony 1.7.122 port)
+
+- Prestige History UI; Cooking coop skills (Clever Incubator / Soft Touch / Factory Farmer)
+- Underwater: Frugal Wrighter, Heated Shot, Wind Catcher
+- Raiding Strategist (siege damage); Harvesting Replenish; Team Friendly Fire
+- Recycler buffs via nested `GetRecyclerStats` Harmony postfix (August wipe API)
+- Heli XP via `OnPatrolHelicopterTakeDamage` (wired in Hurt patch + Dispatch)
+- Preserved port adaptations: `CustomSkillTreeDataDirectory`, OnFuelConsume NRE fix, scoreboard `TryParse`, `WoundingTick` medkit chance
+
 ## Known Compile Risks
 
 - `Patch_MiscGameHooks.cs`: Several game methods (`AntiHack.ReportViolation`, `ResearchTable.ResearchPrice`, `ScientistNPC.CanTargetEntity`, `BaseMelee.ServerUse`) use internal method names that may differ across Rust updates. If any patch class fails to compile, comment it out and add to a `[HarmonyPatch]` manually or remove from `.csproj`.
 - `Patch_ItemCrafter.cs`: `ItemCrafter.CraftItem` signature varies across Rust builds. The patch uses parameter filtering; if the parameter count differs, the patch will not apply (non-fatal).
 - `Patch_MiscGameHooks.cs` `BaseNetworkable_Spawned_Patch`: May be high-frequency. Monitor performance on busy servers.
-- Fish hooks (`OnFishCatch`, `CanCatchFish`, `OnFishingStopped`) are not patched via game methods — SkillTree's own internal `[HarmonyPatch(BaseFishingRod, "Server_RequestCast")]` handles these directly from within the plugin partial class.
+- Fish hooks (`OnFishCatch`, `CanCatchFish`, `OnFishingStopped`) are not patched via game methods — SkillTree's own internal `[HarmonyPatch(BaseFishingRod, "Server_RequestCast")]` / `FishLookup.GetFish` handles these from within the plugin partial class.

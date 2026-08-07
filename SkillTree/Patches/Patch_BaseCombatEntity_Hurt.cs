@@ -12,6 +12,10 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
         {
+            // 1.7.14: heli XP tracking is a separate hook (not part of OnEntityTakeDamage).
+            if (__instance is PatrolHelicopter heli)
+                STPlugin.Dispatch_OnPatrolHelicopterTakeDamage(heli, info);
+
             object result = STPlugin.Dispatch_OnEntityTakeDamage(__instance, info);
             return result == null; // null -> allow; non-null -> block
         }

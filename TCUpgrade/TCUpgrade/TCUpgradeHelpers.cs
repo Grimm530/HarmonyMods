@@ -173,7 +173,7 @@ public static class TCUpgradeHelpers
 			{
 				continue;
 			}
-			int have = inventory.GetAmount(item.itemid, onlyUsableAmounts: false);
+			int have = inventory.GetAmount(item.itemid, onlyUsableAmounts: false, redirectAllowed: false);
 			int need = (int)item.amount;
 			if (have < need)
 			{

@@ -1948,7 +1948,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		foreach (ItemAmount item in list)
 		{
 			int num4 = (int)(item.amount * costMult);
-			if (cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false) < num4)
+			if (cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false, redirectAllowed: false) < num4)
 			{
 				TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesRepairDetail", TCUpgradeHelpers.GetMissingResources(list, cup.inventory)), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 				GetOrCreateConfig(cup).Repair = false;
@@ -2024,7 +2024,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 	{
 		foreach (ItemAmount item in block.blockDefinition.GetGrade(grade, 0uL).CostToBuild())
 		{
-			if ((float)cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false) < item.amount)
+			if ((float)cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false, redirectAllowed: false) < item.amount)
 			{
 				return false;
 			}
@@ -2765,7 +2765,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		if (!HasPermission(player.UserIDString, "TCUpgrade.wallpaper.nocost") && !CanWallpaper(player, cup))
 		{
 			orCreateConfig.Work = false;
-			int haveCloth = cup.inventory.GetAmount(ClothItemId, onlyUsableAmounts: false);
+			int haveCloth = cup.inventory.GetAmount(ClothItemId, onlyUsableAmounts: false, redirectAllowed: false);
 			TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesWallpaperDetail", clothCost, haveCloth), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 			return;
 		}
@@ -2842,7 +2842,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 
 	private bool CanWallpaper(BasePlayer player, BuildingPrivlidge cup)
 	{
-		return cup.inventory.GetAmount(-858312878, onlyUsableAmounts: false) >= (TCUpgradeConfig.Config?.WallResource ?? 5);
+		return cup.inventory.GetAmount(-858312878, onlyUsableAmounts: false, redirectAllowed: false) >= (TCUpgradeConfig.Config?.WallResource ?? 5);
 	}
 
 	private bool CanWallpaperBoat(BasePlayer player)

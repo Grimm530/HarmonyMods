@@ -8,6 +8,7 @@
 
 using System;
 using System.Reflection;
+using Rust.Ai.Gen2;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -117,6 +118,18 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityTakeDamage: " + ex.Message); return null; }
         }
 
+        /// <summary>
+        /// 1.7.14 moved heli XP tracking out of OnEntityTakeDamage into its own hook.
+        /// Not subscription-gated (plugin Init does not Unsubscribe this hook).
+        /// </summary>
+        public static void Dispatch_OnPatrolHelicopterTakeDamage(PatrolHelicopter heli, HitInfo info)
+        {
+            var inst = Instance;
+            if (inst == null || heli == null) return;
+            try { inst.OnPatrolHelicopterTakeDamage(heli, info); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPatrolHelicopterTakeDamage: " + ex.Message); }
+        }
+
         public static void Dispatch_OnEntityDeath(BaseEntity entity, HitInfo info)
         {
             var inst = Instance;
@@ -124,8 +137,18 @@ namespace Oxide.Plugins
             try
             {
                 // Route to typed overloads that the plugin declares.
-                if (entity is BaseEntity be)
-                    inst.OnEntityDeath(be, info);
+                switch (entity)
+                {
+                    case PatrolHelicopter heli:
+                        inst.OnEntityDeath(heli, info);
+                        break;
+                    case ScientistNPC2 snpc2:
+                        inst.OnEntityDeath(snpc2, info);
+                        break;
+                    default:
+                        inst.OnEntityDeath(entity, info);
+                        break;
+                }
             }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityDeath: " + ex.Message); }
         }
@@ -347,6 +370,14 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntity: " + ex.Message); }
         }
 
+        public static void Dispatch_OnLootEntity_ChickenCoop(BasePlayer player, ChickenCoop coop)
+        {
+            var inst = Instance;
+            if (inst == null || player == null || coop == null) return;
+            try { inst.OnLootEntity(player, coop); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntity(ChickenCoop): " + ex.Message); }
+        }
+
         public static void Dispatch_OnLootEntityEnd(BasePlayer player, StorageContainer container)
         {
             var inst = Instance;
@@ -551,7 +582,9 @@ namespace Oxide.Plugins
         {
             var inst = Instance;
             if (inst == null || !inst.IsSubscribed(nameof(OnEntitySpawned))) return;
-            try { inst.OnEntitySpawned(entity); }
+            // 1.7.14 only declares OnEntitySpawned(CollectibleEntity) for Forager tracking.
+            if (entity is not CollectibleEntity collectible) return;
+            try { inst.OnEntitySpawned(collectible); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntitySpawned: " + ex.Message); }
         }
 
@@ -585,6 +618,22 @@ namespace Oxide.Plugins
             if (inst == null) return;
             try { inst.OnEntityKill(dud); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityKill(DudExplosive): " + ex.Message); }
+        }
+
+        public static void Dispatch_OnEntityKill_PatrolHelicopter(PatrolHelicopter heli)
+        {
+            var inst = Instance;
+            if (inst == null || heli == null) return;
+            try { inst.OnEntityKill(heli); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityKill(PatrolHelicopter): " + ex.Message); }
+        }
+
+        public static void Dispatch_OnEntityKill_PlayerBoat(PlayerBoat boat)
+        {
+            var inst = Instance;
+            if (inst == null || boat == null) return;
+            try { inst.OnEntityKill(boat); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityKill(PlayerBoat): " + ex.Message); }
         }
 
         public static void Dispatch_OnServerSave()
@@ -661,21 +710,11 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemAction: " + ex.Message); return null; }
         }
 
-        public static void Dispatch_OnItemAddedToContainer(ItemContainer container, Item item)
-        {
-            var inst = Instance;
-            if (inst == null || !inst.IsSubscribed(nameof(OnItemAddedToContainer))) return;
-            try { inst.OnItemAddedToContainer(container, item); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemAddedToContainer: " + ex.Message); }
-        }
+        // Removed in SkillTree 1.7.14 — ExtraPockets spoil fix uses GetRestoreItem fresh dataFloat instead.
+        // Keep stubs so existing ItemContainer patches compile and stay inert.
+        public static void Dispatch_OnItemAddedToContainer(ItemContainer container, Item item) { }
 
-        public static void Dispatch_OnItemRemovedFromContainer(ItemContainer container, Item item)
-        {
-            var inst = Instance;
-            if (inst == null || !inst.IsSubscribed(nameof(OnItemRemovedFromContainer))) return;
-            try { inst.OnItemRemovedFromContainer(container, item); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemRemovedFromContainer: " + ex.Message); }
-        }
+        public static void Dispatch_OnItemRemovedFromContainer(ItemContainer container, Item item) { }
 
         public static object Dispatch_OnCardSwipe(CardReader reader, Keycard card, BasePlayer player)
         {

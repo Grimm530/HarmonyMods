@@ -15,66 +15,57 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
-
 /* Ideas
  * Vehiclular combatant - more damage to vehicles (maybe including bradley and heli?)
- * Add heli as XP source.
  * Add CUI option to enable/disable components that are shredded by the shredder perk.
  * Add an XP cap for certain sources (quests, building etc).-
  * Colour the pump bar based on xp progression for the level
  * Possible buff for healing percentage when using medical deviucs with whitelist or blacklist
  * Add a dictionary to override the yield for certain ore types.
  * 
- * Fishing bait skill?
- * - Look at harmony patching GetFish method.
- * 
  * 
  * Crafting xp for tea stations
  * 
  * Shield stamina
- * Bee damage removal (see how hazmat handles it)
- * - DamageType Bee damage - Prevent it?
- * 
- * Look at making the shield block while on the players back.
- * 
+ *
  * Timers for ultimate cooldowns. Picture of the skill with a timer over it when active.
  * - Could look at having them inside of the skill tree menu when opened - Shows the time that the skill will be available again.
  * - Might be worth attaching to the background of the tree so it's always there.
  * 
- * Reload speeds
- * - Instant reload (IO) or tiered reload speeds (hooks reload animation and adds a timer to reload instead based on weapon type).
- * 
- * Loot detective
- * - A skill that is command based, that will show a player all nearby StorageContainers that are not empty. 
- * - Can lock to RaidableBases only
- * - Configurable time to display containers
- * - Increasing skill level increases range
- * - Cooldown time via config.
- * 
- * Look at changing no cold damage by setting the MetabolismAttribute min value to 20 or something.
- * Would need to handle when the skill is applied. Check respawning mechanics for persistence.
- * Also handle respec.
+ * Add xp scaling for weapons using shortname (dict<string, double>). If a player kills an animal or npc and the weapon shortname exists in the dict, we use the modifier associated with it.
  */
 
-/* 1.7.122
- * Fixed NullReferenceException in OnFuelConsume (Smelt_Speed) when Create/SplitItem returned null.
- * Fixed scoreboard init logging an error when scanning plugin metadata file SkillTree.json.
- */
-
-/* 1.7.6
- * Fixed an issue with permission mods not registering correctly.
- * Fixed the upload showing 1.7.1
+/* 1.7.14
+ * Fixed food spoiling when stored in ExtraPockets. Food already sitting in a pouch is restored fresh.
+ * Fixed No_Bee_Damage skill.
+ * Added a History button next to Gain Prestige that shows every prestige rank the player has achieved and the benefits each one granted.
+ * Added Clever Incubator (Cooking): reduces chicken coop hatch time. At 100% the egg hatches instantly.
+ * Added Soft Touch (Cooking): increases the love a chicken gains when petted.
+ * Added Factory Farmer (Cooking): increases the number of chickens a coop can hold by 1 per level. Adds a hatch countdown while looting a coop that has no free status widget for the incubating egg.
+ * Added Frugal Wrighter (Underwater): refunds a percentage of the materials used when placing boat building pieces.
+ * Added Heated Shot (Underwater): increases cannon damage.
+ * Added Wind Catcher (Underwater): increases boat speed while the player is at the helm.
+ * Added Strategist (Raiding): increases damage dealt by catapults, battering rams and ballistas.
+ * Added Replenish (Harvesting): chance for a collectible to grow back after being picked up.
+ * Added Friendly Fire (Team): reduces the damage the player deals to their team mates.
+ * Updated for August forced wipe.
+ * Recycler_Efficiency and Recycler_Speed are now applied via a Harmony postfix on
+ * GetRecyclerStats, as Recycler no longer stores efficiency or tick duration per entity.
+ * Fixed an issue with melee damage resist only applying against real players.
+ * 
  */
 
 namespace Oxide.Plugins
 {
-    [Info("Skill Tree", "imthenewguy edited by Grimm530", "1.7.122")]
+    [Info("Skill Tree", "imthenewguy edited by Grimm530", "1.7.14")]
     [Description("Skills on a tree!")]
     public partial class SkillTree : RustPlugin
     {
+
         #region Config
 
         private Configuration config;
@@ -266,9 +257,6 @@ namespace Oxide.Plugins
 
                 [JsonProperty("Prevent flyhack kicks when a player lands?")]
                 public bool prevent_flyhack_kick_fall_damage = false;
-
-                [JsonProperty("Disable flyhack violation when player has Roadrunner ability?")]
-                public bool prevent_flyhack_kick_roadrunner = true;
 
                 [JsonProperty("Automatically apply the boat turbo when a player mounts the boat? [Disables the turbo command]")]
                 public bool boat_turbo_on_mount = false;
@@ -506,6 +494,15 @@ namespace Oxide.Plugins
                     }
                 }
 
+                [JsonProperty("Settings for the Armor_Slot")]
+                public Armor_SlotsSettings armorSlotSettings = new Armor_SlotsSettings();
+
+                public class Armor_SlotsSettings
+                {
+                    [JsonProperty("Allow the perk to exceed the maximum armor slot amounts?")]
+                    public bool AllowAdditionalSlots = false;
+                }
+
                 [JsonProperty("Underwater Breathing settings")]
                 public UnderwaterBreathingSettings underwaterSettings = new UnderwaterBreathingSettings();
                 public class UnderwaterBreathingSettings
@@ -641,6 +638,14 @@ namespace Oxide.Plugins
 
                     [JsonProperty("Arrow damage reflection modifier [1 = 100%]")]
                     public float arrowReflectMod = 1f;
+                }
+
+                [JsonProperty("MaxRepair settings")]
+                public MaxRepairSettings maxRepairSettings = new MaxRepairSettings();
+                public class MaxRepairSettings
+                {
+                    [JsonProperty("Cooldown [0 = no cooldown]")]
+                    public float Cooldown = 0;
                 }
             }
 
@@ -858,9 +863,6 @@ namespace Oxide.Plugins
                 [JsonProperty("Should the player keep excess skill points outside of what they received from leveling/starting points?")]
                 public bool should_keep_excess_points = false;
 
-                [JsonProperty("Should the player keep ALL skill points when prestiging? (points are refunded for re-allocation, allocation is reset) [overrides should_keep_excess_points when true]")]
-                public bool should_keep_all_points = false;
-
                 [JsonProperty("Should we apply the xp bonus multiplicatively? [false = additively]")]
                 public bool apply_bonus_multiplicatively = false;
 
@@ -873,6 +875,9 @@ namespace Oxide.Plugins
 
                     [JsonProperty("Commands to run when the player prestiges ({id} = userid. {name} = player name) [description : command]")]
                     public Dictionary<string, string> commands;
+
+                    [JsonProperty("Commands to run after the player prestiges ({id} = userid. {name} = player name) [description : command]")]
+                    public Dictionary<string, string> postCommands;
 
                     [JsonProperty("Additional benefits descriptions")]
                     public List<string> additionalBenfitsDescription = new List<string>();
@@ -954,11 +959,32 @@ namespace Oxide.Plugins
                 [JsonProperty("Automatically wipe player data after x days if they have not logged in? [0 = off] [only checks on wipe]")]
                 public int wipe_after_days = 0;
 
+                [JsonProperty("Manual wipe settings")]
+                public WipeSettings manualWipeSettings = new WipeSettings();
+
+                [JsonProperty("Forced wipe settings")]
+                public WipeSettings forcedWipeSettings = new WipeSettings();                
+
+                [JsonProperty("Automatically add new trees from the default config?")]
+                public bool auto_update_trees = true;
+
+                [JsonProperty("Automatically add new nodes from the default config?")]
+                public bool auto_update_nodes = true;
+
+                [JsonProperty("Starting skill points")]
+                public int starting_skill_points = 0;
+
+                [JsonProperty("Dictionary of permission based overrides for starting skill points")]
+                public Dictionary<string, int> starting_skill_point_overrides = new Dictionary<string, int>();
+            }
+
+            public class WipeSettings
+            {
                 [JsonProperty("Wipe all player data files [setting true will ignore all below settings that handle data reset]?")]
                 public bool wipe_everything = false;
 
                 [JsonProperty("How should we handle xp, levels and skills when the server wipes [None, Reset, Refund]?")]
-                public WipeType xp_wipe_type = WipeType.Refund;
+                public WipeUpdate.WipeType xp_wipe_type = WipeUpdate.WipeType.Refund;
 
                 [JsonProperty("Should we wipe prestige levels?")]
                 public bool prestige_wipe = false;
@@ -980,18 +1006,6 @@ namespace Oxide.Plugins
 
                 [JsonProperty("How many skill points should they receive for winning?")]
                 public int bonus_skill_points_amount = 5;
-
-                [JsonProperty("Automatically add new trees from the default config?")]
-                public bool auto_update_trees = true;
-
-                [JsonProperty("Automatically add new nodes from the default config?")]
-                public bool auto_update_nodes = true;
-
-                [JsonProperty("Starting skill points")]
-                public int starting_skill_points = 0;
-
-                [JsonProperty("Dictionary of permission based overrides for starting skill points")]
-                public Dictionary<string, int> starting_skill_point_overrides = new Dictionary<string, int>();
             }
 
             [JsonProperty("Rested XP Settings")]
@@ -1443,7 +1457,6 @@ namespace Oxide.Plugins
 
                 [JsonProperty("Time after the server saves that SkillTree will save it's data")]
                 public float saveDelay = 0;
-
                 /// <summary>
                 /// When set (absolute path), player JSON and SkillTree aggregate data are stored under this folder (same pattern as Backpacks).
                 /// Empty keeps default: oxide/data/SkillTree/ on Oxide, or Carbon data SkillTree subfolder.
@@ -1509,20 +1522,11 @@ namespace Oxide.Plugins
                 [JsonProperty("Require the player to have the skilltree.roguelike permission in order to participate?")]
                 public bool require_permission = true;
 
-                [JsonProperty("If the Roguelike setting is enabled, trigger when a player dies in PVE?")]
-                public bool wipeOnPVEDeath = true;
-
-                [JsonProperty("If the Roguelike setting is enabled, trigger when a player dies in PVP?")]
-                public bool wipeOnPVPDeath = true;
-
-                [JsonProperty("If the Roguelike setting is enabled, trigger when a player dies from suicide?")]
-                public bool wipeOnSuicideDeath = true;
-
-                [JsonProperty("If the Roguelike setting is enabled, trigger when a player dies from fall damage?")]
-                public bool wipeOnFallDeath = true;
-
                 [JsonProperty("Require the player to be connected to the service when they die and lose XP?")]
                 public bool requireConnection = true;
+
+                [JsonProperty("Death type settings [true = wipes when killed by this source]")]
+                public Dictionary<DeathType, bool> deathTypes = new Dictionary<DeathType, bool>();
             }
 
             public class NotificationSettings
@@ -1820,6 +1824,7 @@ namespace Oxide.Plugins
                 public double Scarecrow = 100;
                 public double Mission = 1000;
                 public double BradleyAPC = 1000;
+                public double PatrolHelicopter = 3000;
                 public double LootHackedCrate = 200;
                 public double LootHeliCrate = 250;
                 public double LootBradleyCrate = 50;
@@ -1943,7 +1948,7 @@ namespace Oxide.Plugins
         {
             public Dictionary<string, string> perms_list = new Dictionary<string, string>();
 
-            // Key = perm. Value = displayName.
+            //​‌​​‌‌​‌​‌​‌​‌​​​‌‌​​​‌‌​‌‌‌‌​​​​‌​​‌‌‌​​‌‌​​‌‌‌​​‌‌‌‌​‌​​‌‌‌‌​‌ Key = perm. Value = displayName.
             public PermissionInfo(Dictionary<string, string> perms_to_add)
             {
                 this.perms_list = perms_to_add;
@@ -2381,6 +2386,33 @@ namespace Oxide.Plugins
             config.misc_settings.videoURLs = DefaultUrls;
 
             LoadDefaultPrestige();
+
+            config.roguelikeSettings.deathTypes = DefaultDeathTypes;
+        }
+
+        Dictionary<DeathType, bool> DefaultDeathTypes
+        {
+            get
+            {
+                return new Dictionary<DeathType, bool>()
+                {
+                    [DeathType.Animal] = true,
+                    [DeathType.Bradley] = true,
+                    [DeathType.Cold] = true,
+                    [DeathType.Drowned] = true,
+                    [DeathType.ElectricShock] = true,
+                    [DeathType.Fall] = true,
+                    [DeathType.Heat] = true,
+                    [DeathType.HumanNpc] = true,
+                    [DeathType.Hunger] = true,
+                    [DeathType.PatrolHeli] = true,
+                    [DeathType.Pvp] = true,
+                    [DeathType.Radiation] = true,
+                    [DeathType.Suicide] = true,
+                    [DeathType.Thirst] = true,
+                    [DeathType.Traps] = true
+                };
+            }
         }
 
         Dictionary<Buff, string> DefaultUrls
@@ -2747,19 +2779,15 @@ namespace Oxide.Plugins
 
             List<LootItems> items = new List<LootItems>();
 
-            foreach (var item in GetCleanItemDefinitions())
-            {
-                if (item.category == ItemCategory.Component)
-                    items.Add(new LootItems(item.shortname, 1, 3));
-            }
+            foreach (var item in GetCleanItemDefinitions().Where(x => x.category == ItemCategory.Component))
+                items.Add(new LootItems(item.shortname, 1, 3));
 
             result.Add("assets/bundled/prefabs/radtown/crate_underwater_basic.prefab", items);
             result.Add("assets/bundled/prefabs/radtown/underwater_labs/crate_normal_2.prefab", items);
             result.Add("assets/bundled/prefabs/radtown/underwater_labs/crate_normal.prefab", items);
 
-            foreach (var item in GetCleanItemDefinitions())
+            foreach (var item in GetCleanItemDefinitions().Where(x => x.category == ItemCategory.Electrical || x.category == ItemCategory.Weapon || x.category == ItemCategory.Attire))
             {
-                if (item.category != ItemCategory.Electrical && item.category != ItemCategory.Weapon && item.category != ItemCategory.Attire) continue;
                 if (item.category == ItemCategory.Attire || item.category == ItemCategory.Weapon) items.Add(new LootItems(item.shortname, 1, 1));
                 else items.Add(new LootItems(item.shortname, 1, 3));
             }
@@ -2794,6 +2822,7 @@ namespace Oxide.Plugins
                     {
 
                         ["Amature Woodcutter"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.05f, new KeyValuePair<Buff, BuffType>(Buff.Woodcutting_Yield, BuffType.Percentage), "https://www.dropbox.com/s/2s89vo3bmqyefux/Amature_Woodcutter.png?dl=1", 2873043851),
+                        ["Bee Keeper"] = new Configuration.TreeInfo.NodeInfo(true, 1, 1, 1f, new KeyValuePair<Buff, BuffType>(Buff.No_Bee_Damage, BuffType.IO), "https://www.dropbox.com/scl/fi/8j1ugd1fgosfrt1p7y0t2/No_Bee_Damage.v1.png?rlkey=4oawcphej4bafl4plg3dceyvy&st=o9f0yhoz&dl=1", 3766254643),
                         ["Adept Woodcutter"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.075f, new KeyValuePair<Buff, BuffType>(Buff.Woodcutting_Yield, BuffType.Percentage), "https://www.dropbox.com/s/nf9reuenek59a6y/Adept_Woodcutter.png?dl=1", 2873043965),
                         ["Instant Woodcutting"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.05f, new KeyValuePair<Buff, BuffType>(Buff.Instant_Chop, BuffType.Percentage), "https://www.dropbox.com/s/7vut5y0vub9e05c/Instant_Woodcutting.png?dl=1", 2873044070),
                         ["Woodcutting Luck"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.01f, new KeyValuePair<Buff, BuffType>(Buff.Woodcutting_Luck, BuffType.Percentage), "https://www.dropbox.com/s/6acfo7hlj0sxviq/Woodcutters_Luck.png?dl=1", 2873044171),
@@ -2833,6 +2862,7 @@ namespace Oxide.Plugins
                         ["Foragers Intuition"] = new Configuration.TreeInfo.NodeInfo(true, 1, 3, 1f, new KeyValuePair<Buff, BuffType>(Buff.Forager, BuffType.IO), "https://www.dropbox.com/s/y2k9s25terdic5p/Druideskill_10_nobg.v1.png?dl=1", 3010448075),
                         ["Braided Line"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.07f, new KeyValuePair<Buff, BuffType>(Buff.Rod_Tension_Bonus, BuffType.Percentage), "https://www.dropbox.com/s/p3rkfmoay0tglpz/Warriorskill_38_nobg.v1.png?dl=1", 3012306483),
                         ["Lucky forager"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.01f, new KeyValuePair<Buff, BuffType>(Buff.Harvesting_Luck, BuffType.Percentage), "https://www.dropbox.com/scl/fi/kzvv6m81kt8mkpva3zx8y/Priestskill_44_nobg.v1.png?rlkey=e2ilpig2rmw8fuz5enkdmgt6l&st=20qs3eya&dl=1", 3305668585),
+                        ["Replenish"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.05f, new KeyValuePair<Buff, BuffType>(Buff.Collectible_Respawn, BuffType.Percentage), "https://www.dropbox.com/scl/fi/otxqf6pl3yhk566897w07/Druideskill_05_nobg.v1.png?rlkey=5t8yi3v8dj4t0pmcrwkh26v76&st=vt02643r&dl=1", 3768243493),
                     }),
                     ["Medical"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
@@ -2862,8 +2892,6 @@ namespace Oxide.Plugins
                         ["Assassin"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.01f, new KeyValuePair<Buff, BuffType>(Buff.PVP_Damage, BuffType.Percentage), "https://www.dropbox.com/s/i39yhkrdvwti1dn/Assassin.png?dl=1", 2873049790),
                         ["Guarded"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.02f, new KeyValuePair<Buff, BuffType>(Buff.PVP_Shield, BuffType.Percentage), "https://www.dropbox.com/s/yufh2ieo4kysb5g/Guarded.png?dl=1", 2873049899),
                         ["Drum Mag"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.Extended_Mag, BuffType.Percentage), "https://www.dropbox.com/s/2zil9t4brndzgd7/Extended_Mag.v1.png?dl=1", 2995245729),
-                        ["Rocket Loader"] = new Configuration.TreeInfo.NodeInfo(true, 3, 3, 1f, new KeyValuePair<Buff, BuffType>(Buff.Rocket_Mag_Capacity, BuffType.Level), "https://www.dropbox.com/scl/fi/w9uxkh4zzqul2i0n0aody/rocket.launcher.png?rlkey=llgjyf536qeekipy7quubngcx&dl=1", 2929679053),
-                        ["Road Runner"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Combat_Run_Speed, BuffType.Percentage), "https://www.dropbox.com/scl/fi/ywmo88iufztfutf9mo7h4/roadrunner.png?rlkey=0vod181b977fk7ja51cdlhj97&dl=1", 0UL),
                         ["Vampiric Tendencies"] = new Configuration.TreeInfo.NodeInfo(true, 1, UltimateLevel, 1f, new KeyValuePair<Buff, BuffType>(Buff.Combat_Ultimate, BuffType.IO), "https://www.dropbox.com/s/3brv8bohuk75npj/Vampiric_Tendencies.png?dl=1", 2873050024),
                         ["Maintenance"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Durability, BuffType.Percentage), "https://www.dropbox.com/s/b1bgfqdxe2wunr0/Maintenance.png?dl=1", 2873050116),
                         ["Sixth Sense"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 5f, new KeyValuePair<Buff, BuffType>(Buff.Awareness, BuffType.Distance), "https://www.dropbox.com/scl/fi/zybvoa859xxdlj99sjb3u/Archerskill_14_nobg.v1.png?rlkey=v7npg3s5bghc3z7egkmr43bz7&st=u9c43a91&dl=1", 3393706448),
@@ -2920,6 +2948,9 @@ namespace Oxide.Plugins
                         ["Jet Engine"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.3f, new KeyValuePair<Buff, BuffType>(Buff.Heli_Speed, BuffType.Percentage), "https://www.dropbox.com/s/9948qp5tv7oc6l9/Shamanskill_42_nobg.v1.png?dl=1", 3009474256),
                         ["Supercharged"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.BikeEnginePower, BuffType.Percentage), "https://www.dropbox.com/scl/fi/es3bzvvda9i6d4hpwvyno/Priestskill_33_nobg.v1.png?rlkey=pz2r6h1zf19afem50eyxxu5xe&st=s71u9p0n&dl=1", 3283818174),
                         ["Airbags"] = new Configuration.TreeInfo.NodeInfo(true, 2, 2, 0.5f, new KeyValuePair<Buff, BuffType>(Buff.DriverCollisionResistance, BuffType.Percentage), "https://www.dropbox.com/scl/fi/24ytza9zomxv2eas6lqjx/Paladinskill_13_nobg.v1.png?rlkey=mp9nauo14unbttbptrvhu20bp&st=3wjgqq9j&dl=1", 3287404627),
+                        ["Wind Catcher"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Sailing_Speed, BuffType.Percentage), "https://www.dropbox.com/scl/fi/apu0imuvsrvurz5q1ghzq/Pirate_Ship.v1.png?rlkey=3yeznkx5e8ouxn6outs7tncl7&st=56ph7w0f&dl=1", 3768215772),
+                        ["Frugal Wrighter"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.15f, new KeyValuePair<Buff, BuffType>(Buff.Boat_Refund, BuffType.Percentage), "https://www.dropbox.com/scl/fi/2jh50s7gjbs1tn258lwpx/Wheel_Hammers.v1.png?rlkey=er8bmeffdksnnf8ya9f0evu8x&st=u2zsoeqc&dl=1", 3768228074),
+                        ["Heated Shot"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.25f, new KeyValuePair<Buff, BuffType>(Buff.Cannon_Damage, BuffType.Percentage), "https://www.dropbox.com/scl/fi/g6k4qrqwriuwjaex4qswp/Hot_Cannonballs.v1.png?rlkey=n5yboalhvbiey8whrvtxjhagj&st=budrvtij&dl=1", 3768238199)
                     }),
                     ["Cooking"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
@@ -2930,7 +2961,10 @@ namespace Oxide.Plugins
                         ["Tea Party"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Extended_Tea_Duration, BuffType.Percentage), "https://www.dropbox.com/s/himcda9ukseslvf/TeTime.png?dl=1", 3005685932),
                         ["Tea Connoisseur"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.02f, new KeyValuePair<Buff, BuffType>(Buff.Tea_Looter, BuffType.Percentage), "https://www.dropbox.com/s/htpiwo9aeqildv8/Archerskill_38_nobg.v1.png?dl=1", 3006539324),
                         ["Burst Of Energy"] = new Configuration.TreeInfo.NodeInfo(true, 1, UltimateLevel, 1f, new KeyValuePair<Buff, BuffType>(Buff.Cooking_Ultimate, BuffType.IO), "https://www.dropbox.com/s/jjhk0ug4ydajdqa/Assassinskill_12_nobg.v1.png?dl=1", 3011025470),
-                        ["Fry Cook"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.19f, new KeyValuePair<Buff, BuffType>(Buff.Cooking_Speed, BuffType.Percentage), "https://www.dropbox.com/scl/fi/a0ihdbfkga5kbrfnv16gb/Shamanskill_07_nobg.v1.png?rlkey=vhf56q0p5bk2dw2qcxqatitid&st=5p793xdv&dl=1", 3464633815) }),
+                        ["Fry Cook"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.19f, new KeyValuePair<Buff, BuffType>(Buff.Cooking_Speed, BuffType.Percentage), "https://www.dropbox.com/scl/fi/a0ihdbfkga5kbrfnv16gb/Shamanskill_07_nobg.v1.png?rlkey=vhf56q0p5bk2dw2qcxqatitid&st=5p793xdv&dl=1", 3464633815),
+                        ["Clever Incubator"] = new Configuration.TreeInfo.NodeInfo(true, 2, 1, 0.5f, new KeyValuePair<Buff, BuffType>(Buff.Hatch_Speed, BuffType.Percentage), "https://www.dropbox.com/scl/fi/b82m8yeh5tbpxrpe9xu8k/Chick_Hatching.v1.png?rlkey=ya5t983zo822kdzx6391blc29&st=819hhnf6&dl=1", 3768214445),
+                        ["Soft Touch"] = new Configuration.TreeInfo.NodeInfo(true, 2, 2, 0.5f, new KeyValuePair<Buff, BuffType>(Buff.Pet_Effectiveness, BuffType.Percentage), "https://www.dropbox.com/scl/fi/7gvefyih3k37rzzfbq8pm/Happy_Chicken.v1.png?rlkey=urc4i0zq9wzegdahwk920qndy&st=v4hqvznl&dl=1", 3768214912),
+                        ["Factory Farmer"] = new Configuration.TreeInfo.NodeInfo(true, 4, 3, 1f, new KeyValuePair<Buff, BuffType>(Buff.Coop_Capacity, BuffType.Slots), "https://www.dropbox.com/scl/fi/j7cqpeimal1worbcen793/Packed_Coop.v1.png?rlkey=y0vi2lp5ur16k00bswi7qbtpv&st=3pso2vzw&dl=1", 3768215328) }),
                     ["Underwater"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
                         ["Cage Diver"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.SharkResistance, BuffType.Percentage), "https://www.dropbox.com/s/hti5v35qh45lj94/Cage_Diver.png?dl=1", 2873055798),
@@ -2940,8 +2974,10 @@ namespace Oxide.Plugins
                         ["Treasure Hunter"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.02f, new KeyValuePair<Buff, BuffType>(Buff.DeepSeaLooter, BuffType.Percentage), "https://www.dropbox.com/s/po3zsz763hopkjc/Treasure_Hunter.png?dl=1", 2873056606),
                         ["Nimble Fingers"] = new Configuration.TreeInfo.NodeInfo(true, 1, 3, 1f, new KeyValuePair<Buff, BuffType>(Buff.InstantUntie, BuffType.IO), "https://www.dropbox.com/s/3m853nqxq2qmoih/Nimble_Fingers.png?dl=1", 2873056697),
                         ["Aquatic Combatant"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.10f, new KeyValuePair<Buff, BuffType>(Buff.UnderwaterDamageBonus, BuffType.Percentage), "https://www.dropbox.com/s/683npn5fwvkbtni/Aquatic_Combatant.png?dl=1", 2873056786),
-                        ["Swim Speed"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Underwater_Swim_Speed, BuffType.Percentage), null, 296519935UL),
                         ["Sonar Pulse"] = new Configuration.TreeInfo.NodeInfo(true, 1, 2, 1f, new KeyValuePair<Buff, BuffType>(Buff.Sonar, BuffType.IO), "https://www.dropbox.com/scl/fi/rthqet410byv4bpj80hgl/Priestskill_42_nobg.v1.png?rlkey=67h0gyem1x08nh7idb19zvtds&dl=1", 3111209702),
+                        ["Chum Master"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Bait_Value_Bonus, BuffType.Percentage), "https://www.dropbox.com/scl/fi/9a59g5x8lqwpivkmzrsic/Chum_Master.v1.png?rlkey=03mvhl958t7ez2eswseqjyc6t&st=o4erh44w&dl=1", 3766254409)
+                        
+                        
                     }),
                     ["Raiding"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
@@ -2955,6 +2991,7 @@ namespace Oxide.Plugins
                         ["Reliable Explosive"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Dudless_Explosive, BuffType.Percentage), "https://www.dropbox.com/s/rrxxt78hu2r0vb4/Dudless_Explosive.png?dl=1", 2930484526),
                         ["Perceptive"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Trap_Spotter, BuffType.Percentage), "https://www.dropbox.com/s/as74z7rjlfiwy98/Druideskill_27_nobg.v1.png?dl=1", 3012262421),
                         ["Scavenger's Instinct"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 5f, new KeyValuePair<Buff, BuffType>(Buff.Loot_Spotter, BuffType.Distance), "https://www.dropbox.com/scl/fi/hmzmcxp11vjngivq96vy8/Paladinskill_46_nobg.v1.png?rlkey=1r93hrv402wc6fw1xwhn35i7c&st=pgajkxyi&dl=1", 3566102972),
+                        ["Strategist"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Siege_Damage, BuffType.Percentage), "https://www.dropbox.com/scl/fi/lrffgfi4hfghp7dlx3khf/Catapult.v1.png?rlkey=o1u5sbyi2ryax1k8zaynttfh7&st=a8l9rmdj&dl=1", 3768218411),
                     }),
                     ["Team"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
@@ -2964,6 +3001,7 @@ namespace Oxide.Plugins
                         ["Brewed Bonding"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.Tea_Share, BuffType.Percentage), "https://www.dropbox.com/scl/fi/ncgao45ozfx3vzxifwj17/TeaShare.v1.png?rlkey=ptdmj34xfszq7ifgzichia3h7&dl=1", 3215097253),
                         ["Feast Fellows"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Metabolism_Share, BuffType.Percentage), "https://www.dropbox.com/scl/fi/z987oj7ruyg9xczbnqx8z/MetabolismShare.v1.png?rlkey=z3bqgxl3oaavw5fs1d5f9f840&dl=1", 3215097568),
                         ["Craftman's Aura"] = new Configuration.TreeInfo.NodeInfo(true, 3, 3, 1f, new KeyValuePair<Buff, BuffType>(Buff.Human_Workbench, BuffType.Level), "https://www.dropbox.com/scl/fi/507mjkg53sptvpf3bqz7t/MobileWorkbench.v1.png?rlkey=o4whleu473331n691p3gb4vzn&dl=1", 3215097928),
+                        ["Friendly Fire"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Friendly_Fire_Reduction, BuffType.Percentage), "https://www.dropbox.com/scl/fi/her8qle652wkczdlkd3rw/Holding_Hands.v1.png?rlkey=uhlu65js7xibfpdz4szhxer2y&st=irr68xu2&dl=1", 3768218597),
 
                     }, true, 30),
                 };
@@ -3039,60 +3077,15 @@ namespace Oxide.Plugins
         PluginInfo pcdData;
         private DynamicConfigFile PCDDATA;
 
-        const ulong MlrsSkin = 3329012898;
-        readonly string FileName = "SkillTree.json";
-        readonly string SharedXP = "Shared_XP";
-
-        private bool UsesCustomSkillTreeDataDirectory =>
-            config?.misc_settings != null && !string.IsNullOrWhiteSpace(config.misc_settings.CustomSkillTreeDataDirectory);
-
-        private string CustomSkillTreeDataDirectoryFull =>
-            UsesCustomSkillTreeDataDirectory
-                ? Path.GetFullPath(config.misc_settings.CustomSkillTreeDataDirectory.Trim())
-                : null;
-
-        private void EnsureSkillTreeDataDirectoryExists()
-        {
-            var dir = NewDirectory;
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-        }
-
-#if CARBON
-        private string FileDirectory => Carbon.Core.Defines.GetDataFolder() + Path.DirectorySeparatorChar;
-#else
-        private string FileDirectory => Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar;
-#endif
-
-        /// <summary>Player JSON folder (trailing separator). Uses custom directory when configured.</summary>
-        private string NewDirectory
-        {
-            get
-            {
-                if (UsesCustomSkillTreeDataDirectory && !string.IsNullOrEmpty(CustomSkillTreeDataDirectoryFull))
-                {
-                    var root = CustomSkillTreeDataDirectoryFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    return root + Path.DirectorySeparatorChar;
-                }
-#if CARBON
-                return Carbon.Core.Defines.GetDataFolder() + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
-#else
-                return Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
-#endif
-            }
-        }
-
-        private string SkillTreePluginInfoJsonAbsolutePath =>
-            UsesCustomSkillTreeDataDirectory && !string.IsNullOrEmpty(CustomSkillTreeDataDirectoryFull)
-                ? Path.Combine(CustomSkillTreeDataDirectoryFull, $"{Name}.json")
-                : null;
-
-        readonly string perm_admin = "skilltree.admin";
-        readonly string perm_no_scoreboard = "skilltree.noscoreboard";
-        readonly string perm_teaBonus = "skilltree.teabonus";
-        readonly string perm_respec_bypass = "skilltree.respec.bypass";
-        readonly string perm_toggle_bc = "skilltree.togglebc";
-        readonly int maxRoll = 100;
+        static readonly ulong MlrsSkin = 3329012898;
+        static readonly string FileName = "SkillTree.json";
+        static readonly string SharedXP = "Shared_XP";
+        static readonly string perm_admin = "skilltree.admin";
+        static readonly string perm_no_scoreboard = "skilltree.noscoreboard";
+        static readonly string perm_teaBonus = "skilltree.teabonus";
+        static readonly string perm_respec_bypass = "skilltree.respec.bypass";
+        static readonly string perm_toggle_bc = "skilltree.togglebc";
+        static readonly int maxRoll = 100;
 
         void Init()
         {
@@ -3131,7 +3124,7 @@ namespace Oxide.Plugins
             }
             catch (Exception ex)
             {
-                Puts($"1772761338 GetNextCapReset Threw an error. The reset time string may not be formatted correctly. {ex.Message}");
+                Puts($"1775692544 GetNextCapReset Threw an error. The reset time string may not be formatted correctly. {ex.Message}");
                 return DateTime.MinValue;
             }
         }
@@ -3159,6 +3152,9 @@ namespace Oxide.Plugins
             }
             DeepSeaLooterLootTable?.Clear();
             SharkLootTable?.Clear();
+            CoopLooters.Clear();
+            foreach (var tracker in heliDamage.Values) tracker.Free();
+            heliDamage.Clear();
             List<BasePlayer> players = Pool.Get<List<BasePlayer>>();
             players.AddRange(BasePlayer.activePlayerList);
             if (players.Count > 0)
@@ -3190,6 +3186,8 @@ namespace Oxide.Plugins
                         CuiHelper.DestroyUi(player, "StagDangerUI");
                         CuiHelper.DestroyUi(player, "UnderwaterBreathCounter");
                         CuiHelper.DestroyUi(player, "PrestigeConfirmation");
+                        CuiHelper.DestroyUi(player, "PrestigeHistory");
+                        CuiHelper.DestroyUi(player, CoopHatchTimerPanel);
                         CuiHelper.DestroyUi(player, "AchievedRank");
                         CuiHelper.DestroyUi(player, "PresetBackpanel");
                         CuiHelper.DestroyUi(player, "PresetPanel");
@@ -3589,7 +3587,7 @@ namespace Oxide.Plugins
                 return new PlayerInfo();
             }
             var json = File.ReadAllText(NewDirectory + userID + ".json");
-            return JsonConvert.DeserializeObject<PlayerInfo>(json) ?? new PlayerInfo();
+            return DeserializePlayerInfo(json) ?? new PlayerInfo();
         }
 
         void SavePlayerData(BasePlayer player)
@@ -3614,12 +3612,62 @@ namespace Oxide.Plugins
             File.WriteAllText(NewDirectory + $"{userid}.json", json);
         }
 
+        private bool UsesCustomSkillTreeDataDirectory =>
+            config?.misc_settings != null && !string.IsNullOrWhiteSpace(config.misc_settings.CustomSkillTreeDataDirectory);
+
+        private string CustomSkillTreeDataDirectoryFull =>
+            UsesCustomSkillTreeDataDirectory
+                ? Path.GetFullPath(config.misc_settings.CustomSkillTreeDataDirectory.Trim())
+                : null;
+
+        private void EnsureSkillTreeDataDirectoryExists()
+        {
+            var dir = NewDirectory;
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+        }
+
+#if CARBON
+        private string FileDirectory => Carbon.Core.Defines.GetDataFolder() + Path.DirectorySeparatorChar;
+#else
+        private string FileDirectory => Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar;
+#endif
+
+        /// <summary>Player JSON folder (trailing separator). Uses custom directory when configured.</summary>
+        private string NewDirectory
+        {
+            get
+            {
+                if (UsesCustomSkillTreeDataDirectory && !string.IsNullOrEmpty(CustomSkillTreeDataDirectoryFull))
+                {
+                    var root = CustomSkillTreeDataDirectoryFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    return root + Path.DirectorySeparatorChar;
+                }
+#if CARBON
+                return Carbon.Core.Defines.GetDataFolder() + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
+#else
+                return Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
+#endif
+            }
+        }
+
+        private string SkillTreePluginInfoJsonAbsolutePath =>
+            UsesCustomSkillTreeDataDirectory && !string.IsNullOrEmpty(CustomSkillTreeDataDirectoryFull)
+                ? Path.Combine(CustomSkillTreeDataDirectoryFull, $"{Name}.json")
+                : null;
+
+
         class PluginInfo
         {
             public DateTime wipeTime = DateTime.MinValue;
             public ulong HighestPlayer;
+
+            [JsonIgnore]
+            public int highestPlayerPoints;
+
             public DateTime nextXPCapReset = DateTime.MinValue;
             public bool updated = false;
+            public int LastProtocolSave;
 
             [NonSerialized]
             public Dictionary<ulong, PlayerInfo> pEntity = new Dictionary<ulong, PlayerInfo>();
@@ -3641,21 +3689,71 @@ namespace Oxide.Plugins
         PlayerInfo GetOfflinePlayerInfo(string userid)
         {
             if (!File.Exists(NewDirectory + $"{userid}.json")) return null;
-            return JsonConvert.DeserializeObject<PlayerInfo>(File.ReadAllText(NewDirectory + $"{userid}.json"));
+            return DeserializePlayerInfo(File.ReadAllText(NewDirectory + $"{userid}.json"));
         }
 
         bool GetOfflinePlayerinfo(string userid, out PlayerInfo data)
         {
             data = null;
             if (!File.Exists(NewDirectory + $"{userid}.json")) return false;
-            data = JsonConvert.DeserializeObject<PlayerInfo>(File.ReadAllText(NewDirectory + $"{userid}.json"));
+            data = DeserializePlayerInfo(File.ReadAllText(NewDirectory + $"{userid}.json"));
             return data != null;
         }
 
         PlayerInfo LoadOfflinePlayerInfo(string path, bool checkExists)
         {
             if (checkExists && !File.Exists(path)) return null;
-            return JsonConvert.DeserializeObject<PlayerInfo>(File.ReadAllText(path));
+            return DeserializePlayerInfo(File.ReadAllText(path));
+        }
+
+        /// <summary>
+        /// Player files may contain removed Buff enum names (e.g. Combat_Run_Speed).
+        /// Lenient settings + DisabledBuffs converter keep scoreboard/player load from throwing.
+        /// </summary>
+        static readonly JsonSerializerSettings PlayerInfoSerializerSettings = new JsonSerializerSettings
+        {
+            Error = (_, args) => { args.ErrorContext.Handled = true; }
+        };
+
+        static PlayerInfo DeserializePlayerInfo(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            return JsonConvert.DeserializeObject<PlayerInfo>(json, PlayerInfoSerializerSettings);
+        }
+
+        /// <summary>Ignores unknown Buff names when reading HashSet&lt;Buff&gt; from player JSON.</summary>
+        internal class LenientBuffHashSetConverter : JsonConverter
+        {
+            public override bool CanConvert(Type objectType) =>
+                objectType == typeof(HashSet<Buff>);
+
+            public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+            {
+                var set = existingValue as HashSet<Buff> ?? new HashSet<Buff>();
+                if (reader.TokenType == JsonToken.Null) return set;
+
+                var arr = Newtonsoft.Json.Linq.JArray.Load(reader);
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    var s = arr[i]?.ToString();
+                    if (string.IsNullOrEmpty(s)) continue;
+                    if (Enum.TryParse(s, true, out Buff buff))
+                        set.Add(buff);
+                }
+                return set;
+            }
+
+            public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+            {
+                var set = value as HashSet<Buff>;
+                writer.WriteStartArray();
+                if (set != null)
+                {
+                    foreach (var buff in set)
+                        writer.WriteValue(buff.ToString());
+                }
+                writer.WriteEndArray();
+            }
         }
 
         void WriteJson(string userid, string json) => File.WriteAllText(NewDirectory + $"{userid}.json", json);
@@ -3670,7 +3768,7 @@ namespace Oxide.Plugins
             public double rested_xp_mod = 0;
 
             [NonSerialized]
-            public double perm_xp_mod = 0;
+            public double perm_xp_mod = 1;
 
             [NonSerialized]
             public float prestige_xp_mod = 1;
@@ -3701,6 +3799,7 @@ namespace Oxide.Plugins
             public DateTime last_xp_loss;
             public double pending_xp_with_bonus;
             public double pending_xp_without_bonus;
+            [JsonConverter(typeof(LenientBuffHashSetConverter))]
             public HashSet<Buff> DisabledBuffs = new HashSet<Buff>();
             public Presets presets;
             public bool ignoreWarning = false;
@@ -3711,9 +3810,7 @@ namespace Oxide.Plugins
             {
                 get
                 {
-                    int sum = 0;
-                    foreach (var kv in buff_values) sum += kv.Value;
-                    return available_points + sum;
+                    return available_points + buff_values.Sum(x => x.Value);
                 }
             }
         }
@@ -3764,14 +3861,18 @@ namespace Oxide.Plugins
             public void UpdateScores()
             {
                 orderedList.Clear();
-                var list = new List<KeyValuePair<ulong, ScoreInfo>>(data);
-                list.Sort((a, b) => { int c = b.Value.prestige.CompareTo(a.Value.prestige); return c != 0 ? c : b.Value.xp.CompareTo(a.Value.xp); });
                 if (Instance.config.misc_settings.scoreBoardSettings.maxScores > 0)
                 {
-                    for (int i = 0; i < list.Count && i < Instance.config.misc_settings.scoreBoardSettings.maxScores; i++)
-                        orderedList.Add(list[i]);
+                    var count = 0;
+                    foreach (var score in data.OrderByDescending(x => x.Value.prestige).ThenByDescending(x => x.Value.xp))
+                    {
+                        orderedList.Add(score);
+                        count++;
+                        if (count > Instance.config.misc_settings.scoreBoardSettings.maxScores)
+                            break;
+                    }
                 }
-                else orderedList.AddRange(list);
+                else orderedList.AddRange(data.OrderByDescending(x => x.Value.prestige).ThenByDescending(x => x.Value.xp));
             }
 
             public void Wipe()
@@ -3870,7 +3971,7 @@ namespace Oxide.Plugins
             var player = arg.Player();
             if (player != null && !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
-            if (arg.Args == null || arg.Args.Length == 0 || !bool.TryParse(arg.Args[0].ToString(), out var enable))
+            if (arg.Args == null || arg.Args.Length == 0 || !bool.TryParse(arg.Args[0], out var enable))
             {
                 arg.ReplyWith("Usage: sttogglebuffs <true/false> - true: enables buffs globally. false: disables buffs globally");
                 return;
@@ -3980,6 +4081,7 @@ namespace Oxide.Plugins
             public float cooldown_Woodcutting_Ultimate;
             public float cooldown_Double_Bandage_Heal;
             public float cooldown_Wounded_Resist;
+            public float cooldown_MaxRepair;
 
             public Dictionary<Buff, BuffInfo> GetBuffs()
             {
@@ -4064,6 +4166,8 @@ namespace Oxide.Plugins
             if (!buffData.temp_buff_values.TryGetValue(buff, out var tempData)) buffData.temp_buff_values.Add(buff, tempData = new TemporaryBuff());
             if (!tempData.AddBuff(plugin, value, allowStacking, allowOverride)) return false;
 
+            RefreshBuffSubscriptions(player.userID, buffData, buff);
+
             if (IsBehaviourSkill(buff) && pcdData.pEntity.TryGetValue(player.userID, out var playerData))
             {
                 SetupSkills(player, buffData, playerData);
@@ -4081,6 +4185,7 @@ namespace Oxide.Plugins
             if (!buffData.temp_buff_values.TryGetValue(buff, out var tempData)) return true;
             tempData.RemoveBuff(plugin, value, out var shouldRemove);
             if (shouldRemove) buffData.temp_buff_values.Remove(buff);
+            RefreshBuffSubscriptions(player.userID, buffData, buff);
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return false;
             CheckRemoveBehaviour(player, buffData, playerData, buff);
             return true;
@@ -4094,15 +4199,15 @@ namespace Oxide.Plugins
                 try
                 {
                     if (!pcdData.pEntity.TryGetValue(buffData.player.userID, out var playerData)) continue;
-                    var tempBuffs = new List<KeyValuePair<Buff, TemporaryBuff>>(buffData.temp_buff_values);
-                    for (int i = tempBuffs.Count - 1; i >= 0; i--)
+                    for (int i = buffData.temp_buff_values.Count - 1; i >= 0; i--)
                     {
-                        var buff = tempBuffs[i];
+                        var buff = buffData.temp_buff_values.ElementAt(i);
                         if (buff.Value.GetSourceValue(plugin, out var value))
                         {
                             buff.Value.RemoveBuff(plugin, value, out var shouldDelete);
                             CheckRemoveBehaviour(buffData.player, buffData, playerData, buff.Key);
                             if (shouldDelete) buffData.temp_buff_values.Remove(buff.Key);
+                            RefreshBuffSubscriptions(buffData.player.userID, buffData, buff.Key);
                         }
                     }
                 }
@@ -4266,7 +4371,7 @@ namespace Oxide.Plugins
             Extra_Food_Water,
             Fire_Damage_Reduction,
             Fall_Damage_Reduction,
-            No_Cold_Damage,
+            No_Cold_Damage,            
             Wounded_Resist,
             Animal_Damage_Resist,
             Riding_Speed,
@@ -4320,9 +4425,6 @@ namespace Oxide.Plugins
             Skinning_Luck,
             Fishing_Luck,
             Extended_Mag,
-            Rocket_Mag_Capacity,
-            Combat_Run_Speed,
-            Underwater_Swim_Speed,
 
             // Raid tree perks
             Trap_Damage_Reduction,
@@ -4375,6 +4477,17 @@ namespace Oxide.Plugins
 
             Bradley_Damage_Bonus,
             Heli_Damage_Bonus,
+            Bait_Value_Bonus,
+            Hatch_Speed,
+            Pet_Effectiveness,
+            Coop_Capacity,
+            Cannon_Damage,
+            Sailing_Speed,
+            Boat_Refund,
+            Siege_Damage,
+            Collectible_Respawn,
+            Friendly_Fire_Reduction,
+            No_Bee_Damage,
 
             Woodcutting_Ultimate = 991,
             Mining_Ultimate = 992,
@@ -4434,6 +4547,26 @@ namespace Oxide.Plugins
             CUINormal
         }
 
+        [JsonConverter(typeof(StringEnumConverter))]
+        public enum DeathType
+        {
+            Fall,
+            Drowned,
+            Radiation,
+            Cold,
+            Heat,
+            ElectricShock,
+            Hunger,
+            Thirst,
+            Suicide,
+            Pvp,
+            Animal,
+            HumanNpc,
+            Bradley,
+            PatrolHeli,
+            Traps
+        }
+
         //public string[] Trees = { "Mining", "Woodcutting", "Skinning", "Harvesting", "Combat", "Medical", "Build_Craft", "Scavenging", "Vehicles", "Cooking"};
 
         #endregion
@@ -4443,8 +4576,7 @@ namespace Oxide.Plugins
         void LoadMessages()
         {
             List<Buff> buffs = Pool.Get<List<Buff>>();
-            foreach (var val in Enum.GetValues(typeof(Buff)))
-                buffs.Add((Buff)val);
+            buffs.AddRange(Enum.GetValues(typeof(Buff)).Cast<Buff>());
             Dictionary<string, string> buffMessages = new Dictionary<string, string>();
             foreach (var buff in buffs)
             {
@@ -4521,6 +4653,17 @@ namespace Oxide.Plugins
 
                 ["WaterBreathing"] = "This skill will allow you to breath underwater for <color=#42f105>{0} seconds</color> per level.",
                 ["SharkResistance"] = "This skill will reduce the damage received from sharks by <color=#42f105>{0}%</color> per level.",
+                ["Bait_Value_Bonus"] = "This skill increases the bait value of your fishing bait by <color=#42f105>{0}%</color> per level.",
+                ["Hatch_Speed"] = "This skill reduces the time it takes for an egg to hatch in a chicken coop by <color=#42f105>{0}%</color> per level. At 100% the egg will hatch instantly.",
+                ["Pet_Effectiveness"] = "This skill increases the amount of love a chicken gains when you pet it by <color=#42f105>{0}%</color> per level.",
+                ["Coop_Capacity"] = "This skill allows your chicken coops to hold <color=#42f105>{0}</color> additional chickens per level.",
+                ["CoopHatchTimer"] = "Egg hatching: %TIME_LEFT%s",
+                ["Cannon_Damage"] = "This skill increases the damage dealt by cannons by <color=#42f105>{0}%</color> per level.",
+                ["Sailing_Speed"] = "This skill increases the speed of player-made boats by <color=#42f105>{0}%</color> per level while you are at the helm.",
+                ["Boat_Refund"] = "This skill refunds <color=#42f105>{0}%</color> per level of the materials used when placing boat building pieces.",
+                ["Siege_Damage"] = "This skill increases the damage dealt by catapults, battering rams and ballistas by <color=#42f105>{0}%</color> per level.",
+                ["Collectible_Respawn"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level for a collectible to grow back after you pick it up.",
+                ["Friendly_Fire_Reduction"] = "This skill reduces the damage that you deal to your team mates by <color=#42f105>{0}%</color> per level.",
                 ["SharkSkinner"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level of finding a useful item when skinning a shark.",
                 ["DeepSeaLooter"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level of finding a useful item when looting crates underwater.",
                 ["InstantUntie"] = "This skill allows you to instantly untie underwater crates.",
@@ -4529,6 +4672,7 @@ namespace Oxide.Plugins
                 ["Fire_Damage_Reduction"] = "This skill will reduce fire damage by <color=#42f105>{0}%</color> per level.",
                 ["Fall_Damage_Reduction"] = "This skill will reduce fall damage by <color=#42f105>{0}%</color> per level.",
                 ["No_Cold_Damage"] = "This skill prevents you from being damaged by the cold.",
+                ["No_Bee_Damage"] = "This skill prevents you from being damaged by bees.",
                 ["Wounded_Resist"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level of immediately getting up after being wounded.",
                 ["Animal_Damage_Resist"] = "This skill reduces the damage taken by animals by <color=#42f105>{0}%</color> per level.",
                 ["Riding_Speed"] = "This skill increases the speed of your mounted horse by <color=#42f105>{0}%</color> per level.",
@@ -4560,7 +4704,9 @@ namespace Oxide.Plugins
                 ["Recycler_Efficiency"] = "This skill will increase your recycling efficiency by <color=#42f105>{0}%</color> per level.",
                 ["Efficient_Digger"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level to automatically dig up detected caches when they are flagged.",
                 ["Magnetic_Digger"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level to automatically collect dug up items.",
-                ["Boat_Speed"] = "This skill will allow you to toggle your speed while in a boat by pressing mouse 3 or typing the turbo command. Increases your speed by <color=#42f105>{0}%</color> per level.",
+                ["Boat_Speed_new"] = "This skill will allow you to toggle your speed while in a boat by {0}. Increases your speed by <color=#42f105>{1}%</color> per level.",
+                ["Boat_Speed_instructions_inputson"] = "pressing <color=#FFFB00>mouse 3</color> or typing the turbo command [<color=#FFFB00>/{0}</color>]",
+                ["Boat_Speed_instructions_inputsoff"] = "typing the turbo command [<color=#FFFB00>/{0}</color>]",
                 ["BoatSpeedAuto"] = "This skill will increase the speed of your mounted boat by <color=#42f105>{0}%</color> per level.",
                 ["Heli_Fuel_Rate"] = "This skill will reduce your fuel consumption when flying a helicopter by <color=#42f105>{0}%</color> per level.",
                 ["Boat_Fuel_Rate"] = "This skill will reduce your fuel consumption when using a boat by <color=#42f105>{0}%</color> per level.",
@@ -4571,9 +4717,6 @@ namespace Oxide.Plugins
                 ["Reviver"] = "This skill will heal a downed player when revived for <color=#42f105>{0}%</color> of their health per level.",
                 ["PVP_Shield"] = "Reduce the damage receive in PVP by <color=#42f105>{0}%</color> per level.",
                 ["Extended_Mag"] = "Increases the maximum ammo capacity of your weapons by <color=#42f105>{0}%</color> per level.",
-                ["Rocket_Mag_Capacity"] = "Increases rocket launcher magazine capacity by <color=#42f105>{0}</color> per level.",
-                ["Combat_Run_Speed"] = "This skill increases your run speed by <color=#42f105>{0}%</color> per level while on foot.",
-                ["Underwater_Swim_Speed"] = "Increases your swim speed by <color=#42f105>{0}%</color> per level while underwater.",
                 ["Tea_Looter"] = "This skill gives you a <color=#42f105>{0}%</color> per level of finding tea in food crates and boxes.",
                 ["Bite_Speed"] = "This skill increases the speed to hook a fish while fishing by <color=#42f105>{0}%</color> per level.",
                 ["Heli_Speed"] = "This skill increases the lift fraction of helicopters <color=#42f105>{0}%</color> per level.",
@@ -4840,6 +4983,8 @@ namespace Oxide.Plugins
                 ["MinPrestigeString"] = "Requires Prestige Level: {0}</color>",
                 ["TimeLeftPicklock"] = "<color=#ffb600>Pick time remaining: {0}</color>",
                 ["MLRSTimeLeft"] = "<color=#ffb600>Strike time remaining: {0}</color>",
+                ["TimeLeftPicklockNew"] = "<color=#ffb600>Pick time remaining: %TIME_LEFT%</color>",
+                ["MLRSTimeLeftNew"] = "<color=#ffb600>Strike time remaining: %TIME_LEFT%</color>",
                 ["FailMinLevel"] = "You must be level at least {0} to unlock nodes on this tree.",
                 ["FailMinPointsSpent"] = "You must have spent at least {0} to unlock nodes on this tree.",
                 ["FailMinPrestige"] = "You must have prestige level {0} to unlock nodes on this tree.",
@@ -4927,6 +5072,10 @@ namespace Oxide.Plugins
                 ["UILevelUpButton"] = "<color=#ffb600>Level Up</color>",
                 ["UIPrestigeUpButton"] = "<color=#ffb600>Gain Prestige</color>",
                 ["UIPrestigeUpButtonHasLevel"] = "<color=#3fa112>Gain Prestige</color>",
+                ["UIPrestigeHistoryButton"] = "<color=#00d6d9>History</color>",
+                ["UIPrestigeHistory"] = "PRESTIGE HISTORY",
+                ["UIPrestigeHistoryRank"] = "<size=15><color=#a809b0>{0}</color></size>",
+                ["UIPrestigeHistoryEmpty"] = "You have not achieved any prestige ranks yet.",
                 ["UIEnabled"] = "Enabled",
                 ["metal"] = "metal",
                 ["stone"] = "stone",
@@ -4977,10 +5126,6 @@ namespace Oxide.Plugins
                 ["Metal_Detector_Luck_Found_Item"] = "You found <color=#f4ed03>{0}</color>x <color=#8ecd2d>{1}</color> while digging up the site.",
                 ["UIPrestigeExplain2"] = "The prestige system will allow you to reset your Skill Tree progress and start from the beginning, but with additional benefits. <color=#ec3209>This process cannot be undone!</color>\n\n<b>You will be provided with the following benefits:</b>",
                 ["UIPrestigeXPMod"] = "\n\nXP modifier: <color=#ec3209>{0}%</color>",
-                ["UIPrestigeBenefitKeepPoints"] = "Keep all skill points - refunded for re-allocation after reset",
-                ["UIPrestigeBenefitKeepExcessPoints"] = "Keep excess skill points from events and rewards",
-                ["UIPrestigeBenefitPresetsSaved"] = "Preset builds are preserved",
-                ["UIPrestigeBenefitRespecDiscount"] = "{0}% discount on respec and preset swap costs",
                 ["UICONFIRM"] = "CONFIRM",
                 ["UICANCEL"] = "CANCEL",
                 ["BuffUIFormat"] = "{0}: <color=#42f105>{1}</color>\n",
@@ -5082,6 +5227,7 @@ namespace Oxide.Plugins
                 ["UINextRowUnlocks"] = "<color=#f5d800>Next row unlocks in: <color=#0AC406>{0}</color> points</color>",
                 ["Ddraw_Forager_Format"] = "<size=14>{0}{1}</size>",
                 ["Ddraw_Sonar_Format"] = "<size=14>{0}{1}</size>",
+                ["MaxRepairCooldown"] = "\n\n<color=#ffff00>Cooldown:</color> {0} seconds."
             };
 
             Dictionary<string, string> langMessages = new Dictionary<string, string>();
@@ -5121,6 +5267,12 @@ namespace Oxide.Plugins
                 if (level.Value.commands != null)
                 {
                     foreach (var _command in level.Value.commands)
+                        if (!langMessages.ContainsKey(_command.Key)) langMessages.Add(_command.Key, _command.Key);
+                }
+
+                if (level.Value.postCommands != null)
+                {
+                    foreach (var _command in level.Value.postCommands)
                         if (!langMessages.ContainsKey(_command.Key)) langMessages.Add(_command.Key, _command.Key);
                 }
             }
@@ -5318,6 +5470,7 @@ namespace Oxide.Plugins
                 CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
                 CuiHelper.DestroyUi(player, "NavigationMenu");
                 CuiHelper.DestroyUi(player, "PrestigeConfirmation");
+                CuiHelper.DestroyUi(player, "PrestigeHistory");
                 DoClear(player, config.buff_settings.removePermissionsOnDisconnect);
                 LoggingOff(player, true);
                 HandleNewConnection(player);
@@ -5369,10 +5522,8 @@ namespace Oxide.Plugins
         {
             if (type != AntiHackType.FlyHack) return null;
             BuffDetails bd;
-            if (!GetBuffDetails(player.userID, out bd)) return null;
-            if (bd.ContainsBuff(Buff.Fall_Damage_Reduction)) return true;
-            if (config.buff_settings.prevent_flyhack_kick_roadrunner && bd.ContainsBuff(Buff.Combat_Run_Speed)) return true;
-            return null;
+            if (!GetBuffDetails(player.userID, out bd) || !bd.ContainsBuff(Buff.Fall_Damage_Reduction)) return null;
+            return true;
         }
 
         object OnWeaponReload(BaseProjectile weapon, BasePlayer player)
@@ -5391,24 +5542,6 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            var item = weapon.GetItem();
-            var shortname = item?.info?.shortname ?? string.Empty;
-            bool isLauncher = shortname.IndexOf("rocket.launcher", StringComparison.OrdinalIgnoreCase) >= 0 || shortname.IndexOf("dragon", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (isLauncher)
-            {
-                float rocketBuff;
-                if (bd.GetBuff(Buff.Rocket_Mag_Capacity, out rocketBuff) && rocketBuff > 0f)
-                {
-                    if (!ModifiedWeapons.ContainsKey(weapon.net.ID.Value)) ModifiedWeapons.Add(weapon.net.ID.Value, weapon);
-                    int baseSize = weapon.primaryMagazine.definition.builtInSize;
-                    weapon.primaryMagazine.capacity = baseSize + Mathf.RoundToInt(rocketBuff);
-                    weapon.SendNetworkUpdateImmediate();
-                    return null;
-                }
-                if (ModifiedWeapons.ContainsKey(weapon.net.ID.Value)) RemoveMods(weapon, 0);
-                return null;
-            }
-
             if (!bd.GetBuff(Buff.Extended_Mag, out var value))
             {
                 if (ModifiedWeapons.ContainsKey(weapon.net.ID.Value))
@@ -5418,14 +5551,7 @@ namespace Oxide.Plugins
                 return null;
             }
             if (!ModifiedWeapons.ContainsKey(weapon.net.ID.Value)) ModifiedWeapons.Add(weapon.net.ID.Value, weapon);
-            float multResult = 1f;
-            try
-            {
-                multResult = ProjectileWeaponMod.Mult(weapon, (ProjectileWeaponMod x) => x.magazineCapacity, (ProjectileWeaponMod.Modifier y) => y.scalar, false);
-            }
-            catch (InvalidCastException) { multResult = 1f; }
-            catch (Exception ex) { PrintError($"OnWeaponReload: Error calculating mod multiplier: {ex.Message}"); multResult = 1f; }
-            int num = Mathf.CeilToInt(multResult * (float)weapon.primaryMagazine.definition.builtInSize);
+            int num = Mathf.CeilToInt(ProjectileWeaponMod.Mult(weapon, ProjectileWeaponMod.SelectMagCap, ProjectileWeaponMod.SelectScalar) * (float)weapon.primaryMagazine.definition.builtInSize);
             var totalAmmoCapacity = num + Convert.ToInt32(weapon.primaryMagazine.definition.builtInSize * value);
             weapon.primaryMagazine.capacity = totalAmmoCapacity;
 
@@ -5445,25 +5571,6 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            var item = weapon.GetItem();
-            var shortname = item?.info?.shortname ?? string.Empty;
-            bool isLauncher = shortname.IndexOf("rocket.launcher", StringComparison.OrdinalIgnoreCase) >= 0 || shortname.IndexOf("dragon", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (isLauncher)
-            {
-                float rocketBuff;
-                if (bd.GetBuff(Buff.Rocket_Mag_Capacity, out rocketBuff) && rocketBuff > 0f)
-                {
-                    if (!ModifiedWeapons.ContainsKey(weapon.net.ID.Value)) ModifiedWeapons.Add(weapon.net.ID.Value, weapon);
-                    int baseSize = weapon.primaryMagazine.definition.builtInSize;
-                    var oldCap = weapon.primaryMagazine.capacity;
-                    weapon.primaryMagazine.capacity = baseSize + Mathf.RoundToInt(rocketBuff);
-                    if (oldCap != weapon.primaryMagazine.capacity) weapon.SendNetworkUpdateImmediate();
-                    return true;
-                }
-                RemoveMods(weapon, 0);
-                return null;
-            }
-
             float value;
             if (!bd.GetBuff(Buff.Extended_Mag, out value))
             {
@@ -5471,15 +5578,7 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            float multResult = 1f;
-            try
-            {
-                multResult = ProjectileWeaponMod.Mult(weapon, (ProjectileWeaponMod x) => x.magazineCapacity, (ProjectileWeaponMod.Modifier y) => y.scalar, false);
-            }
-            catch (InvalidCastException) { multResult = 1f; }
-            catch (Exception ex) { PrintError($"OnWeaponModChange: Error calculating mod multiplier: {ex.Message}"); multResult = 1f; }
-            int num = Mathf.CeilToInt(multResult * (float)weapon.primaryMagazine.definition.builtInSize);
-
+            int num = Mathf.CeilToInt(ProjectileWeaponMod.Mult(weapon, ProjectileWeaponMod.SelectMagCap, ProjectileWeaponMod.SelectScalar) * (float)weapon.primaryMagazine.definition.builtInSize);
             var totalAmmoCapacity = num + Convert.ToInt32(weapon.primaryMagazine.definition.builtInSize * value);
 
 
@@ -5500,32 +5599,18 @@ namespace Oxide.Plugins
 
         void RemoveMods(BaseProjectile weapon, int extraAmmo, bool removeFromDic = true, bool forceUnload = true)
         {
-            try
-            {
-                DelayedModsChanged(weapon, extraAmmo, forceUnload);
-            }
-            catch (InvalidCastException) { }
-            catch (Exception ex) { PrintError($"RemoveMods: Error in DelayedModsChanged: {ex.Message}"); }
+            DelayedModsChanged(weapon, extraAmmo, forceUnload);
             if (removeFromDic) ModifiedWeapons.Remove(weapon.net.ID.Value);
         }
 
         public void DelayedModsChanged(BaseProjectile weapon, int extraAmmoCapacity = 0, bool unloadModifiedWeapons = true)
         {
-            if (weapon == null || weapon.IsDestroyed || weapon.primaryMagazine == null) return;
-            float multResult = 1f;
-            try
-            {
-                multResult = ProjectileWeaponMod.Mult(weapon, (ProjectileWeaponMod x) => x.magazineCapacity, (ProjectileWeaponMod.Modifier y) => y.scalar, false);
-            }
-            catch (InvalidCastException) { multResult = 1f; }
-            catch (Exception ex) { PrintError($"DelayedModsChanged: Error calculating mod multiplier: {ex.Message}"); multResult = 1f; }
-            int num = Mathf.CeilToInt(multResult * (float)weapon.primaryMagazine.definition.builtInSize) + extraAmmoCapacity;
+            int num = Mathf.CeilToInt(ProjectileWeaponMod.Mult(weapon, ProjectileWeaponMod.SelectMagCap, ProjectileWeaponMod.SelectScalar) * (float)weapon.primaryMagazine.definition.builtInSize);
             if (num == weapon.primaryMagazine.capacity && weapon.primaryMagazine.contents <= num)
             {
                 return;
             }
-            bool shouldUnload = unloadModifiedWeapons && (extraAmmoCapacity <= 0 || num < weapon.primaryMagazine.capacity);
-            if (weapon.primaryMagazine.contents > 0 && weapon.primaryMagazine.contents > num && shouldUnload)
+            if (weapon.primaryMagazine.contents > 0 && weapon.primaryMagazine.contents > num && unloadModifiedWeapons)
             {
                 int contents = weapon.primaryMagazine.contents;
                 BasePlayer player = weapon.GetOwnerPlayer();
@@ -5557,33 +5642,6 @@ namespace Oxide.Plugins
             }
             weapon.primaryMagazine.capacity = num;
             weapon.SendNetworkUpdate();
-        }
-
-        void OnEntitySpawned(BaseNetworkable entity)
-        {
-            var collectible = entity as CollectibleEntity;
-            if (IsForagerLoaded && collectible != null && collectible.net != null)
-                CollectibleManager.Spawned(collectible);
-
-            var launcher = entity as BaseLauncher;
-            if (launcher == null) return;
-            NextTick(() =>
-            {
-                var owner = launcher.GetOwnerPlayer();
-                if (owner == null || owner.IsNpc || !owner.userID.IsSteamId()) return;
-                if (!GetBuffDetails(owner.userID, out var bd)) return;
-                float rocketBuff;
-                if (!bd.GetBuff(Buff.Rocket_Mag_Capacity, out rocketBuff) || rocketBuff <= 0f) return;
-                var item = launcher.GetItem();
-                var shortname = item?.info?.shortname ?? string.Empty;
-                if (shortname.IndexOf("rocket.launcher", StringComparison.OrdinalIgnoreCase) < 0 && shortname.IndexOf("dragon", StringComparison.OrdinalIgnoreCase) < 0) return;
-                int baseSize = launcher.primaryMagazine != null ? launcher.primaryMagazine.definition.builtInSize : 1;
-                if (launcher.primaryMagazine != null)
-                {
-                    launcher.primaryMagazine.capacity = baseSize + Mathf.RoundToInt(rocketBuff);
-                    (launcher as BaseProjectile)?.SendNetworkUpdateImmediate();
-                }
-            });
         }
 
         object CanTakeCutting(BasePlayer player, GrowableEntity plant)
@@ -5673,13 +5731,11 @@ namespace Oxide.Plugins
 
                 Player.Message(player, string.Format(lang.GetMessage("LockPickActivated", this, player.UserIDString), config.buff_settings.raid_perk_settings.Lock_Picker_settings.time), config.misc_settings.ChatID);
 
-                var timeLeft = Convert.ToInt32(config.buff_settings.raid_perk_settings.Lock_Picker_settings.time);
-                pickerData.timer = timer.Every(config.buff_settings.raid_perk_settings.Lock_Picker_settings.timer_tick_rate, () =>
-                {
-                    timeLeft -= config.buff_settings.raid_perk_settings.Lock_Picker_settings.timer_tick_rate;
-                    if (timeLeft <= 0) DestroyPicker(player.userID, pickerData);
-                    else if (config.buff_settings.raid_perk_settings.Lock_Picker_settings.show_timer) PendingTimer(player, string.Format(lang.GetMessage("TimeLeftPicklock", this, player.UserIDString), timeLeft));
-                });
+                var time = config.buff_settings.raid_perk_settings.Lock_Picker_settings.time;
+                if (config.buff_settings.raid_perk_settings.Lock_Picker_settings.show_timer)
+                    PendingTimer(player, lang.GetMessage("TimeLeftPicklockNew", this, player.UserIDString), time);
+
+                pickerData.timer = timer.Once(time, () => DestroyPicker(player.userID, pickerData));
             }
         }
 
@@ -5695,21 +5751,31 @@ namespace Oxide.Plugins
             }
         }
 
-        private void PendingTimer(BasePlayer player, string text)
+        private void PendingTimer(BasePlayer player, string text, float seconds)
         {
             var container = new CuiElementContainer();
             container.Add(new CuiElement
             {
                 Name = "PendingTimer",
                 Parent = "Hud",
+                DestroyUi = "PendingTimer",   // clears any existing one before adding
                 Components = {
                     new CuiTextComponent { Text = text, Font = "robotocondensed-regular.ttf", FontSize = 12, Align = TextAnchor.UpperLeft, Color = "1 1 1 1" },
                     new CuiOutlineComponent { Color = "0 0 0 0.5", Distance = "1 -1" },
+                    new CuiCountdownComponent
+                    {
+                        StartTime = seconds,          // counts down from this
+                        EndTime = 0,
+                        Step = 1,
+                        Interval = 1f,
+                        TimerFormat = TimerFormat.None,
+                        NumberFormat = "0",           // integer seconds
+                        DestroyIfDone = true          // client removes the UI at 0
+                    },
                     new CuiRectTransformComponent { AnchorMin = config.misc_settings.timeLeft_anchor.anchorMin, AnchorMax = config.misc_settings.timeLeft_anchor.anchorMax, OffsetMin = config.misc_settings.timeLeft_anchor.offsetMin, OffsetMax = config.misc_settings.timeLeft_anchor.offsetMax }
                 }
             });
 
-            CuiHelper.DestroyUi(player, "PendingTimer");
             CuiHelper.AddUi(player, container);
         }
 
@@ -5765,6 +5831,29 @@ namespace Oxide.Plugins
                 var AttackerIsRealPlayer = info.InitiatorPlayer != null && !info.InitiatorPlayer.IsNpc && info.InitiatorPlayer.userID.IsSteamId();
                 BuffDetails bd;
 
+                #region Siege weapons
+
+                if (AttackerIsRealPlayer && IsSiegeWeaponDamage(info))
+                {
+                    if (GetBuffDetails(info.InitiatorPlayer.userID, out bd) && bd.GetBuff(Buff.Siege_Damage, out var siegeValue))
+                        info.damageTypes.ScaleAll(1f + siegeValue);
+                }
+
+                #endregion
+
+                #region Friendly fire
+
+                if (AttackerIsRealPlayer && entity is BasePlayer victim && PlayerIsReal(victim) && victim != info.InitiatorPlayer && IsSameTeam(info.InitiatorPlayer, victim))
+                {
+                    if (GetBuffDetails(info.InitiatorPlayer.userID, out bd) && bd.GetBuff(Buff.Friendly_Fire_Reduction, out var ffValue))
+                    {
+                        info.damageTypes.ScaleAll(Mathf.Max(1f - ffValue, 0f));
+                        return null;
+                    }
+                }
+
+                #endregion
+
                 #region Trap
 
                 if (IsTrap(entity) && AttackerIsRealPlayer)
@@ -5783,18 +5872,6 @@ namespace Oxide.Plugins
                 {
                     if (!AttackerIsRealPlayer) return null;
                     if (!GetBuffDetails(info.InitiatorPlayer.userID, out bd) || !bd.GetBuff(Buff.Bradley_Damage_Bonus, out var value)) return null;
-                    info.damageTypes.ScaleAll(1f + value);
-                    return null;
-                }
-
-                #endregion
-
-                #region Attack Heli
-
-                if (entity is PatrolHelicopter heli)
-                {
-                    if (!AttackerIsRealPlayer) return null;
-                    if (!GetBuffDetails(info.InitiatorPlayer.userID, out bd) || !bd.GetBuff(Buff.Heli_Damage_Bonus, out var value)) return null;
                     info.damageTypes.ScaleAll(1f + value);
                     return null;
                 }
@@ -5895,7 +5972,7 @@ namespace Oxide.Plugins
                         info.damageTypes.ScaleAll(reducedValue);
                         if (reducedValue > 0) AddRegenDelay(player);
                         HandleBearBuff(player, info, damageType);
-                        return CancelIfNegated(info);
+                        return null;
                     }
                     var damage = info.damageTypes.GetMajorityDamageType();
                     switch (damage)
@@ -5910,10 +5987,19 @@ namespace Oxide.Plugins
                             {
                                 player.metabolism.temperature.SetValue(20f);
                                 info.damageTypes.ScaleAll(0f);
-                                return true;
+                                return null;
                             }
                             else AddRegenDelay(player);
-                            return CancelIfNegated(info);
+                            return null;
+                        case Rust.DamageType.Bite:
+                            if (info.Initiator?.ShortPrefabName != "beeswarm") break;
+                            if (bd.ContainsBuff(Buff.No_Bee_Damage))
+                            {
+                                info.damageTypes.ScaleAll(0f);
+                                return null;
+                            }
+                            else AddRegenDelay(player);
+                            return null;
                         case Rust.DamageType.Radiation:
                         case Rust.DamageType.RadiationExposure:
                             if (bd.GetBuff(Buff.Radiation_Reduction, out value))
@@ -5929,7 +6015,7 @@ namespace Oxide.Plugins
                                 if (reducedValue > 0) AddRegenDelay(player);
                             }
                             else AddRegenDelay(player);
-                            return CancelIfNegated(info);
+                            return null;
                         case Rust.DamageType.Heat:
                             if (bd.GetBuff(Buff.Fire_Damage_Reduction, out value) || (config.buff_settings.raid_perk_settings.personal_explosive_reduction_settings.fire_damage_reduction && bd.GetBuff(Buff.Personal_Explosive_Reduction, out value) && info.InitiatorPlayer != null && info.InitiatorPlayer == player))
                             {
@@ -5939,7 +6025,7 @@ namespace Oxide.Plugins
                                 if (reducedValue > 0) AddRegenDelay(player);
                             }
                             else AddRegenDelay(player);
-                            return CancelIfNegated(info);
+                            return null;
                         case Rust.DamageType.Fall:
                             if (HasAnimalBuff(player, AnimalBuff.Chicken)) info.damageTypes.ScaleAll(0f);
                             else if (bd.GetBuff(Buff.Fall_Damage_Reduction, out value))
@@ -5951,14 +6037,14 @@ namespace Oxide.Plugins
                             }
                             else AddRegenDelay(player);
                             HandleBearBuff(player, info, Rust.DamageType.Fall);
-                            return CancelIfNegated(info);
+                            return null;
                         case Rust.DamageType.Collision:
                             if (!player.isMounted) break;
                             var vehicle = player.GetMountedVehicle();
                             if (vehicle == null || !bd.GetBuff(Buff.DriverCollisionResistance, out value)) break;
 
                             info.damageTypes.Scale(Rust.DamageType.Collision, Mathf.Max(0, 1f - value));
-                            return CancelIfNegated(info);
+                            return null;
                     }
                     var attacker = info.Initiator;
                     if (attacker == null) return null;
@@ -5969,7 +6055,7 @@ namespace Oxide.Plugins
                         info.damageTypes.ScaleAll(reducedValue);
                         if (reducedValue > 0) AddRegenDelay(player);
                         HandleBearBuff(player, info, damageType);
-                        return CancelIfNegated(info);
+                        return null;
                     }
                     if (bd.GetBuff(Buff.SharkResistance, out value) && attacker is SimpleShark)
                     {
@@ -5978,21 +6064,16 @@ namespace Oxide.Plugins
                         info.damageTypes.ScaleAll(reducedValue);
                         if (reducedValue > 0) AddRegenDelay(player);
                         HandleBearBuff(player, info, damageType);
-                        return CancelIfNegated(info);
+                        return null;
                     }
                     var damageScale = 1f;
+
+                    if (IsMeleeAttack(info, attacker as BasePlayer) && bd.GetBuff(Buff.Melee_Resist, out value))
+                        damageScale -= value;
+
                     var player_attacker = attacker as BasePlayer;
                     if (player_attacker != null && AttackerIsRealPlayer)
-                    {
-                        if (bd.GetBuff(Buff.Melee_Resist, out value))
-                        {
-                            var heldEntity = player_attacker.GetHeldEntity();
-                            if (heldEntity != null && heldEntity is BaseMelee)
-                            {
-                                damageScale -= value;
-                            }
-                        }
-
+                    {                       
                         if (bd.GetBuff(Buff.PVP_Shield, out value))
                         {
                             damageScale -= value;
@@ -6008,7 +6089,7 @@ namespace Oxide.Plugins
                                 info.damageTypes.ScaleAll(reducedValue);
                                 if (reducedValue > 0) AddRegenDelay(player);
                                 HandleBearBuff(player, info, damageType);
-                                return CancelIfNegated(info);
+                                return null;
                             }
                         }
 
@@ -6047,7 +6128,7 @@ namespace Oxide.Plugins
                     if (damageScale != 1f) info.damageTypes.ScaleAll(damageScale);
                     if (damageScale > 0) AddRegenDelay(player);
                     HandleBearBuff(player, info, damageType);
-                    return CancelIfNegated(info);
+                    return null;
                 }
                 #endregion
 
@@ -6125,13 +6206,19 @@ namespace Oxide.Plugins
                 }
                 #endregion
             }
-            catch (Exception ex)
+            catch
             {
-                if (config.misc_settings.enableDebug) PrintWarning($"OnEntityTakeDamage failed for {entity?.ShortPrefabName ?? "null"} from {info?.Initiator?.ShortPrefabName ?? "null"}: {ex.Message}");
             }
 
 
             return null;
+        }
+
+        bool IsMeleeAttack(HitInfo info, BasePlayer attacker)
+        {
+            if (info.Weapon is BaseMelee) return true;
+            if (info.WeaponPrefab is BaseMelee) return true;
+            return attacker != null && attacker.GetHeldEntity() is BaseMelee;
         }
 
         void ScaleVehicleDamage(HitInfo info, float value)
@@ -6238,8 +6325,6 @@ namespace Oxide.Plugins
         {
             try
             {
-                if (player == null || !player.IsConnected) return;
-
                 if (newItem == null)
                 {
                     Timer timer;
@@ -6250,40 +6335,14 @@ namespace Oxide.Plugins
                     }
                     return;
                 }
+                if (!IsPickaxe(newItem.info.shortname)) return;
 
-                BuffDetails bd;
-                if (GetBuffDetails(player.userID, out bd))
-                {
-                    if (bd.GetBuff(Buff.Extended_Mag, out var extendedMag) && extendedMag > 0)
-                    {
-                        var weapon = player.GetHeldEntity() as BaseProjectile;
-                        if (weapon != null)
-                        {
-                            DelayedModsChanged(weapon, Convert.ToInt32(weapon.primaryMagazine.definition.builtInSize * extendedMag));
-                            if (!ModifiedWeapons.ContainsKey(weapon.net.ID.Value)) ModifiedWeapons.Add(weapon.net.ID.Value, weapon);
-                        }
-                    }
-                    if (bd.GetBuff(Buff.Rocket_Mag_Capacity, out var extraRockets) && extraRockets > 0)
-                    {
-                        var launcher = player.GetHeldEntity() as BaseLauncher;
-                        if (launcher != null)
-                        {
-                            var item = launcher.GetItem();
-                            var shortname = item?.info?.shortname ?? string.Empty;
-                            if (shortname.IndexOf("rocket.launcher", StringComparison.OrdinalIgnoreCase) >= 0 || shortname.IndexOf("dragon", StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                DelayedModsChanged(launcher, Mathf.RoundToInt(extraRockets), false);
-                                var proj = launcher as BaseProjectile;
-                                if (proj != null && !ModifiedWeapons.ContainsKey(proj.net.ID.Value)) ModifiedWeapons.Add(proj.net.ID.Value, proj);
-                            }
-                        }
-                    }
-                }
-
-                if (IsPickaxe(newItem.info.shortname))
-                    TriggerMiningUltimateFromItem(player);
+                TriggerMiningUltimateFromItem(player);
             }
-            catch { }
+            catch
+            {
+
+            }
         }
 
         bool IsPickaxe(string shortname)
@@ -6301,84 +6360,143 @@ namespace Oxide.Plugins
             AwardXP(player, config.xp_settings.xp_sources.Mission, null, false, false, nameof(config.xp_settings.xp_sources.Mission));
         }
 
-        void HandleExistingData(Dictionary<string, PlayerInfo> allPlayers)
-        {
-
+        void HandleExistingData(Dictionary<string, PlayerInfo> allPlayers, bool isForced)
+        {            
             foreach (var kvp in allPlayers)
             {
-                if (config.wipe_update_settings.xp_debt_wipe) kvp.Value.xp_debt = 0;
-
                 kvp.Value.last_xp_loss = DateTime.Now;
                 kvp.Value.raiding_ultimate_used_time = DateTime.MinValue;
                 kvp.Value.cooking_ultimate_used_time = DateTime.MinValue;
                 kvp.Value.Trap_Spotter_used_time = DateTime.Now;
                 kvp.Value.Loot_Spotter_used_time = DateTime.Now;
 
-                if (config.wipe_update_settings.respec_multiplier_wipe) kvp.Value.respec_multiplier = 0;
                 if (config.rested_xp_settings.rested_xp_reset_on_wipe)
                 {
                     kvp.Value.xp_bonus_pool = 0;
                     kvp.Value.logged_off = DateTime.Now;
                 }
 
-                if (config.wipe_update_settings.reset_pending_xp_on_wipe)
+                if (isForced)
                 {
-                    kvp.Value.pending_xp_without_bonus = 0;
-                    kvp.Value.pending_xp_with_bonus = 0;
-                }
-
-                if (config.wipe_update_settings.erase_ExtraPockets_on_wipe) kvp.Value.pouch_items.Clear();
-
-                if (config.wipe_update_settings.xp_wipe_type == Configuration.WipeUpdate.WipeType.Reset)
-                {
-                    try
+                    if (config.wipe_update_settings.forcedWipeSettings.xp_debt_wipe) kvp.Value.xp_debt = 0;
+                    if (config.wipe_update_settings.forcedWipeSettings.respec_multiplier_wipe) kvp.Value.respec_multiplier = 0;
+                    if (config.wipe_update_settings.forcedWipeSettings.reset_pending_xp_on_wipe)
                     {
-                        RunResetCommands(kvp.Key, kvp.Value.prestige_level > 0 ? config.general_settings.max_player_level : kvp.Value.achieved_level);
+                        kvp.Value.pending_xp_without_bonus = 0;
+                        kvp.Value.pending_xp_with_bonus = 0;
                     }
-                    catch { }
-                    kvp.Value.achieved_level = 0;
-                    kvp.Value.current_level = 0;
-                    kvp.Value.xp = 0;
-                    kvp.Value.available_points = 0;
-                    kvp.Value.buff_values.Clear();
-                    kvp.Value.pending_xp_without_bonus = 0;
-                    kvp.Value.pending_xp_with_bonus = 0;
-                    kvp.Value.pouch_items.Clear();
-                    kvp.Value.ultimate_settings.Clear();
-                    kvp.Value.non_level_related_points_given = 0;
-                }
-                else if (config.wipe_update_settings.xp_wipe_type == Configuration.WipeUpdate.WipeType.Refund)
-                {
-                    var pointsSpent = 0;
-                    foreach (var buff in kvp.Value.buff_values)
-                        pointsSpent += buff.Value;
+                    if (config.wipe_update_settings.forcedWipeSettings.erase_ExtraPockets_on_wipe) kvp.Value.pouch_items.Clear();
 
-                    kvp.Value.buff_values.Clear();
-                    kvp.Value.available_points += pointsSpent;
-                    kvp.Value.ultimate_settings.Clear();
-                    try
+                    if (config.wipe_update_settings.forcedWipeSettings.xp_wipe_type == Configuration.WipeUpdate.WipeType.Reset)
                     {
-                        RemovePerms(kvp.Key, true);
+                        try
+                        {
+                            RunResetCommands(kvp.Key, kvp.Value.prestige_level > 0 ? config.general_settings.max_player_level : kvp.Value.achieved_level);
+                        }
+                        catch { }
+                        kvp.Value.achieved_level = 0;
+                        kvp.Value.current_level = 0;
+                        kvp.Value.xp = 0;
+                        kvp.Value.available_points = 0;
+                        kvp.Value.buff_values.Clear();
+                        kvp.Value.pending_xp_without_bonus = 0;
+                        kvp.Value.pending_xp_with_bonus = 0;
+                        kvp.Value.pouch_items.Clear();
+                        kvp.Value.ultimate_settings.Clear();
+                        kvp.Value.non_level_related_points_given = 0;
                     }
-                    catch { }
-                }
+                    else if (config.wipe_update_settings.forcedWipeSettings.xp_wipe_type == Configuration.WipeUpdate.WipeType.Refund)
+                    {
+                        var pointsSpent = 0;
+                        foreach (var buff in kvp.Value.buff_values)
+                            pointsSpent += buff.Value;
 
-                if (config.wipe_update_settings.prestige_wipe)
-                {
-                    try
-                    {
-                        RemovePrestigeGroup(kvp.Key, kvp.Value.prestige_level);
+                        kvp.Value.buff_values.Clear();
+                        kvp.Value.available_points += pointsSpent;
+                        kvp.Value.ultimate_settings.Clear();
+                        try
+                        {
+                            RemovePerms(kvp.Key, true);
+                        }
+                        catch { }
                     }
-                    catch { }
-                    kvp.Value.prestige_level = 0;
-                    kvp.Value.prestige_xp_mod = 0;
+                    if (config.wipe_update_settings.forcedWipeSettings.prestige_wipe)
+                    {
+                        try
+                        {
+                            RemovePrestigeGroup(kvp.Key, kvp.Value.prestige_level);
+                        }
+                        catch { }
+                        kvp.Value.prestige_level = 0;
+                        kvp.Value.prestige_xp_mod = 0;
+                    }
+                }
+                else
+                {
+                    if (config.wipe_update_settings.manualWipeSettings.xp_debt_wipe) kvp.Value.xp_debt = 0;
+                    if (config.wipe_update_settings.manualWipeSettings.respec_multiplier_wipe) kvp.Value.respec_multiplier = 0;
+                    if (config.wipe_update_settings.manualWipeSettings.reset_pending_xp_on_wipe)
+                    {
+                        kvp.Value.pending_xp_without_bonus = 0;
+                        kvp.Value.pending_xp_with_bonus = 0;
+                    }
+                    if (config.wipe_update_settings.manualWipeSettings.erase_ExtraPockets_on_wipe) kvp.Value.pouch_items.Clear();
+
+                    if (config.wipe_update_settings.manualWipeSettings.xp_wipe_type == Configuration.WipeUpdate.WipeType.Reset)
+                    {
+                        try
+                        {
+                            RunResetCommands(kvp.Key, kvp.Value.prestige_level > 0 ? config.general_settings.max_player_level : kvp.Value.achieved_level);
+                        }
+                        catch { }
+                        kvp.Value.achieved_level = 0;
+                        kvp.Value.current_level = 0;
+                        kvp.Value.xp = 0;
+                        kvp.Value.available_points = 0;
+                        kvp.Value.buff_values.Clear();
+                        kvp.Value.pending_xp_without_bonus = 0;
+                        kvp.Value.pending_xp_with_bonus = 0;
+                        kvp.Value.pouch_items.Clear();
+                        kvp.Value.ultimate_settings.Clear();
+                        kvp.Value.non_level_related_points_given = 0;
+                    }
+                    else if (config.wipe_update_settings.manualWipeSettings.xp_wipe_type == Configuration.WipeUpdate.WipeType.Refund)
+                    {
+                        var pointsSpent = 0;
+                        foreach (var buff in kvp.Value.buff_values)
+                            pointsSpent += buff.Value;
+
+                        kvp.Value.buff_values.Clear();
+                        kvp.Value.available_points += pointsSpent;
+                        kvp.Value.ultimate_settings.Clear();
+                        try
+                        {
+                            RemovePerms(kvp.Key, true);
+                        }
+                        catch { }
+                    }
+                    if (config.wipe_update_settings.manualWipeSettings.prestige_wipe)
+                    {
+                        try
+                        {
+                            RemovePrestigeGroup(kvp.Key, kvp.Value.prestige_level);
+                        }
+                        catch { }
+                        kvp.Value.prestige_level = 0;
+                        kvp.Value.prestige_xp_mod = 0;
+                    }
                 }
             }
         }
 
-        void AwardBestPlayer(Dictionary<string, PlayerInfo> allPlayers)
+        void AwardBestPlayer(Dictionary<string, PlayerInfo> allPlayers, bool isForced)
         {
-            if (!config.wipe_update_settings.bonus_skill_points) return;
+            if (isForced)
+            {
+                if (!config.wipe_update_settings.forcedWipeSettings.bonus_skill_points) return;
+            }
+            else if (!config.wipe_update_settings.manualWipeSettings.bonus_skill_points) return;
+
             string highest_player = null;
             var highest_xp = 0d;
             foreach (var kvp in allPlayers)
@@ -6391,11 +6509,30 @@ namespace Oxide.Plugins
             }
             Puts($"The player with the highest score is {highest_player} with {highest_xp} xp achieved.");
             pcdData.HighestPlayer = Convert.ToUInt64(highest_player);
+            pcdData.highestPlayerPoints = isForced ? config.wipe_update_settings.forcedWipeSettings.bonus_skill_points_amount : config.wipe_update_settings.manualWipeSettings.bonus_skill_points_amount;
+        }
+
+        bool IsFirstThursdayOfMonth()
+        {
+            var utcNow = DateTime.UtcNow;
+            return utcNow.DayOfWeek == DayOfWeek.Thursday && utcNow.Day <= 7;
         }
 
         void OnNewSave(string filename)
         {
-            if (config.wipe_update_settings.wipe_everything)
+            bool protocolChanged = pcdData.LastProtocolSave != Rust.Protocol.save && pcdData.LastProtocolSave != 0;
+            bool isForced = protocolChanged && IsFirstThursdayOfMonth();
+            pcdData.LastProtocolSave = Rust.Protocol.save;
+
+            if (isForced)
+            {
+                if (config.wipe_update_settings.forcedWipeSettings.wipe_everything)
+                {
+                    ResetAllData();
+                    return;
+                }
+            }
+            else if (config.wipe_update_settings.manualWipeSettings.wipe_everything)
             {
                 ResetAllData();
                 return;
@@ -6436,9 +6573,11 @@ namespace Oxide.Plugins
 
             Pool.FreeUnmanaged(ref ToDelete);
 
-            HandleExistingData(allPlayers);
+            
+            HandleExistingData(allPlayers, isForced);
 
-            AwardBestPlayer(allPlayers);
+            AwardBestPlayer(allPlayers, isForced);
+            
 
             foreach (var data in allPlayers)
             {
@@ -6452,6 +6591,8 @@ namespace Oxide.Plugins
             pcdData.wipeTime = DateTime.Now;
             allPlayers.Clear();
             allPlayers = null;
+
+            SaveData();
         }
 
         object OnHealingItemUse(MedicalTool tool, BasePlayer player)
@@ -6492,11 +6633,7 @@ namespace Oxide.Plugins
             {
                 List<BasePlayer> nearby_players = Pool.Get<List<BasePlayer>>();
                 var entities = FindEntitiesOfType<BasePlayer>(player.transform.position, config.ultimate_settings.ultimate_skinning.wolf_team_dist);
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    var e = entities[i];
-                    if (e.Team != null && e.Team.teamID == player.Team.teamID) nearby_players.Add(e);
-                }
+                nearby_players.AddRange(entities.Where(x => x.Team != null && x.Team.teamID == player.Team.teamID));
                 Pool.FreeUnmanaged(ref entities);
 
                 Unsubscribe(nameof(OnPlayerHealthChange));
@@ -6654,11 +6791,7 @@ namespace Oxide.Plugins
                     xp_modifier = config.tools_black_white_list_settings.power_tool_modifier.skinning_xp_modifier;
                     luck_modifier = config.tools_black_white_list_settings.power_tool_modifier.skinning_luck_modifier;
                 }
-                bool isFinalHit = true;
-                for (int i = 0; i < dispenser.containedItems.Count; i++)
-                {
-                    if (dispenser.containedItems[i].amount > 0) { isFinalHit = false; break; }
-                }
+                bool isFinalHit = dispenser.containedItems.FirstOrDefault(x => x.amount > 0) == null;
                 // Old award xp spot
 
                 if (isFinalHit && dispenser.baseEntity.ShortPrefabName.Equals("shark.corpse") && bd.GetBuff(Buff.SharkSkinner, out var value) && RollSuccessful(value * luck_modifier))
@@ -7018,12 +7151,10 @@ namespace Oxide.Plugins
                     xp_modifier = config.tools_black_white_list_settings.power_tool_modifier.mining_xp_modifier;
                     luck_modifier = config.tools_black_white_list_settings.power_tool_modifier.mining_luck_modifier;
                 }
-
                 if (PassWhitelistCheck(player, null, GatherSourceType.MiningFinal) && item.info.shortname != "hq.metal.ore")
                 {
                     AwardXP(player, config.xp_settings.xp_sources.NodeHitFinal * xp_modifier, dispenser.baseEntity, false, false, nameof(config.xp_settings.xp_sources.NodeHitFinal));
                 }
-
                 if (bd.GetBuff(Buff.Mining_Luck, out var value) && RollSuccessful((value * luck_modifier)) && config.loot_settings.mining_loot_table.Count > 0)
                 {
                     var randProfile = RollLootItem(config.loot_settings.mining_loot_table);
@@ -7109,11 +7240,14 @@ namespace Oxide.Plugins
             if (!item.hasCondition) return result;
             if (!GetBuffDetails(player.userID, out var bd)) return result;
 
-            if (bd.ContainsBuff(Buff.Free_Repairs))
+            if (bd.ContainsBuff(Buff.Free_Repairs)) 
                 result = HandleFreeRepair(player, item);
 
-            if (bd.ContainsBuff(Buff.MaxRepair))
-                NextTick(() => HandleMaxRepair(player, item));
+            if (bd.ContainsBuff(Buff.MaxRepair) && bd.cooldown_MaxRepair < Time.time)
+            {
+                bd.cooldown_MaxRepair = Time.time + config.buff_settings.maxRepairSettings.Cooldown;
+                NextTick(() => HandleMaxRepair(player, item)); // Moved to next tick or the item would repair for free.
+            }
 
             return result;
         }
@@ -7130,7 +7264,7 @@ namespace Oxide.Plugins
         void HandleMaxRepair(BasePlayer player, Item item)
         {
             if (item == null || player == null) return;
-            if (item.condition != item.maxCondition) return;
+            if (item.condition != item.maxCondition) return; // means item wasn't repaired.
             if (config.tools_black_white_list_settings.max_repair_blacklist.Contains(item.info.shortname)) return;
             if (Interface.CallHook("STOnItemRepairWithMaxRepair", item) != null) return;
             item.maxCondition = item.info.condition.max;
@@ -7327,8 +7461,38 @@ namespace Oxide.Plugins
                         player.GiveItem(randomitem);
                     }
                 }
-                //if (def != null) player.GiveItem(ItemManager.CreateByName(randomitem.Key, quantity));                    
+                //if (def != null) player.GiveItem(ItemManager.CreateByName(randomitem.Key, quantity));
             }
+
+            HandleCollectibleRespawn(player, entity, bd);
+        }
+
+        void HandleCollectibleRespawn(BasePlayer player, CollectibleEntity entity, BuffDetails bd)
+        {
+            if (bd == null || !bd.GetBuff(Buff.Collectible_Respawn, out var value) || !RollSuccessful(value)) return;
+            if (Interface.CallHook("STOnCollectibleRespawn", player, entity) != null) return;
+
+            string prefab = entity.PrefabName;
+            Vector3 pos = entity.transform.position;
+            Quaternion rot = entity.transform.rotation;
+            ulong oldID = entity.net?.ID.Value ?? 0;
+
+            NextTick(() =>
+            {
+                var existing = FindEntitiesOfType<CollectibleEntity>(pos, 0.5f);
+                foreach (var found in existing)
+                {
+                    if (found == null || found.IsDestroyed || found.PrefabName != prefab) continue;
+                    if (found.net != null && found.net.ID.Value == oldID) continue;
+                    Pool.FreeUnmanaged(ref existing);
+                    return;
+                }
+                Pool.FreeUnmanaged(ref existing);
+
+                var spawned = GameManager.server.CreateEntity(prefab, pos, rot);
+                if (spawned == null) return;
+                spawned.Spawn();
+            });
         }
 
         Dictionary<ulong, float> Harvester_Ultimate_cooldown = new Dictionary<ulong, float>();
@@ -7343,6 +7507,8 @@ namespace Oxide.Plugins
             {
                 if (entity is BuildingBlock) AwardXP(player, config.xp_settings.xp_sources.BuildingBlockDeployed, entity, false, false, nameof(config.xp_settings.xp_sources.BuildingBlockDeployed));
             }
+
+            HandleBoatBuildRefund(player, go);
 
             GrowableEntity plant = go.GetComponent<GrowableEntity>();
             if (plant != null)
@@ -7423,15 +7589,14 @@ namespace Oxide.Plugins
             var player = crafter.owner;
             if (player == null) return;
 
-            if (task == null || task.blueprint == null || item == null || item.info == null)
+            if (task.blueprint == null)
             {
                 return;
             }
 
             if (!ExcludeFromCraftXP(item.info.shortname))
             {
-                var blueprintTime = item.info.Blueprint != null ? item.info.Blueprint.time : task.blueprint.time;
-                var experienceGain = CraftTimes.ContainsKey(task.taskUID) && config.buff_settings.timeBasedCraftingXP ? Math.Round(CraftTimes[task.taskUID] * config.xp_settings.xp_sources.Crafting, 2) : Math.Round((blueprintTime + 0.99f) * config.xp_settings.xp_sources.Crafting, 2);
+                var experienceGain = CraftTimes.ContainsKey(task.taskUID) && config.buff_settings.timeBasedCraftingXP ? Math.Round(CraftTimes[task.taskUID] * config.xp_settings.xp_sources.Crafting, 2) : Math.Round((item.info.Blueprint.time + 0.99f) * config.xp_settings.xp_sources.Crafting, 2);
                 AwardXP(player, experienceGain, null, false, false, nameof(config.xp_settings.xp_sources.Crafting));
             }
             BuffDetails bd;
@@ -7508,7 +7673,6 @@ namespace Oxide.Plugins
                 }
                 if (!CraftTimes.ContainsKey(task.taskUID)) CraftTimes.Add(task.taskUID, GetModifiedTime(player, task));
             }
-
             return null;
         }
 
@@ -7547,7 +7711,7 @@ namespace Oxide.Plugins
 
             var workbenchLevel = player.currentCraftLevel;
             var diff = workbenchLevel - task.blueprint.GetWorkbenchLevel();
-
+            
             if (diff == 1) return task.blueprint.GetCraftTime() * 0.5f;
             if (diff >= 2) return task.blueprint.GetCraftTime() * 0.25f;
             return task.blueprint.GetCraftTime();
@@ -7726,19 +7890,22 @@ namespace Oxide.Plugins
         Dictionary<ulong, RecyclerEfficiency> ModifiedRecyclers = new Dictionary<ulong, RecyclerEfficiency>();
         public class RecyclerEfficiency
         {
-            public float EfficiencyBonus;
-            public float SpeedDecrease;
-            public RecyclerEfficiency(float efficiencyBonus, float speedDecrease)
+            public Recycler recycler;
+            public float efficiencyBonus;
+            public float speedDecrease;
+            public RecyclerEfficiency(float efficiencyBonus, float speedDecrease, Recycler recycler)
             {
-                EfficiencyBonus = efficiencyBonus;
-                SpeedDecrease = speedDecrease;
+                this.efficiencyBonus = efficiencyBonus;
+                this.speedDecrease = speedDecrease;
+                this.recycler = recycler;
             }
         }
 
+        // Recycler no longer stores efficiency or tick duration per entity, so there is nothing to
+        // restore. The buff values are held here and applied in Recycler_GetRecyclerStats_Patch.
         public void ResetRecyclerEfficiency(ulong id, RecyclerEfficiency data = null, bool remove = false)
         {
-            if (!remove) return;
-            ModifiedRecyclers.Remove(id);
+            if (remove) ModifiedRecyclers.Remove(id);
         }
 
         private void OnRecyclerToggle(Recycler recycler, BasePlayer player)
@@ -7747,17 +7914,14 @@ namespace Oxide.Plugins
             if (Convert.ToBoolean(VirtualRecycler?.Call("IsVirtualRecycler", recycler))) return;
             if (!GetBuffDetails(player.userID, out var bd)) return;
 
-            float efficiencyBonus = 0f;
-            float speedDecrease = 0f;
-            bool hasEfficiency = bd.GetBuff(Buff.Recycler_Efficiency, out efficiencyBonus);
-            bool hasSpeed = bd.GetBuff(Buff.Recycler_Speed, out speedDecrease);
-            if (!hasEfficiency && !hasSpeed) return;
+            bd.GetBuff(Buff.Recycler_Efficiency, out var value);
+            bd.GetBuff(Buff.Recycler_Speed, out var speedDecrease);
+            if (value <= 0 && speedDecrease <= 0) return;
 
-            ModifiedRecyclers[recycler.net.ID.Value] = new RecyclerEfficiency(
-                hasEfficiency ? efficiencyBonus : 0f,
-                hasSpeed ? speedDecrease : 0f);
+            ModifiedRecyclers.Remove(recycler.net.ID.Value);
+            ModifiedRecyclers.Add(recycler.net.ID.Value, new RecyclerEfficiency(value, speedDecrease, recycler));
 
-            if (hasEfficiency && config.notification_settings.chatMessageNotificationSettings.Recycler_Efficiency_Proc && NotificationsOn(player))
+            if (value > 0 && config.notification_settings.chatMessageNotificationSettings.Recycler_Efficiency_Proc && NotificationsOn(player))
             {
                 recycler.GetRecyclerStats(out var efficiency, out _);
                 Player.Message(player, string.Format(lang.GetMessage("SetRecyclerEfficiency", this, player.UserIDString), efficiency * 100), config.misc_settings.ChatID);
@@ -8119,11 +8283,7 @@ namespace Oxide.Plugins
                 case "stag":
                     AwardXP(player, config.xp_settings.xp_sources.MediumAnimal, entity as Stag, false, false, nameof(config.xp_settings.xp_sources.MediumAnimal));
                     AddAnimalBuff(player, AnimalBuff.Stag);
-                    break;
-                case "wolf":
-                    AwardXP(player, config.xp_settings.xp_sources.MediumAnimal, entity as BaseAnimalNPC, false, false, nameof(config.xp_settings.xp_sources.MediumAnimal));
-                    AddAnimalBuff(player, AnimalBuff.Wolf);
-                    break;
+                    break;               
                 case "wolf2":
                     AwardXP(player, config.xp_settings.xp_sources.MediumAnimal, entity as Wolf2, false, false, nameof(config.xp_settings.xp_sources.MediumAnimal));
                     AddAnimalBuff(player, AnimalBuff.Wolf);
@@ -8161,6 +8321,140 @@ namespace Oxide.Plugins
                     AwardXP(player, config.xp_settings.xp_sources.AutoTurret, entity, false, false, nameof(config.xp_settings.xp_sources.AutoTurret));
                     break;
             }
+        }
+
+        Dictionary<ulong, HeliDamage> heliDamage = new Dictionary<ulong, HeliDamage>();
+
+        class HeliDamage
+        {
+            public Dictionary<ulong, float> direct = Pool.Get<Dictionary<ulong, float>>();
+            public Dictionary<ulong, float>[] rotors;
+
+            public HeliDamage(int rotorCount)
+            {
+                rotors = new Dictionary<ulong, float>[rotorCount];
+            }
+
+            public void Free()
+            {
+                Pool.FreeUnmanaged(ref direct);
+                for (int i = 0; i < rotors.Length; i++)
+                {
+                    if (rotors[i] != null) Pool.FreeUnmanaged(ref rotors[i]);
+                }
+            }
+        }
+
+        void OnPatrolHelicopterTakeDamage(PatrolHelicopter heli, HitInfo info)
+        {
+            if (heli?.net == null || info?.damageTypes == null) return;
+            var attacker = info.InitiatorPlayer;
+            if (attacker == null || attacker.IsNpc || !attacker.userID.IsSteamId()) return;
+
+            if (GetBuffDetails(attacker.userID, out var bd) && bd.GetBuff(Buff.Heli_Damage_Bonus, out var value))
+                info.damageTypes.ScaleAll(1f + value);
+
+            if (config.xp_settings.xp_sources.PatrolHelicopter <= 0) return;
+
+            float dmg = ScaledTotal(heli, info.damageTypes);
+            if (dmg <= 0f) return;
+
+            if (!heliDamage.TryGetValue(heli.net.ID.Value, out var tracker))
+                heliDamage[heli.net.ID.Value] = tracker = new HeliDamage(heli.weakspots.Length);
+
+            tracker.direct.TryGetValue(attacker.userID, out var total);
+            tracker.direct[attacker.userID] = total + dmg;
+
+            for (int i = 0; i < heli.weakspots.Length; i++)
+            {
+                var ws = heli.weakspots[i];
+                if (ws.health <= 0f) continue;
+                bool hit = false;
+                foreach (var bone in ws.bonenames)
+                {
+                    if (info.HitBone == StringPool.Get(bone))
+                    {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) continue;
+                var ledger = tracker.rotors[i];
+                if (ledger == null) tracker.rotors[i] = ledger = Pool.Get<Dictionary<ulong, float>>();
+                ledger.TryGetValue(attacker.userID, out var rotorTotal);
+                ledger[attacker.userID] = rotorTotal + Mathf.Min(dmg, ws.health);
+                break;
+            }
+        }
+
+        float ScaledTotal(PatrolHelicopter heli, Rust.DamageTypeList damageTypes)
+        {
+            float total = damageTypes.Total();
+            if (heli.baseProtection == null) return total;
+            for (int i = 0; i < heli.baseProtection.amounts.Length; i++)
+            {
+                float protection = heli.baseProtection.amounts[i];
+                if (protection == 0f) continue;
+                total -= damageTypes.Get((Rust.DamageType)i) * Mathf.Clamp(protection, -1f, 1f);
+            }
+            return total;
+        }
+
+        void OnEntityDeath(PatrolHelicopter heli, HitInfo info)
+        {
+            if (heli?.net == null || !heliDamage.TryGetValue(heli.net.ID.Value, out var tracker)) return;
+            heliDamage.Remove(heli.net.ID.Value);
+
+            var tally = Pool.Get<Dictionary<ulong, float>>();
+            try
+            {
+                float total = 0f;
+                foreach (var entry in tracker.direct)
+                {
+                    tally.TryGetValue(entry.Key, out var t);
+                    tally[entry.Key] = t + entry.Value;
+                    total += entry.Value;
+                }
+
+                for (int i = 0; i < tracker.rotors.Length && i < heli.weakspots.Length; i++)
+                {
+                    var ledger = tracker.rotors[i];
+                    if (ledger == null || ledger.Count == 0 || heli.weakspots[i].health > 0f) continue;
+
+                    float rotorTotal = 0f;
+                    foreach (var entry in ledger) rotorTotal += entry.Value;
+                    if (rotorTotal <= 0f) continue;
+
+                    float credit = heli.MaxHealth() * heli.weakspots[i].healthFractionOnDestroyed;
+                    foreach (var entry in ledger)
+                    {
+                        float share = credit * (entry.Value / rotorTotal);
+                        tally.TryGetValue(entry.Key, out var t);
+                        tally[entry.Key] = t + share;
+                        total += share;
+                    }
+                }
+
+                if (total <= 0f) return;
+                foreach (var entry in tally)
+                {
+                    var participant = BasePlayer.FindByID(entry.Key);
+                    if (participant == null) continue;
+                    AwardXP(participant, config.xp_settings.xp_sources.PatrolHelicopter * (entry.Value / total), heli, false, false, nameof(config.xp_settings.xp_sources.PatrolHelicopter));
+                }
+            }
+            finally
+            {
+                Pool.FreeUnmanaged(ref tally);
+                tracker.Free();
+            }
+        }
+
+        void OnEntityKill(PatrolHelicopter heli)
+        {
+            if (heli?.net == null || !heliDamage.TryGetValue(heli.net.ID.Value, out var tracker)) return;
+            heliDamage.Remove(heli.net.ID.Value);
+            tracker.Free();
         }
 
         private static bool InRange(Vector3 a, Vector3 b, float distance)
@@ -8403,29 +8697,14 @@ namespace Oxide.Plugins
                 player.metabolism.temperature.SetValue(15);
                 player.metabolism.bleeding.SetValue(0);
                 player.health += 10;
-                if (player.IsWounded())
-                    player.StopWounded();
                 return false;
             }
             return null;
         }
 
-        void OnItemAddedToContainer(ItemContainer container, Item item) => RefreshWoundedRecoveryChance(container);
-
-        void OnItemRemovedFromContainer(ItemContainer container, Item item) => RefreshWoundedRecoveryChance(container);
-
-        void RefreshWoundedRecoveryChance(ItemContainer container)
-        {
-            if (container == null) return;
-            var player = container.GetOwnerPlayer();
-            if (player == null || player.IsNpc || !player.userID.IsSteamId() || !player.IsWounded()) return;
-            if (container != player.inventory?.containerBelt) return;
-            player.SendWoundedInformation(player.woundedDuration);
-        }
-
         Dictionary<ulong, PlayerHelicopter> tracked_helis = new Dictionary<ulong, PlayerHelicopter>();
         Dictionary<ulong, MotorRowboat> tracked_rowboats = new Dictionary<ulong, MotorRowboat>();
-        Dictionary<ulong, MotorRowboat> tracked_rhibs = new Dictionary<ulong, MotorRowboat>();
+        Dictionary<ulong, MotorRowboat> tracked_rhibs = new Dictionary<ulong, MotorRowboat>();        
 
         void OnEntityMounted(BaseMountable entity, BasePlayer player)
         {
@@ -8434,6 +8713,12 @@ namespace Oxide.Plugins
             BuffDetails bd;
             if (!GetBuffDetails(player.userID, out bd))
                 return;
+
+            if (entity is SteeringWheel wheel)
+            {
+                IncreaseSailingSpeed(player, wheel, bd);
+                return;
+            }
 
             var vehicle = entity.GetParentEntity();
             if (vehicle == null) return;
@@ -8677,41 +8962,43 @@ namespace Oxide.Plugins
             switch (damageType)
             {
                 case Rust.DamageType.Fall:
-                    if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnFallDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                    {
-                        HandleDataReset(player);
-                        Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                        CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                    }
-                    else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Fall);
+                    if (IsValidRoguelikeDeath(player, DeathType.Fall)) return;
+                    LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Fall);
                     return;
 
                 case Rust.DamageType.Drowned:
+                    if (IsValidRoguelikeDeath(player, DeathType.Drowned)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Drowned);
                     return;
 
                 case Rust.DamageType.Radiation:
+                    if (IsValidRoguelikeDeath(player, DeathType.Radiation)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Radiation);
                     return;
 
                 case Rust.DamageType.Cold:
                 case Rust.DamageType.ColdExposure:
+                    if (IsValidRoguelikeDeath(player, DeathType.Cold)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Cold);
                     return;
 
                 case Rust.DamageType.Heat:
+                    if (IsValidRoguelikeDeath(player, DeathType.Heat)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Fire);
                     return;
 
                 case Rust.DamageType.ElectricShock:
+                    if (IsValidRoguelikeDeath(player, DeathType.ElectricShock)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Codelock);
                     return;
 
                 case Rust.DamageType.Hunger:
+                    if (IsValidRoguelikeDeath(player, DeathType.Hunger)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Hunger);
                     return;
 
                 case Rust.DamageType.Thirst:
+                    if (IsValidRoguelikeDeath(player, DeathType.Thirst)) return;
                     LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Thirst);
                     return;
             }
@@ -8719,19 +9006,15 @@ namespace Oxide.Plugins
             if (attacker == null) return;
             if (attacker is BasePlayer && player == (BasePlayer)attacker)
             {
-                if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnSuicideDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                {
-                    HandleDataReset(player);
-                    Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                    CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                }
-                else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Suicide);
+                if (IsValidRoguelikeDeath(player, DeathType.Suicide)) return;
+                LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Suicide);
                 return;
             }
             // Attacker is real player
             var attackerPlayer = GetAttacker(info);
             if (attackerPlayer != null)
             {
+
                 switch (player.GetType().Name)
                 {
                     case "ZombieNPC":
@@ -8750,66 +9033,96 @@ namespace Oxide.Plugins
                     default:
                         if (!PlayerIsReal(player)) break;
                         if (!IsSameTeam(attackerPlayer, player)) AwardXP(attackerPlayer, config.xp_settings.xp_sources.PVP, player, false, false, nameof(config.xp_settings.xp_sources.PVP));
-                        if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnPVPDeath && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                        {
-                            HandleDataReset(player);
-                            Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                            CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                        }
-                        else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.PVP);
+                        if (IsValidRoguelikeDeath(player, DeathType.Pvp)) break;
+                        LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.PVP);
                         break;
                 }
             }
-            else if (config.xp_settings.xp_loss_settings.xp_loss_table.Animal > 0 && attacker is BaseAnimalNPC)
+            else if (IsAnimal(attacker))
             {
-                if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnPVEDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                {
-                    HandleDataReset(player);
-                    Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                    CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                }
-                else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Animal);
+                if (IsValidRoguelikeDeath(player, DeathType.Animal)) return;
+                if (config.xp_settings.xp_loss_settings.xp_loss_table.Animal > 0) LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Animal);
             }
-            else if (config.xp_settings.xp_loss_settings.xp_loss_table.Scientist > 0 && (attacker is ScientistNPC))
+            else if (IsScientist(attacker))
             {
-                if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnPVEDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                {
-                    HandleDataReset(player);
-                    Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                    CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                }
-                else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Scientist);
+                if (IsValidRoguelikeDeath(player, DeathType.HumanNpc)) return;
+                if (config.xp_settings.xp_loss_settings.xp_loss_table.Scientist > 0) 
+                    LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Scientist);
             }
-            else if (config.xp_settings.xp_loss_settings.xp_loss_table.Bradley > 0 && attacker is BradleyAPC)
+            else if (attacker is BradleyAPC)
             {
-                if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnPVEDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                {
-                    HandleDataReset(player);
-                    Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                    CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                }
-                else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Bradley);
+                if (IsValidRoguelikeDeath(player, DeathType.Bradley)) return;
+                if (config.xp_settings.xp_loss_settings.xp_loss_table.Bradley > 0) LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Bradley);
             }
-            else if (config.xp_settings.xp_loss_settings.xp_loss_table.Heli > 0 && attacker is PatrolHelicopter)
+            else if (attacker is PatrolHelicopter)
             {
-                if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnPVEDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                {
-                    HandleDataReset(player);
-                    Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                    CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                }
-                else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Heli);
+                if (IsValidRoguelikeDeath(player, DeathType.PatrolHeli)) return;
+                if (config.xp_settings.xp_loss_settings.xp_loss_table.Heli > 0) LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Heli);
             }
-            else if (config.xp_settings.xp_loss_settings.xp_loss_table.Traps > 0 && (attacker is AutoTurret || attacker is GunTrap || attacker is BaseTrap))
+            else if (IsTrap(attacker))
             {
-                if (config.roguelikeSettings.enabled && config.roguelikeSettings.wipeOnPVEDeath && PlayerIsReal(player) && (!config.roguelikeSettings.requireConnection || player.IsConnected) && (!config.roguelikeSettings.require_permission || permission.UserHasPermission(player.UserIDString, "skilltree.roguelike")))
-                {
-                    HandleDataReset(player);
-                    Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
-                    CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
-                }
-                else LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Traps);
+                if (IsValidRoguelikeDeath(player, DeathType.Traps)) return;
+                if (config.xp_settings.xp_loss_settings.xp_loss_table.Traps > 0) LoseXP(player, config.xp_settings.xp_loss_settings.xp_loss_table.Traps);
             }
+        }
+
+        bool IsScientist(BaseEntity entity)
+        {
+            return entity is ScientistNPC || entity is ScientistNPC2;
+        }
+
+        public static readonly HashSet<string> SiegeWeaponPrefabs = new HashSet<string>
+        {
+            "batteringram.entity",
+            "boulder",
+            "boulder_explosive",
+            "boulder_incendiary",
+            "boulder_bee",
+            "ballista.bolt.piercer.projectile",
+            "ballista.bolt.pitchfork.projectile",
+            "ballista.bolt.hammerhead.projectile",
+            "ballista.bolt.incendiary.projectile"
+        };
+
+        bool IsSiegeWeaponDamage(HitInfo info)
+        {
+            if (info.WeaponPrefab != null && SiegeWeaponPrefabs.Contains(info.WeaponPrefab.ShortPrefabName)) return true;
+            if (info.ProjectilePrefab != null && SiegeWeaponPrefabs.Contains(info.ProjectilePrefab.name)) return true;
+            var mounted = info.InitiatorPlayer?.GetMounted();
+            if (mounted != null && mounted is BallistaGun && !(mounted is Cannon)) return true;
+            return false;
+        }
+
+        void HandleBoatBuildRefund(BasePlayer player, GameObject go)
+        {
+            var block = go.ToBaseEntity() as BoatBuildingBlock;
+            if (block == null || block.blockDefinition == null || block.blockDefinition.defaultGrade == null) return;
+            if (player.IsNpc || !player.userID.IsSteamId()) return;
+            if (!GetBuffDetails(player.userID, out var bd) || !bd.GetBuff(Buff.Boat_Refund, out var value)) return;
+            if (Interface.CallHook("STOnBoatBuildRefund", player, block) != null) return;
+
+            foreach (ItemAmount itemAmount in block.blockDefinition.defaultGrade.CostToBuild())
+            {
+                int amount = Mathf.FloorToInt(itemAmount.amount * value);
+                if (amount <= 0) continue;
+                var item = ItemManager.Create(itemAmount.itemDef, amount);
+                if (item == null) continue;
+                GiveItem(player, item);
+            }
+        }
+
+        bool IsValidRoguelikeDeath(BasePlayer player, DeathType type)
+        {
+            if (!config.roguelikeSettings.enabled) return false;
+            if (!PlayerIsReal(player)) return false;
+            if (!config.roguelikeSettings.deathTypes.TryGetValue(type, out var valid) || !valid) return false;
+            if ((config.roguelikeSettings.requireConnection && !player.IsConnected) || (config.roguelikeSettings.require_permission && !permission.UserHasPermission(player.UserIDString, "skilltree.roguelike"))) return false;
+
+            HandleDataReset(player);
+            Player.Message(player, lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), config.misc_settings.ChatID);
+            CreateGameTip(lang.GetMessage("RoguelikeDeathMessage", this, player.UserIDString), player);
+
+            return true;
         }
 
         bool IsSameTeam(BasePlayer attacker, BasePlayer defender)
@@ -8993,6 +9306,12 @@ namespace Oxide.Plugins
         {
             if (player == null || player.IsNpc || !player.userID.IsSteamId() || entity == null) return;
 
+            if (entity is SteeringWheel wheel)
+            {
+                ResetSailingSpeed(PlayerBoat.GetParentPlayerBoat(wheel, true), player);
+                return;
+            }
+
             var vehicle = entity.GetParentEntity();
             if (vehicle is RidableHorse horse)
             {
@@ -9101,6 +9420,65 @@ namespace Oxide.Plugins
             boat.engineThrust += value * defaultSpeed;
             MessageMounted(boat, "TurboToggleOn");
             //Player.Message(player, lang.GetMessage("TurboToggleOn", this, player.UserIDString), config.misc_settings.ChatID);
+        }
+
+        public class SailingBoatInfo
+        {
+            public ulong playerId;
+            public Dictionary<ulong, float> parts = new Dictionary<ulong, float>();
+        }
+
+        Dictionary<ulong, SailingBoatInfo> SailingBoats = new Dictionary<ulong, SailingBoatInfo>();
+
+        void IncreaseSailingSpeed(BasePlayer player, SteeringWheel wheel, BuffDetails bd)
+        {
+            if (!bd.GetBuff(Buff.Sailing_Speed, out var value)) return;
+
+            var boat = PlayerBoat.GetParentPlayerBoat(wheel, true);
+            if (boat?.net == null || SailingBoats.ContainsKey(boat.net.ID.Value)) return;
+            if (Interface.CallHook("STOnModifySailingSpeed", player, boat) != null) return;
+
+            var data = new SailingBoatInfo() { playerId = player.userID };
+
+            foreach (var child in boat.children)
+            {
+                if (child?.net == null) continue;
+                if (child is Sail sail)
+                {
+                    data.parts[sail.net.ID.Value] = sail.maxThrust;
+                    sail.maxThrust *= 1f + value;
+                }
+                else if (child is SmallEngine engine)
+                {
+                    data.parts[engine.net.ID.Value] = engine.maxThrust;
+                    engine.maxThrust *= 1f + value;
+                }
+            }
+
+            if (data.parts.Count == 0) return;
+            SailingBoats[boat.net.ID.Value] = data;
+        }
+
+        void ResetSailingSpeed(PlayerBoat boat, BasePlayer player = null, bool doRemove = true)
+        {
+            if (boat?.net == null) return;
+            if (!SailingBoats.TryGetValue(boat.net.ID.Value, out var data)) return;
+            if (player != null && data.playerId != player.userID) return;
+
+            foreach (var child in boat.children)
+            {
+                if (child?.net == null || !data.parts.TryGetValue(child.net.ID.Value, out var original)) continue;
+                if (child is Sail sail) sail.maxThrust = original;
+                else if (child is SmallEngine engine) engine.maxThrust = original;
+            }
+
+            if (doRemove) SailingBoats.Remove(boat.net.ID.Value);
+        }
+
+        void OnEntityKill(PlayerBoat boat)
+        {
+            if (boat?.net == null) return;
+            SailingBoats.Remove(boat.net.ID.Value);
         }
 
         void MessageMounted(MotorRowboat boat, string langKey)
@@ -9360,8 +9738,7 @@ namespace Oxide.Plugins
 
         string RollTea()
         {
-            float totalWeight = 0f;
-            foreach (var kv in config.buff_settings.tea_looter_settings.TeaDropTable) totalWeight += kv.Value;
+            var totalWeight = config.buff_settings.tea_looter_settings.TeaDropTable.Sum(x => x.Value);
             var roll = UnityEngine.Random.Range(0, totalWeight + 1);
 
             var count = 0;
@@ -9402,7 +9779,7 @@ namespace Oxide.Plugins
         }
 
         [PluginReference]
-        private Plugin ImageLibrary, Economics, ServerRewards, ShoppyStock, EventManager, BotReSpawn, Cooking, UINotify, ZombieHorde, EventHelper, RaidableBases, LootDefender, SkillTreeXPEvent, ZoneManager, VirtualRecycler, DeployableNature, NotificationSystem, MovementSpeed;
+        private Plugin ImageLibrary, Economics, ServerRewards, ShoppyStock, EventManager, BotReSpawn, Cooking, UINotify, ZombieHorde, EventHelper, RaidableBases, LootDefender, SkillTreeXPEvent, ZoneManager, VirtualRecycler, DeployableNature, NotificationSystem;
 
         Dictionary<Buff, BuffType> BuffBuffType = new Dictionary<Buff, BuffType>();
 
@@ -9557,7 +9934,7 @@ namespace Oxide.Plugins
                         node.Value.skin = defaultNode.skin;
                         Puts($"Updating node skin id for: {node.Key}");
                         foundNewContent = true;
-                    }
+                    }                    
                 }
             }
 
@@ -9632,7 +10009,7 @@ namespace Oxide.Plugins
                 {
                     if (!item_BPs.ContainsKey(itemDef.shortname)) item_BPs.Add(itemDef.shortname, itemDef.Blueprint);
                 }
-                if (itemDef.steamDlc != null || itemDef.steamItem != null || itemDef.hidden) continue;
+                if (IsPaidItem(itemDef)) continue;
                 if (itemDef.category == ItemCategory.Electrical && config.tools_black_white_list_settings.electricalComponentSettings.electrical_loot_override.Count == 0 && !config.tools_black_white_list_settings.electricalComponentSettings.comp_blacklist.Contains(itemDef.shortname)) electrical_item_list.Add(itemDef);
                 else if (itemDef.category == ItemCategory.Component && config.tools_black_white_list_settings.electricalComponentSettings.component_loot_override.Count == 0 && !config.tools_black_white_list_settings.electricalComponentSettings.comp_blacklist.Contains(itemDef.shortname)) component_item_list.Add(itemDef);
             }
@@ -9730,8 +10107,7 @@ namespace Oxide.Plugins
             cmd.AddConsoleCommand(config.buff_settings.sonar_settings.command, this, nameof(SonarConsoleCMD));
 
             List<YieldTypes> yieldTypes = Pool.Get<List<YieldTypes>>();
-            foreach (var val in Enum.GetValues(typeof(YieldTypes)))
-                yieldTypes.Add((YieldTypes)val);
+            yieldTypes.AddRange(Enum.GetValues(typeof(YieldTypes)).Cast<YieldTypes>());
 
             foreach (var yieldType in yieldTypes)
             {
@@ -9802,12 +10178,7 @@ namespace Oxide.Plugins
             if (config.ultimate_settings.ultimate_raiding.use_real_MLRS_entity)
             {
                 //MLRSRepairTimer = timer.Once(10, () => { });
-                mlrs = null;
-                foreach (var ent in BaseNetworkable.serverEntities)
-                {
-                    var m = ent as MLRS;
-                    if (m != null) { mlrs = m; break; }
-                }
+                mlrs = BaseNetworkable.serverEntities.OfType<MLRS>()?.FirstOrDefault();
                 if (mlrs == null)
                 {
                     Puts("No MLRS found on map. Disabling option to use for raiding ultimate.");
@@ -9834,7 +10205,13 @@ namespace Oxide.Plugins
             {
                 config.tools_black_white_list_settings.electricalComponentSettings.comp_blacklist.Add("command.block");
                 foundNewContent = true;
-            }                
+            }             
+            
+            if (config.roguelikeSettings.deathTypes.Count == 0)
+            {
+                config.roguelikeSettings.deathTypes = DefaultDeathTypes;
+                foundNewContent = true;
+            }
 
             if (foundNewContent) SaveConfig();
 
@@ -9966,7 +10343,7 @@ namespace Oxide.Plugins
 
             if (!config.thirdPartyPluginSettings.survivalArenaSettings.disable_skinning_ultimate_buff_on_join && !config.thirdPartyPluginSettings.paintballSettings.disable_skinning_ultimate_buff_on_join) Unsubscribe(nameof(EMOnEventJoined));
 
-            if (!config.buff_settings.prevent_flyhack_kick_fall_damage && !config.buff_settings.prevent_flyhack_kick_roadrunner) Unsubscribe(nameof(OnPlayerViolation));
+            if (!config.buff_settings.prevent_flyhack_kick_fall_damage) Unsubscribe(nameof(OnPlayerViolation));
 
             foreach (var kvp in config.trees)
             {
@@ -9993,12 +10370,29 @@ namespace Oxide.Plugins
             {
                 foreach (var entity in BaseNetworkable.serverEntities)
                 {
-                    var collectible = entity as CollectibleEntity;
-                    if (collectible == null) continue;
+                    if (entity is not CollectibleEntity collectible) continue;
                     CollectibleManager.Spawned(collectible);
                 }
             }
+            else
+            {
+                Unsubscribe(nameof(OnEntitySpawned));
+            }
         }
+
+        void OnEntitySpawned(CollectibleEntity entity)
+        {
+            if (entity == null || entity.net == null) return;
+            CollectibleManager.Spawned(entity);
+        }
+
+        void OnEntityKill(CollectibleEntity entity)
+        {
+            if (!IsForagerLoaded) return;
+            if (entity == null || entity.net == null) return;
+            CollectibleManager.OnKilled(entity);
+        }
+
 
         int FindNodeMaxLevel(string searchName)
         {
@@ -10084,6 +10478,7 @@ namespace Oxide.Plugins
             Interface.Oxide.CallHook("STOnUnloadPlayerData", player);
             buffDetails.Remove(player.userID);
             notifiedPlayers.Remove(player.userID);
+            CoopLooters.Remove(player.userID);
             player.metabolism.calories.max = 500f;
             player.metabolism.hydration.max = 250f;
             player.SendNetworkUpdate();
@@ -10267,9 +10662,8 @@ namespace Oxide.Plugins
                             {
                                 string command = command_string[0];
                                 List<string> args = Pool.Get<List<string>>();
-                                for (int i = 1; i < command_string.Length; i++)
+                                foreach (var arg in command_string.Skip(1))
                                 {
-                                    var arg = command_string[i];
                                     if (arg.Contains("{id}")) args.Add(arg.Replace("{id}", player.UserIDString));
                                     else if (arg.Contains("{name}")) args.Add(arg.Replace("{name}", player.displayName));
                                     else args.Add(arg);
@@ -10332,9 +10726,8 @@ namespace Oxide.Plugins
                         error = "RunResetCommands Error 2";
                         string command = command_string[0];
                         List<string> args = Pool.Get<List<string>>();
-                        for (int i = 1; i < command_string.Length; i++)
+                        foreach (var arg in command_string.Skip(1))
                         {
-                            var arg = command_string[i];
                             if (arg.Contains("{id}")) args.Add(arg.Replace("{id}", playerID));
                             else if (arg.Contains("{name}"))
                             {
@@ -10406,54 +10799,48 @@ namespace Oxide.Plugins
             var player = arg.Player();
             if (player != null && !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
             //stgiveitem <id> <shortname> <quantity> <skinID> <displayName>
-            var cmdArgs = arg.Args == null ? Array.Empty<string>() : Array.ConvertAll(arg.Args, value => value.ToString());
-            if (cmdArgs.Length < 4)
+            if (arg.Args == null || arg.Args.Length < 4)
             {
                 arg.ReplyWith(lang.GetMessage("stgiveitemUsage", this, player?.UserIDString ?? null));
                 return;
             }
-            if (!cmdArgs[0].IsSteamId())
+            if (!arg.GetString(0).IsSteamId())
             {
-                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemInvalidID", this, player?.UserIDString ?? null), cmdArgs[0]));
+                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemInvalidID", this, player?.UserIDString ?? null), arg.GetString(0)));
                 return;
             }
-            var target = FindPlayerByID(cmdArgs[0], player ?? null);
+            var target = FindPlayerByID(arg.GetString(0), player ?? null);
             if (target == null)
             {
-                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemNoPlayerFound", this, player?.UserIDString ?? null), cmdArgs[0]));
+                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemNoPlayerFound", this, player?.UserIDString ?? null), arg.GetString(0)));
                 return;
             }
-            var def = ItemManager.FindItemDefinition(cmdArgs[1]);
+            var def = ItemManager.FindItemDefinition(arg.GetString(1));
             if (def == null || string.IsNullOrEmpty(def.shortname))
             {
-                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemInvalidShortname", this, player?.UserIDString ?? null), cmdArgs[1]));
+                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemInvalidShortname", this, player?.UserIDString ?? null), arg.GetString(1)));
                 return;
             }
 
-            if (!cmdArgs[2].IsNumeric())
+            if (!arg.GetString(2).IsNumeric())
             {
-                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemQuantityInvalid", this, player?.UserIDString ?? null), cmdArgs[2]));
+                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemQuantityInvalid", this, player?.UserIDString ?? null), arg.GetString(2)));
                 return;
             }
-            var quantity = Convert.ToInt32(cmdArgs[2]);
+            var quantity = arg.GetInt(2);
             quantity = Math.Max(quantity, 1);
 
-            if (!cmdArgs[3].IsNumeric())
+            if (!arg.GetString(3).IsNumeric())
             {
-                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemSkinInvalid", this, player?.UserIDString ?? null), cmdArgs[3]));
+                arg.ReplyWith(string.Format(lang.GetMessage("stgiveitemSkinInvalid", this, player?.UserIDString ?? null), arg.GetString(3)));
                 return;
             }
 
-            var skinID = Convert.ToUInt64(cmdArgs[3]);
+            var skinID = arg.GetUInt64(3);
 
             string displayName = null;
-            if (cmdArgs.Length > 4)
-            {
-                var parts = new List<string>();
-                for (int i = 4; i < cmdArgs.Length; i++) parts.Add(cmdArgs[i]);
-                displayName = string.Join(" ", parts);
-            }
-            var item = ItemManager.CreateByName(cmdArgs[1], quantity, skinID);
+            if (arg.Args.Length > 4) displayName = string.Join(" ", arg.Args.Skip(4));
+            var item = ItemManager.CreateByName(arg.GetString(1), quantity, skinID);
             if (!string.IsNullOrEmpty(displayName)) item.name = displayName;
             target.GiveItem(item);
             arg.ReplyWith($"Gave {item.amount}x {item.name ?? item.info.displayName.english} to {target.displayName}");
@@ -10531,6 +10918,51 @@ namespace Oxide.Plugins
 
         #region Helpers      
 
+        bool IsPaidItem(ItemDefinition def)
+        {
+            if (def.isRedirectOf != null) return true;                                 
+            if (def.steamItem != null) return true;                                     
+            if (def.steamDlc != null && !def.steamDlc.bypassLicenseCheck) return true;  
+            if (def.Blueprint != null && (def.Blueprint.NeedsSteamItem || def.Blueprint.NeedsSteamDLC)) return true;
+            return false;
+        }
+
+        public CollectibleEntityManager CollectibleManager = new CollectibleEntityManager();
+        public class CollectibleEntityManager
+        {
+            private Dictionary<ulong, Collectible> Collectibles = new Dictionary<ulong, Collectible>();           
+
+            public List<Collectible> Nearby(Vector3 pos, float dist)
+            {
+                var result = Pool.Get<List<Collectible>>();
+                foreach (var col in Collectibles)
+                    if (InRange(col.Value.position, pos, dist))
+                        result.Add(col.Value);
+
+                return result;
+            }
+
+            public void Spawned(CollectibleEntity entity)
+            {
+                if (Instance.config.buff_settings.forager_settings.blacklist.Contains(entity.ShortPrefabName)) return;
+                var entry = new Collectible(entity.ShortPrefabName, entity.transform.position);
+                Collectibles[entity.net.ID.Value] = entry;
+            }
+
+            public void OnKilled(CollectibleEntity entity) => Collectibles.Remove(entity.net.ID.Value);
+        }
+
+        public struct Collectible
+        {
+            public string shortname;
+            public Vector3 position;
+            public Collectible(string shortname, Vector3 pos)
+            {
+                this.shortname = shortname;
+                this.position = pos;
+            }
+        }
+
         List<ItemDefinition> ItemDefinitions;
         List<ItemDefinition> GetCleanItemDefinitions()
         {
@@ -10584,7 +11016,7 @@ namespace Oxide.Plugins
             int result = config.general_settings.points_per_level;
             foreach (var kvp in config.general_settings.points_per_level_override)
             {
-                if (kvp.Value <= result || !permission.UserHasPermission(userid, "skilltree." + kvp.Key)) continue;
+                if (kvp.Value <= result || !permission.UserHasPermission(userid, kvp.Key)) continue;
                 result = kvp.Value;
             }
             return result;
@@ -10594,42 +11026,6 @@ namespace Oxide.Plugins
         {
             var s = path.Split(Path.DirectorySeparatorChar);
             return s[s.Length - 1].Split('.')[0];
-        }
-
-        public CollectibleEntityManager CollectibleManager = new CollectibleEntityManager();
-        public class CollectibleEntityManager
-        {
-            private Dictionary<ulong, Collectible> Collectibles = new Dictionary<ulong, Collectible>();
-
-            public List<Collectible> Nearby(Vector3 pos, float dist)
-            {
-                var result = Pool.Get<List<Collectible>>();
-                foreach (var col in Collectibles)
-                    if (InRange(col.Value.position, pos, dist))
-                        result.Add(col.Value);
-
-                return result;
-            }
-
-            public void Spawned(CollectibleEntity entity)
-            {
-                if (Instance.config.buff_settings.forager_settings.blacklist.Contains(entity.ShortPrefabName)) return;
-                var entry = new Collectible(entity.ShortPrefabName, entity.transform.position);
-                Collectibles[entity.net.ID.Value] = entry;
-            }
-
-            public void OnKilled(CollectibleEntity entity) => Collectibles.Remove(entity.net.ID.Value);
-        }
-
-        public struct Collectible
-        {
-            public string shortname;
-            public Vector3 position;
-            public Collectible(string shortname, Vector3 pos)
-            {
-                this.shortname = shortname;
-                position = pos;
-            }
         }
 
         bool CanCombatUltimateTrigger(BasePlayer player, HitInfo info, Rust.DamageType damageType)
@@ -10828,7 +11224,7 @@ namespace Oxide.Plugins
             try
             {
                 foreach (var player in BasePlayer.allPlayerList)
-                    if (player != null && player.displayName.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (player != null && player.displayName.Contains(searchTerm))
                         found.Add(player);
 
                 switch (found.Count)
@@ -10837,18 +11233,13 @@ namespace Oxide.Plugins
                         arg.ReplyWith($"No player found that matched {searchTerm}");
                         return null;
 
-                    case 1:
-                        foreach (var match in found) return match;
-                        return null;
-
+                    case 1: return found.First();
                     default:
                         foreach (var member in found)
-                            if (member.displayName.Equals(searchTerm, StringComparison.OrdinalIgnoreCase))
+                            if (member.displayName == searchTerm)
                                 return member;
 
-                        var names = new List<string>();
-                        foreach (var member in found) names.Add(member.displayName);
-                        arg.ReplyWith(string.Format("Found multiple matches: {0}", string.Join(", ", names)));
+                        arg.ReplyWith(string.Format("Found multiple matches: {0}", string.Join(", ", found.Select(x => x.displayName))));
                         return null;
                 }
             }
@@ -10861,11 +11252,7 @@ namespace Oxide.Plugins
         BasePlayer FindPlayerByID(string id, BasePlayer searchingPlayer = null, bool consoleMsg = true)
         {
             if (!id.IsSteamId()) return null;
-            BasePlayer player = null;
-            for (int i = 0; i < BasePlayer.activePlayerList.Count; i++)
-            {
-                if (BasePlayer.activePlayerList[i].UserIDString == id) { player = BasePlayer.activePlayerList[i]; break; }
-            }
+            var player = BasePlayer.activePlayerList.Where(x => x.UserIDString == id).FirstOrDefault();
             if (player == null)
             {
                 if (searchingPlayer != null) PrintToChat(searchingPlayer, $"No player found matching ID: {id}");
@@ -10877,24 +11264,33 @@ namespace Oxide.Plugins
         private BasePlayer FindPlayerByName(string Playername, BasePlayer SearchingPlayer = null, bool consoleMsg = true)
         {
             var lowered = Playername;
-            var targetList = new List<BasePlayer>();
-            foreach (var p in BasePlayer.allPlayerList)
+            var targetList = BasePlayer.allPlayerList.Where(x => x.displayName.Contains(lowered, System.Globalization.CompareOptions.IgnoreCase)).OrderBy(x => x.displayName.Length);
+            if (targetList.Count() == 1)
             {
-                if (p.displayName.Contains(lowered, System.Globalization.CompareOptions.IgnoreCase)) targetList.Add(p);
+                return targetList.First();
             }
-            targetList.Sort((a, b) => a.displayName.Length.CompareTo(b.displayName.Length));
-            if (targetList.Count == 1) return targetList[0];
-            if (targetList.Count > 1)
+            if (targetList.Count() > 1)
             {
-                if (targetList[0].displayName.Equals(Playername, StringComparison.OrdinalIgnoreCase)) return targetList[0];
-                var names = new List<string>();
-                for (int i = 0; i < targetList.Count; i++) names.Add(targetList[i].displayName);
-                if (SearchingPlayer != null) PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("MorePlayersFound", this, SearchingPlayer.UserIDString), string.Join(",", names)));
-                else if (consoleMsg) Puts(string.Format(lang.GetMessage("MorePlayersFound", this), string.Join(",", names)));
+                if (targetList.First().displayName.Equals(Playername, StringComparison.OrdinalIgnoreCase))
+                {
+                    return targetList.First();
+                }
+                if (SearchingPlayer != null)
+                {
+                    PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("MorePlayersFound", this, SearchingPlayer.UserIDString), String.Join(",", targetList.Select(x => x.displayName))));
+                }
+                else if (consoleMsg) Puts(string.Format(lang.GetMessage("MorePlayersFound", this), String.Join(",", targetList.Select(x => x.displayName))));
                 return null;
             }
-            if (SearchingPlayer != null) PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("NoMatch", this, SearchingPlayer.UserIDString), Playername));
-            else if (consoleMsg) Puts(string.Format(lang.GetMessage("NoMatch", this), Playername));
+            if (targetList.Count() == 0)
+            {
+                if (SearchingPlayer != null)
+                {
+                    PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("NoMatch", this, SearchingPlayer.UserIDString), Playername));
+                }
+                else if (consoleMsg) Puts(string.Format(lang.GetMessage("NoMatch", this), Playername));
+                return null;
+            }
             return null;
         }
 
@@ -10911,9 +11307,9 @@ namespace Oxide.Plugins
             bool hasModifier = false;
             double result = 0;
             // Checks each permission that you have created in the config for xp override.
-            if (pi.perm_xp_mod > 0)
+            if (pi.perm_xp_mod > 1)
             {
-                result = 1 + pi.perm_xp_mod;
+                result = pi.perm_xp_mod;
                 hasModifier = true;
             }            
             // If we don't have any special perms, we set the mod to default (1.0)
@@ -11075,7 +11471,7 @@ namespace Oxide.Plugins
 
                 foreach (var mod in HookMods)
                     exp += exp * mod;
-            }
+            }            
 
             HookMods.Clear();
 
@@ -11094,7 +11490,7 @@ namespace Oxide.Plugins
             if (playerData.xp_hud) UpdateXP(player, playerData);
             if (permission.UserHasPermission(player.UserIDString, "skilltree.chat") && !notifiedPlayers.Contains(player.userID))
             {
-                if (config.chat_commands.chat_cmd.Count > 1) Player.Message(player, string.Format(lang.GetMessage("AccessReminder", this, player.UserIDString), config.chat_commands.chat_cmd[0]), config.misc_settings.ChatID);
+                if (config.chat_commands.chat_cmd.Count > 1) Player.Message(player, string.Format(lang.GetMessage("AccessReminder", this, player.UserIDString), config.chat_commands.chat_cmd.First()), config.misc_settings.ChatID);
                 notifiedPlayers.Add(player.userID);
             }
         }
@@ -11133,11 +11529,7 @@ namespace Oxide.Plugins
             bool isModified = false;
             var hook = Interface.CallHook("CanGainXp", userid, plugin, value);
             if (hook != null) return;
-            BasePlayer player = null;
-            for (int i = 0; i < BasePlayer.activePlayerList.Count; i++)
-            {
-                if (BasePlayer.activePlayerList[i].userID == userid) { player = BasePlayer.activePlayerList[i]; break; }
-            }
+            var player = BasePlayer.activePlayerList.FirstOrDefault(x => x.userID == userid);
             if (player != null && player.IsConnected) AwardXP(player, value, null, noMod, true, plugin, isModified);
             else AssignPendingXP(userid, value, noMod);
         }
@@ -11341,10 +11733,6 @@ namespace Oxide.Plugins
                 case Buff.ExtraPockets:
                     SendExtraPocketsButton(player);
                     break;
-                case Buff.Extended_Mag: HandleWeaponMagExtension(player, bd.GetBuffValue(ni.buffInfo.Key)); break;
-                case Buff.Rocket_Mag_Capacity: HandleRocketMagExtension(player, Mathf.RoundToInt(bd.GetBuffValue(ni.buffInfo.Key))); break;
-                case Buff.Underwater_Swim_Speed: UpdateSwimSpeed(player, bd.GetBuffValue(ni.buffInfo.Key)); break;
-                case Buff.Combat_Run_Speed: UpdateRunSpeed(player, bd.GetBuffValue(ni.buffInfo.Key)); break;
 
                 case Buff.Metabolism_Boost: IncreaseCalories(player, bd.GetBuffValue(ni.buffInfo.Key)); break;
                 case Buff.HealthRegen: UpdateRegen(player, bd.GetBuffValue(ni.buffInfo.Key)); break;
@@ -11410,19 +11798,6 @@ namespace Oxide.Plugins
                 DelayedModsChanged(weapon, Convert.ToInt32(weapon.primaryMagazine.definition.builtInSize * ammoMod));
                 if (!ModifiedWeapons.ContainsKey(weapon.net.ID.Value)) ModifiedWeapons.Add(weapon.net.ID.Value, weapon);
             }
-        }
-
-        void HandleRocketMagExtension(BasePlayer player, int extraRockets)
-        {
-            var launcher = player.GetHeldEntity() as BaseLauncher;
-            if (launcher == null) return;
-            var item = launcher.GetItem();
-            if (item == null) return;
-            var shortname = item.info.shortname ?? string.Empty;
-            if (!shortname.Contains("rocket.launcher", StringComparison.OrdinalIgnoreCase) && !shortname.Contains("dragon", StringComparison.OrdinalIgnoreCase))
-                return;
-            DelayedModsChanged(launcher, extraRockets, unloadModifiedWeapons: false);
-            if (!ModifiedWeapons.ContainsKey(launcher.net.ID.Value)) ModifiedWeapons.Add(launcher.net.ID.Value, launcher as BaseProjectile);
         }
 
         void HandlePerms(BasePlayer player, string tree, string node, int level) => HandlePerms(player.UserIDString, tree, node, level);
@@ -11498,8 +11873,8 @@ namespace Oxide.Plugins
             if (highest == 0) return 0;
             foreach (var perm in config.general_settings.max_skill_points_override)
             {
-                if (perm.Value == 0 && permission.UserHasPermission(player.UserIDString, "skilltree." + perm.Key)) return 0;
-                if (perm.Value > highest && permission.UserHasPermission(player.UserIDString, "skilltree." + perm.Key)) highest = perm.Value;
+                if (perm.Value == 0 && permission.UserHasPermission(player.UserIDString, perm.Key)) return 0;
+                if (perm.Value > highest && permission.UserHasPermission(player.UserIDString, perm.Key)) highest = perm.Value;
             }
             return highest;
         }
@@ -11541,7 +11916,7 @@ namespace Oxide.Plugins
             if (lowest == 0) return 0;
             foreach (var perm in config.general_settings.respec_cost_override)
             {
-                if (!permission.UserHasPermission(player.UserIDString, "skilltree." + perm.Key)) continue;
+                if (!permission.UserHasPermission(player.UserIDString, perm.Key)) continue;
                 if (perm.Value == 0) return 0;
                 if (perm.Value < lowest) lowest = perm.Value;
             }
@@ -11669,13 +12044,7 @@ namespace Oxide.Plugins
                             break;
 
                         case Buff.Skinning_Ultimate:
-                            var skinParts = new List<string>();
-                            bool hasAny = false;
-                            foreach (var kv in config.ultimate_settings.ultimate_skinning.enabled_buffs)
-                            {
-                                if (kv.Value > 0) { skinParts.Add(lang.GetMessage(kv.Key.ToString().ToLower(), this, player.UserIDString)); hasAny = true; }
-                            }
-                            nodeData.description = string.Format(lang.GetMessage(nodeData.buffInfo.Key.ToString(), this, player.UserIDString), hasAny ? string.Join("</color>, <color=#42f105>", skinParts) : "");
+                            nodeData.description = string.Format(lang.GetMessage(nodeData.buffInfo.Key.ToString(), this, player.UserIDString), config.ultimate_settings.ultimate_skinning.enabled_buffs.FirstOrDefault(x => x.Value > 0).Value > 0 ? string.Format(string.Join("</color>, <color=#42f105>", config.ultimate_settings.ultimate_skinning.enabled_buffs.Where(x => x.Value > 0).Select(x => lang.GetMessage(x.Key.ToString().ToLower(), this, player.UserIDString)))) : "");
                             break;
 
                         case Buff.Medical_Ultimate:
@@ -11731,7 +12100,7 @@ namespace Oxide.Plugins
 
                         case Buff.Boat_Speed:
                             if (config.buff_settings.boat_turbo_on_mount) nodeData.description = string.Format(lang.GetMessage("BoatSpeedAuto", this, player.UserIDString), nodeData.value_per_buff * 100);
-                            else nodeData.description = GetStandardNodeDescription(player, nodeData.buffInfo.Key, nodeData.buffInfo.Value, nodeData.value_per_buff);
+                            else nodeData.description = string.Format(lang.GetMessage("Boat_Speed_new", this, player.UserIDString), string.Format(lang.GetMessage(config.chat_commands.use_input_key_boat ? "Boat_Speed_instructions_inputson" : "Boat_Speed_instructions_inputsoff", this, player.UserIDString), config.chat_commands.turbo_cmd), Math.Round(nodeData.value_per_buff * 100, 2));
                             break;
 
                         case Buff.Forager:
@@ -11887,13 +12256,8 @@ namespace Oxide.Plugins
             if (bd.GetBuff(Buff.WaterBreathing, out value)) UpdateWaterBreathing(player, value);
             if (bd.ContainsBuff(Buff.InstantUntie)) UpdateInstantUntie(player);
             if (bd.GetBuff(Buff.Extended_Mag, out value)) HandleWeaponMagExtension(player, value);
-            if (bd.GetBuff(Buff.Rocket_Mag_Capacity, out value)) HandleRocketMagExtension(player, Mathf.RoundToInt(value));
             if (bd.GetBuff(Buff.Comfort, out value)) AddComfortSkill(player, value);
             if (bd.GetBuff(Buff.Human_Workbench, out value)) AddWorkbenchSkill(player, Mathf.RoundToInt(Mathf.Clamp(value, 1, 3)));
-            if (bd.GetBuff(Buff.Underwater_Swim_Speed, out value)) UpdateSwimSpeed(player, value);
-            else DestroySwimSpeed(player);
-            if (bd.GetBuff(Buff.Combat_Run_Speed, out value)) UpdateRunSpeed(player, value);
-            else DestroyRunSpeed(player);
 
             List<ItemInfo> items = Pool.Get<List<ItemInfo>>();
             items.AddRange(playerData.pouch_items);
@@ -11946,8 +12310,8 @@ namespace Oxide.Plugins
                 if (results.Count == 0) return "";
                 if (results.Count == 1) return lang.GetMessage(results[0], this, userid);
                 var result = lang.GetMessage(results[0], this, userid);
-                for (int i = 1; i < results.Count; i++)
-                    result += (", " + lang.GetMessage(results[i], this, userid));
+                foreach (var r in results.Skip(1))
+                    result += (", " + lang.GetMessage(r, this, userid));
 
                 return result;
             }
@@ -12001,8 +12365,7 @@ namespace Oxide.Plugins
             int result = config.wipe_update_settings.starting_skill_points;
             foreach (var kvp in config.wipe_update_settings.starting_skill_point_overrides)
             {
-                var permString = kvp.Key.StartsWith("skilltree.", StringComparison.OrdinalIgnoreCase) ? kvp.Key : "skilltree." + kvp.Key;
-                if (permission.UserHasPermission(userID, permString) && kvp.Value > result) result = kvp.Value;
+                if (permission.UserHasPermission(userID, kvp.Key) && kvp.Value > result) result = kvp.Value;
             }
             return result;
         }
@@ -12051,7 +12414,7 @@ namespace Oxide.Plugins
             if (playerData.GetTotalSkillPoints < playerData.current_level * pointsPerLevel) playerData.available_points += Math.Abs(playerData.GetTotalSkillPoints - (playerData.current_level * pointsPerLevel));
             if (!bonus_given && id == pcdData.HighestPlayer)
             {
-                playerData.available_points += config.wipe_update_settings.bonus_skill_points_amount;
+                playerData.available_points += pcdData.highestPlayerPoints;
                 pcdData.HighestPlayer = 0;
             }
             if (name != null) playerData.name = name;
@@ -12085,11 +12448,11 @@ namespace Oxide.Plugins
 
         double GetPermXpMod(string userid)
         {
-            double highest = 0;
+            double highest = 1;
             foreach (var perm in config.xp_settings.xp_perm_modifier)
             {
                 // If the permissions value is greater than the value stored in result, result is set to the new value.
-                if (permission.UserHasPermission(userid, perm.Key.StartsWith("skilltree.", StringComparison.OrdinalIgnoreCase) ? perm.Key : "skilltree." + perm.Key) && perm.Value > highest)
+                if (permission.UserHasPermission(userid, perm.Key) && perm.Value > highest)
                     highest = perm.Value;
             }
             return highest;
@@ -12413,6 +12776,9 @@ namespace Oxide.Plugins
 
                 case Buff.UnderwaterDamageBonus: return "\n" + string.Format(lang.GetMessage("UnderwaterDamageBonusPVP", this, userid), config.buff_settings.UnderwaterDamageBonus_pvp);
                 case Buff.Mining_Ultimate: return "\n" + string.Format(lang.GetMessage("Mining_Ultimate_Command", this, userid), config.ultimate_settings.ultimate_mining.find_node_cmd);
+                case Buff.MaxRepair:
+                    if (config.buff_settings.maxRepairSettings.Cooldown == 0) return null;
+                    return string.Format(lang.GetMessage("MaxRepairCooldown", this, userid), Mathf.RoundToInt(config.buff_settings.maxRepairSettings.Cooldown));
                 default: return null;
             }
         }
@@ -12544,13 +12910,9 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 2) return;
 
-            if (!int.TryParse(arg.Args[0].ToString(), out var index)) return;
-            if (index < 0 || index >= Trees.Count) return;
-            var treeParts = new List<string>();
-            for (int i = 1; i < arg.Args.Length; i++) treeParts.Add(arg.Args[i].ToString());
-            var tree = string.Join("_", treeParts);
+            if (!int.TryParse(arg.Args[0], out var index)) return;
+            var tree = string.Join("_", arg.Args.Skip(1));
             SendBaseMenu(player, tree, config.general_settings.respecType == RespecType.Tree);
             var container = new CuiElementContainer();
             TreeNavButtons(player, index, container);
@@ -12696,9 +13058,8 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 2) return;
-            if (!double.TryParse(arg.Args[0].ToString(), out var cost)) return;
-            var tree = arg.Args[1].ToString();
+            var cost = Convert.ToDouble(arg.GetString(0));
+            var tree = arg.GetString(1);
             //CuiHelper.DestroyUi(player, "SkillTree");
             ConfirmRespec(player, cost, tree);
         }
@@ -12956,18 +13317,6 @@ namespace Oxide.Plugins
         [ChatCommand("movebar")]
         void MoveBar(BasePlayer player)
         {
-            StartMovingXPBar(player);
-        }
-
-        [ChatCommand("movehud")]
-        void MoveHud(BasePlayer player)
-        {
-            StartMovingXPBar(player);
-        }
-
-        void StartMovingXPBar(BasePlayer player)
-        {
-            if (player == null) return;
             if (!config.xp_settings.allow_move_xp_bar)
             {
                 Player.Message(player, lang.GetMessage("MoveXPDisabled", this, player.UserIDString), config.misc_settings.ChatID);
@@ -13073,56 +13422,36 @@ namespace Oxide.Plugins
 
         }
 
-        void LogGiveXpCommand(string message)
-        {
-            LogToFile("givexp_commands", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}", this, false, true);
-        }
-
         [ConsoleCommand("givexp")]
         void GiveXpCommand(ConsoleSystem.Arg arg)
         {
             var admin = arg.Player();
             if (admin != null && !permission.UserHasPermission(admin.UserIDString, "skilltree.admin")) return;
 
-            if (arg.Args == null || arg.Args.Length < 2)
+            if (arg.Args == null || arg.Args.Length < 3)
             {
-                var usageMsg = "Usage: givexp <target name/id> <amount> [apply bonus true/false]";
-                arg.ReplyWith(usageMsg);
-                LogGiveXpCommand($"FAILED (bad usage): {usageMsg} | args={(arg.Args == null ? "null" : string.Join(" ", arg.Args))}");
+                arg.ReplyWith("Usage: givexp <target name/id> <amount> <apply bonus true/false>");
                 return;
             }
 
-            var searchTerm = arg.Args[0].ToString();
-            if (!double.TryParse(arg.Args[1].ToString(), out var xp))
+            var searchTerm = arg.GetString(0);
+            if (!double.TryParse(arg.Args[1], out var xp))
             {
-                arg.ReplyWith($"Invalid xp amount: {arg.Args[1]}");
-                LogGiveXpCommand($"FAILED (invalid amount): target={searchTerm} amount={arg.Args[1]}");
+                arg.ReplyWith($"Invalid xp amount: {arg.GetString(1)}");
                 return;
             }
 
-            var bonus = false;
-            if (arg.Args.Length >= 3)
+            if (!bool.TryParse(arg.Args[2], out var bonus))
             {
-                if (!bool.TryParse(arg.Args[2].ToString(), out bonus))
-                {
-                    arg.ReplyWith($"Invalid bonus parameter: {arg.Args[2]}. Should be true or false.");
-                    LogGiveXpCommand($"FAILED (invalid bonus): target={searchTerm} amount={xp} bonus={arg.Args[2]}");
-                    return;
-                }
+                arg.ReplyWith($"Invalid bonus parameter: {arg.GetString(2)}. Should be true or false.");
+                return;
             }
 
             var target = FindPlayerOnlineOrSleeping(searchTerm, arg);
-            if (target == null)
-            {
-                LogGiveXpCommand($"FAILED (player not found): target={searchTerm} amount={xp} bonus={bonus}");
-                return;
-            }
 
-            PlayerInfo playerData;
-            pcdData.pEntity.TryGetValue(target.userID, out playerData);
-            var xpBefore = playerData?.xp ?? 0;
-            var levelBefore = playerData?.current_level ?? config.level.GetLevel(xpBefore);
+            if (target == null) return;
 
+            
             if (target.IsConnected)
             {
                 AwardXP(target, xp, null, !bonus, false, "command");
@@ -13131,19 +13460,48 @@ namespace Oxide.Plugins
             else
             {
                 if (GiveXPOffline(target.userID, xp, bonus)) arg.ReplyWith($"Gave {target.displayName} {xp} [Modified: {bonus}] while they were offline.");
-                else
-                {
-                    arg.ReplyWith($"Failed to give xp to offline player: {target.displayName}");
-                    LogGiveXpCommand($"FAILED (offline): {target.displayName} ({target.userID}) amount={xp} bonus={bonus}");
-                    return;
-                }
+                else arg.ReplyWith($"Failed to give xp to offline player: {target.displayName}");
             }
-
-            pcdData.pEntity.TryGetValue(target.userID, out playerData);
-            var xpAfter = playerData?.xp ?? xpBefore;
-            var levelAfter = playerData?.current_level ?? levelBefore;
-            LogGiveXpCommand($"OK: {target.displayName} ({target.userID}) amount={xp} bonus={bonus} connected={target.IsConnected} xp {xpBefore:F2}->{xpAfter:F2} level {levelBefore}->{levelAfter}");
         }
+
+        //[ConsoleCommand("givexp")]
+        //void GiveXPConsole(ConsoleSystem.Arg arg)
+        //{
+        //    var player = arg.Player();
+        //    if (player != null && !permission.UserHasPermission(player.UserIDString, "skilltree.admin")) return;
+
+        //    if (arg.Args == null || arg.Args.Length < 2)
+        //    {
+        //        arg.ReplyWith(lang.GetMessage("GiveXPUsageConsole", this, player?.UserIDString ?? null));
+        //        return;
+        //    }
+
+        //    bool ignoreXPMods;
+        //    bool foundBoolArg = false;
+        //    if (!Boolean.TryParse(arg.Args.Last(), out ignoreXPMods)) ignoreXPMods = false;
+        //    else foundBoolArg = true;
+
+        //    double xp;
+        //    if (!double.TryParse(arg.Args[arg.Args.Length - 1], out xp))
+        //    {
+        //        if (!double.TryParse(arg.Args[arg.Args.Length - 2], out xp))
+        //        {
+        //            arg.ReplyWith(lang.GetMessage("GiveXPUsageConsole", this, player?.UserIDString ?? null));
+        //            return;
+        //        }
+        //    }
+
+        //    var name = String.Join(" ", arg.Args.Take(arg.Args.Length - (foundBoolArg ? 2 : 1)));
+        //    var target = name.IsNumeric() ? FindPlayerByID(name, player ?? null) : FindPlayerByName(name, player ?? null);
+        //    if (target == null)
+        //    {
+        //        if (config.xp_settings.givexp_offline && ulong.TryParse(name, out var userid)) GiveXPOffline(userid, xp);
+        //        return;
+        //    }
+        //    AwardXP(target, xp, null, ignoreXPMods, false, "console");
+        //    PrintToChat(target, string.Format(lang.GetMessage("GaveXP", this, target.UserIDString), xp, player != null ? player.displayName : "Console"));
+        //    arg.ReplyWith(string.Format(lang.GetMessage("ReceivedXP", this), target.displayName, xp));
+        //}
 
         bool GiveXPOffline(ulong id, double xp, bool bonus)
         {
@@ -13169,18 +13527,16 @@ namespace Oxide.Plugins
             }
 
             double xp;
-            if (!double.TryParse(arg.Args[arg.Args.Length - 1].ToString(), out xp))
+            if (!double.TryParse(arg.Args[arg.Args.Length - 1], out xp))
             {
-                if (!double.TryParse(arg.Args[arg.Args.Length - 2].ToString(), out xp))
+                if (!double.TryParse(arg.Args[arg.Args.Length - 2], out xp))
                 {
                     arg.ReplyWith(lang.GetMessage("GiveXPDebtUsageConsole", this, admin?.UserIDString ?? null));
                     return;
                 }
             }
 
-            var nameParts2 = new List<string>();
-            for (int i = 0; i < arg.Args.Length - 1; i++) nameParts2.Add(arg.Args[i].ToString());
-            var name = string.Join(" ", nameParts2);
+            var name = String.Join(" ", arg.Args.Take(arg.Args.Length -  1));
             var target = name.IsNumeric() ? FindPlayerByID(name, admin ?? null) : FindPlayerByName(name, admin ?? null);
             if (target == null)
             {
@@ -13232,15 +13588,13 @@ namespace Oxide.Plugins
                 Player.Message(player, lang.GetMessage("GiveXPUsage", this, player.UserIDString), config.misc_settings.ChatID);
                 return;
             }
-            if (!args[args.Length - 1].IsNumeric())
+            if (!args.Last().IsNumeric())
             {
                 Player.Message(player, lang.GetMessage("XPLastArg", this, player.UserIDString), config.misc_settings.ChatID);
                 return;
             }
-            var xp = Convert.ToDouble(args[args.Length - 1]);
-            var nameParts3 = new List<string>();
-            for (int i = 0; i < args.Length - 1; i++) nameParts3.Add(args[i]);
-            var name = string.Join(" ", nameParts3);
+            var xp = Convert.ToDouble(args.Last());
+            var name = String.Join(" ", args.Take(args.Length - 1));
             var target = FindPlayerByName(name, player);
             if (target == null) return;
             AwardXP(target, xp, null, false, false, "chat command");
@@ -13256,16 +13610,13 @@ namespace Oxide.Plugins
             var player = arg.Player();
             if (player != null && !permission.UserHasPermission(player.UserIDString, "skilltree.admin")) return;
 
-            // Args is Facepunch.StringView[] — use Arg.Get* helpers (Convert.ToInt32 on StringView throws InvalidCastException)
             if (arg.Args.IsNullOrEmpty() || arg.Args.Length < 2 || !arg.GetString(arg.Args.Length - 1).IsNumeric())
             {
                 arg.ReplyWith(lang.GetMessage("GiveSPUsage", this));
                 return;
             }
             var amount = arg.GetInt(arg.Args.Length - 1);
-            var nameParts4 = new List<string>();
-            for (int i = 0; i < arg.Args.Length - 1; i++) nameParts4.Add(arg.GetString(i));
-            var name = string.Join(" ", nameParts4);
+            var name = String.Join(" ", arg.Args.Take(arg.Args.Length - 1));
             var target = name.IsNumeric() ? FindPlayerByID(name, player ?? null) : FindPlayerByName(name, player ?? null);
             if (target == null)
             {
@@ -13297,7 +13648,7 @@ namespace Oxide.Plugins
 
             bool onlineOnly;
             int amount;
-            if (arg.Args == null || arg.Args.Length < 2 || !int.TryParse(arg.Args[0].ToString(), out amount) || amount < 1 || !Boolean.TryParse(arg.Args[1].ToString(), out onlineOnly))
+            if (arg.Args == null || arg.Args.Length < 2 || !int.TryParse(arg.Args[0], out amount) || amount < 1 || !Boolean.TryParse(arg.Args[1], out onlineOnly))
             {
                 arg.ReplyWith("Usage: givesptoall <amount> <online only: true/false>");
                 return;
@@ -13360,14 +13711,14 @@ namespace Oxide.Plugins
 
             bool onlineOnly;
             double amount;
-            if (arg.Args == null || arg.Args.Length < 2 || !double.TryParse(arg.Args[0].ToString(), out amount) || amount <= 0 || !Boolean.TryParse(arg.Args[1].ToString(), out onlineOnly))
+            if (arg.Args == null || arg.Args.Length < 2 || !double.TryParse(arg.Args[0], out amount) || amount <= 0 || !Boolean.TryParse(arg.Args[1], out onlineOnly))
             {
                 arg.ReplyWith("Usage: givexptoall <amount> <online only: true/false> <Optional: no mods: true/false");
                 return;
             }
 
             bool noMod = false;
-            if (arg.Args.Length == 3) Boolean.TryParse(arg.Args[2].ToString(), out noMod);
+            if (arg.Args.Length == 3) Boolean.TryParse(arg.Args[2], out noMod);
 
             foreach (var p in BasePlayer.activePlayerList)
             {
@@ -13430,15 +13781,13 @@ namespace Oxide.Plugins
         void GiveSkillPoints(BasePlayer player, string command, string[] args)
         {
             if (!permission.UserHasPermission(player.UserIDString, "skilltree.admin")) return;
-            if (args.Length < 2 || !args[args.Length - 1].IsNumeric())
+            if (args.Length < 2 || !args.Last().IsNumeric())
             {
                 Player.Message(player, lang.GetMessage("GiveSPUsage", this, player.UserIDString), config.misc_settings.ChatID);
                 return;
             }
-            var amount = Convert.ToInt32(args[args.Length - 1]);
-            var nameParts5 = new List<string>();
-            for (int i = 0; i < args.Length - 1; i++) nameParts5.Add(args[i]);
-            var target = FindPlayerByName(string.Join(" ", nameParts5), player);
+            var amount = Convert.ToInt32(args.Last());
+            var target = FindPlayerByName(String.Join(" ", args.Take(args.Length - 1)), player);
             if (target == null) return;
 
             GiveSkillPoints(target, amount);
@@ -13595,7 +13944,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var target = FindPlayerByName(string.Join(" ", arg.Args), null, false) ?? FindPlayerByID(arg.Args[0].ToString(), null, false);
+            var target = FindPlayerByName(string.Join(" ", arg.Args), null, false) ?? FindPlayerByID(arg.GetString(0), null, false);
             if (target == null)
             {
                 arg.ReplyWith($"No player found that matched {string.Join(" ", arg.Args)}");
@@ -14282,11 +14631,7 @@ namespace Oxide.Plugins
 
         void AwardEventWinnerXP(ulong winnerID, double xp)
         {
-            BasePlayer player = null;
-            for (int i = 0; i < BasePlayer.activePlayerList.Count; i++)
-            {
-                if (BasePlayer.activePlayerList[i].userID == winnerID) { player = BasePlayer.activePlayerList[i]; break; }
-            }
+            var player = BasePlayer.activePlayerList.FirstOrDefault(x => x.userID == winnerID);
             if (player != null) AwardXP(player, xp, null, false, false, "Event");
         }
 
@@ -14579,7 +14924,7 @@ namespace Oxide.Plugins
             var inventory = oven.inventory;
             if (inventory?.itemList == null) return;
 
-            // Snapshot — we mutate amounts / remove while scanning.
+            // Snapshot â€” we mutate amounts / remove while scanning.
             foreach (var item in new List<Item>(inventory.itemList))
             {
                 if (item?.info == null || item.amount < 1) continue;
@@ -14594,7 +14939,7 @@ namespace Oxide.Plugins
                 if (!itemToGive.MoveToContainer(inventory))
                     itemToGive.Drop(inventory.dropPosition, inventory.dropVelocity);
 
-                // Prefer amount-- over SplitItem(1).Remove() — SplitItem returns null when amount <= split size.
+                // Prefer amount-- over SplitItem(1).Remove() â€” SplitItem returns null when amount <= split size.
                 if (item.amount > 1)
                 {
                     item.amount--;
@@ -14630,7 +14975,7 @@ namespace Oxide.Plugins
 
         public Dictionary<string, Subscription> subscriptions = new Dictionary<string, Subscription>()
         {
-            [nameof(OnEntityTakeDamage)] = new Subscription(false, new List<Buff>() { Buff.Animal_Damage_Resist, Buff.Barrel_Smasher, Buff.Fall_Damage_Reduction, Buff.Fire_Damage_Reduction, Buff.Melee_Resist, Buff.No_Cold_Damage, Buff.PVP_Critical, Buff.PVP_Damage, Buff.PVP_Shield, Buff.Radiation_Reduction, Buff.Loot_Pickup, Buff.Human_NPC_Damage, Buff.Human_NPC_Defence, Buff.Animal_NPC_Damage, Buff.Vehicle_Ultimate, Buff.Scavengers_Ultimate, Buff.Combat_Ultimate, Buff.SharkResistance, Buff.UnderwaterDamageBonus, Buff.Skinning_Ultimate, Buff.Trap_Damage_Reduction, Buff.Trap_Damage_Increase, Buff.Personal_Explosive_Reduction, Buff.Extra_Scrap_Barrel, Buff.Component_Barrel, Buff.Electronic_Barrel, Buff.DriverCollisionResistance, Buff.Heli_Damage_Bonus, Buff.Bradley_Damage_Bonus }),
+            [nameof(OnEntityTakeDamage)] = new Subscription(false, new List<Buff>() { Buff.Animal_Damage_Resist, Buff.Barrel_Smasher, Buff.Fall_Damage_Reduction, Buff.Fire_Damage_Reduction, Buff.Melee_Resist, Buff.No_Cold_Damage, Buff.No_Bee_Damage, Buff.PVP_Critical, Buff.PVP_Damage, Buff.PVP_Shield, Buff.Radiation_Reduction, Buff.Loot_Pickup, Buff.Human_NPC_Damage, Buff.Human_NPC_Defence, Buff.Animal_NPC_Damage, Buff.Vehicle_Ultimate, Buff.Scavengers_Ultimate, Buff.Combat_Ultimate, Buff.SharkResistance, Buff.UnderwaterDamageBonus, Buff.Skinning_Ultimate, Buff.Trap_Damage_Reduction, Buff.Trap_Damage_Increase, Buff.Personal_Explosive_Reduction, Buff.Extra_Scrap_Barrel, Buff.Component_Barrel, Buff.Electronic_Barrel, Buff.DriverCollisionResistance, Buff.Bradley_Damage_Bonus, Buff.Siege_Damage, Buff.Friendly_Fire_Reduction }),
             //[nameof(OnItemUse)] = new Subscription(false, new List<Buff>() { Buff.Rationer }),
             [nameof(OnPlayerRevive)] = new Subscription(false, new List<Buff>() { Buff.Reviver }),
             [nameof(OnPlayerHealthChange)] = new Subscription(false, new List<Buff>() { Buff.Double_Bandage_Heal, Buff.Skinning_Ultimate, Buff.Heal_Share }),
@@ -14639,8 +14984,8 @@ namespace Oxide.Plugins
             [nameof(OnRecyclerToggle)] = new Subscription(false, new List<Buff>() { Buff.Recycler_Speed, Buff.Recycler_Efficiency }),
             [nameof(OnPlayerAddModifiers)] = new Subscription(false, new List<Buff>() { Buff.Rationer, Buff.Extra_Food_Water, Buff.Iron_Stomach, Buff.Extended_Tea_Duration, Buff.Tea_Share, Buff.Metabolism_Share }),
             [nameof(OnPlayerWound)] = new Subscription(false, new List<Buff>() { Buff.Wounded_Resist }),
-            [nameof(OnEntityMounted)] = new Subscription(false, new List<Buff>() { Buff.Riding_Speed, Buff.Heli_Fuel_Rate, Buff.Boat_Fuel_Rate, Buff.Heli_Speed, Buff.BikeEnginePower }),
-            [nameof(OnEntityDismounted)] = new Subscription(false, new List<Buff>() { Buff.Boat_Fuel_Rate, Buff.Heli_Fuel_Rate, Buff.Riding_Speed, Buff.Boat_Speed, Buff.Heli_Speed, Buff.Boat_Speed, Buff.BikeEnginePower }),
+            [nameof(OnEntityMounted)] = new Subscription(false, new List<Buff>() { Buff.Riding_Speed, Buff.Heli_Fuel_Rate, Buff.Boat_Fuel_Rate, Buff.Heli_Speed, Buff.BikeEnginePower, Buff.Sailing_Speed }),
+            [nameof(OnEntityDismounted)] = new Subscription(false, new List<Buff>() { Buff.Boat_Fuel_Rate, Buff.Heli_Fuel_Rate, Buff.Riding_Speed, Buff.Boat_Speed, Buff.Heli_Speed, Buff.Boat_Speed, Buff.BikeEnginePower, Buff.Sailing_Speed }),
             [nameof(OnHammerHit)] = new Subscription(false, new List<Buff>() { Buff.Vehicle_Mechanic }),
             [nameof(OnPayForUpgrade)] = new Subscription(false, new List<Buff>() { Buff.Upgrade_Refund }),
             [nameof(OnPlayerInput)] = new Subscription(false, new List<Buff>() { Buff.Boat_Speed }),
@@ -14655,7 +15000,7 @@ namespace Oxide.Plugins
             [nameof(OnWeaponModChange)] = new Subscription(false, new List<Buff>() { Buff.Extended_Mag }),
             [nameof(OnFishCatch)] = new Subscription(false, new List<Buff>() { Buff.Rod_Tension_Bonus, Buff.Fishing_Luck }),
             [nameof(OnFishingStopped)] = new Subscription(false, new List<Buff>() { Buff.Rod_Tension_Bonus }),
-            [nameof(OnTimedExplosiveExplode)] = new Subscription(false, new List<Buff>() { Buff.Double_Explosion_Chance }),
+            [nameof(OnTimedExplosiveExplode)] = new Subscription(false, new List<Buff>() { Buff.Double_Explosion_Chance, Buff.Cannon_Damage }),
             [nameof(OnMixingTableToggle)] = new Subscription(false, new List<Buff>() { Buff.Cooking_Speed }),
             [nameof(OnRocketLaunched)] = new Subscription(false, new List<Buff>() { Buff.Rocket_Velocity, Buff.Explosion_Radius }),
             [nameof(OnExplosiveThrown)] = new Subscription(false, new List<Buff>() { Buff.Explosion_Radius }),
@@ -14798,6 +15143,48 @@ namespace Oxide.Plugins
             }
         }
 
+        void RefreshBuffSubscriptions(ulong id, BuffDetails buffData, Buff changed)
+        {
+            foreach (var sub in subscriptions)
+            {
+                if (sub.Key == nameof(OnPlayerInput) && !config.chat_commands.use_input_key_boat) continue;
+                if (!sub.Value.buffs.Contains(changed)) continue;
+
+                bool needed = false;
+                for (int i = 0; i < sub.Value.buffs.Count; i++)
+                {
+                    if (buffData.ContainsBuff(sub.Value.buffs[i]))
+                    {
+                        needed = true;
+                        break;
+                    }
+                }
+
+                if (needed)
+                {
+                    sub.Value.AddPlayer(id);
+                    if (!sub.Value.isSubscribed)
+                    {
+                        sub.Value.Subscribed();
+                        Subscribe(sub.Key);
+                    }
+                }
+                else
+                {
+                    sub.Value.RemovePlayer(id);
+                    if (sub.Value.isSubscribed && !sub.Value.Required())
+                    {
+                        OnUnsubscribe(sub.Key);
+                        sub.Value.Unsubscribed();
+                        Unsubscribe(sub.Key);
+                    }
+                }
+            }
+
+            if (changed == Buff.Shield_Reflect)
+                HandleShieldSubscriptions(id, buffData.ContainsBuff(Buff.Shield_Reflect));
+        }
+
         void LoadBuffs()
         {
             if (config.buff_settings.boat_turbo_on_mount && !subscriptions[nameof(OnEntityMounted)].buffs.Contains(Buff.Boat_Speed)) subscriptions[nameof(OnEntityMounted)].buffs.Add(Buff.Boat_Speed);
@@ -14817,28 +15204,22 @@ namespace Oxide.Plugins
                     if (sub.Key == nameof(OnPlayerInput) && !config.chat_commands.use_input_key_boat)
                     {
                         Unsubscribe(nameof(OnPlayerInput));
-                        sub.Value.Unsubscribed();
                         continue;
                     }
-                    sub.Value.subscribers.Clear();
                     foreach (var player in buffDetails)
                     {
                         var buffs = player.Value.GetAllBuffs();
-                        if (buffs == null || buffs.Count == 0) continue;
+                        if (buffs != null || buffs.Count > 0) continue;
                         foreach (var buff in buffs)
                         {
                             if (sub.Value.buffs.Contains(buff.Key))
                             {
                                 sub.Value.AddPlayer(player.Key);
+                                sub.Value.Subscribed();
                             }
                         }
                     }
-                    if (sub.Value.Required())
-                    {
-                        if (!sub.Value.isSubscribed) Subscribe(sub.Key);
-                        sub.Value.Subscribed();
-                    }
-                    else
+                    if (!sub.Value.Required())
                     {
                         sub.Value.Unsubscribed();
                         Unsubscribe(sub.Key);
@@ -15114,7 +15495,8 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, "SkillTree");
             CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
             CuiHelper.DestroyUi(player, "NavigationMenu");
-            StartMovingXPBar(player);
+            UpdateXP(player, null, true);
+            player.ShowToast(GameTip.Styles.Blue_Normal, lang.GetMessage("MoveBarInstructions", this, player.UserIDString), true);
         }
 
         [ConsoleCommand("sttoggleextrapocketsbutton")]
@@ -15369,10 +15751,9 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 2) return;
 
-            if (!Enum.TryParse<Buff>(arg.Args[0].ToString(), out var buff)) return;
-            if (!bool.TryParse(arg.Args[1].ToString(), out var currentValue)) return;
+            if (!Enum.TryParse<Buff>(arg.GetString(0), out var buff)) return;
+            if (!bool.TryParse(arg.Args[1], out var currentValue)) return;
             if (!GetBuffDetails(player.userID, out var buffData) || !buffData.GetBuffInfo(buff, out var value)) return;
             value.SetEnabled(player, buff, !currentValue);
 
@@ -15404,14 +15785,6 @@ namespace Oxide.Plugins
 
                 case Buff.WaterBreathing:
                     SetWaterBreathingBlock(player, !enable);
-                    return;
-
-                case Buff.Underwater_Swim_Speed:
-                    SetSwimSpeedBlock(player, !enable);
-                    return;
-
-                case Buff.Combat_Run_Speed:
-                    SetRunSpeedBlock(player, !enable);
                     return;
 
                 case Buff.InstantUntie:
@@ -15477,15 +15850,6 @@ namespace Oxide.Plugins
             gameObject.AddDamageCooldown(config.buff_settings.health_regen_combat_delay);
         }
 
-        // A buff that reduces a hit to zero must cancel the damage hook (return non-null).
-        // If we instead leave an all-zero damage array and return null, the game keeps
-        // processing the 0-damage hit and records lastDamage via GetMajorityDamageType(),
-        // which resolves an all-zero array to the highest DamageType index (Cannon). That
-        // stale value then shows up as a false "died (Cannon)" when the player later dies
-        // with no HitInfo (e.g. a fall-wound bleed-out). Returns null when damage remains,
-        // so partial reductions still apply exactly as before.
-        object CancelIfNegated(HitInfo info) => info?.damageTypes != null && info.damageTypes.Total() <= 0f ? (object)true : null;
-
         void SetRegenBlock(BasePlayer player, bool shouldBlock)
         {
             if (!buffDetails.TryGetValue(player.userID, out var bd) || !bd.ContainsBuff(Buff.HealthRegen)) return;
@@ -15494,10 +15858,9 @@ namespace Oxide.Plugins
             gameObject.SetRegenBlock(shouldBlock);
         }
 
-        public class Regen : MonoBehaviour
+        public class Regen : FacepunchBehaviour
         {
             private BasePlayer player;
-            private float regenDelay;
             private float _regenAmount;
             private bool IsBlocked;
 
@@ -15506,23 +15869,20 @@ namespace Oxide.Plugins
             private void Awake()
             {
                 player = GetComponent<BasePlayer>();
-                regenDelay = Time.time + 1f;
                 _regenAmount = 0;
+
+                InvokeRepeating(Run, 1, 1);
             }
 
-            public void FixedUpdate()
+            public void Run()
             {
                 if (player == null || !player.IsConnected)
                 {
                     Destroy(this);
                     return;
                 }
-                if (regenDelay < Time.time)
-                {
-                    regenDelay = Time.time + 1f;
-                    if (damageCooldownTime > Time.time || IsBlocked) return;
-                    DoRegen();
-                }
+                if (damageCooldownTime > Time.time || IsBlocked) return;
+                DoRegen();
             }
 
             public void SetRegenBlock(bool shouldBlock)
@@ -15556,197 +15916,6 @@ namespace Oxide.Plugins
 
         #endregion
 
-        #region Swim / Run Speed
-
-        private static readonly float[] SwimSpeedMovementModifiers = { 0f, 5f, 7f, 10f, 15f, 20f };
-        private static readonly float[] RunSpeedMovementModifiers = { 0f, 2.5f, 4f, 5f, 7f, 10f };
-
-        void UpdateSwimSpeed(BasePlayer player, float levelValue)
-        {
-            ApplySwimSpeedMovementBoost(player, levelValue);
-        }
-
-        void ApplySwimSpeedMovementBoost(BasePlayer player, float levelValue)
-        {
-            int level = Mathf.Clamp(Mathf.RoundToInt(levelValue / 0.2f), 0, 5);
-            float mod = SwimSpeedMovementModifiers[level];
-            if (MovementSpeed != null && MovementSpeed.IsLoaded)
-            {
-                if (mod <= 0f) { try { MovementSpeed.Call("RemoveSwimSpeed", player, "SkillTree"); } catch { } return; }
-                try { MovementSpeed.Call("AddSwimSpeedBoost", player, "SkillTree", mod, 0f, true); } catch { }
-                return;
-            }
-            if (mod <= 0f) return;
-            var component = player.GetComponent<SwimSpeedBehaviour>();
-            if (component == null) component = player.gameObject.AddComponent<SwimSpeedBehaviour>();
-            component.SetSwimModifier(mod / 20f);
-        }
-
-        void UpdateRunSpeed(BasePlayer player, float levelValue)
-        {
-            ApplyRunSpeedMovementBoost(player, levelValue);
-        }
-
-        void ApplyRunSpeedMovementBoost(BasePlayer player, float levelValue)
-        {
-            if (MovementSpeed == null || !MovementSpeed.IsLoaded) return;
-            int level = Mathf.Clamp(Mathf.RoundToInt(levelValue / 0.2f), 0, 5);
-            float mod = RunSpeedMovementModifiers[level];
-            if (mod <= 0f)
-            {
-                try { MovementSpeed.Call("RemoveRunSpeed", player, "SkillTree_Run"); } catch { }
-                return;
-            }
-            try { MovementSpeed.Call("AddRunSpeedBoost", player, "SkillTree_Run", mod, 0f, true); } catch { }
-        }
-
-        void SetSwimSpeedBlock(BasePlayer player, bool shouldBlock)
-        {
-            if (!buffDetails.TryGetValue(player.userID, out var bd) || !bd.ContainsBuff(Buff.Underwater_Swim_Speed)) return;
-            if (MovementSpeed != null && MovementSpeed.IsLoaded)
-            {
-                if (shouldBlock) { try { MovementSpeed.Call("RemoveSwimSpeed", player, "SkillTree"); } catch { } }
-                else if (bd.GetBuff(Buff.Underwater_Swim_Speed, out var value)) ApplySwimSpeedMovementBoost(player, value);
-                return;
-            }
-            var component = player.GetComponent<SwimSpeedBehaviour>();
-            if (component == null) return;
-            component.SetBlocked(shouldBlock);
-        }
-
-        void SetRunSpeedBlock(BasePlayer player, bool shouldBlock)
-        {
-            if (!buffDetails.TryGetValue(player.userID, out var bd) || !bd.ContainsBuff(Buff.Combat_Run_Speed)) return;
-            if (MovementSpeed != null && MovementSpeed.IsLoaded)
-            {
-                if (shouldBlock) { try { MovementSpeed.Call("RemoveRunSpeed", player, "SkillTree_Run"); } catch { } }
-                else if (bd.GetBuff(Buff.Combat_Run_Speed, out var value)) ApplyRunSpeedMovementBoost(player, value);
-            }
-        }
-
-        void DestroySwimSpeed(BasePlayer player)
-        {
-            if (MovementSpeed != null && MovementSpeed.IsLoaded)
-            { try { MovementSpeed.Call("RemoveSwimSpeed", player, "SkillTree"); } catch { } }
-            var component = player.GetComponent<SwimSpeedBehaviour>();
-            if (component != null) UnityEngine.Object.DestroyImmediate(component);
-        }
-
-        void DestroyRunSpeed(BasePlayer player)
-        {
-            if (MovementSpeed != null && MovementSpeed.IsLoaded)
-            { try { MovementSpeed.Call("RemoveRunSpeed", player, "SkillTree_Run"); } catch { } }
-        }
-
-        public class SwimSpeedBehaviour : MonoBehaviour
-        {
-            private BasePlayer player;
-            private float nextTick;
-            private float interval = 0.05f;
-            private bool applied;
-            private bool blocked;
-            private float swimModifier;
-            private float swimVelocity;
-
-            private void Awake()
-            {
-                player = GetComponent<BasePlayer>();
-                nextTick = Time.time + interval;
-                applied = false;
-                blocked = false;
-                if (player != null) { player.PauseSpeedHackDetection(float.MaxValue); ResetAntiHackCompat(player); }
-            }
-
-            public void SetBlocked(bool shouldBlock)
-            {
-                blocked = shouldBlock;
-                if (blocked && applied && player != null) { player.ApplyInheritedVelocity(Vector3.zero); applied = false; }
-            }
-
-            public void SetSwimModifier(float value)
-            {
-                swimModifier = Mathf.Clamp01(value);
-                swimVelocity = swimModifier * 8f;
-            }
-
-            private bool IsMovingForward()
-            {
-                if (player == null || player.serverInput == null) return false;
-                var input = player.serverInput;
-                return input.IsDown(BUTTON.FORWARD) && !input.IsDown(BUTTON.BACKWARD);
-            }
-
-            private void FixedUpdate()
-            {
-                if (player == null || !player.IsConnected) { Destroy(this); return; }
-                if (Time.time < nextTick) return;
-                nextTick = Time.time + interval;
-
-                if (blocked || swimVelocity <= 0f)
-                {
-                    player.ApplyInheritedVelocity(Vector3.zero);
-                    applied = false;
-                    return;
-                }
-                if (!player.IsSwimming() || player.isMounted || player.IsFlying)
-                {
-                    player.ApplyInheritedVelocity(Vector3.zero);
-                    applied = false;
-                    return;
-                }
-
-                applied = true;
-                var input = player.serverInput;
-                Vector3 forward = player.eyes.BodyForward();
-                Vector3 right = player.eyes.BodyRight();
-                Vector3 up = Vector3.up;
-                Vector3 moveDir = Vector3.zero;
-                if (input.IsDown(BUTTON.FORWARD)) moveDir += forward;
-                if (input.IsDown(BUTTON.LEFT)) moveDir -= right;
-                if (input.IsDown(BUTTON.RIGHT)) moveDir += right;
-                if (input.IsDown(BUTTON.JUMP)) moveDir += up * 0.5f;
-
-                if (moveDir == Vector3.zero)
-                {
-                    player.ApplyInheritedVelocity(Vector3.zero);
-                    applied = false;
-                    return;
-                }
-                moveDir.y = Mathf.Clamp(moveDir.y, -0.3f, 0.3f);
-                moveDir.Normalize();
-                player.ApplyInheritedVelocity(moveDir * swimVelocity);
-                if (player.ActivePlayerInd >= 0 && AntiHack.PlayerSpeedhackStates.IsCreated)
-                {
-                    var speedState = AntiHack.PlayerSpeedhackStates[player.ActivePlayerInd];
-                    speedState.Distance = 0f;
-                    AntiHack.PlayerSpeedhackStates[player.ActivePlayerInd] = speedState;
-                    if (speedState.PauseTime <= 0f)
-                        player.PauseSpeedHackDetection(float.MaxValue);
-                }
-            }
-
-            private void OnDestroy()
-            {
-                if (player != null) { player.ApplyInheritedVelocity(Vector3.zero); player.PauseSpeedHackDetection(0.01f); ResetAntiHackCompat(player); }
-            }
-        }
-
-        #endregion
-
-        private static void ResetAntiHackCompat(BasePlayer player)
-        {
-            if (player == null || player.ActivePlayerInd < 0)
-                return;
-
-            try
-            {
-                BasePlayer.ResetAntiHack(player, AntiHack.PlayerStates, AntiHack.PlayerNoclipStates, AntiHack.PlayerSpeedhackStates, AntiHack.PlayerFlyhackStates);
-            }
-            catch
-            {
-            }
-        }
-
         #region AnimalTracker
 
         Dictionary<BasePlayer, float> track_delays = new Dictionary<BasePlayer, float>();
@@ -15771,16 +15940,7 @@ namespace Oxide.Plugins
 
             var animals = FindEntitiesOfType<BaseEntity>(player.transform.position, 300f);
             animals.RemoveAll(x => x.skinID > 0 || !IsAnimal(x));
-            BaseEntity animal = null;
-            if (animals.Count > 0)
-            {
-                float best = float.MaxValue;
-                for (int i = 0; i < animals.Count; i++)
-                {
-                    float d = Vector3.Distance(animals[i].transform.position, player.transform.position);
-                    if (d < best) { best = d; animal = animals[i]; }
-                }
-            }
+            BaseEntity animal = animals.Count > 0 ? animals.OrderBy(x => Vector3.Distance(x.transform.position, player.transform.position)).First() : null;
 
             if (animal == null)
             {
@@ -15840,6 +16000,7 @@ namespace Oxide.Plugins
                 public int dataInt;
                 public int blueprintTarget;
                 public int blueprintAmount;
+                public float dataFloat;
             }
             public int contentsSlots;
             public List<ItemInfo> item_contents;
@@ -15970,11 +16131,13 @@ namespace Oxide.Plugins
             if (flameThrower != null) flameThrower.ammo = savedItem.ammo;
             if (savedItem.instanceData != null)
             {
+                float freshDataFloat = item.instanceData?.dataFloat ?? 0f;
                 item.instanceData = new ProtoBuf.Item.InstanceData();
                 item.instanceData.ShouldPool = false;
                 item.instanceData.dataInt = savedItem.instanceData.dataInt;
                 item.instanceData.blueprintTarget = savedItem.instanceData.blueprintTarget;
                 item.instanceData.blueprintAmount = savedItem.instanceData.blueprintAmount;
+                item.instanceData.dataFloat = savedItem.instanceData.dataFloat > 0f ? savedItem.instanceData.dataFloat : freshDataFloat;
             }
             item.flags = savedItem.flags;
             if (savedItem.item_contents != null && savedItem.item_contents.Count > 0)
@@ -16133,6 +16296,7 @@ namespace Oxide.Plugins
                         dataInt = item.instanceData.dataInt,
                         blueprintTarget = item.instanceData.blueprintTarget,
                         blueprintAmount = item.instanceData.blueprintAmount,
+                        dataFloat = item.instanceData.dataFloat,
                     }
                     : null,
                     name = item.name ?? null,
@@ -16148,10 +16312,71 @@ namespace Oxide.Plugins
         void OnLootEntityEnd(BasePlayer player, StorageContainer container)
         {
             if (player == null || container == null || container.inventory == null) return;
+            if (container is ChickenCoop)
+            {
+                CoopLooters.Remove(player.userID);
+                CuiHelper.DestroyUi(player, CoopHatchTimerPanel);
+            }
             if (containers.ContainsKey(container.inventory.uid.Value))
             {
                 StorePlayerItems(player, container);
             }
+        }
+
+        const string CoopHatchTimerPanel = "SkillTreeCoopHatchTimer";
+
+        static Dictionary<ulong, ChickenCoop> CoopLooters = new Dictionary<ulong, ChickenCoop>();
+
+        void OnLootEntity(BasePlayer player, ChickenCoop coop)
+        {
+            if (player == null || coop == null || player.IsNpc || !player.userID.IsSteamId()) return;
+            CoopLooters[player.userID] = coop;
+            ShowCoopHatchTimer(player, coop);
+        }
+
+        [ConsoleCommand("stcoophatchtimerdone")]
+        void CoopHatchTimerDone(ConsoleSystem.Arg arg)
+        {
+            var player = arg?.Player();
+            if (player == null) return;
+            CuiHelper.DestroyUi(player, CoopHatchTimerPanel);
+        }
+
+        static void ShowCoopHatchTimer(BasePlayer player, ChickenCoop coop)
+        {
+            if (Instance == null || player == null || coop == null) return;
+            if (!coop.HasFlag(BaseEntity.Flags.Reserved1)) return;
+
+            int liveChickens = 0;
+            float remaining = 0f;
+            foreach (var status in coop.Animals)
+            {
+                if (status.SpawnedAnimal.Get(true) != null) liveChickens++;
+                else
+                {
+                    float time = status.TimeUntilHatch;
+                    if (time > remaining) remaining = time;
+                }
+            }
+
+            if (liveChickens < 4) return;
+
+            var container = new CuiElementContainer();
+            container.Add(new CuiElement
+            {
+                Name = CoopHatchTimerPanel,
+                Parent = "Overlay",
+                DestroyUi = CoopHatchTimerPanel,
+                Components =
+                {
+                    new CuiTextComponent { Text = Instance.lang.GetMessage("CoopHatchTimer", Instance, player.UserIDString), Font = "robotocondensed-regular.ttf", FontSize = 12, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" },
+                    new CuiOutlineComponent { Color = "0 0 0 0.6", Distance = "1 -1" },
+                    new CuiRectTransformComponent { AnchorMin = "0.5 0", AnchorMax = "0.5 0", OffsetMin = "385 199", OffsetMax = "585 229" },
+                    new CuiCountdownComponent { EndTime = 0f, StartTime = Mathf.Max(1, Mathf.CeilToInt(remaining)), Step = 1f, DestroyIfDone = true, Command = "stcoophatchtimerdone" }
+                }
+            });
+
+            CuiHelper.AddUi(player, container);
         }
 
         void OnTimedExplosiveExplode(TimedExplosive explosive)
@@ -16161,6 +16386,16 @@ namespace Oxide.Plugins
 
             BuffDetails bd;
             float value;
+
+            if (explosive.ShortPrefabName != null && explosive.ShortPrefabName.Contains("cannon") && GetBuffDetails(player.userID, out bd) && bd.GetBuff(Buff.Cannon_Damage, out var cannonValue))
+            {
+                foreach (var damage in explosive.damageTypes)
+                    damage.amount *= 1f + cannonValue;
+
+                foreach (var damage in explosive.playerDamage)
+                    damage.amount *= 1f + cannonValue;
+            }
+
             if (!GetBuffDetails(player.userID, out bd) || !bd.GetBuff(Buff.Double_Explosion_Chance, out value)) return;
             if (!RollSuccessful(value)) return;
             if (config.buff_settings.raid_perk_settings.Double_Explosion_chance_settings.blacklist.Contains(explosive.ShortPrefabName)) return;
@@ -16193,15 +16428,7 @@ namespace Oxide.Plugins
 
         void OnEntityKill(StorageContainer container)
         {
-            if (container is BaseOven oven) ovens.Remove(oven);
             RemoveContainer(container);
-        }
-
-        void OnEntityKill(CollectibleEntity entity)
-        {
-            if (!IsForagerLoaded) return;
-            if (entity == null || entity.net == null) return;
-            CollectibleManager.OnKilled(entity);
         }
 
         void OnEntityKill(Workbench workbench)
@@ -16264,7 +16491,6 @@ namespace Oxide.Plugins
         void OnRocketLaunched(BasePlayer player, TimedExplosive entity) => HandleRocket(player, entity);
         void HandleExplosionRadius(BasePlayer player, TimedExplosive timedExplosive)
         {
-            if (player == null || timedExplosive == null) return;
             if (config.buff_settings.raid_perk_settings.Explosion_Radius_settings.blacklist.Contains(timedExplosive.ShortPrefabName)) return;
             BuffDetails bd;
             float value;
@@ -16468,9 +16694,9 @@ namespace Oxide.Plugins
                     var obj = LoadOfflinePlayerInfo(file, false);
                     data.Add(userid, new ScoreboardInfo.ScoreInfo(obj.name ?? useridString, obj.xp, obj.prestige_level, obj.prestige_level > 0 ? config.prestige_settings.levels.TryGetValue(obj.prestige_level, out var presData) ? presData.RankUpPic : 0 : 0));
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Puts($"Error loading file: [{FormatUserIDFromPath(file)}] {file}");
+                    Puts($"Error loading file: [{FormatUserIDFromPath(file)}] {file} — {ex.Message}");
                 }
                 count++;
                 if (count > config.misc_settings.scoreBoardSettings.ScoreUpdateIteration)
@@ -16828,12 +17054,11 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
 
             PlayerInfo pi;
             if (!pcdData.pEntity.TryGetValue(player.userID, out pi)) return;
             Buff buff;
-            if (!Enum.TryParse(arg.Args[0].ToString(), out buff)) return;
+            if (!Enum.TryParse(arg.GetString(0), out buff)) return;
 
             UltimatePlayerSettings ultimateData;
             if (!pi.ultimate_settings.TryGetValue(buff, out ultimateData)) pi.ultimate_settings.Add(buff, ultimateData = new UltimatePlayerSettings());
@@ -16944,9 +17169,7 @@ namespace Oxide.Plugins
             {
                 if (ups.enabled)
                 {
-                    var skinToggles = new List<string>();
-                    foreach (var kv in config.ultimate_settings.ultimate_skinning.enabled_buffs) skinToggles.Add(lang.GetMessage(kv.Key.ToString().ToLower(), this, player.UserIDString));
-                    Player.Message(player, string.Format(lang.GetMessage("SkinningUltimateToggleText", this, player.UserIDString), string.Join("</color>, <color=#DFF008>", skinToggles)), config.misc_settings.ChatID);
+                    Player.Message(player, string.Format(lang.GetMessage("SkinningUltimateToggleText", this, player.UserIDString), string.Join("</color>, <color=#DFF008>", config.ultimate_settings.ultimate_skinning.enabled_buffs.Select(x => lang.GetMessage(x.Key.ToString().ToLower(), this, player.UserIDString)))), config.misc_settings.ChatID);
                 }
                 else
                 {
@@ -17000,11 +17223,7 @@ namespace Oxide.Plugins
                 else MiningUltimateCooldowns.Add(player.userID, Time.time + config.ultimate_settings.ultimate_mining.cooldown);
                 List<BaseEntity> mining_nodes = Pool.Get<List<BaseEntity>>();
                 var entities = FindEntitiesOfType<BaseEntity>(player.transform.position, config.ultimate_settings.ultimate_mining.distance_from_player);
-                for (int i = 0; i < entities.Count; i++)
-                {
-                    var e = entities[i];
-                    if (e.PrefabName != null && e.PrefabName.StartsWith("assets/bundled/prefabs/autospawn/resource/ores")) mining_nodes.Add(e);
-                }
+                mining_nodes.AddRange(entities.Where(x => x.PrefabName.StartsWith("assets/bundled/prefabs/autospawn/resource/ores")));
                 Pool.FreeUnmanaged(ref entities);
                 if (mining_nodes.Count > 0)
                 {
@@ -17078,7 +17297,7 @@ namespace Oxide.Plugins
 
             container.Add(new CuiButton
             {
-                Button = { Color = "0.2352941 0.2705882 0.1607843 1", Command = string.Format(CultureInfo.InvariantCulture, "stattemptresurrection {0} {1} {2}", pos.x, pos.y, pos.z) },
+                Button = { Color = "0.2352941 0.2705882 0.1607843 1", Command = $"stattemptresurrection {pos.x} {pos.y} {pos.z}" },
                 Text = { Text = lang.GetMessage("UIResurrect", this, player.UserIDString), Font = "robotocondensed-bold.ttf", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "0.5803922 0.7294118 0.2588235 1" },
                 RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-48 -10", OffsetMax = "48 10" }
             }, "SkillTree_MedicalUltimate_ResurrectionButton", "Button_2968");
@@ -17123,9 +17342,7 @@ namespace Oxide.Plugins
 
             if (UnityEngine.Random.Range(0f, 100f) <= config.ultimate_settings.ultimate_medical.resurrection_chance)
             {
-                Vector3 pos;
-                if (!TryGetResurrectionPosition(arg, out pos)) return;
-
+                var pos = new Vector3(Convert.ToSingle(arg.GetString(0)), Convert.ToSingle(arg.GetString(1)), Convert.ToSingle(arg.GetString(2)));
                 player.RespawnAt(pos, Quaternion.identity);
                 if (Resurrection_Cooldowns.ContainsKey(player.userID)) Resurrection_Cooldowns[player.userID] = Time.time + config.ultimate_settings.ultimate_medical.resurrection_delay;
                 else Resurrection_Cooldowns.Add(player.userID, Time.time + config.ultimate_settings.ultimate_medical.resurrection_delay);
@@ -17139,30 +17356,6 @@ namespace Oxide.Plugins
                         CuiHelper.DestroyUi(player, "SkillTree_MedicalUltimate_Failed");
                 }, 3);
             }
-        }
-
-        private bool TryGetResurrectionPosition(ConsoleSystem.Arg arg, out Vector3 pos)
-        {
-            pos = Vector3.zero;
-            if (arg == null || arg.Args == null || arg.Args.Length < 3) return false;
-
-            float x;
-            float y;
-            float z;
-            if (!TryGetCommandFloat(arg, 0, out x) || !TryGetCommandFloat(arg, 1, out y) || !TryGetCommandFloat(arg, 2, out z)) return false;
-
-            pos = new Vector3(x, y, z);
-            return true;
-        }
-
-        private bool TryGetCommandFloat(ConsoleSystem.Arg arg, int index, out float value)
-        {
-            value = 0f;
-            var rawValue = arg.GetString(index, null);
-            if (string.IsNullOrEmpty(rawValue)) return false;
-
-            return float.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
-                || float.TryParse(rawValue, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
         }
 
         private void SendResurrectionFailed(BasePlayer player)
@@ -17211,11 +17404,7 @@ namespace Oxide.Plugins
         private void Plant_Gene_Select(BasePlayer player)
         {
             PlayerInfo pi;
-            if (!pcdData.pEntity.TryGetValue(player.userID, out pi))
-            {
-                CloseGeneMenu(player);
-                return;
-            }
+            if (!pcdData.pEntity.TryGetValue(player.userID, out pi)) return;
 
             var container = new CuiElementContainer();
             container.Add(new CuiPanel
@@ -17291,11 +17480,6 @@ namespace Oxide.Plugins
             var player = arg.Player();
             if (player == null) return;
 
-            CloseGeneMenu(player);
-        }
-
-        void CloseGeneMenu(BasePlayer player)
-        {
             CuiHelper.DestroyUi(player, "Plant_Gene_Select");
             CuiHelper.DestroyUi(player, "Plant_Gene_Select_background");
         }
@@ -17306,26 +17490,14 @@ namespace Oxide.Plugins
             var player = arg.Player();
             if (player == null) return;
 
-            try
+            CuiHelper.DestroyUi(player, "Plant_Gene_Select");
+
+            var pos = arg.GetInt(0);
+            var c = Convert.ToChar(arg.GetString(1));
+
+            PlayerInfo pi;
+            if (pcdData.pEntity.TryGetValue(player.userID, out pi))
             {
-                var pos = Convert.ToInt32(arg.GetString(0));
-                var c = Convert.ToChar(arg.GetString(1));
-
-                if (pos < 0 || pos >= 6 || FoundInvalidGeneLetter(c.ToString()))
-                {
-                    CloseGeneMenu(player);
-                    return;
-                }
-
-                PlayerInfo pi;
-                if (!pcdData.pEntity.TryGetValue(player.userID, out pi))
-                {
-                    CloseGeneMenu(player);
-                    return;
-                }
-
-                if (string.IsNullOrEmpty(pi.plant_genes) || pi.plant_genes.Length < 6) pi.plant_genes = "gggggg";
-
                 string newGene = "";
                 for (int i = 0; i < 6; i++)
                 {
@@ -17333,13 +17505,8 @@ namespace Oxide.Plugins
                     else newGene += pi.plant_genes[i];
                 }
                 pi.plant_genes = newGene.ToString();
-                Plant_Gene_Select(player);
             }
-            catch (Exception ex)
-            {
-                Puts($"Failed to update plant gene selection for {player.displayName} [{player.userID}]: {ex.Message}");
-                CloseGeneMenu(player);
-            }
+            Plant_Gene_Select(player);
         }
 
         #endregion
@@ -17583,11 +17750,7 @@ namespace Oxide.Plugins
             if (player.InSafeZone()) return;
             List<BasePlayer> neutral_players = Pool.Get<List<BasePlayer>>();
             var entities = FindEntitiesOfType<BasePlayer>(player.transform.position, config.ultimate_settings.ultimate_skinning.stag_danger_dist);
-            for (int i = 0; i < entities.Count; i++)
-            {
-                var x = entities[i];
-                if (x != player && !x.InSafeZone() && (x.Team == null || player.Team == null || x.Team.teamID != player.Team.teamID)) neutral_players.Add(x);
-            }
+            neutral_players.AddRange(entities.Where(x => x != player && !x.InSafeZone() && (x.Team == null || player.Team == null || x.Team.teamID != player.Team.teamID)));
             Pool.FreeUnmanaged(ref entities);
             if (neutral_players.Count > 0)
             {
@@ -17705,11 +17868,7 @@ namespace Oxide.Plugins
             {
                 Player.Message(player, string.Format(lang.GetMessage("BoarLootMsg", this, player.UserIDString), (entity.PrefabName.StartsWith("assets/content/nature/plants/mushroom/") ? lang.GetMessage("Mushroom", this, player.UserIDString) : lang.GetMessage("BerryBush", this, player.UserIDString))), config.misc_settings.ChatID);
                 List<ItemDefinition> items = Pool.Get<List<ItemDefinition>>();
-                for (int i = 0; i < component_item_list.Count; i++)
-                {
-                    var c = component_item_list[i];
-                    if (!config.ultimate_settings.ultimate_skinning.boar_blackList.Contains(c.shortname)) items.Add(c);
-                }
+                items.AddRange(component_item_list.Where(x => !config.ultimate_settings.ultimate_skinning.boar_blackList.Contains(x.shortname)));
                 var itemDef = items.GetRandom();
 
                 player.GiveItem(ItemManager.CreateByName(itemDef.shortname, UnityEngine.Random.Range(config.ultimate_settings.ultimate_skinning.boar_min_quantity, config.ultimate_settings.ultimate_skinning.boar_min_quantity)));
@@ -17748,11 +17907,9 @@ namespace Oxide.Plugins
 
         private static Dictionary<BasePlayer, float> BreathTime = new Dictionary<BasePlayer, float>();
 
-        public class WaterBreathing : MonoBehaviour
+        public class WaterBreathing : FacepunchBehaviour
         {
             private BasePlayer player;
-
-            private float checkDelay;
 
             private float max_breathing_time;
             private bool IsSwimming;
@@ -17760,12 +17917,12 @@ namespace Oxide.Plugins
             private bool exceeded_breathing_time;
             private bool Blocked;
 
-            // Awake() is part of the Monobehaviour class.
             private void Awake()
             {
                 player = GetComponent<BasePlayer>();
-                checkDelay = Time.time + 3f;
                 max_breathing_time = BreathTime[player];
+
+                InvokeRepeating(Run, 2, 2);
             }
 
             public void SetBlocked(bool shouldBlock)
@@ -17773,17 +17930,13 @@ namespace Oxide.Plugins
                 Blocked = shouldBlock;
             }
 
-            // FixedUpdate() is also part of the monobehaviour class.
-            public void FixedUpdate()
+            public void Run()
             {
                 if (player == null) return;
-
-                if (checkDelay > Time.time) return;
 
                 ItemModGiveOxygen.AirSupplyType oxygenSource;
                 var beathLeft = player.GetOxygenTime(out oxygenSource);
 
-                checkDelay = Time.time + 2f;
                 if (player.IsDead() || Blocked) return;
 
 
@@ -17954,21 +18107,21 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var target = BasePlayer.Find(arg.Args[0].ToString());
+            var target = BasePlayer.Find(arg.GetString(0));
             if (target != null && target.IsConnected)
             {
                 arg.ReplyWith($"You cannot reset {target.displayName}'s data as they are connected to the server.");
                 return;
             }
 
-            if (!File.Exists(NewDirectory + $"{arg.Args[0]}.json"))
+            if (!File.Exists(NewDirectory + $"{arg.GetString(0)}.json"))
             {
-                arg.ReplyWith($"No data file found for {arg.Args[0]}");
+                arg.ReplyWith($"No data file found for {arg.GetString(0)}");
                 return;
             }
 
-            File.Delete(NewDirectory + $"{arg.Args[0]}.json");
-            arg.ReplyWith($"Deleted data for {arg.Args[0]}");
+            File.Delete(NewDirectory + $"{arg.GetString(0)}.json");
+            arg.ReplyWith($"Deleted data for {arg.GetString(0)}");
         }
 
         [ConsoleCommand("setxp")]
@@ -17983,25 +18136,20 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var player = BasePlayer.Find(arg.Args[0].ToString());
+            var player = BasePlayer.Find(arg.GetString(0));
             if (player == null)
             {
                 List<BasePlayer> foundPlayers = Pool.Get<List<BasePlayer>>();
                 foreach (var p in BasePlayer.activePlayerList)
                 {
-                    if (p.displayName.Contains(arg.Args[0].ToString()))
+                    if (p.displayName.Contains(arg.GetString(0)))
                     {
                         foundPlayers.Add(p);
                     }
                 }
 
-                if (foundPlayers.Count == 0) arg.ReplyWith($"No players found that matched: {arg.Args[0]}");
-                else if (foundPlayers.Count > 1)
-                {
-                    var names = new List<string>();
-                    for (int i = 0; i < foundPlayers.Count; i++) names.Add(foundPlayers[i].displayName);
-                    arg.ReplyWith($"Found multiple matches: {string.Join(", ", names)}");
-                }
+                if (foundPlayers.Count == 0) arg.ReplyWith($"No players found that matched: {arg.GetString(0)}");
+                else if (foundPlayers.Count > 1) arg.ReplyWith($"Found multiple matches: {string.Join(", ", foundPlayers.Select(x => x.displayName))}");
                 else player = foundPlayers[0];
 
                 Pool.FreeUnmanaged(ref foundPlayers);
@@ -18015,9 +18163,10 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (!double.TryParse(arg.Args[1].ToString(), out var xp) || xp <= 0)
+            var xp = Convert.ToDouble(arg.GetString(0));
+            if (xp <= 0)
             {
-                arg.ReplyWith($"{arg.Args[1]} is not a valid value. Must be above 1.");
+                arg.ReplyWith($"{arg.GetString(0)} is not a valid value. Must be above 1.");
                 return;
             }
 
@@ -18321,7 +18470,7 @@ namespace Oxide.Plugins
             var component = player.gameObject.AddComponent<RaidBehaviour>();
             component.Instance = this;
             component.showTimeRemaining = config.ultimate_settings.ultimate_raiding.show_time_remaining;
-            component.timeRemainingMessage = lang.GetMessage("MLRSTimeLeft", this, player.UserIDString);
+            component.timeRemainingMessage = lang.GetMessage("MLRSTimeLeftNew", this, player.UserIDString);
         }
 
         void DestroyRaidBehaviour(BasePlayer player)
@@ -18373,13 +18522,12 @@ namespace Oxide.Plugins
         public Dictionary<ulong, bool> StrikeFired = new Dictionary<ulong, bool>();
 
         //CreateGameTip
-        public class RaidBehaviour : MonoBehaviour
+        public class RaidBehaviour : FacepunchBehaviour
         {
             public SkillTree Instance;
             private BasePlayer player;
             private ulong userid;
             private int pressedDuration;
-            private float nextCheck;
 
             public bool showTimeRemaining;
             public string timeRemainingMessage;
@@ -18395,6 +18543,7 @@ namespace Oxide.Plugins
             private bool sendhudhint = false;
             private float startTime;
             private bool sentInstructions = false;
+            private bool sentTimer = false;
             private bool wasDestroyed;
 
             private Timer positionTimer;
@@ -18404,7 +18553,6 @@ namespace Oxide.Plugins
                 player = GetComponent<BasePlayer>();
                 wsAdmin = player.IsAdmin;
                 startTime = Time.time;
-                nextCheck = Time.time + 0.5f;
                 userid = player.userID;
                 foreach (var item in player.inventory.containerBelt.itemList)
                 {
@@ -18414,9 +18562,11 @@ namespace Oxide.Plugins
                         break;
                     }
                 }
+
+                InvokeRepeating(Run, 0.5f, 1);
             }
 
-            public void FixedUpdate()
+            public void Run()
             {
                 if (!sentInstructions)
                 {
@@ -18440,56 +18590,55 @@ namespace Oxide.Plugins
 
                 var activeItem = player.GetActiveItem();
 
-                if (showTimeRemaining && !striking) Instance.PendingTimer(player, string.Format(timeRemainingMessage, Convert.ToInt32(startTime + Instance.MaxDuration - Time.time)));
+                if (showTimeRemaining && !striking && !sentTimer)
+                {
+                    Instance.PendingTimer(player, timeRemainingMessage, startTime + Instance.MaxDuration - Time.time);
+                    sentTimer = true;
+                }
 
                 if (!player.serverInput.IsDown(BUTTON.FIRE_SECONDARY) || !player.serverInput.IsDown(BUTTON.USE) || activeItem == null || activeItem != binoculars)
                 {
-                    nextCheck = Time.time + Instance.CheckInterval;
                     pressedDuration = 0;
                     if (!player.serverInput.IsDown(BUTTON.FIRE_SECONDARY)) CuiHelper.DestroyUi(player, "LaunchProgress");
                     else LaunchProgress(player, 0, Instance.DurationTicks);
                     return;
                 }
 
-                if (Time.time > nextCheck)
+                pressedDuration++;
+                LaunchProgress(player, pressedDuration, Instance.DurationTicks);
+
+                RaycastHit raycastHit;
+                bool flag = Physics.Raycast(player.eyes.HeadRay(), out raycastHit, 5000, LAYER_TARGET);
+                targetPoint = flag ? raycastHit.point : Vector3.zero;
+
+                if (Interface.CallHook("OnRaidingUltimateTargetAcquire", player, targetPoint) != null)
+                    targetPoint = Vector3.zero;
+
+                if (!Instance.PassRaidableBasesCheck(targetPoint, Buff.Raiding_Ultimate))
+                    targetPoint = Vector3.zero;
+
+                if (targetPoint == Vector3.zero)
                 {
-                    nextCheck = Time.time + Instance.CheckInterval;
-                    pressedDuration++;
-                    LaunchProgress(player, pressedDuration, Instance.DurationTicks);
+                    ResetLaunchProgress();
+                    return;
+                }
 
-                    RaycastHit raycastHit;
-                    bool flag = Physics.Raycast(player.eyes.HeadRay(), out raycastHit, 5000, LAYER_TARGET);
-                    targetPoint = flag ? raycastHit.point : Vector3.zero;
+                if (!wsAdmin)
+                {
+                    player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
+                    player.SendNetworkUpdateImmediate();
+                }
+                player.SendConsoleCommand("ddraw.text", Instance.CheckInterval, Color.red, targetPoint, "X");
+                if (!wsAdmin)
+                {
+                    player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, false);
+                    player.SendNetworkUpdateImmediate();
+                }
 
-                    if (Interface.CallHook("OnRaidingUltimateTargetAcquire", player, targetPoint) != null)
-                        targetPoint = Vector3.zero;
-
-                    if (!Instance.PassRaidableBasesCheck(targetPoint, Buff.Raiding_Ultimate))
-                        targetPoint = Vector3.zero;
-
-                    if (targetPoint == Vector3.zero)
-                    {
-                        ResetLaunchProgress();
-                        return;
-                    }
-
-                    if (!wsAdmin)
-                    {
-                        player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
-                        player.SendNetworkUpdateImmediate();
-                    }
-                    player.SendConsoleCommand("ddraw.text", Instance.CheckInterval, Color.red, targetPoint, "X");
-                    if (!wsAdmin)
-                    {
-                        player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, false);
-                        player.SendNetworkUpdateImmediate();
-                    }
-
-                    if (!string.IsNullOrEmpty(Instance.config.ultimate_settings.ultimate_raiding.valid_position_effect)) EffectNetwork.Send(new Effect(Instance.config.ultimate_settings.ultimate_raiding.valid_position_effect, player.transform.position, player.transform.position), player.net.connection);
-                    if (pressedDuration >= Instance.DurationTicks)
-                    {
-                        DoStrike();
-                    }
+                if (!string.IsNullOrEmpty(Instance.config.ultimate_settings.ultimate_raiding.valid_position_effect)) EffectNetwork.Send(new Effect(Instance.config.ultimate_settings.ultimate_raiding.valid_position_effect, player.transform.position, player.transform.position), player.net.connection);
+                if (pressedDuration >= Instance.DurationTicks)
+                {
+                    DoStrike();
                 }
             }
 
@@ -19220,6 +19369,12 @@ namespace Oxide.Plugins
                 [2] = new PermissionInfo(new Dictionary<string, string>() { ["cooking.instant"] = "Instant Cooking", ["cooking.free"] = "Free Cooking" })
             })));
 
+            config.trees["Cooking"].nodes.Add("Test perms node 2", new Configuration.TreeInfo.NodeInfo(false, 2, 2, 1, new KeyValuePair<Buff, BuffType>(Buff.Permission, BuffType.Permission), "https://www.dropbox.com/s/6blc3eiarm07rku/cooking%20tree%20example.v1.png?dl=1", 1786071876, new Permissions("This is a test node. You can add your description here. Level 1 gives 6 backpack slots. Level 2 gives 12 backpack slots.", new Dictionary<int, PermissionInfo>()
+            {
+                [1] = new PermissionInfo(new Dictionary<string, string>() { ["backpacks.size.6"] = "6 Backpack slots" }),
+                [2] = new PermissionInfo(new Dictionary<string, string>() { ["backpacks.size.12"] = "12 Backpack slots" })
+            })));
+
             SaveConfig();
             if (player != null) Player.Message(player, "Saved new node called 'Test perms node' in the Cooking tree.", config.misc_settings.ChatID);
             else Puts("Saved new node called 'Test perms node' in the Cooking tree.");
@@ -19566,6 +19721,7 @@ namespace Oxide.Plugins
         bool ShieldPatchActive = false;
         bool HandlingRebound = false;
 
+        [AutoPatch]
         [HarmonyPatch(typeof(Shield), "ServerSideAttack")]
         internal class Shield_Patch
         {
@@ -19611,6 +19767,116 @@ namespace Oxide.Plugins
         }
 
 
+        internal struct CoopHatchState
+        {
+            public float hatchMinutes;
+            public int maxChickens;
+            public bool applied;
+            public bool instant;
+            public bool wasHatching;
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(ChickenCoop), "SubmitEggForHatching")]
+        internal class ChickenCoop_SubmitEggForHatching_Patch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(ChickenCoop __instance, BaseEntity.RPCMessage msg, ref CoopHatchState __state)
+            {
+                __state = default(CoopHatchState);
+                var player = msg.player;
+                if (player == null || player.IsNpc || !player.userID.IsSteamId()) return;
+                if (!Instance.buffDetails.TryGetValue(player.userID, out var bd)) return;
+
+                __state.hatchMinutes = __instance.ChickenHatchTimeMinutes;
+                __state.maxChickens = __instance.MaxChickens;
+                __state.wasHatching = __instance.HasFlag(BaseEntity.Flags.Reserved1);
+
+                if (bd.GetBuff(Buff.Coop_Capacity, out var slots) && slots > 0)
+                {
+                    __instance.MaxChickens += Mathf.RoundToInt(slots);
+                    __state.applied = true;
+                    if (__instance.Animals.Count < __instance.MaxChickens && __instance.HasFlag(BaseEntity.Flags.Reserved3))
+                        __instance.SetFlag(BaseEntity.Flags.Reserved3, false);
+                }
+
+                if (bd.GetBuff(Buff.Hatch_Speed, out var speed) && speed > 0)
+                {
+                    __instance.ChickenHatchTimeMinutes *= Mathf.Max(1f - speed, 0f);
+                    __state.applied = true;
+                    __state.instant = speed >= 1f;
+                }
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(ChickenCoop __instance, BaseEntity.RPCMessage msg, CoopHatchState __state)
+            {
+                if (__state.applied)
+                {
+                    __instance.ChickenHatchTimeMinutes = __state.hatchMinutes;
+                    __instance.MaxChickens = __state.maxChickens;
+                }
+
+                if (__state.wasHatching || !__instance.HasFlag(BaseEntity.Flags.Reserved1)) return;
+
+                if (__state.instant)
+                {
+                    __instance.Invoke(new Action(__instance.CheckEggHatchState), 0f);
+                    return;
+                }
+
+                var player = msg.player;
+                if (player == null || !CoopLooters.TryGetValue(player.userID, out var looted) || looted != __instance) return;
+                ShowCoopHatchTimer(player, __instance);
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(FarmableAnimal), "ServerPetChicken")]
+        internal class FarmableAnimal_ServerPetChicken_Patch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(FarmableAnimal __instance, ref float __state)
+            {
+                __state = __instance.AnimalLove;
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(FarmableAnimal __instance, BaseEntity.RPCMessage msg, float __state)
+            {
+                if (__instance.AnimalLove <= __state) return;
+                var player = msg.player;
+                if (player == null || player.IsNpc || !player.userID.IsSteamId()) return;
+                if (!Instance.buffDetails.TryGetValue(player.userID, out var bd) || !bd.GetBuff(Buff.Pet_Effectiveness, out var value)) return;
+
+                __instance.AnimalLove = Mathf.Clamp(__instance.AnimalLove + 15f * value, 0f, 100f);
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(FishLookup), "GetFish")]
+        internal class FishLookup_GetFish_Patch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Item lure, ref KeyValuePair<ItemModCompostable, float> __state)
+            {
+                if (lure == null) return;
+                var player = lure.GetOwnerPlayer();
+                if (player == null || player.IsNpc || !player.userID.IsSteamId()) return;
+                if (!Instance.buffDetails.TryGetValue(player.userID, out var bd) || !bd.GetBuff(Buff.Bait_Value_Bonus, out var value)) return;
+                if (!lure.info.TryGetComponent<ItemModCompostable>(out var comp) || comp.BaitValue <= 0f) return;
+                __state = new KeyValuePair<ItemModCompostable, float>(comp, comp.BaitValue);
+                comp.BaitValue *= 1f + value;
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(KeyValuePair<ItemModCompostable, float> __state)
+            {
+                if (__state.Key != null) __state.Key.BaitValue = __state.Value;
+            }
+        }
+
+        [AutoPatch]
         [HarmonyPatch(typeof(MetalDetectorSource), "CreateFlag")]
         internal class Item_SplitItem_Patch
         {
@@ -19638,6 +19904,7 @@ namespace Oxide.Plugins
             }
         }
 
+        [AutoPatch]
         [HarmonyPatch(typeof(MetalDetectorFlag), "OnFullyDug")]
         internal class OnFullyDug_Patch
         {
@@ -19690,6 +19957,7 @@ namespace Oxide.Plugins
             }
         }
 
+        [AutoPatch]
         [HarmonyPatch(typeof(BaseFishingRod), "Server_RequestCast")]
         internal class FishingRod_Cast_Patch
         {
@@ -19714,38 +19982,36 @@ namespace Oxide.Plugins
             }
         }
 
+        [AutoPatch]
         [HarmonyPatch(typeof(Recycler), "StopRecycling")]
         internal class StopRecycling_Patch
         {
             [HarmonyPostfix]
             private static void Postfix(Recycler __instance)
             {
-                if (__instance == null || __instance.net == null) return;
+                if (__instance == null) return;
                 Instance.ResetRecyclerEfficiency(__instance.net.ID.Value, null, true);
             }
         }
 
-        /// <summary>
-        /// Game update removed per-recycler radtown/safezone efficiency fields and GetRecycleThinkDuration.
-        /// Apply SkillTree buffs through GetRecyclerStats instead (used by StartRecycling).
-        /// </summary>
-        [HarmonyPatch(typeof(Recycler), nameof(Recycler.GetRecyclerStats))]
-        internal class GetRecyclerStats_Patch
+        // Efficiency and tick duration are read from the global RecyclerConfig here and cached by
+        // StartRecycling, so the Recycler_Efficiency / Recycler_Speed buffs are applied at this point.
+        [AutoPatch]
+        [HarmonyPatch(typeof(Recycler), "GetRecyclerStats")]
+        internal class Recycler_GetRecyclerStats_Patch
         {
             [HarmonyPostfix]
             private static void Postfix(Recycler __instance, ref float efficiency, ref float duration)
             {
-                if (__instance == null || __instance.net == null || Instance == null) return;
-                if (!Instance.ModifiedRecyclers.TryGetValue(__instance.net.ID.Value, out var data)) return;
+                if (Instance == null || __instance == null || __instance.net == null) return;
+                if (!Instance.ModifiedRecyclers.TryGetValue(__instance.net.ID.Value, out var data) || data == null) return;
 
-                if (data.EfficiencyBonus > 0f)
-                    efficiency = Mathf.Clamp01(efficiency + efficiency * data.EfficiencyBonus);
-
-                if (data.SpeedDecrease > 0f)
-                    duration = Mathf.Max(0.1f, duration - data.SpeedDecrease);
+                if (data.efficiencyBonus > 0) efficiency += efficiency * data.efficiencyBonus;
+                if (data.speedDecrease > 0) duration = Math.Max(duration - data.speedDecrease, 0.1f);
             }
         }
 
+        [AutoPatch]
         [HarmonyPatch(typeof(BasePlayer), "RadiationProtection")]
         internal class RadiationProtection_Patch
         {
@@ -19766,22 +20032,41 @@ namespace Oxide.Plugins
             }
         }
 
+        [AutoPatch]
         [HarmonyPatch(typeof(ItemModContainerArmorSlot), "CreateForPlayer")]
         internal class ItemModContainerArmorSlot_Patch
         {
             [HarmonyPrefix]
             private static bool Prefix(ItemModContainerArmorSlot __instance, Item item, BasePlayer player)
             {
-                if (player == null || !Instance.GetBuffDetails(player.userID, out var bd) || !bd.GetBuff(Buff.Armor_Slots, out var value) || value <= 0) return true;
+                if (player == null) return true;
 
-                var cap = ItemModContainerArmorSlot.GetRandomSlotCount(Mathf.Clamp01(player.modifiers.GetValue(Modifier.ModifierType.Crafting_Quality)), __instance.MinSlots, __instance.MaxSlots);
-                if (cap < value) cap = Mathf.RoundToInt(value);
-                cap = Mathf.Min(cap, __instance.MaxSlots);
+                float floor = 0;
+                if (!Instance.GetBuffDetails(player.userID, out var bd) || !bd.GetBuff(Buff.Armor_Slots, out floor))
+                    return true;
+
+                float improveChance = Mathf.Clamp01(player.modifiers.GetValue(Modifier.ModifierType.Crafting_Quality));
+
+                float num = UnityEngine.Random.Range(0f, 1f - improveChance);
+                int cap = 0;
+                if (num <= 0.5f || improveChance > 0f)
+                {
+                    cap = __instance.MinSlots;
+                    for (int i = 0; i < __instance.MaxSlots - __instance.MinSlots && num <= Instance.RollChances[Mathf.Clamp(i, 0, Instance.RollChances.Length - 1)]; i++)
+                    {
+                        cap++;
+                    }
+                }
+                
+                cap = Mathf.Max(Mathf.RoundToInt(floor), cap);
+                if (!Instance.config.buff_settings.armorSlotSettings.AllowAdditionalSlots)
+                    cap = Mathf.Min(cap, __instance.MaxSlots);
 
                 __instance.CreateAtCapacity(cap, item);
                 return false;
             }
         }
+
 
         // WoundingTick rolls recovery without calling GetRecoveryChance(), so belt medkits never raise the expiry roll chance.
         [HarmonyPatch(typeof(BasePlayer), "WoundingTick")]
@@ -19832,7 +20117,6 @@ namespace Oxide.Plugins
                 }
             }
         }
-
         private float[] RollChances = new float[]
         {
             0.3f,
@@ -19983,10 +20267,9 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 2) return;
 
-            if (!int.TryParse(arg.Args[0].ToString(), out var nextLevel)) return;
-            if (!bool.TryParse(arg.Args[1].ToString(), out var hasLevel)) return;
+            int nextLevel = arg.GetInt(0);
+            bool hasLevel = Convert.ToBoolean(arg.GetString(1));
 
             PrestigeConfirmation(player, nextLevel, hasLevel);
         }
@@ -20008,76 +20291,63 @@ namespace Oxide.Plugins
 
         #region UI
 
-        (string, int) GetPrestigeBenefits(BasePlayer player, Configuration.PrestigeSettings.PrestigeInfo prestigeData, int prestigeLevel)
+        Dictionary<int, (string, int)> CachedPrestigeDescription = new Dictionary<int, (string, int)>();
+        (string, int) GetPrestigeBenefits(BasePlayer player, int rank, Configuration.PrestigeSettings.PrestigeInfo prestigeData)
         {
+            if (CachedPrestigeDescription.TryGetValue(rank, out var cached)) 
+                return cached;
+
             var count = 0;
-            string sb = "";
-            if (prestigeData.perms != null)
+            List<string> sb = Pool.Get<List<string>>();
+            try
             {
-                foreach (var description in prestigeData.perms.Keys)
+                if (prestigeData.perms != null)
                 {
-                    sb += ($"\n<color=#ece209>-</color> {lang.GetMessage(description, this, player.UserIDString).Trim()}.");
+                    foreach (var description in prestigeData.perms.Keys)
+                    {
+                        sb.Add($"\n<color=#ece209>-</color> {lang.GetMessage(description, this, player.UserIDString).Trim()}.");
+                        count++;
+                    }
+                }
+
+                if (prestigeData.commands != null)
+                {
+                    foreach (var description in prestigeData.commands.Keys)
+                    {
+                        sb.Add($"\n<color=#ece209>-</color> {lang.GetMessage(description, this, player.UserIDString).Trim()}.");
+                        count++;
+                    }
+                }
+
+                if (prestigeData.postCommands != null)
+                {
+                    foreach (var description in prestigeData.postCommands.Keys)
+                    {
+                        sb.Add($"\n<color=#ece209>-</color> {lang.GetMessage(description, this, player.UserIDString).Trim()}.");
+                        count++;
+                    }
+                }
+
+                foreach (var benefit in prestigeData.additionalBenfitsDescription)
+                {
+                    sb.Add($"\n<color=#ece209>-</color> {lang.GetMessage(benefit, this, player.UserIDString).Trim()}.");
                     count++;
                 }
-            }
 
-            if (prestigeData.commands != null)
+                var str = string.Join("", sb);
+                CachedPrestigeDescription.Add(rank, (str, count));
+                return (str, count);
+            }
+            finally
             {
-                foreach (var description in prestigeData.commands.Keys)
-                {
-                    sb += ($"\n<color=#ece209>-</color> {lang.GetMessage(description, this, player.UserIDString).Trim()}.");
-                    count++;
-                }
-            }
-
-            foreach (var benefit in prestigeData.additionalBenfitsDescription)
-            {
-                sb += ($"\n<color=#ece209>-</color> {lang.GetMessage(benefit, this, player.UserIDString).Trim()}.");
-                count++;
-            }
-
-            if (config.prestige_settings.should_keep_all_points)
-            {
-                sb += ($"\n<color=#ece209>-</color> {lang.GetMessage("UIPrestigeBenefitKeepPoints", this, player.UserIDString).Trim()}.");
-                count++;
-            }
-            else if (config.prestige_settings.should_keep_excess_points)
-            {
-                sb += ($"\n<color=#ece209>-</color> {lang.GetMessage("UIPrestigeBenefitKeepExcessPoints", this, player.UserIDString).Trim()}.");
-                count++;
-            }
-
-            if (config.misc_settings.presetSettings.enabled)
-            {
-                sb += ($"\n<color=#ece209>-</color> {lang.GetMessage("UIPrestigeBenefitPresetsSaved", this, player.UserIDString).Trim()}.");
-                count++;
-            }
-
-            var respecDiscount = GetPrestigeRespecDiscountPercent(prestigeLevel);
-            if (respecDiscount > 0)
-            {
-                sb += ($"\n<color=#ece209>-</color> {string.Format(lang.GetMessage("UIPrestigeBenefitRespecDiscount", this, player.UserIDString), respecDiscount).Trim()}.");
-                count++;
-            }
-
-            return (sb, count);
-        }
-
-        int GetPrestigeRespecDiscountPercent(int prestigeLevel)
-        {
-            if (config.general_settings.respec_cost <= 0) return 0;
-            double baseCost = config.general_settings.respec_cost;
-            string permKey = "prestige." + prestigeLevel;
-            if (!config.general_settings.respec_cost_override.TryGetValue(permKey, out var prestigeCost)) return 0;
-            if (prestigeCost >= baseCost) return 0;
-            return (int)Math.Round((1 - prestigeCost / baseCost) * 100);
+                Pool.FreeUnmanaged(ref sb);
+            }            
         }
 
         private void PrestigeConfirmation(BasePlayer player, int nextLevel, bool hasLevel)
         {
             Configuration.PrestigeSettings.PrestigeInfo prestigeData;
             if (!config.prestige_settings.levels.TryGetValue(nextLevel, out prestigeData)) return;
-            bool canPrestige = pcdData.pEntity.TryGetValue(player.userID, out var pData) && pData.current_level >= config.general_settings.max_player_level;
             var container = new CuiElementContainer();
             container.Add(new CuiPanel
             {
@@ -20097,7 +20367,7 @@ namespace Oxide.Plugins
                 }
             });
 
-            var benefits = GetPrestigeBenefits(player, prestigeData, nextLevel);
+            var benefits = GetPrestigeBenefits(player, nextLevel, prestigeData);
 
             container.Add(new CuiElement
             {
@@ -20152,7 +20422,7 @@ namespace Oxide.Plugins
                 }
             });
 
-            if (canPrestige)
+            if (hasLevel)
             {
                 container.Add(new CuiButton
                 {
@@ -20227,6 +20497,202 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, "PrestigeConfirmation");
         }
 
+        [ConsoleCommand("stprestigehistory")]
+        void OpenPrestigeHistory(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player == null) return;
+
+            PrestigeHistory(player);
+        }
+
+        [ConsoleCommand("closeprestigehistory")]
+        void ClosePrestigeHistory(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player == null) return;
+
+            CuiHelper.DestroyUi(player, "PrestigeHistory");
+        }
+
+        private void PrestigeHistory(BasePlayer player)
+        {
+            PlayerInfo playerData;
+            if (!pcdData.pEntity.TryGetValue(player.userID, out playerData)) return;
+
+            const float viewportHeight = 400f;
+            const float rowSpacing = 6f;
+            const float rowLineHeight = 16f;
+            const float rowBaseHeight = 40f;
+            const float minRowHeight = 92f;
+
+            List<int> ranks = Pool.Get<List<int>>();
+            List<float> heights = Pool.Get<List<float>>();
+            try
+            {
+                float contentHeight = 0f;
+                for (int rank = playerData.prestige_level; rank >= 1; rank--)
+                {
+                    if (!config.prestige_settings.levels.ContainsKey(rank)) continue;
+                    var data = config.prestige_settings.levels[rank];
+                    var benefits = GetPrestigeBenefits(player, rank, data);
+                    float height = Math.Max(minRowHeight, rowBaseHeight + benefits.Item2 * rowLineHeight);
+                    ranks.Add(rank);
+                    heights.Add(height);
+                    contentHeight += height + rowSpacing;
+                }
+                if (contentHeight > 0f) contentHeight -= rowSpacing;
+
+                bool needsScroll = contentHeight > viewportHeight;
+                float boxHeight = needsScroll ? viewportHeight : Math.Max(contentHeight, 60f);
+
+                var container = new CuiElementContainer();
+                container.Add(new CuiPanel
+                {
+                    CursorEnabled = true,
+                    Image = { Color = "0 0 0 1" },
+                    RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
+                }, "Overlay", "PrestigeHistory");
+
+                container.Add(new CuiElement
+                {
+                    Name = "PrestigeHistoryAnchor",
+                    Parent = "PrestigeHistory",
+                    Components =
+                    {
+                        new CuiNeedsCursorComponent(),
+                        new CuiImageComponent{ Color = "0 0 0 0" },
+                        new CuiRectTransformComponent{ AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = $"-320 {-boxHeight * 0.5f}", OffsetMax = $"320 {boxHeight * 0.5f}" }
+                    }
+                });
+
+                container.Add(new CuiElement
+                {
+                    Name = "PrestigeHistoryTitle",
+                    Parent = "PrestigeHistoryAnchor",
+                    Components =
+                    {
+                        new CuiTextComponent { Text = lang.GetMessage("UIPrestigeHistory", this, player.UserIDString), Font = "robotocondensed-bold.ttf", FontSize = 26, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" },
+                        new CuiOutlineComponent { Color = "0 0 0 0.5", Distance = "1 -1" },
+                        new CuiRectTransformComponent { AnchorMin = "0 1", AnchorMax = "1 1", OffsetMin = "0 10", OffsetMax = "0 60" }
+                    }
+                });
+
+                if (ranks.Count == 0)
+                {
+                    container.Add(new CuiElement
+                    {
+                        Name = "PrestigeHistoryEmpty",
+                        Parent = "PrestigeHistoryAnchor",
+                        Components =
+                        {
+                            new CuiTextComponent { Text = lang.GetMessage("UIPrestigeHistoryEmpty", this, player.UserIDString), Font = "robotocondensed-regular.ttf", FontSize = 13, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" },
+                            new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+                        }
+                    });
+                }
+
+                string rowParent = "PrestigeHistoryAnchor";
+
+                if (needsScroll)
+                {
+                    container.Add(new CuiElement
+                    {
+                        Name = "PrestigeHistoryScroll",
+                        Parent = "PrestigeHistoryAnchor",
+                        Components =
+                        {
+                            new CuiScrollViewComponent
+                            {
+                                MovementType = UnityEngine.UI.ScrollRect.MovementType.Elastic,
+                                Vertical = true,
+                                Horizontal = false,
+                                Inertia = true,
+                                Elasticity = 0.25f,
+                                DecelerationRate = 0.3f,
+                                ScrollSensitivity = 24f,
+                                ContentTransform = new CuiRectTransform { AnchorMin = "0 1", AnchorMax = "1 1", OffsetMin = $"0 -{contentHeight}", OffsetMax = "0 0" }
+                            },
+                            new CuiNeedsCursorComponent()
+                        }
+                    });
+
+                    container.Add(new CuiPanel()
+                    {
+                        Image = { Color = "0 0 0 0" },
+                        RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
+                    }, "PrestigeHistoryScroll", "PrestigeHistoryScroll_AREA");
+
+                    rowParent = "PrestigeHistoryScroll_AREA";
+                }
+
+                float offset = 0f;
+                for (int i = 0; i < ranks.Count; i++)
+                {
+                    int rank = ranks[i];
+                    var data = config.prestige_settings.levels[rank];
+                    var benefits = GetPrestigeBenefits(player, rank, data);
+                    float top = -offset;
+                    float bottom = top - heights[i];
+                    offset += heights[i] + rowSpacing;
+                    string row = $"PrestigeHistoryRow{i}";
+
+                    container.Add(new CuiElement
+                    {
+                        Name = row,
+                        Parent = rowParent,
+                        Components =
+                        {
+                            new CuiImageComponent { Color = "1 1 1 0.05" },
+                            new CuiRectTransformComponent { AnchorMin = "0 1", AnchorMax = "1 1", OffsetMin = $"0 {bottom}", OffsetMax = $"{(needsScroll ? -12f : 0f)} {top}" }
+                        }
+                    });
+
+                    if (data.RankUpPic != 0)
+                    {
+                        container.Add(new CuiElement
+                        {
+                            Parent = row,
+                            Components =
+                            {
+                                new CuiImageComponent { Color = "1 1 1 1", ItemId = 1776460938, SkinId = data.RankUpPic },
+                                new CuiRectTransformComponent { AnchorMin = "0 0.5", AnchorMax = "0 0.5", OffsetMin = "8 -38", OffsetMax = "84 38" }
+                            }
+                        });
+                    }
+
+                    string title = string.Format(lang.GetMessage("UIPrestigeHistoryRank", this, player.UserIDString), string.IsNullOrEmpty(data.rankTitle) ? rank.ToString() : lang.GetMessage(data.rankTitle, this, player.UserIDString));
+                    string xpMod = data.xp_mod != 1 ? string.Format(lang.GetMessage("UIPrestigeXPMod", this, player.UserIDString), Math.Round(data.xp_mod * 100, 2)) : string.Empty;
+
+                    container.Add(new CuiElement
+                    {
+                        Parent = row,
+                        Components =
+                        {
+                            new CuiTextComponent { Text = title + benefits.Item1 + xpMod, Font = "robotocondensed-regular.ttf", FontSize = 12, Align = TextAnchor.UpperLeft, Color = "1 1 1 1" },
+                            new CuiOutlineComponent { Color = "0 0 0 0.5", Distance = "1 -1" },
+                            new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "92 4", OffsetMax = "-8 -6" }
+                        }
+                    });
+                }
+
+                container.Add(new CuiButton
+                {
+                    Button = { Color = "1 1 1 0", Command = "closeprestigehistory" },
+                    Text = { Text = lang.GetMessage("UIClose", this, player.UserIDString), Font = "robotocondensed-bold.ttf", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 0.3820755 0.3820755 1" },
+                    RectTransform = { AnchorMin = "0.5 0", AnchorMax = "0.5 0", OffsetMin = "-30 -32", OffsetMax = "30 -6" }
+                }, "PrestigeHistoryAnchor", "PrestigeHistoryClose");
+
+                CuiHelper.DestroyUi(player, "PrestigeHistory");
+                CuiHelper.AddUi(player, container);
+            }
+            finally
+            {
+                Pool.FreeUnmanaged(ref ranks);
+                Pool.FreeUnmanaged(ref heights);
+            }
+        }
+
         [ConsoleCommand("confirmprestige")]
         void ConfirmPrestigeMenu(ConsoleSystem.Arg arg)
         {
@@ -20243,14 +20709,10 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
             CuiHelper.DestroyUi(player, "NavigationMenu");
             CuiHelper.DestroyUi(player, "PrestigeConfirmation");
+            CuiHelper.DestroyUi(player, "PrestigeHistory");
 
             int excessPoints = 0;
-            if (config.prestige_settings.should_keep_all_points)
-            {
-                excessPoints = playerData.available_points;
-                foreach (var skill in playerData.buff_values) excessPoints += skill.Value;
-            }
-            else if (config.prestige_settings.should_keep_excess_points) excessPoints = CalculateExcessPoints(player, playerData);
+            if (config.prestige_settings.should_keep_excess_points) excessPoints = CalculateExcessPoints(player, playerData);
 
             int newPrestigeLevel = playerData.prestige_level + 1;
 
@@ -20306,7 +20768,6 @@ namespace Oxide.Plugins
             playerData.xp_debt = 0;
             playerData.last_xp_loss = DateTime.MinValue;
             playerData.ultimate_settings.Clear();
-            playerData.respec_multiplier = 0;
             playerData.xp_debt = 0;
             playerData.pending_xp_without_bonus = 0;
             playerData.pending_xp_with_bonus = 0;
@@ -20318,16 +20779,18 @@ namespace Oxide.Plugins
             HandleNewConnection(player);
             LoadBuffs();
 
+            if (prestigeData != null && prestigeData.postCommands != null) HandlePrestigeCommands(player, prestigeData.postCommands);
+
             GiveSkillPoints(player, excessPoints);            
 
             if (config.notification_settings.discordSettings.send_prestige_up) SendDiscordMsg(string.Format(lang.GetMessage("PrestigeEarnDiscord", this), player.displayName, player.UserIDString, playerData.prestige_level));
             Interface.Oxide.CallHook("STOnPlayerPrestigeLevelled", player, newPrestigeLevel);
             if (config.notification_settings.notificationSystemSettings.SendPrestigLevelRewards && prestigeData != null)
             {
-                var benefits = GetPrestigeBenefits(player, prestigeData, newPrestigeLevel);
+                var benefits = GetPrestigeBenefits(player, newPrestigeLevel, prestigeData);
                 SendNotificationSystemMsg(player.userID,
-                    string.Format(lang.GetMessage("NSPrestigeTitle", this, player.UserIDString), newPrestigeLevel),
-                    string.Format(lang.GetMessage("NSPrestigeBody", this, player.UserIDString), newPrestigeLevel, benefits.Item1));
+                string.Format(lang.GetMessage("NSPrestigeTitle", this, player.UserIDString), newPrestigeLevel),
+                string.Format(lang.GetMessage("NSPrestigeBody", this, player.UserIDString), newPrestigeLevel, benefits.Item1));
             }
         }
 
@@ -20453,16 +20916,21 @@ namespace Oxide.Plugins
         {
             private BasePlayer player;
             public float Interval;
+            private float Delay;
             public float ComfortAmount = 1;
             public float Distance = 10;
             public bool Blocked;
+            public bool BlockActioned;
             private bool Started = false;
-            private List<ModifierDefintion> comfortModifiers = new List<ModifierDefintion>();
+
+            private TriggerComfort comfortTrigger;
+            private List<BasePlayer> comfortedPlayers = Pool.Get<List<BasePlayer>>();
 
             public void InitializeComfort(BasePlayer player)
             {
                 this.player = player;
-                InvokeRepeating(Run, 0.5f, Mathf.Max(Interval, 0.5f));
+                InvokeRepeating(Run, 0.5f, Interval);
+                AddComfort();
                 Started = true;
             }
 
@@ -20474,58 +20942,87 @@ namespace Oxide.Plugins
                     Destroy(this);
                     return;
                 }
-
-                if (Blocked) return;
-
-                ApplyComfort(player);
-                ComfortPlayers();
+                if (Delay < Time.time)
+                {
+                    Delay = Time.time + Interval;
+                    if (Blocked)
+                    {
+                        if (!BlockActioned)
+                        {
+                            RemoveComfort();
+                            BlockActioned = true;
+                        }
+                        return;
+                    }
+                    if (comfortTrigger == null) AddComfort();
+                    ComfortPlayers();
+                }
             }
 
             public void UpdateComfortAmount(float amount)
             {
                 ComfortAmount = amount;
+                comfortTrigger.baseComfort = amount;
+            }
+
+            private void AddComfort()
+            {
+                comfortTrigger = player.gameObject.AddComponent<TriggerComfort>();
+                comfortTrigger.baseComfort = ComfortAmount;
+                player.EnterTrigger(comfortTrigger);
             }
 
             public void SetBlocked(bool shouldBlock)
             {
+                BlockActioned = false;
                 Blocked = shouldBlock;
-            }
-
-            private void ApplyComfort(BasePlayer target)
-            {
-                if (target == null || !target.IsConnected || target.IsDead() || target.modifiers == null) return;
-
-                if (comfortModifiers.Count == 0)
-                {
-                    comfortModifiers.Add(new ModifierDefintion
-                    {
-                        type = Modifier.ModifierType.Comfort,
-                        source = Modifier.ModifierSource.Interaction
-                    });
-                }
-
-                var modifier = comfortModifiers[0];
-                modifier.value = ComfortAmount;
-                modifier.duration = Mathf.Max(Interval + 1f, 2f);
-
-                PlayerModifiers.AddToPlayer(target, comfortModifiers);
             }
 
             private void ComfortPlayers()
             {
                 var hits = FindNearbyTeamMates(player, Distance);
                 hits.Remove(player);
+                //hits.Remove(player);
+                comfortedPlayers.RemoveAll(x => x == null);
+                foreach (var hit in comfortedPlayers)
+                {
+                    if (hit.Team == null || player.Team == null || hit.Team.teamID != player.Team.teamID || !hits.Contains(hit))
+                    {
+                        hit.LeaveTrigger(comfortTrigger);
+                        comfortTrigger.OnEntityLeave(hit);
+                    }
+                }
+                comfortedPlayers.Clear();
                 foreach (var hit in hits)
                 {
-                    if (hit.Team != null && player.Team != null && hit.Team.teamID == player.Team.teamID)
-                        ApplyComfort(hit);
+                    if ((hit.triggers.IsNullOrEmpty() || !hit.triggers.Contains(comfortTrigger)) && (hit.Team != null && player.Team != null && hit.Team.teamID == player.Team.teamID))
+                        hit.EnterTrigger(comfortTrigger);
                 }
+                comfortedPlayers.AddRange(hits);
                 Pool.FreeUnmanaged(ref hits);
+            }
+
+            private void RemoveComfort()
+            {
+                try
+                {
+                    player.triggers.Remove(comfortTrigger);
+                }
+                catch { }
+                if (comfortTrigger == null && (comfortTrigger = player.gameObject.GetComponent<TriggerComfort>()) == null) return;
+                comfortTrigger.OnEntityLeave(player);
+                comfortedPlayers.RemoveAll(x => x == null);
+                foreach (var p in comfortedPlayers)
+                    p.LeaveTrigger(comfortTrigger);
+
+                comfortedPlayers.Clear();
+                GameObject.Destroy(player.gameObject.GetComponent<TriggerComfort>());
             }
 
             private void OnDestroy()
             {
-                comfortModifiers.Clear();
+                RemoveComfort();
+                Pool.FreeUnmanaged(ref comfortedPlayers);
                 enabled = false;
                 CancelInvoke();
             }
@@ -20575,6 +21072,7 @@ namespace Oxide.Plugins
             component.Range = config.buff_settings.mobileWorkbenchSettings.Distance;
             component.Interval = config.buff_settings.mobileWorkbenchSettings.Interval;
             component.SkillLevel = level;
+            component.Setup(player);
 
             if (DisabledPlayers.Contains(player.userID)) component.SetBlocked(true);
         }
@@ -20650,7 +21148,7 @@ namespace Oxide.Plugins
             gameObject.SetBlocked(shouldBlock);
         }
 
-        public class MobileWorkbenchSkill : MonoBehaviour
+        public class MobileWorkbenchSkill : FacepunchBehaviour
         {
             /* We apply our workbench trigger if they are close, and remove it if they are further away.
              * 
@@ -20658,7 +21156,6 @@ namespace Oxide.Plugins
              */
 
             private BasePlayer player;
-            private float Delay;
             public float Range;
             public float Interval = 5;
             public int SkillLevel;
@@ -20666,37 +21163,33 @@ namespace Oxide.Plugins
             private bool Blocked;
             private bool BlockActioned;
 
-            private void Awake()
+            public void Setup(BasePlayer player)
             {
-                player = GetComponent<BasePlayer>();
-                Delay = Time.time + 1f;
+                this.player = player;
+                InvokeRepeating(Run, 0.5f, Interval);
             }
 
-            public void FixedUpdate()
+            public void Run()
             {
                 if (player == null || !player.IsConnected)
                 {
                     Destroy(this);
                     return;
                 }
-                if (Delay < Time.time)
+                if (Blocked)
                 {
-                    Delay = Time.time + Interval;
-                    if (Blocked)
+                    if (!BlockActioned)
                     {
-                        if (!BlockActioned)
-                        {
-                            foreach (var _player in TrackedPlayers)
-                                RemoveTriggerFromPlayer(_player.Key, _player.Value);
+                        foreach (var _player in TrackedPlayers)
+                            RemoveTriggerFromPlayer(_player.Key, _player.Value);
 
-                            BlockActioned = true;
-                        }
-                        return;
+                        BlockActioned = true;
                     }
-                    CheckExistingPlayers();
-                    CheckForNewPlayers();
-                    RunLogic();
+                    return;
                 }
+                CheckExistingPlayers();
+                CheckForNewPlayers();
+                RunLogic();
             }
 
             public void SetBlocked(bool shouldBlocK)
@@ -20708,10 +21201,9 @@ namespace Oxide.Plugins
             public void UpdateSkillLevel(int level)
             {
                 SkillLevel = level;
-                var tracked = new List<KeyValuePair<BasePlayer, TriggerWorkbench>>(TrackedPlayers);
-                for (int i = tracked.Count - 1; i >= 0; i--)
+                for (int i = TrackedPlayers.Count - 1; i >= 0; i--)
                 {
-                    var _player = tracked[i];
+                    var _player = TrackedPlayers.ElementAt(i);
                     RemoveTriggerFromPlayer(_player.Key, _player.Value);
                 }
                 TrackedPlayers.Clear();
@@ -20720,10 +21212,9 @@ namespace Oxide.Plugins
             private void CheckExistingPlayers()
             {
                 var hasTeam = player.Team != null && player.Team.members?.Count > 1;
-                var tracked2 = new List<KeyValuePair<BasePlayer, TriggerWorkbench>>(TrackedPlayers);
-                for (int i = tracked2.Count - 1; i >= 0; i--)
+                for (int i = TrackedPlayers.Count - 1; i >= 0; i--)
                 {
-                    var _player = tracked2[i];
+                    var _player = TrackedPlayers.ElementAt(i);
                     if (_player.Key == null)
                     {
                         TrackedPlayers.Remove(_player.Key);
@@ -20801,7 +21292,7 @@ namespace Oxide.Plugins
                         if (_player.Key.cachedCraftLevel == highest.WorkbenchLevel()) continue; // Player has a higher crafting level than we are providing.
 
                         error_string = "Error 14";
-                        SetWorkbenchLevel(_player.Key, highest.WorkbenchLevel());
+                        SetWorkbenchLevel(player, highest.WorkbenchLevel());
                         error_string = "Error 15";
                     }
                     error_string = "Error 16";
@@ -21132,8 +21623,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            int pointsInTree = 0;
-            foreach (var kv in playerData.buff_values) pointsInTree += kv.Value;
+            var pointsInTree = playerData.buff_values.Sum(x => x.Value);
 
             double cost = 0;
             if (config.misc_settings.presetSettings.setupCosts.chargeRespecCost)
@@ -21555,8 +22045,7 @@ namespace Oxide.Plugins
             var result = config.misc_settings.presetSettings.maxPresets;
             foreach (var perm in config.misc_settings.presetSettings.maxPresetsOverride)
             {
-                var hasPrefix = perm.Key.StartsWith("skilltree.", StringComparison.OrdinalIgnoreCase);
-                if (permission.UserHasPermission(player.UserIDString, hasPrefix ? perm.Key : "skilltree." + perm.Key) && perm.Value > result)
+                if (permission.UserHasPermission(player.UserIDString, perm.Key) && perm.Value > result)
                     result = perm.Value;
             }
 
@@ -22145,11 +22634,9 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
-            if (!bool.TryParse(arg.Args[0].ToString(), out var adding)) return;
-            var addParts = new List<string>();
-            for (int i = 1; i < arg.Args.Length; i++) addParts.Add(arg.Args[i].ToString());
-            STAddSelectPresetPanel(player, adding, string.Join(" ", addParts));
+            if (arg.Args == null) return;
+            if (!bool.TryParse(arg.Args[0], out var adding)) return;
+            STAddSelectPresetPanel(player, adding, string.Join(" ", arg.Args.Skip(1)));
         }
 
         [ConsoleCommand("stconfirmpreset")]
@@ -22157,11 +22644,9 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
-            if (!bool.TryParse(arg.Args[0].ToString(), out var added)) return;
-            var profileParts = new List<string>();
-            for (int i = 1; i < arg.Args.Length; i++) profileParts.Add(arg.Args[i].ToString());
-            var profile = string.Join(" ", profileParts);
+            if (arg.Args == null) return;
+            if (!bool.TryParse(arg.Args[0], out var added)) return;
+            var profile = string.Join(" ", arg.Args.Skip(1));
             if (string.IsNullOrEmpty(profile)) return;
 
             CuiHelper.DestroyUi(player, "PresetAddSelectBackpanel");
@@ -22508,8 +22993,7 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
-            var url = arg.Args[0].ToString();
+            var url = arg.GetString(0);
 
             PlayVideo(player, url);
         }
@@ -22519,8 +23003,7 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
-            var url = arg.Args[0].ToString();
+            var url = arg.GetString(0);
 
             PlayVideoBG(player);
             VideoConfirmation(player, false, url);
@@ -22631,30 +23114,22 @@ namespace Oxide.Plugins
         void CheckboxToggle(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
-            if (!bool.TryParse(arg.Args[0].ToString(), out var result)) return;
-            var vidParts = new List<string>();
-            for (int i = 1; i < arg.Args.Length; i++) vidParts.Add(arg.Args[i].ToString());
-            VideoConfirmation(player, !result, string.Join(" ", vidParts));
+            if (!bool.TryParse(arg.Args[0], out var result)) return;
+            VideoConfirmation(player, !result, string.Join(" ", arg.Args.Skip(1)));
         }
 
         [ConsoleCommand("stvideoconfirmation")]
         void ConfirmSelected(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 2) return;
-            if (!bool.TryParse(arg.Args[0].ToString(), out var result)) return;
+            if (!bool.TryParse(arg.Args[0], out var result)) return;
             if (result)
             {
-                if (bool.TryParse(arg.Args[1].ToString(), out var stopConfirmation))
+                if (bool.TryParse(arg.Args[1], out var stopConfirmation))
                 {
                     if (pcdData.pEntity.TryGetValue(player.userID, out var playerData)) playerData.ignoreWarning = stopConfirmation;
                 }
-                var playParts = new List<string>();
-                for (int i = 2; i < arg.Args.Length; i++) playParts.Add(arg.Args[i].ToString());
-                PlayVideo(player, string.Join(" ", playParts));
+                PlayVideo(player, string.Join(" ", arg.Args.Skip(2)));
             }
             CuiHelper.DestroyUi(player, "PlayVideoBG");
             CuiHelper.DestroyUi(player, "VideoConfirmation");
@@ -23026,6 +23501,7 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
             CuiHelper.DestroyUi(player, "NavigationMenu");
             CuiHelper.DestroyUi(player, "PrestigeConfirmation");
+            CuiHelper.DestroyUi(player, "PrestigeHistory");
         }
 
         [ConsoleCommand("stchangetree")]
@@ -23033,10 +23509,8 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 1) return;
 
-            if (!int.TryParse(arg.Args[0].ToString(), out var index)) return;
-            if (index < 0 || index >= Trees.Count) return;
+            if (!int.TryParse(arg.Args[0], out var index)) return;
 
             var tree = Trees[index];
             if (!TreeData.TryGetValue(player.userID, out var treeData) || !treeData.trees.TryGetValue(tree, out var nodes)) return;
@@ -23153,8 +23627,7 @@ namespace Oxide.Plugins
                 if (!nodesCount.ContainsKey(node.Value.tier)) nodesCount.Add(node.Value.tier, 1);
                 else nodesCount[node.Value.tier]++;                
             }
-            int widest = 0;
-            foreach (var kv in nodesCount) { if (kv.Value > widest) widest = kv.Value; }
+            int widest = nodesCount.OrderByDescending(x => x.Value).FirstOrDefault().Value;
             int height = nodesCount.Count;
             nodesCount.Clear();
 
@@ -23170,9 +23643,7 @@ namespace Oxide.Plugins
                 if (!treeData.trees.TryGetValue(tree, out nodes)) return result;
             }
 
-            var nodeList = new List<KeyValuePair<string, NodeInfo>>(nodes.nodes);
-            nodeList.Sort((a, b) => a.Value.tier.CompareTo(b.Value.tier));
-            foreach (var node in nodeList)
+            foreach (var node in nodes.nodes.OrderBy(x => x.Value.tier))
             {
                 if (!result.TryGetValue(node.Value.tier, out var data)) result.Add(node.Value.tier, data = new Dictionary<string, NodeInfo>());
                 data.Add(node.Key, node.Value);
@@ -23194,18 +23665,15 @@ namespace Oxide.Plugins
             }
 
             var nodeRows = GetNodes(player, tree, nodes);
-            var rowList = new List<KeyValuePair<int, Dictionary<string, NodeInfo>>>(nodeRows);
-            rowList.Sort((a, b) => a.Key.CompareTo(b.Key));
 
             var count = 0;
-            for (int j = 0; j < rowList.Count; j++)
+            for (int j = 0; j < nodeRows.Count; j++)
             {
-                int lengthMod = 0;
-                var nodeColumns = rowList[j];
-                var colList = new List<KeyValuePair<string, NodeInfo>>(nodeColumns.Value);
-                for (int i = 0; i < colList.Count; i++)
+                int lengthMod = 0; // Represents nodes that were actually shown to the user and not excluded using ShouldShowNode.
+                var nodeColumns = nodeRows.ElementAt(j);
+                for (int i = 0; i < nodeColumns.Value.Count; i++)
                 {
-                    var node = colList[i];
+                    var node = nodeColumns.Value.ElementAt(i);
                     if (!ShouldShowNode(player, playerData, node.Value)) continue;
 
                     container.Add(new CuiElement
@@ -23321,13 +23789,12 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 5) return;
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return;
-            if (!bool.TryParse(arg.Args[3].ToString(), out var treeFormatted)) return;
-            if (!bool.TryParse(arg.Args[4].ToString(), out var nodeFormatted)) return;
-            var tree = treeFormatted ? arg.Args[0].ToString() : arg.Args[0].ToString().Replace('_', ' ');
-            var nodeName = nodeFormatted ? arg.Args[1].ToString() : arg.Args[1].ToString().Replace('_', ' ');
-            var parent = arg.Args[2].ToString();
+            if (!bool.TryParse(arg.Args[3], out var treeFormatted)) return;
+            if (!bool.TryParse(arg.Args[4], out var nodeFormatted)) return;
+            var tree = treeFormatted ? arg.GetString(0) : arg.GetString(0).Replace('_', ' ');
+            var nodeName = nodeFormatted ? arg.GetString(1) : arg.GetString(1).Replace('_', ' ');
+            var parent = arg.GetString(2);
 
             var container = new CuiElementContainer();
             SkillDescription(player, container, tree, playerData, nodeName, null);
@@ -23401,8 +23868,7 @@ namespace Oxide.Plugins
                 if (nodes.min_points > 0)
                 {
                     var minPoints = GetPointRequirement(player, tree, nodes.min_points);
-                    int totalPoints = 0;
-                    foreach (var t in treeData.trees) totalPoints += t.Value.points_spent;
+                    var totalPoints = treeData.trees.Sum(x => x.Value.points_spent);
 
                     container.Add(new CuiElement
                     {
@@ -23541,7 +24007,9 @@ namespace Oxide.Plugins
                 });
             }
 
-            if (config.prestige_settings.show_button_before_level || playerData.current_level >= config.general_settings.max_player_level)
+            bool showGainButton = config.prestige_settings.show_button_before_level || playerData.current_level >= config.general_settings.max_player_level;
+
+            if (showGainButton)
             {
                 container.Add(new CuiButton
                 {
@@ -23549,6 +24017,16 @@ namespace Oxide.Plugins
                     Text = { Text = playerData.current_level >= config.general_settings.max_player_level ? lang.GetMessage("UIPrestigeUpButtonHasLevel", this, player.UserIDString) : lang.GetMessage("UIPrestigeUpButton", this, player.UserIDString), Font = "robotocondensed-regular.ttf", FontSize = 10, Align = TextAnchor.MiddleCenter, Color = "0 0 0 1" },
                     RectTransform = { AnchorMin = "1 0.5", AnchorMax = "1 0.5", OffsetMin = "27.924 -11.509", OffsetMax = "98.487 11.509" }
                 }, "SkillCurrentPrestige", "GainPrestigeButton");
+            }
+
+            if (playerData.prestige_level > 0)
+            {
+                container.Add(new CuiButton
+                {
+                    Button = { Color = "0.2352941 0.2352941 0.2352941 0.3176471", Command = "stprestigehistory" },
+                    Text = { Text = lang.GetMessage("UIPrestigeHistoryButton", this, player.UserIDString), Font = "robotocondensed-regular.ttf", FontSize = 10, Align = TextAnchor.MiddleCenter, Color = "0 0 0 1" },
+                    RectTransform = { AnchorMin = "1 0.5", AnchorMax = "1 0.5", OffsetMin = showGainButton ? "101.487 -11.509" : "27.924 -11.509", OffsetMax = showGainButton ? "157.487 11.509" : "83.924 11.509" }
+                }, "SkillCurrentPrestige", "PrestigeHistoryButton");
             }
 
             if (send) CuiHelper.AddUi(player, container);
@@ -23648,14 +24126,13 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 2) return;
 
             CuiHelper.DestroyUi(player, "respec_confirmation");
-            if (!double.TryParse(arg.Args[0].ToString(), out var cost)) return;
+            if (!double.TryParse(arg.Args[0], out var cost)) return;
 
             if (!PaidForRespec(player, cost)) return;
 
-            var tree = arg.Args[1].ToString();
+            var tree = arg.GetString(1);
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return;
             if (config.general_settings.respec_multiplier > 0)
             {
@@ -23706,7 +24183,9 @@ namespace Oxide.Plugins
                 nodeDescription += lang.GetMessage(nodeName + ".permission", this, player.UserIDString);
             }
 
-            nodeDescription += AddAdditionalDescription(node.buffInfo.Key, player.UserIDString);
+            var addition = AddAdditionalDescription(node.buffInfo.Key, player.UserIDString);
+            if (!string.IsNullOrEmpty(addition))
+                nodeDescription += addition;
             if (!string.IsNullOrEmpty(node.excluded_skill)) nodeDescription += string.Format(lang.GetMessage("UIExcludeDescription", this, player.UserIDString), node.excluded_skill);
             if (!string.IsNullOrEmpty(node.required_skill)) nodeDescription += string.Format(lang.GetMessage("UIRequiredDescription", this, player.UserIDString), node.required_skill);
 
@@ -23847,12 +24326,11 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            if (arg.Args == null || arg.Args.Length < 5) return;
-            if (!bool.TryParse(arg.Args[3].ToString(), out var nodeFormatted)) return;
-            if (!bool.TryParse(arg.Args[4].ToString(), out var treeFormatted)) return;
-            var nodeName = nodeFormatted ? arg.Args[0].ToString() : arg.Args[0].ToString().Replace('_', ' ');
-            var parent = arg.Args[1].ToString();
-            var tree = treeFormatted ? arg.Args[2].ToString() : arg.Args[2].ToString().Replace('_', ' ');
+            if (!bool.TryParse(arg.Args[3], out var nodeFormatted)) return;
+            if (!bool.TryParse(arg.Args[4], out var treeFormatted)) return;
+            var nodeName = nodeFormatted ? arg.GetString(0) : arg.GetString(0).Replace('_', ' ');
+            var parent = arg.GetString(1);
+            var tree = treeFormatted ? arg.GetString(2) : arg.GetString(2).Replace('_', ' ');
             
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return;
             if (!TreeData.TryGetValue(player.userID, out var treeData) || !treeData.trees.TryGetValue(tree, out var nodes)) return;

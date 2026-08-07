@@ -74,6 +74,20 @@ namespace ShopHarmony
             EditingLayer = "UI.Shop.Editing",
             CMD_Main_Console = "UI_Shop";
 
+        /// <summary>
+        /// Top-most CUI parent for fullscreen shop overlays (edit/modals).
+        /// ServerPanel Template ParentLayer is OverlayNonScaled; parenting to Overlay puts UI underneath it.
+        /// </summary>
+        private string GetTopUiParent()
+        {
+            var displayType = _config?.UI?.DisplayType;
+            if (!string.IsNullOrWhiteSpace(displayType) &&
+                !displayType.Equals("Overlay", StringComparison.OrdinalIgnoreCase))
+                return displayType;
+
+            return "OverlayNonScaled";
+        }
+
         private const string
             PERM_ADMIN = "shop.admin",
             PERM_FREE_BYPASS = "shop.free",
@@ -287,7 +301,8 @@ namespace ShopHarmony
             [JsonProperty(PropertyName = LangRu ? "Интерфейс" : "Interface")]
             public UserInterface UI = new()
             {
-                DisplayType = "Overlay",
+                // Must sit above ServerPanel (Template ParentLayer = OverlayNonScaled)
+                DisplayType = "OverlayNonScaled",
                 RoundDigits = 5,
                 Color1 = new IColor("#161617"),
                 Color2 = new IColor("#4B68FF"),
@@ -4061,6 +4076,10 @@ namespace ShopHarmony
                     }
                 }
             }
+
+            // ServerPanel Template.json uses OverlayNonScaled; shop edit/modals on Overlay render underneath it.
+            if (string.Equals(_config.UI?.DisplayType, "Overlay", StringComparison.OrdinalIgnoreCase))
+                _config.UI.DisplayType = "OverlayNonScaled";
 
             _config.Version = Version;
             PrintWarning("Config update completed!");
@@ -8268,7 +8287,7 @@ namespace ShopHarmony
             {
                 container.Add(new CuiElement
                 {
-                    Parent = shopUI?.ShopBackground?.DisplayType ?? "Overlay",
+                    Parent = shopUI?.ShopBackground?.DisplayType ?? GetTopUiParent(),
                     Name = "Mevent.ScrollFix.Mock",
                     DestroyUi = "Mevent.ScrollFix.Mock",
                     Components =
@@ -9165,7 +9184,7 @@ namespace ShopHarmony
                         Image = {Color = _config.UI.Color13.Get},
                         CursorEnabled = true
                     },
-                    _config.UI.DisplayType, ModalLayer, ModalLayer
+                    GetTopUiParent(), ModalLayer, ModalLayer
                 },
                 {
                     new CuiPanel
@@ -9677,7 +9696,7 @@ namespace ShopHarmony
                     Material = "assets/content/ui/uibackgroundblur-ingamemenu.mat"
                 },
                 CursorEnabled = true
-            }, _config.UI.DisplayType, ModalLayer, ModalLayer);
+            }, GetTopUiParent(), ModalLayer, ModalLayer);
 
             container.Add(new CuiButton
             {
@@ -9882,7 +9901,7 @@ namespace ShopHarmony
                     Material = "assets/content/ui/uibackgroundblur.mat"
                 },
                 CursorEnabled = true
-            }, "Overlay", ModalLayer, ModalLayer);
+            }, GetTopUiParent(), ModalLayer, ModalLayer);
 
             container.Add(new CuiButton
             {
@@ -10161,7 +10180,7 @@ namespace ShopHarmony
                     RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
                     Image = {Color = _config.UI.Color11.Get},
                     CursorEnabled = true
-                }, _config.UI.DisplayType, EditingLayer, EditingLayer);
+                }, GetTopUiParent(), EditingLayer, EditingLayer);
 
             #endregion
 
@@ -10680,7 +10699,7 @@ namespace ShopHarmony
                     Close = ModalLayer,
                     Color = _config.UI.Color12.Get
                 }
-            }, _config.UI.DisplayType, ModalLayer, ModalLayer);
+            }, GetTopUiParent(), ModalLayer, ModalLayer);
 
             #endregion
 
@@ -10932,7 +10951,7 @@ namespace ShopHarmony
                     RectTransform = {AnchorMin = "0 0", AnchorMax = "1 1"},
                     Image = {Color = _config.UI.Color11.Get},
                     CursorEnabled = true
-                }, _config.UI.DisplayType, EditingLayer, EditingLayer);
+                }, GetTopUiParent(), EditingLayer, EditingLayer);
 
             #endregion
 

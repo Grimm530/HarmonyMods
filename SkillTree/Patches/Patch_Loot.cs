@@ -29,6 +29,11 @@ namespace SkillTreeHarmony.Patches
                 }
                 catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntity: " + ex.Message); }
             }
+            else if (targetEntity is ChickenCoop coop)
+            {
+                try { STPlugin.Dispatch_OnLootEntity_ChickenCoop(player, coop); }
+                catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnLootEntity(ChickenCoop): " + ex.Message); }
+            }
         }
     }
 

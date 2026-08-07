@@ -279,6 +279,8 @@ namespace SkillTreeHarmony.Patches
             {
                 switch (__instance)
                 {
+                    case PatrolHelicopter ph:   STPlugin.Dispatch_OnEntityKill_PatrolHelicopter(ph);   break;
+                    case PlayerBoat boat:       STPlugin.Dispatch_OnEntityKill_PlayerBoat(boat);       break;
                     case Workbench wb:          STPlugin.Dispatch_OnEntityKill_Workbench(wb);          break;
                     case StorageContainer sc:   STPlugin.Dispatch_OnEntityKill_StorageContainer(sc);  break;
                     case CollectibleEntity ce:  STPlugin.Dispatch_OnEntityKill_CollectibleEntity(ce); break;
