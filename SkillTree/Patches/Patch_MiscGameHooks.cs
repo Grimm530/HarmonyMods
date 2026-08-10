@@ -34,6 +34,24 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
+    // ---- Item repair (MaxRepair / Free_Repairs) ----------------------------
+    // Oxide CallHook("OnItemRepair") only reaches Oxide plugins; Harmony SkillTree must patch here.
+
+    [HarmonyPatch(typeof(RepairBench), nameof(RepairBench.RepairAnItem))]
+    public static class RepairBench_RepairAnItem_Patch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(Item itemToRepair, BasePlayer player, BaseEntity repairBenchEntity, float maxConditionLostOnRepair, bool mustKnowBlueprint)
+        {
+            if (player == null || itemToRepair == null) return true;
+            object r = null;
+            try { r = STPlugin.Dispatch_OnItemRepair(player, itemToRepair); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemRepair: " + ex.Message); }
+            // Oxide: non-null cancels default repair (Free_Repairs already repaired).
+            return r == null;
+        }
+    }
+
     // ---- Mount / dismount -------------------------------------------------
     // DismountPlayer is (BasePlayer, bool) in IL even when lite has a default.
 

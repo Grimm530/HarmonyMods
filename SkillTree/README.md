@@ -43,7 +43,7 @@ Facepunch loads `HarmonyMods/*.dll` alphabetically (filesystem order). Typical o
 **Do not rely on a manual load sequence.** SkillTree binds via ready callbacks:
 
 - `Permissions_ReadyCallbacks` → re-register skilltree.* permissions
-- `MovementSpeed_ReadyCallbacks` → re-resolve optional plugin refs (no RoadRunner in 1.7.14)
+- `MovementSpeed_ReadyCallbacks` → re-resolve MovementSpeed + re-apply Road Runner / Swim Speed for online players
 
 ## Commands
 
@@ -93,6 +93,6 @@ ImageLibrary, Economics, ServerRewards, RaidableBases, ZoneManager, and other op
 ## Known Compile Risks
 
 - `Patch_MiscGameHooks.cs`: Several game methods (`AntiHack.ReportViolation`, `ResearchTable.ResearchPrice`, `ScientistNPC.CanTargetEntity`, `BaseMelee.ServerUse`) use internal method names that may differ across Rust updates. If any patch class fails to compile, comment it out and add to a `[HarmonyPatch]` manually or remove from `.csproj`.
-- `Patch_ItemCrafter.cs`: `ItemCrafter.CraftItem` signature varies across Rust builds. The patch uses parameter filtering; if the parameter count differs, the patch will not apply (non-fatal).
+- `Patch_ItemCrafter.cs`: `ItemCrafter.CraftItem` postfix applies `Craft_Speed`. `RepairBench.RepairAnItem` prefix applies `MaxRepair` / `Free_Repairs`.
 - `Patch_MiscGameHooks.cs` `BaseNetworkable_Spawned_Patch`: May be high-frequency. Monitor performance on busy servers.
 - Fish hooks (`OnFishCatch`, `CanCatchFish`, `OnFishingStopped`) are not patched via game methods — SkillTree's own internal `[HarmonyPatch(BaseFishingRod, "Server_RequestCast")]` / `FishLookup.GetFish` handles these from within the plugin partial class.

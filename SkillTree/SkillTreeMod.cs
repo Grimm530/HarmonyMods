@@ -112,7 +112,8 @@ namespace SkillTreeHarmony
             ScrubSkillTreeFromReplicatedList();
 
             // Seed basic chat commands (config-independent defaults). Chat routing = ChatSayBridge.
-            foreach (var cmd in new[] { "st", "skilltree", "skills", "score", "scoreboard" })
+            // Include common config-driven aliases so /setgenes works even before OnServerInitialized.
+            foreach (var cmd in new[] { "st", "skilltree", "skills", "score", "scoreboard", "setgenes", "locatenodes", "turbo", "crates", "traps" })
             {
                 _chatCommandNames.Add(cmd);
                 RegisterChatAliasConsole(cmd);
@@ -160,7 +161,19 @@ namespace SkillTreeHarmony
                 var plugin = OxidePlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.ResolvePluginReferences();
-                Debug.Log("[SkillTree] MovementSpeed ready — RoadRunner/swim PluginReference rebound.");
+                // SetupSkills may have run before MovementSpeed existed — re-apply for online players.
+                foreach (var player in BasePlayer.activePlayerList)
+                {
+                    if (player == null || player.IsNpc) continue;
+                    try
+                    {
+                        var mi = typeof(OxidePlugin).GetMethod("UpdateInstancedData",
+                            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        mi?.Invoke(plugin, new object[] { player });
+                    }
+                    catch { }
+                }
+                Debug.Log("[SkillTree] MovementSpeed ready — RoadRunner/swim rebound for online players.");
             }
             catch (Exception ex)
             {
@@ -316,6 +329,13 @@ namespace SkillTreeHarmony
             if (new[] { "score", "scoreboard" }.Contains(commandName, StringComparer.OrdinalIgnoreCase))
             {
                 InvokeChatMethod(plugin, "CheckScoreBoard", player, commandName, args);
+                return true;
+            }
+
+            // Fallback for seeded aliases when AddChatCommand has not run yet / was missed.
+            if (string.Equals(commandName, "setgenes", StringComparison.OrdinalIgnoreCase))
+            {
+                InvokeChatMethod(plugin, "SetPlantGenes", player, commandName, args);
                 return true;
             }
 

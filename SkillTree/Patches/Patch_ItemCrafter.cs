@@ -11,6 +11,26 @@ using STPlugin = Oxide.Plugins.SkillTree;
 namespace SkillTreeHarmony.Patches
 {
     /// <summary>
+    /// OnItemCraft — postfix after the task is queued so Craft_Speed can clone/modify the blueprint
+    /// before ServerUpdate calls GetScaledDuration. Mirrors Oxide CallHook("OnItemCraft", ...).
+    /// </summary>
+    [HarmonyPatch(typeof(ItemCrafter), nameof(ItemCrafter.CraftItem))]
+    public static class ItemCrafter_CraftItem_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(ItemCrafter __instance, BasePlayer owner, Item fromTempBlueprint, bool __result)
+        {
+            if (!__result || owner == null || __instance == null) return;
+            var queue = __instance.queue;
+            if (queue == null || queue.Count == 0) return;
+            var task = queue.Last?.Value;
+            if (task == null) return;
+            try { STPlugin.Dispatch_OnItemCraft(task, owner, fromTempBlueprint); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemCraft: " + ex.Message); }
+        }
+    }
+
+    /// <summary>
     /// OnItemCraftFinished — postfix on ItemCrafter.FinishCrafting.
     /// FinishCrafting returns void and keeps the crafted Item as a local; Oxide passes that Item.
     /// Capture it via Dup after CreateByItemID so the postfix can forward a real reference.

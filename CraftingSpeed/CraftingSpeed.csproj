@@ -20,6 +20,9 @@
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
     <Reference Include="Rust.Harmony">
       <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
     </Reference>

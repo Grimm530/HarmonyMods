@@ -7,16 +7,14 @@ internal class ItemCrafter_GetScaledDuration
 {
 	/// <summary>
 	/// Postfix divides the crafting duration by CraftingSpeedMultiplier.
-	/// The original transpiler targeted Ldfld "time" which only exists inside ItemBlueprint.GetCraftTime(),
-	/// not in GetScaledDuration, so it never matched. Using a Postfix on the return value works correctly.
 	/// </summary>
 	[HarmonyPostfix]
 	private static void Postfix(ref float __result)
 	{
+		if (__result <= 0f) return;
 		HarmonyConfig.LoadConfig();
-		if (HarmonyConfig.Config != null && HarmonyConfig.Config.CraftingSpeedMultiplier > 0f)
-		{
-			__result /= HarmonyConfig.Config.CraftingSpeedMultiplier;
-		}
+		float mult = HarmonyConfig.Config?.CraftingSpeedMultiplier ?? 0f;
+		if (mult > 0f)
+			__result /= mult;
 	}
 }

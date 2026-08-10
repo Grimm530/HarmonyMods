@@ -743,6 +743,11 @@ namespace CustomMapGen.Patches
         {
             if (string.IsNullOrEmpty(prefabNameLower)) return false;
             string n = prefabNameLower;
+            // Caves must not be treated as large monuments. Especially cave_large_sewers_hard —
+            // a bare "sewer" match would falsely classify it as Sewer Branch and relocate it
+            // onto the center-outpost clearance ring (tall plateau next to Outpost).
+            if (n.IndexOf("cave", StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
             return n.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("bandit_town", StringComparison.OrdinalIgnoreCase) >= 0
@@ -754,6 +759,7 @@ namespace CustomMapGen.Patches
                 || n.IndexOf("radtown", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("trainyard", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("water_treatment", StringComparison.OrdinalIgnoreCase) >= 0
+                // Sewer Branch only (caves already excluded above so "sewer" cannot match cave_large_sewers_*).
                 || n.IndexOf("sewer", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("sphere_tank", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("satellite_dish", StringComparison.OrdinalIgnoreCase) >= 0
@@ -768,6 +774,9 @@ namespace CustomMapGen.Patches
         {
             if (string.IsNullOrEmpty(prefabName)) return 0f;
             string n = prefabName;
+            // Caves are not large monuments; do not apply Sewer Branch / large radii to cave_large_sewers_*.
+            if (n.IndexOf("cave", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 0f;
             if (n.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 120f;
             // Airfield footprint is much larger than water treatment (runway + hangars).

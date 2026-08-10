@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>RoadFix</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>RoadFix</RootNamespace>
+    <Description>Harmony mod: roads follow path height like rails (no terrain snap) and soft-bridge over rivers. Config: HarmonyConfig/RoadFix.json</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony">
+      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(RustManaged)\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.System">
+      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.World">
+      <HintPath>$(RustManaged)\Rust.World.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Data">
+      <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.FileSystem">
+      <HintPath>$(RustManaged)\Rust.FileSystem.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

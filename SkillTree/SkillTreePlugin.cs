@@ -258,6 +258,9 @@ namespace Oxide.Plugins
                 [JsonProperty("Prevent flyhack kicks when a player lands?")]
                 public bool prevent_flyhack_kick_fall_damage = false;
 
+                [JsonProperty("Disable flyhack violation when player has Roadrunner ability?")]
+                public bool prevent_flyhack_kick_roadrunner = true;
+
                 [JsonProperty("Automatically apply the boat turbo when a player mounts the boat? [Disables the turbo command]")]
                 public bool boat_turbo_on_mount = false;
 
@@ -2898,7 +2901,8 @@ namespace Oxide.Plugins
                         ["Supersonic Thrust"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 1f, new KeyValuePair<Buff, BuffType>(Buff.Rocket_Velocity, BuffType.Percentage), "https://www.dropbox.com/scl/fi/wnxbqcr3tf1skr86c5n6x/Archerskill_05_nobg.v1.png?rlkey=534ipsyv0zasw3mlclyf2eido&st=s4cnj9ly&dl=1", 3470847198),
                         ["Ricochet"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.Shield_Reflect, BuffType.Percentage), "https://www.dropbox.com/scl/fi/by0ecvqo94p275odes6ph/Assassinskill_17_nobg.v1.png?rlkey=by53d2j3tfoizrn02vr7ekax1&st=7u0bo2jw&dl=1", 3475613624),
                         ["Tank Buster"] = new Configuration.TreeInfo.NodeInfo(true, 5, 2, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.Bradley_Damage_Bonus, BuffType.Percentage), "https://www.dropbox.com/scl/fi/w73higanxue1n5jjlxgte/Engineerskill_27_nobg.v1.png?rlkey=khmvqdixsby2x6bncyzohz10q&st=3c34eha6&dl=1", 3538449981),
-                        ["Skybane"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.Heli_Damage_Bonus, BuffType.Percentage), "https://www.dropbox.com/scl/fi/7ywy7mfqgy9e9pjdlfv5q/Engineerskill_12_nobg.v1.png?rlkey=p6g6m826bx8jzwj0ox6drgf2d&st=ja0y2c6m&dl=1", 3538450199)
+                        ["Skybane"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.1f, new KeyValuePair<Buff, BuffType>(Buff.Heli_Damage_Bonus, BuffType.Percentage), "https://www.dropbox.com/scl/fi/7ywy7mfqgy9e9pjdlfv5q/Engineerskill_12_nobg.v1.png?rlkey=p6g6m826bx8jzwj0ox6drgf2d&st=ja0y2c6m&dl=1", 3538450199),
+                        ["Road Runner"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Combat_Run_Speed, BuffType.Percentage), "https://www.dropbox.com/scl/fi/ywmo88iufztfutf9mo7h4/roadrunner.png?rlkey=0vod181b977fk7ja51cdlhj97&dl=1", 0UL)
                     }),
                     ["Build_Craft"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
@@ -2975,9 +2979,8 @@ namespace Oxide.Plugins
                         ["Nimble Fingers"] = new Configuration.TreeInfo.NodeInfo(true, 1, 3, 1f, new KeyValuePair<Buff, BuffType>(Buff.InstantUntie, BuffType.IO), "https://www.dropbox.com/s/3m853nqxq2qmoih/Nimble_Fingers.png?dl=1", 2873056697),
                         ["Aquatic Combatant"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.10f, new KeyValuePair<Buff, BuffType>(Buff.UnderwaterDamageBonus, BuffType.Percentage), "https://www.dropbox.com/s/683npn5fwvkbtni/Aquatic_Combatant.png?dl=1", 2873056786),
                         ["Sonar Pulse"] = new Configuration.TreeInfo.NodeInfo(true, 1, 2, 1f, new KeyValuePair<Buff, BuffType>(Buff.Sonar, BuffType.IO), "https://www.dropbox.com/scl/fi/rthqet410byv4bpj80hgl/Priestskill_42_nobg.v1.png?rlkey=67h0gyem1x08nh7idb19zvtds&dl=1", 3111209702),
-                        ["Chum Master"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Bait_Value_Bonus, BuffType.Percentage), "https://www.dropbox.com/scl/fi/9a59g5x8lqwpivkmzrsic/Chum_Master.v1.png?rlkey=03mvhl958t7ez2eswseqjyc6t&st=o4erh44w&dl=1", 3766254409)
-                        
-                        
+                        ["Chum Master"] = new Configuration.TreeInfo.NodeInfo(true, 5, 1, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Bait_Value_Bonus, BuffType.Percentage), "https://www.dropbox.com/scl/fi/9a59g5x8lqwpivkmzrsic/Chum_Master.v1.png?rlkey=03mvhl958t7ez2eswseqjyc6t&st=o4erh44w&dl=1", 3766254409),
+                        ["Swim Speed"] = new Configuration.TreeInfo.NodeInfo(true, 5, 3, 0.2f, new KeyValuePair<Buff, BuffType>(Buff.Underwater_Swim_Speed, BuffType.Percentage), null, 296519935UL)
                     }),
                     ["Raiding"] = new Configuration.TreeInfo(new Dictionary<string, Configuration.TreeInfo.NodeInfo>()
                     {
@@ -3707,7 +3710,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Player files may contain removed Buff enum names (e.g. Combat_Run_Speed).
+        /// Player files may contain unknown Buff enum names from older builds.
         /// Lenient settings + DisabledBuffs converter keep scoreboard/player load from throwing.
         /// </summary>
         static readonly JsonSerializerSettings PlayerInfoSerializerSettings = new JsonSerializerSettings
@@ -4376,6 +4379,7 @@ namespace Oxide.Plugins
             Animal_Damage_Resist,
             Riding_Speed,
             Free_Bullet_Chance,
+            Combat_Run_Speed,
             Primitive_Expert,
             Upgrade_Refund,
             Craft_Speed,
@@ -4417,6 +4421,7 @@ namespace Oxide.Plugins
             SharkSkinner,
             DeepSeaLooter,
             InstantUntie,
+            Underwater_Swim_Speed,
             UnderwaterDamageBonus,
             Permission,
             MaxRepair,
@@ -4677,6 +4682,8 @@ namespace Oxide.Plugins
                 ["Animal_Damage_Resist"] = "This skill reduces the damage taken by animals by <color=#42f105>{0}%</color> per level.",
                 ["Riding_Speed"] = "This skill increases the speed of your mounted horse by <color=#42f105>{0}%</color> per level.",
                 ["Free_Bullet_Chance"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level of not using a bullet while firing.",
+                ["Combat_Run_Speed"] = "This skill increases your run speed by <color=#42f105>{0}%</color> per level while on foot.",
+                ["Underwater_Swim_Speed"] = "Increases your swim speed by <color=#42f105>{0}%</color> per level while underwater.",
                 ["Primitive_Expert"] = "This skill makes primitive weapons lose no durability.",
                 ["Upgrade_Refund"] = "This skill gives you a <color=#42f105>{0}%</color> chance per level of receiving your building materials back when upgrading your building blocks.",
                 ["Craft_Speed"] = "This skill increases your crafting speed by <color=#42f105>{0}%</color> per level.",
@@ -5522,8 +5529,10 @@ namespace Oxide.Plugins
         {
             if (type != AntiHackType.FlyHack) return null;
             BuffDetails bd;
-            if (!GetBuffDetails(player.userID, out bd) || !bd.ContainsBuff(Buff.Fall_Damage_Reduction)) return null;
-            return true;
+            if (!GetBuffDetails(player.userID, out bd)) return null;
+            if (bd.ContainsBuff(Buff.Fall_Damage_Reduction)) return true;
+            if (config.buff_settings.prevent_flyhack_kick_roadrunner && bd.ContainsBuff(Buff.Combat_Run_Speed)) return true;
+            return null;
         }
 
         object OnWeaponReload(BaseProjectile weapon, BasePlayer player)
@@ -9779,7 +9788,7 @@ namespace Oxide.Plugins
         }
 
         [PluginReference]
-        private Plugin ImageLibrary, Economics, ServerRewards, ShoppyStock, EventManager, BotReSpawn, Cooking, UINotify, ZombieHorde, EventHelper, RaidableBases, LootDefender, SkillTreeXPEvent, ZoneManager, VirtualRecycler, DeployableNature, NotificationSystem;
+        private Plugin ImageLibrary, Economics, ServerRewards, ShoppyStock, EventManager, BotReSpawn, Cooking, UINotify, ZombieHorde, EventHelper, RaidableBases, LootDefender, SkillTreeXPEvent, ZoneManager, VirtualRecycler, DeployableNature, NotificationSystem, MovementSpeed;
 
         Dictionary<Buff, BuffType> BuffBuffType = new Dictionary<Buff, BuffType>();
 
@@ -10343,7 +10352,7 @@ namespace Oxide.Plugins
 
             if (!config.thirdPartyPluginSettings.survivalArenaSettings.disable_skinning_ultimate_buff_on_join && !config.thirdPartyPluginSettings.paintballSettings.disable_skinning_ultimate_buff_on_join) Unsubscribe(nameof(EMOnEventJoined));
 
-            if (!config.buff_settings.prevent_flyhack_kick_fall_damage) Unsubscribe(nameof(OnPlayerViolation));
+            if (!config.buff_settings.prevent_flyhack_kick_fall_damage && !config.buff_settings.prevent_flyhack_kick_roadrunner) Unsubscribe(nameof(OnPlayerViolation));
 
             foreach (var kvp in config.trees)
             {
@@ -10491,6 +10500,8 @@ namespace Oxide.Plugins
             try { DestroyInstantUntie(player); } catch { Puts($"Error: Failed to remove Instant untie from {player.displayName} [{player.userID}]"); }
             try { DestroyComfortSkill(player); } catch { Puts($"Error: Failed to remove Comfort from {player.displayName} [{player.userID}]"); Puts($"Error: Failed to remove regen from {player.displayName} [{player.userID}]"); }
             try { DestroyMobileWorkbench(player); } catch { Puts($"Error: Failed to remove Mobile workbench from {player.displayName} [{player.userID}]"); }
+            try { DestroySwimSpeed(player); } catch { }
+            try { DestroyRunSpeed(player); } catch { }
             RemovePerms(player.UserIDString, removePerms);
         }
 
@@ -12258,6 +12269,18 @@ namespace Oxide.Plugins
             if (bd.GetBuff(Buff.Extended_Mag, out value)) HandleWeaponMagExtension(player, value);
             if (bd.GetBuff(Buff.Comfort, out value)) AddComfortSkill(player, value);
             if (bd.GetBuff(Buff.Human_Workbench, out value)) AddWorkbenchSkill(player, Mathf.RoundToInt(Mathf.Clamp(value, 1, 3)));
+
+            // Apply swim speed (MovementSpeed Harmony mod)
+            if (bd.GetBuff(Buff.Underwater_Swim_Speed, out value))
+                UpdateSwimSpeed(player, value);
+            else
+                DestroySwimSpeed(player);
+
+            // Apply Road Runner run speed (MovementSpeed Harmony mod)
+            if (bd.GetBuff(Buff.Combat_Run_Speed, out value))
+                UpdateRunSpeed(player, value);
+            else
+                DestroyRunSpeed(player);
 
             List<ItemInfo> items = Pool.Get<List<ItemInfo>>();
             items.AddRange(playerData.pouch_items);
@@ -15787,6 +15810,14 @@ namespace Oxide.Plugins
                     SetWaterBreathingBlock(player, !enable);
                     return;
 
+                case Buff.Underwater_Swim_Speed:
+                    SetSwimSpeedBlock(player, !enable);
+                    return;
+
+                case Buff.Combat_Run_Speed:
+                    SetRunSpeedBlock(player, !enable);
+                    return;
+
                 case Buff.InstantUntie:
                     SetInstantUntieBlock(player, !enable);
                     return;
@@ -15807,6 +15838,103 @@ namespace Oxide.Plugins
                 case Buff.Riding_Speed:
                     if (!enable) player.EnsureDismounted();
                     return;
+            }
+        }
+
+        #endregion
+
+        #region Swim / Run Speed
+
+        // MovementSpeed swim multipliers to mirror (from MovementSpeed.json)
+        // Index by perk level 0-5: 0 = none, 1..5 = configured tiers.
+        private static readonly float[] SwimSpeedMovementModifiers = { 0f, 5f, 7f, 10f, 15f, 20f };
+
+        // MovementSpeed run multipliers to mirror for Road Runner (from MovementSpeed.json)
+        // Index by perk level 0-5: 0 = none, 1..5 = configured tiers.
+        private static readonly float[] RunSpeedMovementModifiers = { 0f, 2.5f, 4f, 5f, 7f, 10f };
+
+        void UpdateSwimSpeed(BasePlayer player, float levelValue) => ApplySwimSpeedMovementBoost(player, levelValue);
+
+        void ApplySwimSpeedMovementBoost(BasePlayer player, float levelValue)
+        {
+            if (MovementSpeed == null || !MovementSpeed.IsLoaded) return;
+
+            // SkillTree stores value as level * 0.2 (max_level 5, value_per_buff 0.2)
+            int level = Mathf.Clamp(Mathf.RoundToInt(levelValue / 0.2f), 0, 5);
+            float mod = SwimSpeedMovementModifiers[level];
+
+            if (mod <= 0f)
+            {
+                try { MovementSpeed.Call("RemoveSwimSpeed", player, "SkillTree"); } catch { }
+                return;
+            }
+
+            try { MovementSpeed.Call("AddSwimSpeedBoost", player, "SkillTree", mod, 0f, true); }
+            catch { }
+        }
+
+        void UpdateRunSpeed(BasePlayer player, float levelValue) => ApplyRunSpeedMovementBoost(player, levelValue);
+
+        void ApplyRunSpeedMovementBoost(BasePlayer player, float levelValue)
+        {
+            if (MovementSpeed == null || !MovementSpeed.IsLoaded) return;
+
+            int level = Mathf.Clamp(Mathf.RoundToInt(levelValue / 0.2f), 0, 5);
+            float mod = RunSpeedMovementModifiers[level];
+
+            if (mod <= 0f)
+            {
+                try { MovementSpeed.Call("RemoveRunSpeed", player, "SkillTree_Run"); } catch { }
+                return;
+            }
+
+            try { MovementSpeed.Call("AddRunSpeedBoost", player, "SkillTree_Run", mod, 0f, true); }
+            catch { }
+        }
+
+        void SetSwimSpeedBlock(BasePlayer player, bool shouldBlock)
+        {
+            if (!buffDetails.TryGetValue(player.userID, out var bd) || !bd.ContainsBuff(Buff.Underwater_Swim_Speed)) return;
+            if (MovementSpeed == null || !MovementSpeed.IsLoaded) return;
+
+            if (shouldBlock)
+            {
+                try { MovementSpeed.Call("RemoveSwimSpeed", player, "SkillTree"); } catch { }
+            }
+            else if (bd.GetBuff(Buff.Underwater_Swim_Speed, out var value))
+            {
+                ApplySwimSpeedMovementBoost(player, value);
+            }
+        }
+
+        void SetRunSpeedBlock(BasePlayer player, bool shouldBlock)
+        {
+            if (!buffDetails.TryGetValue(player.userID, out var bd) || !bd.ContainsBuff(Buff.Combat_Run_Speed)) return;
+            if (MovementSpeed == null || !MovementSpeed.IsLoaded) return;
+
+            if (shouldBlock)
+            {
+                try { MovementSpeed.Call("RemoveRunSpeed", player, "SkillTree_Run"); } catch { }
+            }
+            else if (bd.GetBuff(Buff.Combat_Run_Speed, out var value))
+            {
+                ApplyRunSpeedMovementBoost(player, value);
+            }
+        }
+
+        void DestroySwimSpeed(BasePlayer player)
+        {
+            if (MovementSpeed != null && MovementSpeed.IsLoaded)
+            {
+                try { MovementSpeed.Call("RemoveSwimSpeed", player, "SkillTree"); } catch { }
+            }
+        }
+
+        void DestroyRunSpeed(BasePlayer player)
+        {
+            if (MovementSpeed != null && MovementSpeed.IsLoaded)
+            {
+                try { MovementSpeed.Call("RemoveRunSpeed", player, "SkillTree_Run"); } catch { }
             }
         }
 
