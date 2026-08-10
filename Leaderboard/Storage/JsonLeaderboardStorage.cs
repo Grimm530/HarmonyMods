@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 
@@ -11,7 +12,11 @@ public class JsonLeaderboardStorage : ILeaderboardStorage
 
     public JsonLeaderboardStorage(string dataFolder)
     {
-        _basePath = Path.Combine(Environment.CurrentDirectory, dataFolder.Trim(), "Players");
+        var folder = (dataFolder ?? "LeaderboardData").Trim();
+        // InitStorage may already pass an absolute path under CurrentDirectory.
+        _basePath = Path.IsPathRooted(folder)
+            ? Path.Combine(folder, "Players")
+            : Path.Combine(Environment.CurrentDirectory, folder, "Players");
         try
         {
             if (!Directory.Exists(_basePath))
@@ -42,6 +47,8 @@ public class JsonLeaderboardStorage : ILeaderboardStorage
                 if (stats != null)
                 {
                     stats.UserId = userId; // ensure id is set
+                    if (stats.StatsStorage == null)
+                        stats.StatsStorage = new Dictionary<LootType, Dictionary<string, float>>();
                     callback?.Invoke(stats);
                     return;
                 }
@@ -52,6 +59,48 @@ public class JsonLeaderboardStorage : ILeaderboardStorage
             UnityEngine.Debug.LogWarning($"[Leaderboard] Load {userId}: {ex.Message}");
         }
         callback?.Invoke(new PlayerStats(userId));
+    }
+
+    public List<PlayerStats> LoadAllPlayers()
+    {
+        var list = new List<PlayerStats>();
+        try
+        {
+            if (!Directory.Exists(_basePath)) return list;
+            string[] files;
+            lock (_lock)
+                files = Directory.GetFiles(_basePath, "*.json");
+            for (int i = 0; i < files.Length; i++)
+            {
+                try
+                {
+                    string json;
+                    lock (_lock)
+                        json = File.ReadAllText(files[i]);
+                    var stats = JsonConvert.DeserializeObject<PlayerStats>(json);
+                    if (stats == null) continue;
+                    if (stats.UserId == 0)
+                    {
+                        var name = Path.GetFileNameWithoutExtension(files[i]);
+                        if (ulong.TryParse(name, out var uid))
+                            stats.UserId = uid;
+                    }
+                    if (stats.UserId == 0) continue;
+                    if (stats.StatsStorage == null)
+                        stats.StatsStorage = new Dictionary<LootType, Dictionary<string, float>>();
+                    list.Add(stats);
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[Leaderboard] LoadAll {Path.GetFileName(files[i])}: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] LoadAllPlayers: {ex.Message}");
+        }
+        return list;
     }
 
     public void SavePlayer(PlayerStats stats)

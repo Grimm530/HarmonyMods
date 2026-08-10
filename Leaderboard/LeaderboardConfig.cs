@@ -19,6 +19,12 @@ public class LeaderboardConfig
     /// </summary>
     [JsonProperty("CountNpcHitsForHitrate")] public bool CountNpcHitsForHitrate { get; set; } = true;
 
+    /// <summary>
+    /// When true, killing an NPC BasePlayer also increments Kill/"kills" (Discord "Killers").
+    /// On PvE servers leave false so Killers stays for real PvP and scientists go to "NPC kills" only.
+    /// </summary>
+    [JsonProperty("CountNpcKillsAsPlayerKills")] public bool CountNpcKillsAsPlayerKills { get; set; } = false;
+
     [JsonProperty("Relay")]
     public RelayConfig Relay { get; set; } = new();
 
@@ -34,8 +40,11 @@ public class LeaderboardConfig
 public class RelayConfig
 {
     [JsonProperty("Enabled")] public bool Enabled { get; set; } = false;
-    [JsonProperty("Url")] public string Url { get; set; } = ""; // POST JSON to bot
+    /// <summary>POST JSON to LeaderBot /relay. Prefer http://127.0.0.1:8765/relay when the bot runs on the same host.</summary>
+    [JsonProperty("Url")] public string Url { get; set; } = "";
     [JsonProperty("BatchIntervalSeconds")] public float BatchIntervalSeconds { get; set; } = 30f;
+    /// <summary>On mod load, push every player JSON (Players + all StatsStorage rows) to the relay so Discord/MySQL catch up.</summary>
+    [JsonProperty("SyncAllOnLoad")] public bool SyncAllOnLoad { get; set; } = true;
 }
 
 public class DiscordConfig

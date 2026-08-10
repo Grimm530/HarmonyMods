@@ -9,6 +9,7 @@
     <RootNamespace>Leaderboard</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
     <Reference Include="Rust.Data">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
     </Reference>

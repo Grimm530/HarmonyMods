@@ -71,6 +71,21 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 | BasePlayer.OnDestroy | Prefix | Disconnect → play time end, save |
 | Chat.say | Prefix | `/lb`, `/leaderboard`, `/stats` → open UI |
 
+## Event / raid recording (Harmony event mods)
+
+Patches (reflection — no hard DLL refs) credit wins when these mods are loaded:
+
+| Source | Stored as | Shortname |
+|--------|-----------|-----------|
+| RaidableBases `AwardRaiders` | `LootType.RaidableBases` | `easy` / `medium` / `hard` / `expert` / `nightmare` |
+| Convoy `EventLauncher.StopEvent` (PveMode owner) | `LootType.Event` | `Convoy` |
+| ArmoredTrain `EconomyManager.DefineEventWinner` | `LootType.Event` | `ArmoredTrainEvent` |
+| CHT `OnEntityDeath` (top damager / caller) | `LootType.Event` | `CHT` |
+
+Also: `API_OnEventWin(ulong userId, string eventName, int amount = 1)` via AppDomain `Leaderboard_Plugin`.
+
+**Discord categories** are configured on LeaderBot (`C:\!DiscordBots\UltimateLeaderboard-Discord-Bot-v1.2.0\config.json` → `auto_leaderboard.categories`). Presets: `points`, `playtime`, `killers`, `events`, `raids`, `explosive`, `npc_kills`, `resources`, `animals`, `builder`. Or full objects with `type` = `points` | `playtime` | `stat_sum` | `loot_type_total`.
+
 ## Leaderboard categories → data source
 
 Each in-game category is filled from specific **LootType**s and **recording methods** (Harmony patches). Data is stored in `StatsStorage[LootType][shortname]` and displayed in the Resources tab sections.

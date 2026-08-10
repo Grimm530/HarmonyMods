@@ -103,8 +103,9 @@ The **UltimateLeaderboard Discord Bot** can act as the relay endpoint and write 
 2. **Start the bot** – it will listen for `POST /relay` on the given port (default 8765).
 3. **Point the Harmony Leaderboard** at the bot: in `HarmonyConfig/Leaderboard.json` (next to your Rust server root) set:
    - `Relay.Enabled`: `true`
-   - `Relay.Url`: `http://<BOT_HOST>:8765/relay`  
-     Use the hostname or IP where the Discord bot runs (e.g. `http://132.148.183.172:8765/relay` if the bot runs on the same machine as MySQL). The Rust server must be able to reach this URL.
-4. **Firewall**: ensure port 8765 (or your chosen relay port) is open for inbound traffic from the game server to the bot host.
+   - `Relay.Url`: `http://127.0.0.1:8765/relay` when LeaderBot runs on the **same machine** as the Rust server (recommended).  
+     Use `http://<BOT_HOST>:8765/relay` only if the bot is on another host the server can reach. Do **not** use a public IP that does not forward port 8765.
+   - `Relay.SyncAllOnLoad`: `true` (default) — on `harmony.load Leaderboard`, pushes all player JSON into MySQL so Discord `/stats` is not empty after a wipe or fresh DB.
+4. **Firewall**: if the bot is remote, ensure port 8765 (or your chosen relay port) is open for inbound traffic from the game server to the bot host.
 
 Then Discord `/stats` and in-game leaderboard will both read/write the same MySQL database.

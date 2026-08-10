@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace Leaderboard.Relay;
 
@@ -13,6 +15,8 @@ namespace Leaderboard.Relay;
 /// </summary>
 public static class RelaySender
 {
+    private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+
     public static void SendBatch(string url, List<StatUpdatePayload> updates, List<PlayerStatsPayload> players = null)
     {
         if (string.IsNullOrEmpty(url)) return;
@@ -28,26 +32,31 @@ public static class RelaySender
 
     private static void PostJson(string url, string json, Action<long> onDone)
     {
-        if (string.IsNullOrEmpty(url)) return;
-        // Rust disallows non-secure connections; force HTTPS so relay works when endpoint supports it.
-        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-            url = "https://" + url.Substring(7);
-        try
+        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(json)) return;
+        // Use HttpClient (not UnityWebRequest) so loopback http:// relays work.
+        // Do not rewrite http→https — LeaderBot relay is plain HTTP.
+        _ = Task.Run(async () =>
         {
-            using var req = new UnityWebRequest(url, "POST");
-            req.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(json));
-            req.downloadHandler = new DownloadHandlerBuffer();
-            req.SetRequestHeader("Content-Type", "application/json");
-            req.SendWebRequest().completed += _ =>
+            try
             {
-                try { onDone?.Invoke(req.responseCode); } catch { }
-                req.Dispose();
-            };
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST: {ex.Message}");
-        }
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var resp = await Http.PostAsync(url, content).ConfigureAwait(false);
+                var code = (long)resp.StatusCode;
+                try { onDone?.Invoke(code); } catch { }
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(body) && body.Length > 200)
+                        body = body.Substring(0, 200);
+                    UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url} -> {code} {body}");
+                }
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url}: {ex.Message}");
+                try { onDone?.Invoke(0); } catch { }
+            }
+        });
     }
 }
 

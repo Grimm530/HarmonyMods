@@ -576,7 +576,20 @@ public static class LeaderboardUI
                 (LootType.ShotFired, "ammo.rifle.explosive", "Explosive 5.56 Rifle Ammo"),
                 (LootType.ExplosiveUsed, "ammo.grenadelauncher.he", "GL HE"),
                 (LootType.ExplosiveUsed, "explosive.timed", "C4"),
-                (LootType.ShotFired, "ammo.rocket.mlrs", "MLRS Rocket")
+                (LootType.ShotFired, "ammo.rocket.mlrs", "MLRS Rocket"),
+                (LootType.RaidableBases, "easy", "Raidable Easy"),
+                (LootType.RaidableBases, "medium", "Raidable Medium"),
+                (LootType.RaidableBases, "hard", "Raidable Hard"),
+                (LootType.RaidableBases, "expert", "Raidable Expert"),
+                (LootType.RaidableBases, "nightmare", "Raidable Nightmare")
+            }),
+            new ResourceSection("EVENTS", new[]
+            {
+                (LootType.Event, "Convoy", "Convoy"),
+                (LootType.Event, "ArmoredTrainEvent", "Armored Train"),
+                (LootType.Event, "CHT", "Custom Helicopter (CHT)"),
+                (LootType.Kill, "bradleyapc", "Bradley"),
+                (LootType.Kill, "helicopter", "Patrol Helicopter")
             }),
             new ResourceSection("RECYCLED", new[]
             {
@@ -998,25 +1011,34 @@ public static class LeaderboardUI
         return v;
     }
 
-    /// <summary>Total events completed: Bradley + Patrol Helicopter (from LootType.Kill).</summary>
+    /// <summary>Total events: LootType.Event (Convoy/AT/CHT) + Bradley/heli kills.</summary>
     private static float GetEventCount(PlayerStats stats)
     {
         if (stats == null) return 0f;
+        float events = stats.GetTotal(LootType.Event);
         stats.TryGetItem(LootType.Kill, "helicopter", out var heli);
         stats.TryGetItem(LootType.Kill, "bradleyapc", out var bradley);
-        return heli + bradley;
+        return events + heli + bradley;
     }
 
-    /// <summary>Favorite event: whichever of Bradley or Patrol Helicopter the player has completed more.</summary>
+    /// <summary>Favorite among Event keys and Bradley/Patrol Helicopter.</summary>
     private static string GetFavoriteEvent(PlayerStats stats)
     {
         if (stats == null) return "—";
+        string top = null;
+        float topVal = 0f;
+        foreach (var kv in stats.GetAll(LootType.Event))
+        {
+            if (kv.Value > topVal) { topVal = kv.Value; top = kv.Key; }
+        }
         stats.TryGetItem(LootType.Kill, "helicopter", out var heli);
         stats.TryGetItem(LootType.Kill, "bradleyapc", out var bradley);
-        if (heli <= 0 && bradley <= 0) return "—";
-        if (bradley > heli) return "Bradley";
-        if (heli > bradley) return "Patrol Helicopter";
-        return "Bradley"; // tie: either is fine
+        if (bradley > topVal) { topVal = bradley; top = "Bradley"; }
+        if (heli > topVal) { topVal = heli; top = "Patrol Helicopter"; }
+        if (topVal <= 0 || string.IsNullOrEmpty(top)) return "—";
+        if (top == "ArmoredTrainEvent") return "Armored Train";
+        if (top == "CHT") return "Custom Helicopter";
+        return FormatEventName(top);
     }
 
     private static string GetTopKey(PlayerStats stats, LootType type, out float value)

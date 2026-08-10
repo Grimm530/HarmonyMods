@@ -26,6 +26,7 @@ public class LeaderboardMod : IHarmonyModHooks
     public const string AppDomainUltimatePluginKey = "UltimateLeaderboard_Plugin";
 
     private readonly Dictionary<ulong, PlayerStats> _playerStats = new();
+    private readonly HashSet<ulong> _loadedFromDisk = new();
     private readonly Dictionary<ulong, float> _lastCommandTime = new();
     private readonly object _statsLock = new();
 
@@ -304,9 +305,173 @@ public class LeaderboardMod : IHarmonyModHooks
 
         RegisterCommands();
         StartLocalImagesLoadCoroutine();
+        // Populate in-memory cache from disk so Top 10 / Search / Discord sync include offline players.
+        LoadAllPlayersFromDisk();
         // Players already online when the mod loads never get PlayerInit again — start their sessions.
         RegisterConnectedPlayers();
+        // Event mods may load after this assembly — defer integration patches a few seconds.
+        ScheduleEventModPatches();
+        if (_config?.Relay?.Enabled == true && _config.Relay.SyncAllOnLoad && !string.IsNullOrEmpty(_config.Relay.Url))
+            SyncAllToRelay();
         UnityEngine.Debug.Log($"[Leaderboard] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}. Commands: /leaderboard, /lb, /stats");
+    }
+
+    private void ScheduleEventModPatches()
+    {
+        var runner = _tickObject != null ? _tickObject.GetComponent<LeaderboardTickBehaviour>() : null;
+        if (runner == null) return;
+        runner.StartCoroutine(DeferredEventModPatches());
+    }
+
+    private System.Collections.IEnumerator DeferredEventModPatches()
+    {
+        // Wait for other HarmonyMods/*.dll to finish loading (filesystem order is undefined).
+        yield return new UnityEngine.WaitForSeconds(5f);
+        try
+        {
+            if (_harmony != null)
+                Patches.EventModPatches.TryApply(_harmony);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] EventModPatches: {ex.Message}");
+        }
+    }
+
+    /// <summary>Load every player JSON into memory (required for Top 10 / Search when players are offline).</summary>
+    private void LoadAllPlayersFromDisk()
+    {
+        try
+        {
+            var all = _storage?.LoadAllPlayers();
+            if (all == null || all.Count == 0)
+            {
+                UnityEngine.Debug.Log("[Leaderboard] No player JSON files found on disk.");
+                return;
+            }
+            lock (_statsLock)
+            {
+                for (int i = 0; i < all.Count; i++)
+                {
+                    var s = all[i];
+                    if (s == null || s.UserId == 0) continue;
+                    // Prefer already-online session rows if RegisterConnectedPlayers ran first (it doesn't).
+                    if (_playerStats.TryGetValue(s.UserId, out var existing) && existing.IsOnline)
+                    {
+                        MergeDiskStatsInto(existing, s);
+                        _loadedFromDisk.Add(s.UserId);
+                        continue;
+                    }
+                    if (s.Points == 0f)
+                        s.Points = RecalculatePoints(s);
+                    _playerStats[s.UserId] = s;
+                    _loadedFromDisk.Add(s.UserId);
+                }
+            }
+            UnityEngine.Debug.Log($"[Leaderboard] Loaded {all.Count} players from disk into memory.");
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] LoadAllPlayersFromDisk: {ex.Message}");
+        }
+    }
+
+    /// <summary>Merge historical disk stats into an in-memory row (keeps live session fields).</summary>
+    private static void MergeDiskStatsInto(PlayerStats live, PlayerStats disk)
+    {
+        if (live == null || disk == null) return;
+        if (string.IsNullOrEmpty(live.LastName) || live.LastName == "Unknown")
+            live.LastName = disk.LastName ?? live.LastName;
+        if (live.TotalPlayTime < disk.TotalPlayTime)
+            live.TotalPlayTime = disk.TotalPlayTime;
+        if (live.Points == 0 && disk.Points != 0)
+            live.Points = disk.Points;
+        live.HiddenFromLeaderboard = disk.HiddenFromLeaderboard;
+        if (disk.StatsStorage == null) return;
+        if (live.StatsStorage == null)
+            live.StatsStorage = new Dictionary<LootType, Dictionary<string, float>>();
+        foreach (var typeKv in disk.StatsStorage)
+        {
+            if (!live.StatsStorage.TryGetValue(typeKv.Key, out var liveBag))
+                live.StatsStorage[typeKv.Key] = liveBag = new Dictionary<string, float>();
+            if (typeKv.Value == null) continue;
+            foreach (var itemKv in typeKv.Value)
+            {
+                if (!liveBag.TryGetValue(itemKv.Key, out var liveVal) || liveVal < itemKv.Value)
+                    liveBag[itemKv.Key] = itemKv.Value;
+            }
+        }
+    }
+
+    /// <summary>Push all in-memory players + StatsStorage rows to the Discord bot relay (MySQL).</summary>
+    public void SyncAllToRelay()
+    {
+        var url = _config?.Relay?.Url;
+        if (string.IsNullOrEmpty(url)) return;
+
+        List<StatUpdatePayload> updates;
+        List<PlayerStatsPayload> players;
+        lock (_statsLock)
+        {
+            updates = new List<StatUpdatePayload>();
+            players = new List<PlayerStatsPayload>(_playerStats.Count);
+            foreach (var kv in _playerStats)
+            {
+                var s = kv.Value;
+                if (s == null) continue;
+                players.Add(ToPlayerPayload(s));
+                if (s.StatsStorage == null) continue;
+                foreach (var typeKv in s.StatsStorage)
+                {
+                    if (typeKv.Value == null) continue;
+                    foreach (var itemKv in typeKv.Value)
+                    {
+                        updates.Add(new StatUpdatePayload
+                        {
+                            UserId = s.UserId,
+                            LootType = (int)typeKv.Key,
+                            ShortName = itemKv.Key,
+                            ItemValue = itemKv.Value
+                        });
+                    }
+                }
+            }
+        }
+
+        if (players.Count == 0 && updates.Count == 0) return;
+        // Batch to avoid huge single payloads (LeaderBot / MySQL).
+        const int playerChunk = 25;
+        const int updateChunk = 200;
+        int sentPlayers = 0, sentUpdates = 0;
+        for (int p = 0; p < players.Count || sentUpdates < updates.Count;)
+        {
+            var chunkPlayers = new List<PlayerStatsPayload>();
+            var chunkUpdates = new List<StatUpdatePayload>();
+            for (int i = 0; i < playerChunk && p < players.Count; i++, p++)
+                chunkPlayers.Add(players[p]);
+            for (int i = 0; i < updateChunk && sentUpdates < updates.Count; i++, sentUpdates++)
+                chunkUpdates.Add(updates[sentUpdates]);
+            if (chunkPlayers.Count == 0 && chunkUpdates.Count == 0) break;
+            RelaySender.SendBatch(url, chunkUpdates, chunkPlayers);
+            sentPlayers += chunkPlayers.Count;
+        }
+        UnityEngine.Debug.Log($"[Leaderboard] Relay SyncAll queued: {players.Count} players, {updates.Count} stat rows → {url}");
+    }
+
+    private static PlayerStatsPayload ToPlayerPayload(PlayerStats s)
+    {
+        return new PlayerStatsPayload
+        {
+            UserId = s.UserId,
+            LastIP = s.LastIP ?? "",
+            LastName = s.LastName ?? "",
+            ConnectTime = s.ConnectTime.ToString("o"),
+            DisconnectTime = s.DisconnectTime.ToString("o"),
+            // Use fixed-point (no thousand separators) — "N" produces "9,047.91" which breaks MySQL/bot parsers.
+            TotalPlayTime = s.TotalPlayTime.ToString("0.########", System.Globalization.CultureInfo.InvariantCulture),
+            Points = s.Points,
+            HiddenFromLeaderboard = s.HiddenFromLeaderboard ? 1 : 0
+        };
     }
 
     private void RegisterApiType()
@@ -332,6 +497,17 @@ public class LeaderboardMod : IHarmonyModHooks
             AppDomain.CurrentDomain.SetData(AppDomainUltimatePluginKey, null);
         }
         catch { }
+    }
+
+    /// <summary>
+    /// UltimateLeaderboard-compatible API: record an event win for Discord/in-game Events.
+    /// Call via AppDomain Leaderboard_Plugin: Call("API_OnEventWin", userId, "Convoy", 1)
+    /// </summary>
+    public void API_OnEventWin(ulong userId, string eventName, int amount = 1)
+    {
+        if (userId == 0 || string.IsNullOrEmpty(eventName) || amount == 0) return;
+        if (!SteamIdHelper.IsSteamId(userId)) return;
+        RecordStat(userId, LootType.Event, eventName, amount);
     }
 
     /// <summary>Dispatch for ServerPanel / AppDomain consumers (Plugin.Call).</summary>
@@ -381,9 +557,9 @@ public class LeaderboardMod : IHarmonyModHooks
             // Prefer ServerPanel embed; clear any leftover Overlay UI.
             LeaderboardUI.Destroy(player);
             SetOpenInServerPanel(player.userID, true);
-            // Ensure an in-memory row exists now so BuildForServerPanel never waits on disk I/O.
-            GetOrCreateStats(player.userID, player.displayName);
+            // Load from disk first (do NOT GetOrCreateStats beforehand — that skips disk load).
             EnsurePlayerLoaded(player.userID, player.displayName, null);
+            GetOrCreateStats(player.userID, player.displayName);
             var json = LeaderboardUI.BuildForServerPanel(player);
             if (string.IsNullOrWhiteSpace(json))
                 UnityEngine.Debug.LogWarning("[Leaderboard] API_OpenPlugin produced empty UI JSON");
@@ -682,19 +858,35 @@ public class LeaderboardMod : IHarmonyModHooks
     {
         lock (_statsLock)
         {
-            if (_playerStats.TryGetValue(userId, out var s))
+            if (_loadedFromDisk.Contains(userId) && _playerStats.TryGetValue(userId, out var s))
             {
-                s.LastName = displayName ?? s.LastName;
+                if (!string.IsNullOrEmpty(displayName))
+                    s.LastName = displayName;
                 onLoaded?.Invoke();
                 return;
             }
         }
-        _storage?.LoadPlayer(userId, stats =>
+        _storage?.LoadPlayer(userId, diskStats =>
         {
             lock (_statsLock)
             {
-                stats.LastName = displayName ?? stats.LastName;
-                _playerStats[userId] = stats;
+                if (!string.IsNullOrEmpty(displayName))
+                    diskStats.LastName = displayName;
+                else if (string.IsNullOrEmpty(diskStats.LastName))
+                    diskStats.LastName = "Unknown";
+
+                if (_playerStats.TryGetValue(userId, out var existing))
+                {
+                    // Race: RecordStat/GetOrCreate created a stub before disk load finished.
+                    MergeDiskStatsInto(existing, diskStats);
+                    if (!string.IsNullOrEmpty(displayName))
+                        existing.LastName = displayName;
+                }
+                else
+                {
+                    _playerStats[userId] = diskStats;
+                }
+                _loadedFromDisk.Add(userId);
             }
             onLoaded?.Invoke();
         });
@@ -735,8 +927,18 @@ public class LeaderboardMod : IHarmonyModHooks
     public void RecordStat(ulong userId, LootType type, string prefab, float value)
     {
         if (string.IsNullOrEmpty(prefab)) return;
+        // Prefer disk-backed row when available; avoid creating an empty stub that blocks load.
+        bool needsLoad;
+        lock (_statsLock)
+            needsLoad = !_loadedFromDisk.Contains(userId) && !_playerStats.ContainsKey(userId);
+        if (needsLoad)
+        {
+            EnsurePlayerLoaded(userId, null, () => RecordStat(userId, type, prefab, value));
+            return;
+        }
         var stats = GetOrCreateStats(userId, null);
         stats.AddStats(type, prefab, value);
+        stats.Points += GetScoreDelta(type, prefab, value);
 
         if (_config?.Relay?.Enabled == true && !string.IsNullOrEmpty(_config.Relay.Url))
         {
@@ -757,8 +959,18 @@ public class LeaderboardMod : IHarmonyModHooks
     public void RecordStatSet(ulong userId, LootType type, string prefab, float value)
     {
         if (string.IsNullOrEmpty(prefab)) return;
+        bool needsLoad;
+        lock (_statsLock)
+            needsLoad = !_loadedFromDisk.Contains(userId) && !_playerStats.ContainsKey(userId);
+        if (needsLoad)
+        {
+            EnsurePlayerLoaded(userId, null, () => RecordStatSet(userId, type, prefab, value));
+            return;
+        }
         var stats = GetOrCreateStats(userId, null);
+        stats.TryGetItem(type, prefab, out var oldValue);
         stats.SetStats(type, prefab, value);
+        stats.Points += GetScoreDelta(type, prefab, value - oldValue);
 
         if (_config?.Relay?.Enabled == true && !string.IsNullOrEmpty(_config.Relay.Url))
         {
@@ -773,6 +985,50 @@ public class LeaderboardMod : IHarmonyModHooks
                 });
             }
         }
+    }
+
+    /// <summary>UltimateLeaderboard-compatible default scores for Discord Points category.</summary>
+    private static float GetScoreDelta(LootType type, string prefab, float valueDelta)
+    {
+        if (valueDelta == 0f || string.IsNullOrEmpty(prefab)) return 0f;
+        float score = 0f;
+        switch (type)
+        {
+            case LootType.Kill:
+                if (prefab == "kills") score = 1f;
+                else if (prefab == "helicopter") score = 15f;
+                else if (prefab == "bradleyapc") score = 10f;
+                else if (prefab == "barrel") score = 0.1f;
+                else if (prefab == "scientistnpc_heavy") score = 2f;
+                break;
+            case LootType.Death:
+                if (prefab == "deaths") score = -1f;
+                break;
+            case LootType.Gather:
+                if (prefab == "stones") score = 0.1f;
+                else if (prefab == "sulfur.ore" || prefab == "metal.ore" || prefab == "hq.metal.ore") score = 0.5f;
+                break;
+            case LootType.LootItems:
+                if (prefab == "supply_drop") score = 3f;
+                else if (prefab == "crate_normal") score = 0.3f;
+                else if (prefab == "crate_elite") score = 0.5f;
+                else if (prefab == "bradley_crate" || prefab == "heli_crate") score = 5f;
+                break;
+        }
+        return score * valueDelta;
+    }
+
+    private static float RecalculatePoints(PlayerStats stats)
+    {
+        if (stats?.StatsStorage == null) return 0f;
+        float points = 0f;
+        foreach (var typeKv in stats.StatsStorage)
+        {
+            if (typeKv.Value == null) continue;
+            foreach (var itemKv in typeKv.Value)
+                points += GetScoreDelta(typeKv.Key, itemKv.Key, itemKv.Value);
+        }
+        return points;
     }
 
     public LeaderboardConfig GetConfig() => _config;
@@ -838,17 +1094,7 @@ public class LeaderboardMod : IHarmonyModHooks
             foreach (var uid in userIds)
             {
                 if (!_playerStats.TryGetValue(uid, out var s)) continue;
-                players.Add(new PlayerStatsPayload
-                {
-                    UserId = s.UserId,
-                    LastIP = s.LastIP ?? "",
-                    LastName = s.LastName ?? "",
-                    ConnectTime = s.ConnectTime.ToString("o"),
-                    DisconnectTime = s.DisconnectTime.ToString("o"),
-                    TotalPlayTime = s.TotalPlayTime.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
-                    Points = s.Points,
-                    HiddenFromLeaderboard = s.HiddenFromLeaderboard ? 1 : 0
-                });
+                players.Add(ToPlayerPayload(s));
             }
         }
 

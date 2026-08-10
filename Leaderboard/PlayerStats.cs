@@ -74,21 +74,45 @@ public class PlayerStats
     public int GetAnimalKills()
     {
         if (!StatsStorage.TryGetValue(LootType.Kill, out var storage)) return 0;
-        var exclude = new HashSet<string> { "kills", "kill_sleepers", "max_distance", "helicopter", "bradleyapc" };
+        var exclude = new HashSet<string> { "kills", "kill_sleepers", "max_distance", "helicopter", "bradleyapc", "raidbase_npc", "horde_npc" };
         int sum = 0;
         foreach (var kv in storage)
-            if (!exclude.Contains(kv.Key)) sum += (int)kv.Value;
+        {
+            var key = kv.Key ?? "";
+            if (exclude.Contains(key)) continue;
+            if (key.EndsWith(".corpse", StringComparison.OrdinalIgnoreCase)) continue;
+            if (key.IndexOf("scientist", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (key.IndexOf("npc", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            // Deployables / barrels are not animals
+            if (key.IndexOf("barrel", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (key.IndexOf("deployed", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (key.IndexOf("door", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            sum += (int)kv.Value;
+        }
         return sum;
     }
 
-    /// <summary>Total NPC kills (e.g. helicopter, bradley, scientists).</summary>
+    /// <summary>Total NPC kills (scientists/dwellers by prefab + heli/Bradley).</summary>
     public int GetNpcKills()
     {
         if (!StatsStorage.TryGetValue(LootType.Kill, out var storage)) return 0;
-        var npcKeys = new HashSet<string> { "helicopter", "bradleyapc" };
+        var exclude = new HashSet<string> { "kills", "kill_sleepers", "max_distance" };
         int sum = 0;
         foreach (var kv in storage)
-            if (npcKeys.Contains(kv.Key)) sum += (int)kv.Value;
+        {
+            var key = kv.Key ?? "";
+            if (exclude.Contains(key)) continue;
+            // Animals are counted separately; skip common animal prefabs for the NPC total.
+            if (key is "bear" or "polarbear" or "boar" or "chicken" or "stag" or "wolf2" or "panther"
+                or "crocodile" or "snake.entity" or "tiger" or "simpleshark")
+                continue;
+            if (key.EndsWith(".corpse", System.StringComparison.OrdinalIgnoreCase)) continue;
+            // Scientists, dwellers, heli, bradley, custom NPC keys, etc.
+            if (key.IndexOf("scientist", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || key.IndexOf("npc", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || key is "helicopter" or "bradleyapc" or "raidbase_npc" or "horde_npc")
+                sum += (int)kv.Value;
+        }
         return sum;
     }
 
