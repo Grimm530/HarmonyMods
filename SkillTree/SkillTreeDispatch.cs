@@ -576,6 +576,27 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnTimedExplosiveExplode: " + ex.Message); }
         }
 
+        public static object Dispatch_OnExplosiveDud(DudTimedExplosive dud)
+        {
+            var inst = Instance;
+            if (inst == null || dud == null) return null;
+            try
+            {
+                var mi = typeof(SkillTree).GetMethod("OnExplosiveDud",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                return mi?.Invoke(inst, new object[] { dud });
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnExplosiveDud: " + ex.Message); return null; }
+        }
+
+        public static void Dispatch_OnBonusItemDropped(Item item, BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null || item == null || player == null) return;
+            try { inst.OnBonusItemDropped(item, player); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnBonusItemDropped: " + ex.Message); }
+        }
+
         // ---- Entity spawn / kill / save ----------------------------------
 
         public static void Dispatch_OnEntitySpawned(BaseNetworkable entity)

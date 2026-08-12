@@ -90,9 +90,31 @@ ImageLibrary, Economics, ServerRewards, RaidableBases, ZoneManager, and other op
 - Heli XP via `OnPatrolHelicopterTakeDamage` (wired in Hurt patch + Dispatch)
 - Preserved port adaptations: `CustomSkillTreeDataDirectory`, OnFuelConsume NRE fix, scoreboard `TryParse`, `WoundingTick` medkit chance
 
+## Yield / gather patches (must match Oxide timing)
+
+SkillTree yield buffs mutate the live `Item` (or `itemList`) **before** `GiveItem`. Broken postfix/`item=null` ports silently no-op because `HandleDispenser` returns on `item == null`.
+
+| Oxide hook | Game site | Patch |
+|---|---|---|
+| `OnDispenserGather` | `ResourceDispenser.GiveResourceFromItem` after `ItemManager.CreateByItemID` | Transpiler → `Dispatch_OnDispenserGather(dispenser, player, item)` |
+| `OnDispenserBonus` | `ResourceDispenser.AssignFinishBonus` after `ItemManager.Create` | Transpiler → `Dispatch_OnDispenserBonus(dispenser, player, item)` |
+| `OnCollectiblePickup` | `CollectibleEntity.DoPickup` start (mutates `itemList`) | Prefix |
+| `OnGrowableGathered` | `GrowableEntity.GiveFruit(player, amount, applyCondition, eat)` after Create | Transpiler → `Dispatch_OnGrowableGathered(plant, item, player)` |
+| `CanTakeCutting` | `GrowableEntity.TakeClones` (bonus clones side-effect; returns null) | Prefix |
+
+## Perk hook wiring (`Patch_PerkHooks.cs`)
+
+Many buffs had `Dispatch_*` stubs with **no Harmony callers** (dead copies). Callers now replace Oxide `Interface.CallHook` at the game site (or Prefix where cancel/`ref` result is needed).
+
+Previously dead / miswired (now fixed): Free_Bullet_Chance, Extended_Mag, Research_Refund, Lock_Picker, Recycler_Speed/Efficiency, Extra_Fish / Fishing_Luck, Vehicle_Mechanic, Mining/Woodcutting Hotspot, Double_Bandage_Heal, food/tea stack (Rationer/Iron_Stomach/Tea_*), Rocket_Velocity, Dudless_Explosive, scientist kill XP, Node_Spawn_Chance, OnBonusItemDropped magnet, metal-detector dig XP, flyhack Roadrunner, Bear OnNpcTarget, Build_Craft card swipe.
+
+Still external: **ZoneManager NoSkillZones** (needs ZoneManager enter/exit bridge → `Dispatch_OnEnterZone` / `OnExitZone`).
+
+On load, watch for `[SkillTree] CallHookReplace: did not find '…'` — means a Rust IL change broke that hook replace.
+
 ## Known Compile Risks
 
 - `Patch_MiscGameHooks.cs`: Several game methods (`AntiHack.ReportViolation`, `ResearchTable.ResearchPrice`, `ScientistNPC.CanTargetEntity`, `BaseMelee.ServerUse`) use internal method names that may differ across Rust updates. If any patch class fails to compile, comment it out and add to a `[HarmonyPatch]` manually or remove from `.csproj`.
 - `Patch_ItemCrafter.cs`: `ItemCrafter.CraftItem` postfix applies `Craft_Speed`. `RepairBench.RepairAnItem` prefix applies `MaxRepair` / `Free_Repairs`.
 - `Patch_MiscGameHooks.cs` `BaseNetworkable_Spawned_Patch`: May be high-frequency. Monitor performance on busy servers.
-- Fish hooks (`OnFishCatch`, `CanCatchFish`, `OnFishingStopped`) are not patched via game methods — SkillTree's own internal `[HarmonyPatch(BaseFishingRod, "Server_RequestCast")]` / `FishLookup.GetFish` handles these from within the plugin partial class.
+- Fish bait/bite/tension apply stay on internal plugin Harmony patches; catch/luck/XP use `Patch_PerkHooks`.

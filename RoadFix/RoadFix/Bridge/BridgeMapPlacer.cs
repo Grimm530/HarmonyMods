@@ -108,10 +108,14 @@ internal static class BridgeMapPlacer
 
         if (cfg.DebugLogging)
         {
+            Vector3 pathMid = BridgeTerrain.SamplePoint(crossing.Path, (crossing.StartDist + crossing.EndDist) * 0.5f);
+            float terrainMid = TerrainMeta.HeightMap.GetHeight(pathMid);
             Debug.Log(
                 $"[RoadFix] Queued bridge from {Path.GetFileName(fullPath)} at {crossing.Center} " +
                 $"span={crossing.SpanLength:F1} nodes={crossing.NodeCount} lengthScale={lengthScale:F2} " +
                 $"nodeY={yPrev:F1}→{yNext:F1} pitch={pitchDeg:F1}° pivot={pivotWorld} " +
+                $"pathMidY={pathMid.y:F2} terrainMidY={terrainMid:F2} " +
+                $"banks={crossing.StartDeckY:F2}→{crossing.EndDeckY:F2} bedDetect={crossing.RiverBedY:F2} " +
                 $"heightOffset={cfg.BridgeHeightOffset} yaw={cfg.BridgeYawOffset} axis={cfg.BridgeLengthAxis} " +
                 $"serialized={serialized} deferred={deferred} skipped={skipped}");
         }

@@ -1,5 +1,6 @@
-// OnCollectiblePickup — prefix on CollectibleEntity.DoPickup.
-// Must be Prefix because DoPickup ends with Kill(), so a postfix sees a dead entity.
+// OnCollectiblePickup — Prefix on CollectibleEntity.DoPickup (matches Oxide timing).
+// SkillTree mutates entity.itemList amounts before ItemManager.Create / GiveItem.
+// Must be Prefix: DoPickup ends with Kill(), and yield must apply before items are created.
 using HarmonyLib;
 using UnityEngine;
 using STPlugin = Oxide.Plugins.SkillTree;
@@ -12,7 +13,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(CollectibleEntity __instance, BasePlayer reciever)
         {
-            if (__instance == null || reciever == null) return;
+            if (__instance == null || reciever == null || __instance.itemList == null) return;
             try { STPlugin.Dispatch_OnCollectiblePickup(__instance, reciever); }
             catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnCollectiblePickup: " + ex.Message); }
         }

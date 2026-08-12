@@ -176,17 +176,165 @@ namespace ZombieHorde
             private readonly Dictionary<string, HashSet<string>> _userPerms =
                 new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             private string PermsPath => Path.Combine(DataDirectory, "ZombieHorde", "permissions.json");
+
+            // 0Permissions (Permissions_ApiType) — preferred on this server
+            private Type _permType;
+            private MethodInfo _harmonyUserHas;
+            private MethodInfo _harmonyRegister;
+            private MethodInfo _harmonyGrant;
+            private MethodInfo _harmonyRevoke;
+            private MethodInfo _harmonyRegisterReady;
+            private int _boundGen = -1;
+            private bool _resolveAttempted;
+            private bool _loggedLink;
+            private Action _readyCallback;
+
+            // Oxide Permission library fallback
             private object _oxidePerm;
             private MethodInfo _userHasPermission;
             private MethodInfo _grantUserPermission;
             private MethodInfo _revokeUserPermission;
             private MethodInfo _registerPermission;
-            private bool _resolved;
+            private object _oxidePluginOwner;
+            private bool _oxideResolved;
+            private bool _localLoaded;
 
-            private void Resolve()
+            private static int ReadGeneration()
             {
-                if (_resolved) return;
-                _resolved = true;
+                try
+                {
+                    if (AppDomain.CurrentDomain.GetData("Permissions_Generation") is int g)
+                        return g;
+                }
+                catch { }
+                return 0;
+            }
+
+            private static object ReadLiveInstance(Type type)
+            {
+                if (type == null) return null;
+                try
+                {
+                    return type.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                }
+                catch { return null; }
+            }
+
+            private static Type ResolveLivePermType()
+            {
+                var fromDomain = AppDomain.CurrentDomain.GetData("Permissions_ApiType") as Type;
+                if (fromDomain != null && ReadLiveInstance(fromDomain) != null)
+                    return fromDomain;
+
+                Type fallback = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
+                    {
+                        var t = asm.GetType("PermissionsHarmony.PermissionsMod");
+                        if (t == null) continue;
+                        if (ReadLiveInstance(t) != null)
+                            return t;
+                        fallback ??= t;
+                    }
+                    catch { }
+                }
+                return fromDomain ?? fallback;
+            }
+
+            private void EnsureHarmonyBound()
+            {
+                int gen = ReadGeneration();
+                object live = ReadLiveInstance(_permType);
+                if (_permType != null && _boundGen == gen && live != null && _harmonyUserHas != null)
+                    return;
+
+                try
+                {
+                    _permType = null;
+                    _harmonyUserHas = _harmonyRegister = _harmonyGrant = _harmonyRevoke = _harmonyRegisterReady = null;
+                    _permType = ResolveLivePermType();
+                    live = ReadLiveInstance(_permType);
+                    if (_permType == null || live == null)
+                    {
+                        if (!_resolveAttempted)
+                        {
+                            _resolveAttempted = true;
+                            Debug.LogWarning("[ZombieHorde] 0Permissions not ready yet — will use Oxide/local until Permissions_ApiType is available.");
+                        }
+                        return;
+                    }
+
+                    _resolveAttempted = false;
+                    BindingFlags sf = BindingFlags.Public | BindingFlags.Static;
+                    _harmonyUserHas = _permType.GetMethod("UserHasPermission", sf, null, new[] { typeof(string), typeof(string) }, null);
+                    _harmonyRegister = _permType.GetMethod("RegisterPermission", sf, null, new[] { typeof(string) }, null);
+                    _harmonyGrant = _permType.GetMethod("GrantUserPermission", sf, null, new[] { typeof(string), typeof(string) }, null);
+                    _harmonyRevoke = _permType.GetMethod("RevokeUserPermission", sf, null, new[] { typeof(string), typeof(string) }, null);
+                    _harmonyRegisterReady = _permType.GetMethod("RegisterReadyCallback", sf, null, new[] { typeof(Action) }, null);
+                    _boundGen = gen;
+
+                    if (!_loggedLink)
+                    {
+                        _loggedLink = true;
+                        Debug.Log("[ZombieHorde] Linked to 0Permissions (perm grant / zombiehorde.*).");
+                    }
+                    else
+                        Debug.Log("[ZombieHorde] Re-linked to 0Permissions (gen=" + gen + ").");
+                }
+                catch (Exception ex)
+                {
+                    _permType = null;
+                    Debug.LogWarning("[ZombieHorde] 0Permissions bind failed: " + ex.Message);
+                }
+            }
+
+            private void EnsureReadyCallback()
+            {
+                if (_readyCallback != null) return;
+                _readyCallback = ReplayRegistered;
+                EnsureHarmonyBound();
+                try
+                {
+                    if (_harmonyRegisterReady != null)
+                    {
+                        _harmonyRegisterReady.Invoke(null, new object[] { _readyCallback });
+                        return;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var list = AppDomain.CurrentDomain.GetData("Permissions_ReadyCallbacks") as System.Collections.IList;
+                    if (list == null)
+                    {
+                        list = new List<Action>();
+                        AppDomain.CurrentDomain.SetData("Permissions_ReadyCallbacks", list);
+                    }
+                    lock (list)
+                    {
+                        if (!list.Contains(_readyCallback))
+                            list.Add(_readyCallback);
+                    }
+                }
+                catch { }
+            }
+
+            private void ReplayRegistered()
+            {
+                EnsureHarmonyBound();
+                foreach (var perm in _registered)
+                {
+                    try { _harmonyRegister?.Invoke(null, new object[] { perm }); }
+                    catch { }
+                }
+            }
+
+            private void ResolveOxide()
+            {
+                if (_oxideResolved) return;
+                _oxideResolved = true;
                 try
                 {
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -195,23 +343,80 @@ namespace ZombieHorde
                         if (iface == null) continue;
                         object oxide = iface.GetProperty("Oxide", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
                         if (oxide == null) continue;
-                        MethodInfo getLib = oxide.GetType().GetMethod("GetLibrary", new[] { typeof(string) });
-                        if (getLib != null)
-                            _oxidePerm = getLib.Invoke(oxide, new object[] { "Permission" });
+
+                        // OxideMod.GetLibrary<T>(string name = null) is generic — do not Invoke the open form.
+                        Type permLibType = asm.GetType("Oxide.Core.Libraries.Permission");
+                        if (permLibType == null) continue;
+
+                        MethodInfo getLibOpen = null;
+                        foreach (MethodInfo m in oxide.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                        {
+                            if (m.Name != "GetLibrary" || !m.IsGenericMethodDefinition) continue;
+                            ParameterInfo[] ps = m.GetParameters();
+                            if (ps.Length <= 1)
+                            {
+                                getLibOpen = m;
+                                break;
+                            }
+                        }
+                        if (getLibOpen == null) continue;
+
+                        MethodInfo getLib = getLibOpen.MakeGenericMethod(permLibType);
+                        object[] invokeArgs = getLib.GetParameters().Length == 0
+                            ? Array.Empty<object>()
+                            : new object[] { null };
+                        _oxidePerm = getLib.Invoke(oxide, invokeArgs);
                         if (_oxidePerm == null) continue;
+
                         Type t = _oxidePerm.GetType();
                         _userHasPermission = t.GetMethod("UserHasPermission", new[] { typeof(string), typeof(string) });
                         _grantUserPermission = t.GetMethod("GrantUserPermission", new[] { typeof(string), typeof(string), typeof(object) });
                         _revokeUserPermission = t.GetMethod("RevokeUserPermission", new[] { typeof(string), typeof(string) });
                         _registerPermission = t.GetMethod("RegisterPermission", new[] { typeof(string), typeof(object) });
-                        LoadLocal();
+                        _oxidePluginOwner = FindOxidePluginOwner(oxide);
+                        Debug.Log("[ZombieHorde] Linked to Oxide Permission library (perm.grant).");
                         return;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning("[ZombieHorde] Oxide permission resolve: " + ex.Message);
+                    Debug.LogWarning("[ZombieHorde] Oxide permission resolve: " + (ex.InnerException ?? ex).Message);
+                    _oxidePerm = null;
                 }
+            }
+
+            /// <summary>
+            /// Oxide RegisterPermission requires a real Plugin owner (dictionary key + OnRemovedFromManager).
+            /// Prefer RustCore; otherwise any loaded plugin.
+            /// </summary>
+            private static object FindOxidePluginOwner(object oxide)
+            {
+                try
+                {
+                    object rpm = oxide.GetType().GetProperty("RootPluginManager")?.GetValue(oxide);
+                    if (rpm == null) return null;
+                    MethodInfo getPlugins = rpm.GetType().GetMethod("GetPlugins", Type.EmptyTypes);
+                    if (getPlugins?.Invoke(rpm, null) is not System.Collections.IEnumerable plugins)
+                        return null;
+
+                    object fallback = null;
+                    foreach (object plugin in plugins)
+                    {
+                        if (plugin == null) continue;
+                        string name = plugin.GetType().GetProperty("Name")?.GetValue(plugin) as string;
+                        if (string.Equals(name, "RustCore", StringComparison.OrdinalIgnoreCase))
+                            return plugin;
+                        fallback ??= plugin;
+                    }
+                    return fallback;
+                }
+                catch { return null; }
+            }
+
+            private void EnsureLocalLoaded()
+            {
+                if (_localLoaded) return;
+                _localLoaded = true;
                 LoadLocal();
             }
 
@@ -251,21 +456,42 @@ namespace ZombieHorde
 
             public void RegisterPermission(string name, object owner)
             {
-                Resolve();
+                if (string.IsNullOrWhiteSpace(name)) return;
                 _registered.Add(name);
+
+                EnsureHarmonyBound();
+                EnsureReadyCallback();
+                try
+                {
+                    _harmonyRegister?.Invoke(null, new object[] { name });
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[ZombieHorde] 0Permissions RegisterPermission(" + name + "): " + (ex.InnerException ?? ex).Message);
+                }
+
+                ResolveOxide();
                 if (_oxidePerm != null && _registerPermission != null)
                 {
-                    try { _registerPermission.Invoke(_oxidePerm, new object[] { name, owner }); }
-                    catch { }
+                    // Oxide RegisterPermission requires a real Oxide Plugin owner — never pass ZombieHordePlugin.
+                    if (_oxidePluginOwner != null)
+                    {
+                        try { _registerPermission.Invoke(_oxidePerm, new object[] { name, _oxidePluginOwner }); }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning("[ZombieHorde] Oxide RegisterPermission(" + name + "): " + (ex.InnerException ?? ex).Message);
+                        }
+                    }
+                    else
+                        Debug.LogWarning("[ZombieHorde] Oxide Permission linked but no Plugin owner found — use: perm grant user <id> " + name);
                 }
             }
 
             public bool UserHasPermission(string userId, string perm)
             {
-                Resolve();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(perm)) return false;
 
-                // Admins always pass admin permission
+                // Admins always pass admin permission (command access only — not ignore/deny perms).
                 if (perm.Equals("zombiehorde.admin", StringComparison.OrdinalIgnoreCase))
                 {
                     if (ulong.TryParse(userId, out ulong uid))
@@ -276,23 +502,47 @@ namespace ZombieHorde
                     }
                 }
 
+                EnsureHarmonyBound();
+                if (_harmonyUserHas != null)
+                {
+                    try
+                    {
+                        if (_harmonyUserHas.Invoke(null, new object[] { userId, perm }) is bool ok)
+                            return ok;
+                    }
+                    catch { }
+                }
+
+                ResolveOxide();
                 if (_oxidePerm != null && _userHasPermission != null)
                 {
                     try { return (bool)_userHasPermission.Invoke(_oxidePerm, new object[] { userId, perm }); }
                     catch { }
                 }
+
+                EnsureLocalLoaded();
                 return _userPerms.TryGetValue(userId, out var set) && set.Contains(perm);
             }
 
             public void GrantUserPermission(string userId, string perm, object owner = null)
             {
-                Resolve();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(perm)) return;
+
+                EnsureHarmonyBound();
+                if (_harmonyGrant != null)
+                {
+                    try { _harmonyGrant.Invoke(null, new object[] { userId, perm }); return; }
+                    catch { }
+                }
+
+                ResolveOxide();
                 if (_oxidePerm != null && _grantUserPermission != null)
                 {
                     try { _grantUserPermission.Invoke(_oxidePerm, new object[] { userId, perm, owner }); return; }
                     catch { }
                 }
+
+                EnsureLocalLoaded();
                 if (!_userPerms.TryGetValue(userId, out var set))
                     _userPerms[userId] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (set.Add(perm)) SaveLocal();
@@ -300,13 +550,23 @@ namespace ZombieHorde
 
             public void RevokeUserPermission(string userId, string perm)
             {
-                Resolve();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(perm)) return;
+
+                EnsureHarmonyBound();
+                if (_harmonyRevoke != null)
+                {
+                    try { _harmonyRevoke.Invoke(null, new object[] { userId, perm }); return; }
+                    catch { }
+                }
+
+                ResolveOxide();
                 if (_oxidePerm != null && _revokeUserPermission != null)
                 {
                     try { _revokeUserPermission.Invoke(_oxidePerm, new object[] { userId, perm }); return; }
                     catch { }
                 }
+
+                EnsureLocalLoaded();
                 if (_userPerms.TryGetValue(userId, out var set) && set.Remove(perm))
                     SaveLocal();
             }
@@ -334,10 +594,13 @@ namespace ZombieHorde
 
         public sealed class PluginRef
         {
+            private const string KitsAppDomainApiKey = "Kits_ApiType";
+            private const string KitsAppDomainPluginKey = "Kits_Plugin";
+
             private readonly string _name;
             private object _plugin;
             private MethodInfo _call;
-            private bool _tried;
+            private bool _loggedKitsBind;
 
             public PluginRef(string name) { _name = name; }
 
@@ -368,8 +631,27 @@ namespace ZombieHorde
 
             private void Resolve()
             {
-                if (_tried) return;
-                _tried = true;
+                // Keep retrying when unbound so late-loaded Harmony Kits still works.
+                if (_plugin != null && !IsKitsHarmonyBridge(_plugin)) return;
+
+                if (string.Equals(_name, "Kits", StringComparison.OrdinalIgnoreCase))
+                {
+                    object wrapper = TryGetKitsPluginWrapper();
+                    if (wrapper != null)
+                    {
+                        _plugin = wrapper;
+                        _call = null;
+                        if (!_loggedKitsBind)
+                        {
+                            _loggedKitsBind = true;
+                            Debug.Log("[ZombieHorde] Kits resolve: bound Harmony Kits_Plugin (GetKitInfo/GiveKit)");
+                        }
+                        return;
+                    }
+                    _plugin = null;
+                    _call = null;
+                }
+
                 try
                 {
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -382,13 +664,40 @@ namespace ZombieHorde
                         if (rpm == null) continue;
                         MethodInfo get = rpm.GetType().GetMethod("GetPlugin", new[] { typeof(string) });
                         _plugin = get?.Invoke(rpm, new object[] { _name });
-                        if (_plugin != null) return;
+                        if (_plugin != null)
+                        {
+                            _call = null;
+                            return;
+                        }
                     }
                 }
                 catch { }
             }
 
-            public void Reset() { _tried = false; _plugin = null; _call = null; }
+            private static bool IsKitsHarmonyBridge(object plugin)
+            {
+                if (plugin == null) return false;
+                string typeName = plugin.GetType().FullName ?? "";
+                return typeName.IndexOf("KitsPluginWrapper", StringComparison.Ordinal) >= 0
+                    || typeName.IndexOf("KitsHarmonyMod", StringComparison.Ordinal) >= 0;
+            }
+
+            private static object TryGetKitsPluginWrapper()
+            {
+                try
+                {
+                    object wrapper = AppDomain.CurrentDomain.GetData(KitsAppDomainPluginKey);
+                    if (wrapper != null) return wrapper;
+
+                    Type api = AppDomain.CurrentDomain.GetData(KitsAppDomainApiKey) as Type;
+                    if (api == null) return null;
+                    PropertyInfo instanceProp = api.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                    return instanceProp?.GetValue(null);
+                }
+                catch { return null; }
+            }
+
+            public void Reset() { _plugin = null; _call = null; }
         }
 
         private static readonly List<ConsoleSystem.Command> Commands = new List<ConsoleSystem.Command>();

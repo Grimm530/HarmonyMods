@@ -169,6 +169,7 @@ namespace PlatformSync
             private MethodInfo _removeUserGroup;
             private MethodInfo _groupExists;
             private MethodInfo _createGroup;
+            private MethodInfo _getUserIdsInGroup;
             private MethodInfo _registerReady;
             private int _boundGen = -1;
             private bool _resolveAttempted;
@@ -242,7 +243,7 @@ namespace PlatformSync
             private void ClearBind()
             {
                 _permType = null;
-                _userHasGroup = _addUserGroup = _removeUserGroup = _groupExists = _createGroup = _registerReady = null;
+                _userHasGroup = _addUserGroup = _removeUserGroup = _groupExists = _createGroup = _getUserIdsInGroup = _registerReady = null;
             }
 
             private void EnsureBound()
@@ -275,6 +276,7 @@ namespace PlatformSync
                     _removeUserGroup = _permType.GetMethod("RemoveUserGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
                     _groupExists = _permType.GetMethod("GroupExists", sf, null, new[] { typeof(string) }, null);
                     _createGroup = _permType.GetMethod("CreateGroup", sf, null, new[] { typeof(string), typeof(string), typeof(int) }, null);
+                    _getUserIdsInGroup = _permType.GetMethod("GetUserIdsInGroup", sf, null, new[] { typeof(string) }, null);
                     _registerReady = _permType.GetMethod("RegisterReadyCallback", sf, null, new[] { typeof(Action) }, null);
                     _boundGen = gen;
 
@@ -475,6 +477,56 @@ namespace PlatformSync
                 if (_localGroups.TryGetValue(userId, out var set) && set.Remove(groupName))
                     SaveLocalGroups();
             }
+
+            /// <summary>
+            /// Steam IDs in a permission group. Prefers 0Permissions; falls back to local groups.json mirror.
+            /// Never deletes user records — callers should only add/remove group membership.
+            /// </summary>
+            public List<string> GetUsersInGroup(string groupName)
+            {
+                EnsureBound();
+                var result = new List<string>();
+                if (string.IsNullOrWhiteSpace(groupName)) return result;
+
+                if (_getUserIdsInGroup != null)
+                {
+                    try
+                    {
+                        var raw = _getUserIdsInGroup.Invoke(null, new object[] { groupName });
+                        if (raw is string[] arr)
+                        {
+                            for (int i = 0; i < arr.Length; i++)
+                            {
+                                if (!string.IsNullOrWhiteSpace(arr[i]))
+                                    result.Add(arr[i].Trim());
+                            }
+                            return result;
+                        }
+                        if (raw is IEnumerable enumerable)
+                        {
+                            foreach (var item in enumerable)
+                            {
+                                var s = item?.ToString();
+                                if (!string.IsNullOrWhiteSpace(s))
+                                    result.Add(s.Trim());
+                            }
+                            return result;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[PlatformSync] GetUsersInGroup: " + ex.Message);
+                    }
+                }
+
+                EnsureLocalLoaded();
+                foreach (var kv in _localGroups)
+                {
+                    if (kv.Value != null && kv.Value.Contains(groupName))
+                        result.Add(kv.Key);
+                }
+                return result;
+            }
         }
 
         #endregion
@@ -614,25 +666,68 @@ namespace PlatformSync
 
         private static readonly List<ConsoleSystem.Command> Commands = new List<ConsoleSystem.Command>();
 
+        /// <summary>
+        /// Register a console command. Dotted names (e.g. ps.recheck) use Parent/Name so the
+        /// console finds them as ps.recheck — not global.ps.recheck.
+        /// </summary>
         public static void RegisterConsoleCommand(string name, Action<ConsoleSystem.Arg> handler, bool adminOnly = true)
         {
+            if (string.IsNullOrWhiteSpace(name) || handler == null) return;
             try
             {
+                string cmdName = name;
+                string cmdParent = "";
+                string fullName;
+                string dictKey;
+
+                int dot = name.IndexOf('.');
+                if (dot > 0 && dot < name.Length - 1)
+                {
+                    cmdParent = name.Substring(0, dot);
+                    cmdName = name.Substring(dot + 1);
+                    fullName = cmdParent + "." + cmdName;
+                    dictKey = fullName;
+                }
+                else
+                {
+                    fullName = "global." + name;
+                    dictKey = fullName;
+                }
+
                 var cmd = new ConsoleSystem.Command
                 {
-                    Name = name,
-                    FullName = "global." + name,
+                    Name = cmdName,
+                    Parent = cmdParent,
+                    FullName = fullName,
                     Variable = false,
                     ServerAdmin = adminOnly,
                     ServerUser = !adminOnly,
                     AllowRunFromServer = true,
-                    Call = arg => handler(arg)
+                    Call = arg =>
+                    {
+                        if (arg == null) return;
+                        if (adminOnly && arg.Connection != null && !arg.IsAdmin)
+                        {
+                            arg.ReplyWith("Permission denied (admin only).");
+                            return;
+                        }
+                        try { handler(arg); }
+                        catch (Exception ex) { arg.ReplyWith("Error: " + ex.Message); }
+                    }
                 };
                 Commands.Add(cmd);
+
                 var dict = ConsoleSystem.Index.Server.Dict;
                 var globalDict = ConsoleSystem.Index.Server.GlobalDict;
-                if (dict != null) dict["global." + name] = cmd;
-                if (globalDict != null) globalDict[name] = cmd;
+                if (dict != null)
+                {
+                    dict[dictKey] = cmd;
+                    // Some RCON clients look up FullName explicitly
+                    if (!string.Equals(dictKey, fullName, StringComparison.Ordinal))
+                        dict[fullName] = cmd;
+                }
+                if (string.IsNullOrEmpty(cmdParent) && globalDict != null)
+                    globalDict[cmdName] = cmd;
             }
             catch (Exception ex)
             {
@@ -648,8 +743,15 @@ namespace PlatformSync
                 var globalDict = ConsoleSystem.Index.Server.GlobalDict;
                 foreach (var cmd in Commands)
                 {
-                    if (dict != null) dict.Remove(cmd.FullName);
-                    if (globalDict != null) globalDict.Remove(cmd.Name);
+                    if (dict != null)
+                    {
+                        if (!string.IsNullOrEmpty(cmd.FullName))
+                            dict.Remove(cmd.FullName);
+                        if (!string.IsNullOrEmpty(cmd.Parent))
+                            dict.Remove(cmd.Parent + "." + cmd.Name);
+                    }
+                    if (globalDict != null && string.IsNullOrEmpty(cmd.Parent))
+                        globalDict.Remove(cmd.Name);
                 }
             }
             catch { }

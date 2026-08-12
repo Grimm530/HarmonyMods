@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using Facepunch;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Rust;
 using UnityEngine;
 using Random = UnityEngine.Random;
@@ -55,7 +56,8 @@ namespace ZombieHorde
 
             GrimmNpcBridge.Bind();
 
-            Compat.RegisterConsoleCommand("horde", OnConsoleHorde, true);
+            // adminOnly=false so zombiehorde.admin (not only auth level) can run F1 console, matching Oxide.
+            Compat.RegisterConsoleCommand("horde", OnConsoleHorde, false);
             Compat.RegisterConsoleCommand("hordeinfo", OnConsoleHordeInfo, false);
 
             // Defer world init until ServerMgr is ready
@@ -820,7 +822,7 @@ namespace ZombieHorde
 
             if (cmd == "hordeinfo")
             {
-                CmdHordeInfo(player);
+                player.ChatMessage(GetInfoString());
                 return true;
             }
             if (cmd == "horde")
@@ -833,23 +835,53 @@ namespace ZombieHorde
 
         private void OnConsoleHorde(ConsoleSystem.Arg arg)
         {
-            BasePlayer player = Compat.GetPlayer(arg);
-            string[] args = arg.HasArgs() ? arg.Args.Select(a => a.ToString()).ToArray() : Array.Empty<string>();
-            if (player != null)
-                CmdHorde(player, args);
-            else
-                CmdHordeConsole(arg, args);
+            if (arg == null) return;
+
+            // Match Oxide: console commands are separate from chat; permission when run by a player.
+            if (arg.Connection != null)
+            {
+                string userId = arg.Connection.userid.ToString();
+                if (!Compat.Permission.UserHasPermission(userId, ADMIN_PERMISSION))
+                {
+                    arg.ReplyWith("You do not have permission to use this command");
+                    return;
+                }
+            }
+
+            CmdHordeConsole(arg);
         }
 
         private void OnConsoleHordeInfo(ConsoleSystem.Arg arg)
         {
+            if (arg == null) return;
             BasePlayer player = Compat.GetPlayer(arg);
-            if (player != null) CmdHordeInfo(player);
-            else
+            if (player != null)
             {
-                int members = Horde.AllHordes.Sum(h => h.MemberCount);
-                arg.ReplyWith($"Active hordes: {Horde.AllHordes.Count}, zombies: {members}");
+                player.ChatMessage(GetInfoString());
+                return;
             }
+
+            // Server/RCON: broadcast like Oxide PrintToChat, also reply for RCON visibility.
+            string info = GetInfoString();
+            ConsoleNetwork.BroadcastToAllClients("chat.add", 0, 0, info);
+            arg.ReplyWith(info);
+        }
+
+        private float nextCountTime;
+        private string cachedInfoString = string.Empty;
+
+        private string GetInfoString()
+        {
+            if (nextCountTime < Time.time || string.IsNullOrEmpty(cachedInfoString))
+            {
+                int memberCount = 0;
+                for (int i = 0; i < Horde.AllHordes.Count; i++)
+                    memberCount += Horde.AllHordes[i].MemberCount;
+                cachedInfoString =
+                    $"There are currently <color=#ce422b>{Horde.AllHordes.Count}</color> hordes with a total of <color=#ce422b>{memberCount}</color> zombies";
+                nextCountTime = Time.time + 30f;
+            }
+            return cachedInfoString;
         }
 
         private void CmdHordeInfo(BasePlayer player)
@@ -972,20 +1004,25 @@ namespace ZombieHorde
                 }
                 case "hordecount":
                 {
-                    if (args.Length != 2 || !int.TryParse(args[1], out int n)) { SendReply(player, "Specify a number"); return; }
+                    if (args.Length != 2 || !int.TryParse(args[1], out int n)) { SendReply(player, "You must enter a number"); return; }
                     ConfigData.Configuration.Horde.MaximumHordes = n;
+                    if (Horde.AllHordes.Count < n)
+                        CreateRandomHordes();
                     SaveConfig();
-                    SendReply(player, $"Maximum hordes set to {n}");
+                    SendReply(player, $"Set maximum hordes to {n}");
                     return;
                 }
                 case "membercount":
                 {
-                    if (args.Length != 2 || !int.TryParse(args[1], out int n)) { SendReply(player, "Specify a number"); return; }
+                    if (args.Length != 2 || !int.TryParse(args[1], out int n)) { SendReply(player, "You must enter a number"); return; }
                     ConfigData.Configuration.Horde.MaximumMemberCount = n;
                     SaveConfig();
-                    SendReply(player, $"Maximum members set to {n}");
+                    SendReply(player, $"Set maximum horde members to {n}");
                     return;
                 }
+                default:
+                    SendReply(player, "Invalid Syntax!");
+                    break;
             }
         }
 
@@ -1004,17 +1041,183 @@ namespace ZombieHorde
             }
         }
 
-        private void CmdHordeConsole(ConsoleSystem.Arg arg, string[] args)
+        /// <summary>
+        /// Oxide console parity: info, destroy (1-based), create (random spawn), addloadout, hordecount, membercount.
+        /// </summary>
+        private void CmdHordeConsole(ConsoleSystem.Arg arg)
         {
-            if (args.Length == 0)
+            if (arg.Args == null || arg.Args.Length == 0)
             {
-                arg.ReplyWith("horde info|create|destroy|hordecount|membercount");
+                arg.ReplyWith("horde info - Show position and information about active zombie hordes");
+                arg.ReplyWith("horde destroy <number> - Destroy the specified zombie horde");
+                arg.ReplyWith("horde create <opt:distance> <opt:profile> - Create a new zombie horde at a random position, optionally specifying distance they can roam from the initial spawn point");
+                arg.ReplyWith("horde addloadout <kitname> <opt:otherkitname> <opt:otherkitname> - Convert the specified kit(s) into loadout(s) (add as many as you want)");
+                arg.ReplyWith("horde hordecount <number> - Set the maximum number of hordes allowed");
+                arg.ReplyWith("horde membercount <number> - Set the maximum number of members allowed per horde");
                 return;
             }
-            // Minimal server console support
-            if (args[0].Equals("info", StringComparison.OrdinalIgnoreCase))
+
+            switch (arg.GetString(0).ToLower())
             {
-                arg.ReplyWith($"Hordes={Horde.AllHordes.Count} Members={Horde.AllHordes.Sum(h => h.MemberCount)}");
+                case "info":
+                {
+                    int memberCount = 0;
+                    for (int i = 0; i < Horde.AllHordes.Count; i++)
+                        memberCount += Horde.AllHordes[i].MemberCount;
+                    arg.ReplyWith($"There are {Horde.AllHordes.Count} active zombie hordes with a total of {memberCount} zombies");
+                    return;
+                }
+                case "destroy":
+                {
+                    // Console uses 1-based indices (Oxide parity); chat uses 0-based.
+                    if (arg.Args.Length != 2 || !int.TryParse(arg.GetString(1), out int number))
+                    {
+                        arg.ReplyWith("You must specify a horde number");
+                        return;
+                    }
+                    if (number < 1 || number > Horde.AllHordes.Count)
+                    {
+                        arg.ReplyWith("An invalid horde number has been specified");
+                        return;
+                    }
+                    Horde.AllHordes[number - 1].Destroy(true, true);
+                    arg.ReplyWith($"You have destroyed zombie horde {number}");
+                    return;
+                }
+                case "create":
+                {
+                    float distance = -1;
+                    if (arg.Args.Length >= 2)
+                    {
+                        if (!float.TryParse(arg.GetString(1), out distance))
+                        {
+                            arg.ReplyWith("Invalid Syntax!");
+                            return;
+                        }
+                    }
+
+                    string profile = string.Empty;
+                    if (arg.Args.Length >= 3 && ConfigData.Configuration.HordeProfiles != null
+                        && ConfigData.Configuration.HordeProfiles.ContainsKey(arg.GetString(2)))
+                        profile = arg.GetString(2);
+
+                    if (NavmeshSpawnPoint.Find(GetSpawnPoint(), 20f, out Vector3 position)
+                        && Horde.Create(new Horde.SpawnOrder(position, ConfigData.Configuration.Horde.InitialMemberCount,
+                            ConfigData.Configuration.Horde.MaximumMemberCount, distance, profile)))
+                    {
+                        if (distance > 0)
+                            arg.ReplyWith($"You have created a zombie horde with a roam distance of {distance}");
+                        else
+                            arg.ReplyWith("You have created a zombie horde");
+                    }
+                    else
+                        arg.ReplyWith("Invalid spawn position. Unable to spawn horde. Try again for a new random position");
+                    return;
+                }
+                case "addloadout":
+                {
+                    if (!Kits.IsLoaded)
+                    {
+                        arg.ReplyWith("Unable to find the kits plugin");
+                        return;
+                    }
+
+                    if (arg.Args.Length < 2)
+                    {
+                        arg.ReplyWith("horde addloadout <kitname> <opt:otherkitname> <opt:otherkitname> - Convert the specified kit(s) into loadout(s) (add as many as you want)");
+                        return;
+                    }
+
+                    for (int i = 1; i < arg.Args.Length; i++)
+                    {
+                        string kitname = arg.Args[i].ToString();
+                        object success = Kits.Call("GetKitInfo", kitname);
+                        if (success == null)
+                        {
+                            arg.ReplyWith($"Unable to find a kit with the name {kitname}");
+                            continue;
+                        }
+
+                        JObject obj = success as JObject;
+                        if (obj == null)
+                        {
+                            try { obj = JObject.FromObject(success); }
+                            catch
+                            {
+                                arg.ReplyWith($"Unable to read kit info for {kitname}");
+                                continue;
+                            }
+                        }
+
+                        JArray items = obj["items"] as JArray;
+                        if (items == null)
+                        {
+                            arg.ReplyWith($"Kit {kitname} has no items");
+                            continue;
+                        }
+
+                        var loadout = new ConfigData.MemberOptions.Loadout(kitname);
+                        for (int y = 0; y < items.Count; y++)
+                        {
+                            JObject item = items[y] as JObject;
+                            if (item == null) continue;
+
+                            string container = (string)item["container"];
+                            List<ConfigData.LootTable.InventoryItem> list =
+                                container == "belt" ? loadout.BeltItems
+                                : container == "main" ? loadout.MainItems
+                                : loadout.WearItems;
+
+                            int itemId = item["itemid"] != null ? (int)item["itemid"] : 0;
+                            string shortname = ItemManager.FindItemDefinition(itemId)?.shortname;
+                            if (string.IsNullOrEmpty(shortname) && item["shortname"] != null)
+                                shortname = (string)item["shortname"];
+                            if (string.IsNullOrEmpty(shortname)) continue;
+
+                            list.Add(new ConfigData.LootTable.InventoryItem
+                            {
+                                Amount = item["amount"] != null ? (int)item["amount"] : 1,
+                                Shortname = shortname,
+                                SkinID = item["skinid"] != null ? (ulong)item["skinid"] : 0UL
+                            });
+                        }
+
+                        ConfigData.Configuration.Member.Loadouts.Add(loadout);
+                        arg.ReplyWith($"Successfully converted the kit {kitname} to a zombie loadout");
+                    }
+
+                    SaveConfig();
+                    return;
+                }
+                case "hordecount":
+                {
+                    if (arg.Args.Length < 2 || !int.TryParse(arg.GetString(1), out int hordes))
+                    {
+                        arg.ReplyWith("You must enter a number");
+                        return;
+                    }
+                    ConfigData.Configuration.Horde.MaximumHordes = hordes;
+                    if (Horde.AllHordes.Count < hordes)
+                        CreateRandomHordes();
+                    SaveConfig();
+                    arg.ReplyWith($"Set maximum hordes to {hordes}");
+                    return;
+                }
+                case "membercount":
+                {
+                    if (arg.Args.Length < 2 || !int.TryParse(arg.GetString(1), out int members))
+                    {
+                        arg.ReplyWith("You must enter a number");
+                        return;
+                    }
+                    ConfigData.Configuration.Horde.MaximumMemberCount = members;
+                    SaveConfig();
+                    arg.ReplyWith($"Set maximum horde members to {members}");
+                    return;
+                }
+                default:
+                    arg.ReplyWith("Invalid Syntax!");
+                    break;
             }
         }
 

@@ -51,6 +51,78 @@ internal static class BridgeTerrain
     }
 
     /// <summary>
+    /// Flatten rail path nodes across a bridge span onto a straight grade between the
+    /// approach nodes (aligns rail mesh with bridgerail gravel deck).
+    /// </summary>
+    public static void SnapRailNodesToDeckGrade(BridgeCrossing crossing)
+    {
+        if (crossing.Path?.Path?.Points == null)
+            return;
+
+        Vector3[] points = crossing.Path.Path.Points;
+        float pathLen = crossing.Path.Path.Length;
+        if (pathLen <= 0f || points.Length < 2)
+            return;
+
+        float y0 = SamplePoint(crossing.Path, crossing.StartDist).y;
+        float y1 = SamplePoint(crossing.Path, crossing.EndDist).y;
+        float gravel = RoadFixConfig.Config?.RailDeckGravelOffset ?? 0f;
+        y0 += gravel;
+        y1 += gravel;
+
+        float fade = 10f;
+        float d0 = Mathf.Max(0f, crossing.StartDist - fade);
+        float d1 = Mathf.Min(pathLen, crossing.EndDist + fade);
+
+        // Accumulate distance along polyline for accurate node→span mapping.
+        float[] distAt = new float[points.Length];
+        distAt[0] = 0f;
+        for (int i = 1; i < points.Length; i++)
+            distAt[i] = distAt[i - 1] + Vector3.Distance(points[i - 1], points[i]);
+
+        int changed = 0;
+        for (int i = 0; i < points.Length; i++)
+        {
+            float d = distAt[i];
+            if (d < d0 || d > d1)
+                continue;
+
+            Vector3 p = points[i];
+            float deckY;
+            if (d < crossing.StartDist)
+            {
+                float t = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(d0, crossing.StartDist, d));
+                deckY = Mathf.Lerp(p.y, y0, t);
+            }
+            else if (d > crossing.EndDist)
+            {
+                float t = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(d1, crossing.EndDist, d));
+                deckY = Mathf.Lerp(p.y, y1, t);
+            }
+            else
+            {
+                float t = Mathf.InverseLerp(crossing.StartDist, crossing.EndDist, d);
+                deckY = Mathf.Lerp(y0, y1, t);
+            }
+
+            if (Mathf.Abs(p.y - deckY) > 0.01f)
+                changed++;
+            p.y = deckY;
+            points[i] = p;
+        }
+
+        crossing.Path.Path.RecalculateTangents();
+
+        if (RoadFixConfig.Config?.DebugLogging == true)
+        {
+            Debug.Log(
+                $"[RoadFix] SnapRail→deck '{crossing.Path.Name}' Y {y0:F2}→{y1:F2} " +
+                $"gravelOffset={gravel:F2} span={crossing.StartDist:F0}-{crossing.EndDist:F0} " +
+                $"changed={changed}/{points.Length}");
+        }
+    }
+
+    /// <summary>
     /// Rail-style: path nodes follow the bank-to-bank slope (not terrain / not flat max).
     /// </summary>
     public static void ElevatePathAcrossSpan(BridgeCrossing crossing)

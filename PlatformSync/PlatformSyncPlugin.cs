@@ -25,9 +25,23 @@ namespace PlatformSync
         private const int LogBufferFlushCount = 10;
         private const float LogBufferFlushDelay = 5f;
         private const float ValidateRequestTimeout = 15f;
+        private const float RecheckRequestDelay = 0.75f;
         private const int DataVersion = 1;
         private const string LocalLinkedAction = "local-linked";
         private const string LocalUnlinkedAction = "local-unlinked";
+
+        private bool _recheckRunning;
+        private bool _recheckCancel;
+        private readonly Queue<string> _recheckQueue = new Queue<string>();
+        private int _recheckTotal;
+        private int _recheckDone;
+        private int _recheckFailed;
+        private int _recheckVerifiedRemoved;
+        private int _recheckNitroRemoved;
+        private int _recheckVerifiedAdded;
+        private int _recheckNitroAdded;
+        private string _recheckScope = "all";
+        private Action<string> _recheckReply;
 
         private static string LinksDataPath => Compat.LinksDataPath;
         private static string LinksLogLegacyPath => Compat.LinksLogLegacyPath;
@@ -92,6 +106,9 @@ namespace PlatformSync
 
         public void Shutdown()
         {
+            _recheckCancel = true;
+            _recheckQueue.Clear();
+            _recheckRunning = false;
             FlushLinkLog();
             Compat.UnregisterCommands();
             if (Instance == this) Instance = null;
@@ -101,6 +118,7 @@ namespace PlatformSync
         {
             Compat.RegisterConsoleCommand("ps.testlink", TestLinkConsoleCommand, adminOnly: true);
             Compat.RegisterConsoleCommand("ps.testurl", TestUrlConsoleCommand, adminOnly: true);
+            Compat.RegisterConsoleCommand("ps.recheck", RecheckConsoleCommand, adminOnly: true);
             Compat.RegisterConsoleCommand("localverify", LocalVerifyConsoleCommand, adminOnly: true);
             Compat.RegisterConsoleCommand("localverifycheck", LocalVerifyCheckConsoleCommand, adminOnly: true);
             Compat.RegisterConsoleCommand("localverifyroles", LocalVerifyRolesConsoleCommand, adminOnly: true);
@@ -724,6 +742,282 @@ namespace PlatformSync
                 : "Cached Discord roles for " + arg.GetString(0) + ": " + string.Join(", ", roles));
         }
 
+        private void RecheckConsoleCommand(ConsoleSystem.Arg arg)
+        {
+            if (arg == null || !arg.IsAdmin)
+            {
+                arg?.ReplyWith("You do not have permission to use this command.");
+                return;
+            }
+
+            string scope = "all";
+            if (arg.Args != null && arg.Args.Length > 0 && !string.IsNullOrWhiteSpace(arg.GetString(0)))
+                scope = arg.GetString(0).Trim();
+
+            StartGroupRecheck(scope, msg =>
+            {
+                Puts(msg);
+                arg.ReplyWith(msg);
+            });
+        }
+
+        /// <summary>
+        /// Queue Platform Sync API checks for members of verified and/or nitro.
+        /// Only adds/removes group membership — never deletes permission user data.
+        /// Usage: ps.recheck [all|verified|nitro|cancel|status]
+        /// </summary>
+        private void StartGroupRecheck(string scope, Action<string> reply)
+        {
+            reply = reply ?? (msg => Puts(msg));
+            scope = string.IsNullOrWhiteSpace(scope) ? "all" : scope.Trim().ToLowerInvariant();
+
+            if (scope == "cancel" || scope == "stop")
+            {
+                if (!_recheckRunning)
+                {
+                    reply("No PlatformSync recheck is running.");
+                    return;
+                }
+                _recheckCancel = true;
+                reply("Cancelling PlatformSync recheck after the current request...");
+                return;
+            }
+
+            if (scope == "status")
+            {
+                if (!_recheckRunning)
+                {
+                    reply("No PlatformSync recheck is running.");
+                    return;
+                }
+                reply("PlatformSync recheck in progress: " + _recheckDone + "/" + _recheckTotal
+                      + " (scope=" + _recheckScope + ", queue=" + _recheckQueue.Count + ").");
+                return;
+            }
+
+            if (_recheckRunning)
+            {
+                reply("A recheck is already running (" + _recheckDone + "/" + _recheckTotal
+                      + "). Use: ps.recheck cancel");
+                return;
+            }
+
+            bool wantVerified = scope == "all" || scope == "verified" || scope == "link" || scope == "discord";
+            bool wantNitro = scope == "all" || scope == "nitro";
+            if (!wantVerified && !wantNitro)
+            {
+                reply("Usage: ps.recheck [all|verified|nitro|status|cancel]");
+                return;
+            }
+
+            Compat.Permission.EnsureLinked();
+            string verifiedGroup = LocalVerifyOxideGroup;
+            if (string.IsNullOrWhiteSpace(verifiedGroup)) verifiedGroup = "verified";
+            const string nitroGroup = "nitro";
+
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (wantVerified)
+            {
+                EnsureGroup(verifiedGroup);
+                foreach (var id in permission.GetUsersInGroup(verifiedGroup))
+                    if (!string.IsNullOrWhiteSpace(id)) ids.Add(id.Trim());
+            }
+            if (wantNitro)
+            {
+                EnsureGroup(nitroGroup);
+                foreach (var id in permission.GetUsersInGroup(nitroGroup))
+                    if (!string.IsNullOrWhiteSpace(id)) ids.Add(id.Trim());
+            }
+
+            if (ids.Count == 0)
+            {
+                reply("No users found in selected group(s) for scope '" + scope + "'.");
+                return;
+            }
+
+            _recheckQueue.Clear();
+            foreach (var id in ids)
+                _recheckQueue.Enqueue(id);
+
+            _recheckScope = scope;
+            _recheckTotal = _recheckQueue.Count;
+            _recheckDone = 0;
+            _recheckFailed = 0;
+            _recheckVerifiedRemoved = 0;
+            _recheckNitroRemoved = 0;
+            _recheckVerifiedAdded = 0;
+            _recheckNitroAdded = 0;
+            _recheckCancel = false;
+            _recheckRunning = true;
+            _recheckReply = reply;
+
+            reply("Starting PlatformSync recheck for " + _recheckTotal + " user(s) (scope=" + scope
+                  + "). Only group membership will change; user data is kept. Delay=" + RecheckRequestDelay + "s.");
+            ProcessNextRecheck();
+        }
+
+        private void ProcessNextRecheck()
+        {
+            if (!_recheckRunning) return;
+
+            if (_recheckCancel || _recheckQueue.Count == 0)
+            {
+                FinishRecheck(_recheckCancel ? "cancelled" : "complete");
+                return;
+            }
+
+            string steamId = _recheckQueue.Dequeue();
+            string url = "https://link.platformsync.io/validate.php?action=validate&steamid=" + steamId
+                         + "&guildid=" + ConfigGet("GuildID") + "&auth=" + ConfigGet("APIToken");
+            var headers = new Dictionary<string, string> { { "Accept", "*/*" } };
+
+            webrequest.Enqueue(url, null, (code, response) =>
+            {
+                if (!_recheckRunning) return;
+
+                _recheckDone++;
+                string steamName = GetKnownSteamName(steamId);
+                if (code != 200 || string.IsNullOrWhiteSpace(response))
+                {
+                    _recheckFailed++;
+                    Puts("PlatformSync recheck failed for " + steamId + " (code " + code + ").");
+                }
+                else
+                {
+                    try
+                    {
+                        var linkDetails = JObject.Parse(response);
+                        ApplyValidateResult(steamId, steamName, linkDetails, trackRecheckStats: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _recheckFailed++;
+                        Puts("PlatformSync recheck parse failed for " + steamId + ": " + ex.Message);
+                    }
+                }
+
+                if (_recheckDone % 25 == 0 || _recheckQueue.Count == 0)
+                {
+                    Puts("PlatformSync recheck progress: " + _recheckDone + "/" + _recheckTotal
+                         + " failed=" + _recheckFailed
+                         + " verified-=" + _recheckVerifiedRemoved + " nitro-=" + _recheckNitroRemoved
+                         + " verified+=" + _recheckVerifiedAdded + " nitro+=" + _recheckNitroAdded);
+                }
+
+                timer.Once(RecheckRequestDelay, ProcessNextRecheck);
+            }, this, RequestMethod.GET, headers, ValidateRequestTimeout);
+        }
+
+        private void FinishRecheck(string status)
+        {
+            FlushLinkLog();
+            string summary = "PlatformSync recheck " + status + ". Checked: " + _recheckDone + "/" + _recheckTotal
+                             + ", failed: " + _recheckFailed
+                             + ", verified removed: " + _recheckVerifiedRemoved
+                             + ", nitro removed: " + _recheckNitroRemoved
+                             + ", verified added: " + _recheckVerifiedAdded
+                             + ", nitro added: " + _recheckNitroAdded
+                             + ".";
+            _recheckRunning = false;
+            _recheckCancel = false;
+            _recheckQueue.Clear();
+            var reply = _recheckReply;
+            _recheckReply = null;
+            Puts(summary);
+            reply?.Invoke(summary);
+        }
+
+        /// <summary>
+        /// Apply Platform Sync validate payload for any Steam ID (online or offline).
+        /// Only mutates group membership — never deletes permission user records.
+        /// </summary>
+        private void ApplyValidateResult(string steamId, string steamName, JObject linkDetails, bool trackRecheckStats = false, BasePlayer notifyPlayer = null)
+        {
+            if (string.IsNullOrWhiteSpace(steamId) || linkDetails == null) return;
+            if (string.IsNullOrWhiteSpace(steamName))
+                steamName = GetKnownSteamName(steamId);
+
+            bool notify = notifyPlayer != null;
+
+            if (Convert.ToBoolean(ConfigGet("EnableDiscordLink")) == true)
+            {
+                bool linked = linkDetails["linked"] != null && (bool)linkDetails["linked"];
+                var discordOxideGroup = linkDetails["discord_oxide_group"]?.ToString();
+                if (string.IsNullOrWhiteSpace(discordOxideGroup))
+                    discordOxideGroup = LocalVerifyOxideGroup;
+
+                if (linked)
+                {
+                    EnsureGroup(discordOxideGroup);
+                    if (!permission.UserHasGroup(steamId, discordOxideGroup))
+                    {
+                        permission.AddUserGroup(steamId, discordOxideGroup);
+                        AppendLinkLog(
+                            steamId,
+                            steamName,
+                            JsonString(linkDetails, "discord_id", "discordId"),
+                            JsonString(linkDetails, "discord_username", "discord_name", "discordUsername", "discordName"),
+                            "linked");
+                        if (trackRecheckStats) _recheckVerifiedAdded++;
+                        if (notify) notifyPlayer.ChatMessage(Lang("ConfirmLink"));
+                        Puts(steamId + " has linked with the discord adding them to the " + discordOxideGroup + " group.");
+                    }
+                    else if (notify)
+                    {
+                        notifyPlayer.ChatMessage(Lang("AlreadyLinked"));
+                    }
+                }
+                else
+                {
+                    if (notify)
+                        notifyPlayer.ChatMessage(Lang("ErrorLink"));
+
+                    if (HasActiveLocalLinkForGroup(steamId, discordOxideGroup))
+                    {
+                        Puts(steamId + " is locally verified; keeping " + discordOxideGroup + " group.");
+                    }
+                    else if (permission.UserHasGroup(steamId, discordOxideGroup))
+                    {
+                        permission.RemoveUserGroup(steamId, discordOxideGroup);
+                        AppendLinkLog(
+                            steamId,
+                            steamName,
+                            JsonString(linkDetails, "discord_id", "discordId"),
+                            JsonString(linkDetails, "discord_username", "discord_name", "discordUsername", "discordName"),
+                            "unlinked");
+                        if (trackRecheckStats) _recheckVerifiedRemoved++;
+                        Puts(steamId + " has stop linking with the discord removing them from the " + discordOxideGroup + " group.");
+                    }
+                }
+            }
+
+            if (Convert.ToBoolean(ConfigGet("EnableNitro")) == true)
+            {
+                bool nitro = linkDetails["nitro"] != null && (bool)linkDetails["nitro"];
+                var nitroOxideGroup = linkDetails["nitro_oxide_group"]?.ToString();
+                if (string.IsNullOrWhiteSpace(nitroOxideGroup))
+                    nitroOxideGroup = "nitro";
+
+                if (nitro)
+                {
+                    EnsureGroup(nitroOxideGroup);
+                    if (!permission.UserHasGroup(steamId, nitroOxideGroup))
+                    {
+                        permission.AddUserGroup(steamId, nitroOxideGroup);
+                        if (trackRecheckStats) _recheckNitroAdded++;
+                        if (notify) notifyPlayer.ChatMessage(Lang("ConfirmNitro"));
+                        Puts(steamId + " has boosted the discord adding them to the " + nitroOxideGroup + " group.");
+                    }
+                }
+                else if (permission.UserHasGroup(steamId, nitroOxideGroup))
+                {
+                    permission.RemoveUserGroup(steamId, nitroOxideGroup);
+                    if (trackRecheckStats) _recheckNitroRemoved++;
+                    Puts(steamId + " has stop boosting the discord removing them from the " + nitroOxideGroup + " group.");
+                }
+            }
+        }
+
         private void GetCallback(int code, string response, BasePlayer player, bool inGameCommand = false, int requestId = 0)
         {
             if (inGameCommand && !CompleteLinkRequest(player, requestId))
@@ -754,89 +1048,13 @@ namespace PlatformSync
                 return;
             }
 
-            var iplayer = GetIPlayer(player);
-            if (iplayer == null) return;
-
-            if (Convert.ToBoolean(ConfigGet("EnableDiscordLink")) == true)
-            {
-                if ((bool)linkDetails["linked"] == true)
-                {
-                    var discord_oxide_group = linkDetails["discord_oxide_group"].ToString();
-                    if (!iplayer.BelongsToGroup(discord_oxide_group))
-                    {
-                        iplayer.AddToGroup(discord_oxide_group);
-                        AppendLinkLog(
-                            player.UserIDString,
-                            player?.displayName ?? "",
-                            JsonString(linkDetails, "discord_id", "discordId"),
-                            JsonString(linkDetails, "discord_username", "discord_name", "discordUsername", "discordName"),
-                            "linked");
-                        if (inGameCommand)
-                        {
-                            player.ChatMessage(Lang("ConfirmLink"));
-                        }
-                        Puts(linkDetails["steamid"] + " has linked with the discord adding them to the " + linkDetails["discord_oxide_group"] + " group.");
-                    }
-                    else if (inGameCommand)
-                    {
-                        player.ChatMessage(Lang("AlreadyLinked"));
-                    }
-                }
-                else
-                {
-                    if (inGameCommand)
-                    {
-                        player.ChatMessage(Lang("ErrorLink"));
-                    }
-                }
-
-                if ((bool)linkDetails["linked"] == false)
-                {
-                    var discord_oxide_group = linkDetails["discord_oxide_group"].ToString();
-                    if (HasActiveLocalLinkForGroup(player.UserIDString, discord_oxide_group))
-                    {
-                        Puts(linkDetails["steamid"] + " is locally verified; keeping " + discord_oxide_group + " group.");
-                    }
-                    else if (iplayer.BelongsToGroup(discord_oxide_group))
-                    {
-                        iplayer.RemoveFromGroup(discord_oxide_group);
-                        AppendLinkLog(
-                            player.UserIDString,
-                            player?.displayName ?? "",
-                            JsonString(linkDetails, "discord_id", "discordId"),
-                            JsonString(linkDetails, "discord_username", "discord_name", "discordUsername", "discordName"),
-                            "unlinked");
-                        Puts(linkDetails["steamid"] + " has stop linking with the discord removing them from the " + linkDetails["discord_oxide_group"] + " group.");
-                    }
-                }
-            }
-
-            if (Convert.ToBoolean(ConfigGet("EnableNitro")) == true)
-            {
-                if ((bool)linkDetails["nitro"] == true)
-                {
-                    var nitro_oxide_group = linkDetails["nitro_oxide_group"].ToString();
-                    if (!iplayer.BelongsToGroup(nitro_oxide_group))
-                    {
-                        iplayer.AddToGroup(nitro_oxide_group);
-                        if (inGameCommand)
-                        {
-                            player.ChatMessage(Lang("ConfirmNitro"));
-                        }
-                        Puts(linkDetails["steamid"] + " has boosted the discord adding them to the " + linkDetails["nitro_oxide_group"] + " group.");
-                    }
-                }
-
-                if ((bool)linkDetails["nitro"] == false)
-                {
-                    var nitro_oxide_group = linkDetails["nitro_oxide_group"].ToString();
-                    if (iplayer.BelongsToGroup(nitro_oxide_group))
-                    {
-                        iplayer.RemoveFromGroup(nitro_oxide_group);
-                        Puts(linkDetails["steamid"] + " has stop boosting the discord removing them from the " + linkDetails["nitro_oxide_group"] + " group.");
-                    }
-                }
-            }
+            if (player == null) return;
+            ApplyValidateResult(
+                player.UserIDString,
+                player.displayName ?? "",
+                linkDetails,
+                trackRecheckStats: false,
+                notifyPlayer: inGameCommand ? player : null);
         }
         #endregion
 

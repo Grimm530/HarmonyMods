@@ -76,9 +76,27 @@ Load with `harmony.load PlatformSync` (or automatic at startup).
 | `/testlink [steamid]` | admin | Debug PlatformSync API |
 | `/testurl` | admin | Debug HTTP/HTTPS reachability |
 | `ps.testlink` / `ps.testurl` | console admin | Same as above |
+| `ps.recheck [all\|verified\|nitro\|status\|cancel]` | console / RCON admin | Re-check all members of `verified` and/or `nitro` via Platform Sync API; **only removes/adds group membership** (never deletes user data) |
 | `localverify <steamid> <discordid>` | console admin | Manual verify via Rustcord role |
 | `localverifycheck` | console admin | Re-check local links |
 | `localverifyroles <discordid>` | console admin | List cached Discord roles |
+
+### `ps.recheck`
+
+Queued API validate for everyone currently in the selected permission group(s). Safe for offline players.
+
+```text
+ps.recheck              # verified + nitro
+ps.recheck nitro        # nitro boosters only
+ps.recheck verified     # Discord-linked / verified only
+ps.recheck status
+ps.recheck cancel
+```
+
+- **Removes** `verified` / `nitro` when the API says unlinked / not boosting (local-verify exceptions still kept).
+- **Adds** the group when the API says they should have it.
+- **Does not** delete `HarmonyData/Permissions/users.json` entries — only group membership changes.
+- Rate-limited (~0.75s between requests). Prefer RCON/console over Discord slash; a Discord bot can still fire this via RCON if you want a Discord button.
 
 ## Note on Rustcord local verify
 

@@ -176,6 +176,22 @@ namespace PermissionsHarmony
         public static bool UserHasGroup(string playerId, string groupName) =>
             Instance?._service?.UserHasGroup(playerId, groupName) == true;
 
+        /// <summary>Steam IDs currently in the group (no nickname suffix).</summary>
+        public static string[] GetUserIdsInGroup(string groupName)
+        {
+            var svc = Instance?._service;
+            if (svc == null || string.IsNullOrWhiteSpace(groupName))
+                return Array.Empty<string>();
+            var list = new List<string>();
+            foreach (var entry in svc.GetUsersInGroup(groupName))
+            {
+                if (string.IsNullOrEmpty(entry)) continue;
+                int space = entry.IndexOf(' ');
+                list.Add(space > 0 ? entry.Substring(0, space) : entry);
+            }
+            return list.ToArray();
+        }
+
         public static bool CreateGroup(string groupName, string title, int rank) =>
             Instance?._service?.CreateGroup(groupName, title, rank) == true;
 

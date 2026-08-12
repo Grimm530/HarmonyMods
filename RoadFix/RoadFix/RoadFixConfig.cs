@@ -84,27 +84,45 @@ public class RoadFixConfig
         [JsonProperty("FullRiverHeightReapply")]
         public bool FullRiverHeightReapply = false;
 
-        /// <summary>Outer fade (metres) for local crossing river carve. Vanilla rivers use 64.</summary>
+        /// <summary>Soft bank pad (metres) past channel width — knocks down side ridges.</summary>
         [JsonProperty("LocalRiverOuterFade")]
-        public float LocalRiverOuterFade = 6f;
+        public float LocalRiverOuterFade = 18f;
 
-        /// <summary>Side-skirt fade (metres) for local crossing river carve.</summary>
+        /// <summary>Reserved (smoothing strength uses fixed passes now).</summary>
         [JsonProperty("LocalRiverInnerFade")]
         public float LocalRiverInnerFade = 8f;
 
         /// <summary>
-        /// Half-length along the river (metres) to carve under/past the deck.
-        /// Too small leaves lips; ~20+ clears the bowl ends.
+        /// How far along the river to sample clean bed before/after the crossing (metres).
+        /// Also influences the gap skipped over raised road/rail fill.
         /// </summary>
         [JsonProperty("LocalRiverSegmentPad")]
         public float LocalRiverSegmentPad = 28f;
 
         /// <summary>
         /// Multiplier on vanilla GetRadius for carve WIDTH (across channel).
-        /// 1 = full river radius (~24m mid-river); &lt;1 narrows the cut.
+        /// &gt;1 reaches past typical bank crest ridges.
         /// </summary>
         [JsonProperty("RiverCarveWidthScale")]
-        public float RiverCarveWidthScale = 0.75f;
+        public float RiverCarveWidthScale = 1.15f;
+
+        /// <summary>
+        /// Small extra metres on the before/after bed average (negative = slightly deeper).
+        /// Main depth now comes from real bed samples, not this bonus.
+        /// </summary>
+        [JsonProperty("BedDepthBonus")]
+        public float BedDepthBonus = -0.15f;
+
+        /// <summary>
+        /// Flatten rail path nodes across bridge spans onto a straight grade
+        /// (matches bridgerail gravel deck / kills rail waves on the span).
+        /// </summary>
+        [JsonProperty("SnapRailNodesToDeck")]
+        public bool SnapRailNodesToDeck = true;
+
+        /// <summary>Added to snapped rail node Y (gravel top relative to path center).</summary>
+        [JsonProperty("RailDeckGravelOffset")]
+        public float RailDeckGravelOffset = 0f;
 
         /// <summary>
         /// Extra yaw (degrees) applied after LookRotation(pathTangent).

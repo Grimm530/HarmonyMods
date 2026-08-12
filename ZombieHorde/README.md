@@ -35,13 +35,43 @@ harmony.load 0GrimmNPC
 harmony.load ZombieHorde
 ```
 
+## Permissions
+
+Requires **0Permissions** (`0Permissions.dll`). No need to reload 0Permissions after loading ZombieHorde.
+
+**Prefer the space form** (0Permissions). Dotted `perm.grant` is Oxide’s alias and only works after Oxide registration succeeds:
+
+```text
+perm grant user 7656119XXXXXXXXXX zombiehorde.ignore
+perm.grant user 7656119XXXXXXXXXX zombiehorde.ignore
+```
+
+| Permission | Effect |
+|------------|--------|
+| `zombiehorde.admin` | Chat/console `/horde` + `horde` commands (server admins also pass this check) |
+| `zombiehorde.ignore` | Zombies will not target this player |
+| `zombiehorde.ignoreuntilhurt` | Ignored until the player damages a zombie |
+
+Verify: `perm show user <steamid>` or `oxide.show user <steamid>` should list `zombiehorde.ignore` after grant.
+
+On load you should see both:
+- `[ZombieHorde] Linked to 0Permissions ...`
+- `[ZombieHorde] Linked to Oxide Permission library (perm.grant).`
+
 ## Commands
 
 | Command | Who | Purpose |
 |---------|-----|---------|
-| `/horde` | admin | Create/destroy/info/teleport/loadouts |
-| `/hordeinfo` | all | Show active hordes |
-| `horde` | console | Admin console variant |
+| `/horde` | admin (`zombiehorde.admin`) | Chat: info / tpto / destroy / create / createspawn / createloadout / hordecount / membercount |
+| `/hordeinfo` | all | Show active hordes (cached summary) |
+| `horde` | console / RCON / F1 | Console: info / destroy / create / **addloadout** / hordecount / membercount |
+| `hordeinfo` | console | Broadcast horde summary |
+
+**Console notes (Oxide parity):**
+- `horde create [distance] [profile]` spawns at a **random** valid point (bypasses max horde limit)
+- `horde destroy <number>` uses **1-based** indices
+- `horde addloadout <kit> [kit…]` requires Harmony **Kits** (`Kits_Plugin` / `GetKitInfo`) or Oxide Kits
+- Chat `/horde create` still spawns near the player; `/horde createloadout` copies inventory (console uses kits via `addloadout`)
 
 ## Project structure
 

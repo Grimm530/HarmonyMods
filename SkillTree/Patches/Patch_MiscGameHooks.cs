@@ -1,5 +1,7 @@
 // Misc game hooks — targets verified against .cursor/!Assembly-RUST for this server build.
 using System;
+using System.Collections.Generic;
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 using STPlugin = Oxide.Plugins.SkillTree;
@@ -166,19 +168,40 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    // ---- Melee attack ---------------------------------------------------
+    // ---- Melee attack (Mining_Hotspot) ----------------------------------
+    // Oxide OnMeleeAttack fires in BaseMelee.PlayerAttack with a real HitInfo.
+    // DoAttackShared is the shared player path that still has that HitInfo.
 
-    [HarmonyPatch(typeof(BaseMelee), "ServerUse")]
-    public static class BaseMelee_ServerUse_Patch
+    [HarmonyPatch(typeof(BaseMelee), nameof(BaseMelee.DoAttackShared))]
+    public static class BaseMelee_DoAttackShared_Patch
     {
-        [HarmonyPostfix]
-        public static void Postfix(BaseMelee __instance)
+        [HarmonyPrefix]
+        public static void Prefix(BaseMelee __instance, HitInfo info)
         {
-            if (__instance == null) return;
+            if (__instance == null || info == null || __instance is Hammer) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
-            try { STPlugin.Dispatch_OnMeleeAttack(player, null); }
+            try { STPlugin.Dispatch_OnMeleeAttack(player, info); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnMeleeAttack: " + ex.Message); }
+        }
+    }
+
+    // ---- Hammer (Vehicle_Mechanic) --------------------------------------
+
+    [HarmonyPatch(typeof(Hammer), nameof(Hammer.DoAttackShared))]
+    public static class Hammer_DoAttackShared_Patch
+    {
+        [HarmonyTranspiler]
+        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            return CallHookReplace.Replace(instructions, "OnHammerHit",
+                AccessTools.Method(typeof(Hammer_DoAttackShared_Patch), nameof(CallHookShim)));
+        }
+
+        public static object CallHookShim(string hook, object player, object info)
+        {
+            try { return STPlugin.Dispatch_OnHammerHit(player as BasePlayer, info as HitInfo); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnHammerHit: " + ex.Message); return null; }
         }
     }
 
@@ -229,18 +252,34 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    // ---- Healing item use -----------------------------------------------
+    // ---- Healing item use (Double_Bandage_Heal) -------------------------
+    // Players use UseSelf/UseOther → GiveEffectsTo. ServerUse is NPC-only.
 
-    [HarmonyPatch(typeof(MedicalTool), "ServerUse")]
-    public static class MedicalTool_ServerUse_Patch
+    [HarmonyPatch(typeof(MedicalTool), "GiveEffectsTo")]
+    public static class MedicalTool_GiveEffectsTo_Patch
     {
         [HarmonyPrefix]
-        public static bool Prefix(MedicalTool __instance)
+        public static bool Prefix(MedicalTool __instance, BasePlayer fromPlayer)
         {
-            var player = __instance?.GetOwnerPlayer();
-            if (player == null) return true;
-            object r = STPlugin.Dispatch_OnHealingItemUse(__instance, player);
+            if (__instance == null || fromPlayer == null) return true;
+            object r = null;
+            try { r = STPlugin.Dispatch_OnHealingItemUse(__instance, fromPlayer); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnHealingItemUse: " + ex.Message); }
             return r == null;
+        }
+    }
+
+    // ---- Bandage assist revive (Reviver) --------------------------------
+
+    [HarmonyPatch(typeof(BasePlayer), "RPC_Assist")]
+    public static class BasePlayer_RPC_Assist_Patch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(BasePlayer __instance, BaseEntity.RPCMessage msg)
+        {
+            if (__instance == null || msg.player == null || !__instance.IsWounded()) return;
+            try { STPlugin.Dispatch_OnPlayerRevive(msg.player, __instance); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerAssist/Revive: " + ex.Message); }
         }
     }
 

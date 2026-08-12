@@ -1,15 +1,20 @@
-using HarmonyLib;
+﻿using HarmonyLib;
 
-namespace RustServerMetrics.HarmonyPatches
+// ReSharper disable InconsistentNaming
+
+namespace RustServerMetrics.HarmonyPatches;
+
+[HarmonyPatch(typeof(Performance), "FPSTimer")]
+public class Performance_FPSTimer_Patch
 {
-    [HarmonyPatch(typeof(Performance), "FPSTimer")]
-    public class Performance_FPSTimer_Patch
+    [HarmonyPostfix]
+    public static void Postfix()
     {
-        [HarmonyPostfix]
-        public static void Postfix()
+        if (!MetricsLogger.IsReady)
         {
-            if (MetricsLogger.Instance == null) return;
-            MetricsLogger.Instance.OnPerformanceReportGenerated();
+            return;
         }
+        
+        MetricsLogger.Instance.OnPerformanceReportGenerated();
     }
 }

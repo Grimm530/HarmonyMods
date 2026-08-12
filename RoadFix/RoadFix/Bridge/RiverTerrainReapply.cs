@@ -6,12 +6,27 @@ namespace RoadFix.Bridge;
 
 /// <summary>
 /// Cuts road/rail fill at river crossings (lower-only).
-/// Width = across channel (scaled GetRadius * widthScale).
-/// Length = along river under the deck (LocalRiverSegmentPad) — must clear lips.
-/// Depth = match natural bed beside the crossing (never scaled GetDepth pool bowls).
+/// Samples consistent river-bed heights before and after the crossing, interpolates
+/// that grade through the span, then smooths only the cells we touched.
 /// </summary>
 internal static class RiverTerrainReapply
 {
+    private struct BedAnchors
+    {
+        /// <summary>River distance at centre of before-sample window (grade start).</summary>
+        public float BeforeDist;
+        /// <summary>River distance at centre of after-sample window (grade end).</summary>
+        public float AfterDist;
+        /// <summary>Full carve corridor start/end along the river (includes sample stretches).</summary>
+        public float Corridor0;
+        public float Corridor1;
+        public float BeforeY;
+        public float AfterY;
+        public float WidthHalf;
+        public int BeforeCount;
+        public int AfterCount;
+    }
+
     public static void Reapply()
     {
         var cfg = RoadFixConfig.Config;
@@ -61,13 +76,10 @@ internal static class RiverTerrainReapply
         }
 
         var cfg = RoadFixConfig.Config;
-        float widthScale = Mathf.Clamp(cfg.RiverCarveWidthScale, 0.25f, 1f);
-        float alongHalfBase = Mathf.Max(12f, cfg.LocalRiverSegmentPad);
-        float edgeFade = Mathf.Clamp(cfg.LocalRiverOuterFade, 1f, 4f);
+        float widthScale = Mathf.Clamp(cfg.RiverCarveWidthScale, 0.25f, 1.25f);
         int carved = 0;
         int cells = 0;
-        float maxWidthSeen = 0f;
-        float maxAlongSeen = 0f;
+        float minBedSeen = float.MaxValue;
 
         foreach (BridgeCrossing crossing in crossings)
         {
@@ -76,29 +88,36 @@ internal static class RiverTerrainReapply
             if (!TryNearestRiverSample(crossing, out _, out PathList river, out float riverDist))
                 continue;
 
-            bool isRail = TerrainMeta.Path?.Rails != null && TerrainMeta.Path.Rails.Contains(crossing.Path);
-            // Deck corridor (along-river / lateral to path): rails use wide bridgerail.map.
-            float alongHalf = isRail
-                ? Mathf.Max(alongHalfBase, 28f)
-                : Mathf.Max(alongHalfBase, 18f);
+            if (!TrySampleBedAnchors(crossing, river, riverDist, widthScale, out BedAnchors anchors))
+                continue;
 
-            float fullRadius = PathList.GetRadius(
-                riverDist, river.Path.Length, river.Width * 0.5f, river.RandomScale, scaleWidthWithLength: true);
-            float widthHalf = fullRadius * widthScale;
-            maxWidthSeen = Mathf.Max(maxWidthSeen, widthHalf);
-            maxAlongSeen = Mathf.Max(maxAlongSeen, alongHalf);
+            float bedMid = (anchors.BeforeY + anchors.AfterY) * 0.5f;
+            minBedSeen = Mathf.Min(minBedSeen, bedMid);
 
-            float bedY = SampleNaturalBedY(river, riverDist, alongHalf);
-            cells += CarveCrossingChannel(crossing, river, riverDist, widthHalf, alongHalf, edgeFade, bedY);
+            float alongHalf = (anchors.Corridor1 - anchors.Corridor0) * 0.5f;
+            CrossingDiagnostics.LogCrossing(
+                "pre-carve", crossing, river, riverDist, anchors.WidthHalf, alongHalf, bedMid);
+
+            if (cfg.DebugLogging)
+            {
+                Debug.Log(
+                    $"[RoadFix] bed-anchors '{crossing.Path.Name}' river d={riverDist:F1} " +
+                    $"before d={anchors.BeforeDist:F1} Y={anchors.BeforeY:F2} n={anchors.BeforeCount} | " +
+                    $"after d={anchors.AfterDist:F1} Y={anchors.AfterY:F2} n={anchors.AfterCount} | " +
+                    $"corridor={anchors.Corridor0:F0}..{anchors.Corridor1:F0} " +
+                    $"widthHalf={anchors.WidthHalf:F1} slope={(anchors.AfterY - anchors.BeforeY) / Mathf.Max(1f, anchors.AfterDist - anchors.BeforeDist):F3}");
+            }
+
+            cells += CarveThroughAnchors(crossing, river, anchors);
             carved++;
         }
 
         if (cfg.DebugLogging)
         {
             Debug.Log(
-                $"[RoadFix] Local LOWER-only carve at {carved}/{crossings.Count} crossing(s) " +
-                $"(widthHalf≈{maxWidthSeen:F1}m scale={widthScale:F2} alongHalf≈{maxAlongSeen:F0}m " +
-                $"edgeFade={edgeFade:F1}m cells≈{cells})");
+                $"[RoadFix] Before/after channel carve at {carved}/{crossings.Count} crossing(s) " +
+                $"(minBedY≈{(minBedSeen < float.MaxValue * 0.5f ? minBedSeen : 0f):F2} " +
+                $"bedBonus={cfg.BedDepthBonus:F2} cells≈{cells})");
         }
     }
 
@@ -142,69 +161,151 @@ internal static class RiverTerrainReapply
     }
 
     /// <summary>
-    /// Natural channel floor beside the crossing (outside the road fill), so we don't dig a pool.
+    /// Read many centreline heights upstream and downstream of the road/rail influence,
+    /// then take robust averages so the through-cut matches the existing river bed.
     /// </summary>
-    private static float SampleNaturalBedY(PathList river, float riverCenterDist, float alongHalf)
-    {
-        TerrainHeightMap heightMap = TerrainMeta.HeightMap;
-        float offset = river.TerrainOffset != 0f ? river.TerrainOffset : -1.5f;
-        // Unscaled shallow offset only — never GetDepth(scaleWidthWithLength) (up to 3× → pool).
-        float shallowFloor = float.MaxValue;
-        float sum = 0f;
-        int n = 0;
-
-        // Sample just past the carve along the river (true bed, not road fill under the deck).
-        foreach (float sign in new[] { -1f, 1f })
-        {
-            for (float extra = 2f; extra <= 10f; extra += 2f)
-            {
-                float d = Mathf.Clamp(riverCenterDist + sign * (alongHalf + extra), 0f, river.Path.Length);
-                Vector3 pt = BridgeTerrain.SamplePoint(river, d);
-                float h = heightMap.GetHeight(pt);
-                // Ignore samples that still look like raised embankment vs river path.
-                if (h > pt.y + 3f)
-                    continue;
-                sum += h;
-                n++;
-                shallowFloor = Mathf.Min(shallowFloor, h);
-            }
-        }
-
-        float fromPath = BridgeTerrain.SamplePoint(river, riverCenterDist).y + offset;
-        if (n <= 0)
-            return fromPath;
-
-        float avg = sum / n;
-        // Target the natural bed; never deeper than path+unscaled offset.
-        return Mathf.Max(avg, fromPath);
-    }
-
-    private static int CarveCrossingChannel(
+    private static bool TrySampleBedAnchors(
         BridgeCrossing crossing,
         PathList river,
-        float riverCenterDist,
-        float widthHalf,
-        float alongHalf,
-        float edgeFade,
-        float bedY)
+        float riverDist,
+        float widthScale,
+        out BedAnchors anchors)
+    {
+        anchors = default;
+        var cfg = RoadFixConfig.Config;
+        float offset = river.TerrainOffset != 0f ? river.TerrainOffset : -1.5f;
+
+        // Skip the raised road/rail fill at the crossing, then sample a stretch of clean bed.
+        float gap = Mathf.Max(
+            crossing.Path.Width * 0.6f + 6f,
+            Mathf.Max(cfg.LocalRiverSegmentPad * 0.45f, 14f));
+        float sampleLen = Mathf.Clamp(cfg.LocalRiverSegmentPad + 8f, 20f, 40f);
+        float step = 2f;
+
+        var before = new List<float>(24);
+        var after = new List<float>(24);
+        float widthSum = 0f;
+        int widthN = 0;
+
+        CollectSide(river, riverDist - gap, -1f, sampleLen, step, offset, before, ref widthSum, ref widthN);
+        CollectSide(river, riverDist + gap, +1f, sampleLen, step, offset, after, ref widthSum, ref widthN);
+
+        if (before.Count < 3 || after.Count < 3)
+            return false;
+
+        float beforeY = RobustAverage(before);
+        float afterY = RobustAverage(after);
+
+        float bonus = cfg.BedDepthBonus;
+        // Tiny depth nudge only — profile comes from the real bed samples.
+        float depthScale = Mathf.Clamp01(((widthSum / Mathf.Max(1, widthN)) - 3f) / 14f);
+        beforeY += bonus * Mathf.Lerp(0.15f, 0.6f, depthScale);
+        afterY += bonus * Mathf.Lerp(0.15f, 0.6f, depthScale);
+
+        float avgRadius = widthN > 0 ? widthSum / widthN : river.Width * 0.5f;
+
+        float beforeMid = Mathf.Max(0f, riverDist - gap - sampleLen * 0.5f);
+        float afterMid = Mathf.Min(river.Path.Length, riverDist + gap + sampleLen * 0.5f);
+        float corridor0 = Mathf.Max(0f, riverDist - gap - sampleLen);
+        float corridor1 = Mathf.Min(river.Path.Length, riverDist + gap + sampleLen);
+
+        anchors = new BedAnchors
+        {
+            BeforeDist = beforeMid,
+            AfterDist = afterMid,
+            Corridor0 = corridor0,
+            Corridor1 = corridor1,
+            BeforeY = beforeY,
+            AfterY = afterY,
+            WidthHalf = avgRadius * widthScale,
+            BeforeCount = before.Count,
+            AfterCount = after.Count
+        };
+
+        return anchors.AfterDist > anchors.BeforeDist + 4f && anchors.WidthHalf > 1.5f;
+    }
+
+    private static void CollectSide(
+        PathList river,
+        float startDist,
+        float dir,
+        float sampleLen,
+        float step,
+        float offset,
+        List<float> heights,
+        ref float widthSum,
+        ref int widthN)
     {
         TerrainHeightMap heightMap = TerrainMeta.HeightMap;
-        PathList road = crossing.Path;
+        float len = river.Path.Length;
+        float baseR = river.Width * 0.5f;
 
-        // Longer soft skirts on channel sides (avoids hard vertical walls).
-        float sideFade = Mathf.Max(edgeFade, RoadFixConfig.Config?.LocalRiverInnerFade ?? 4f);
-        float widthRadius = widthHalf + sideFade;
-        float alongRadius = alongHalf + sideFade;
+        for (float t = 0f; t <= sampleLen; t += step)
+        {
+            float d = startDist + dir * t;
+            if (d < 0f || d > len)
+                continue;
 
-        // Long SmoothStep ramp bank→bed along the span (short linear fades = cliffs).
-        float bankFade = Mathf.Clamp(crossing.SpanLength * 0.4f, 12f, 22f);
-        float spanPad = bankFade * 0.5f;
+            Vector3 pt = BridgeTerrain.SamplePoint(river, d);
+            float pathBed = pt.y + offset;
+            float h = heightMap.GetHeight(pt);
 
-        float searchR = Mathf.Max(widthRadius, alongRadius) + crossing.SpanLength * 0.5f + bankFade + 8f;
+            // Road fill sits well above the carved bed — skip those samples.
+            if (h > pathBed + 1.75f)
+                continue;
+
+            // Prefer the actual carved heightmap; fall back to path bed if slightly noisy.
+            float sample = h <= pathBed + 1.25f ? h : pathBed;
+            // Keep samples in a tight band around the path profile.
+            sample = Mathf.Clamp(sample, pathBed - 1.25f, pathBed + 0.75f);
+            heights.Add(sample);
+
+            widthSum += PathList.GetRadius(d, len, baseR, river.RandomScale, scaleWidthWithLength: true);
+            widthN++;
+        }
+    }
+
+    private static float RobustAverage(List<float> values)
+    {
+        if (values.Count == 0)
+            return 0f;
+        values.Sort();
+        // Trim outer 15% each side when we have enough samples.
+        int trim = values.Count >= 8 ? Mathf.Max(1, values.Count / 6) : 0;
+        float sum = 0f;
+        int n = 0;
+        for (int i = trim; i < values.Count - trim; i++)
+        {
+            sum += values[i];
+            n++;
+        }
+        return n > 0 ? sum / n : values[values.Count / 2];
+    }
+
+    private static int CarveThroughAnchors(
+        BridgeCrossing crossing,
+        PathList river,
+        BedAnchors anchors)
+    {
+        TerrainHeightMap heightMap = TerrainMeta.HeightMap;
+        var cfg = RoadFixConfig.Config;
+        // Bank skirt past the channel — must reach past the ridge crests in screenshots.
+        float softPad = Mathf.Clamp(cfg.LocalRiverOuterFade, 10f, 28f);
+
+        // Full corridor: entire before-sample → after-sample stretch through the crossing.
+        float corridor0 = Mathf.Max(0f, anchors.Corridor0 - softPad);
+        float corridor1 = Mathf.Min(river.Path.Length, anchors.Corridor1 + softPad);
+        float widthHalf = anchors.WidthHalf;
+        // Small core + long rim = gentle side banks instead of sharp U walls.
+        float coreFrac = widthHalf < 8f ? 0.12f : 0.2f;
+        float rim = widthHalf + softPad;
+
+        float searchR = rim + (corridor1 - corridor0) * 0.5f + 10f;
         Vector3 center = crossing.Center;
         center.y = 0f;
 
-        float bed01 = TerrainMeta.NormalizeY(bedY);
+        // Track touched cells for a follow-up smooth pass.
+        var touched = new HashSet<long>();
         int cells = 0;
 
         heightMap.ForEach(center, searchR, (x, z) =>
@@ -213,72 +314,128 @@ internal static class RiverTerrainReapply
             float nz = heightMap.Coordinate(z);
             Vector3 world = TerrainMeta.Denormalize(new Vector3(nx, 0f, nz));
 
-            float riverD0 = Mathf.Max(0f, riverCenterDist - alongRadius);
-            float riverD1 = Mathf.Min(river.Path.Length, riverCenterDist + alongRadius);
-            if (!TryClosestOnPath(river, riverD0, riverD1, world, out float distRiver, out float riverY, out float riverD))
+            if (!TryClosestOnPath(river, corridor0, corridor1, world, out float distRiver, out _, out float riverD))
+                return;
+            if (distRiver > rim)
                 return;
 
-            if (distRiver > widthRadius)
-                return;
+            // Bed grade from before → after along the river.
+            float tGrade = Mathf.InverseLerp(anchors.BeforeDist, anchors.AfterDist, riverD);
+            tGrade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(tGrade));
+            float bedY = Mathf.Lerp(anchors.BeforeY, anchors.AfterY, tGrade);
 
-            float along = Mathf.Abs(riverD - riverCenterDist);
-            if (along > alongRadius)
-                return;
-
-            if (!TryClosestOnPath(
-                    road,
-                    crossing.StartDist - spanPad,
-                    crossing.EndDist + spanPad,
-                    world,
-                    out float distRoad,
-                    out _,
-                    out float roadD))
-                return;
-            if (distRoad > alongRadius)
-                return;
-
-            // 1 at mid-span, 0 at / past banks — SmoothStep for a continuous slope.
-            float endBlend = 1f;
-            if (roadD <= crossing.StartDist)
-                endBlend = 0f;
-            else if (roadD >= crossing.EndDist)
-                endBlend = 0f;
-            else if (roadD < crossing.StartDist + bankFade)
-                endBlend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(crossing.StartDist, crossing.StartDist + bankFade, roadD));
-            else if (roadD > crossing.EndDist - bankFade)
-                endBlend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(crossing.EndDist, crossing.EndDist - bankFade, roadD));
-            if (endBlend <= 0.01f)
-                return;
-
-            float widthT = distRiver <= widthHalf
-                ? 1f
-                : Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(widthHalf, widthRadius, distRiver));
-            float alongT = along <= alongHalf
-                ? 1f
-                : Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(alongHalf, alongRadius, along));
-            float opacity = widthT * alongT;
-            if (opacity <= 0.02f)
-                return;
-
-            float pathBed01 = TerrainMeta.NormalizeY(riverY + (river.TerrainOffset != 0f ? river.TerrainOffset : -1.5f));
-            float midTarget01 = Mathf.Max(bed01, pathBed01);
-
-            // Ramp target from approach path height (banks) down to bed (mid) — no hard shelf.
-            float pathY = BridgeTerrain.SamplePoint(
-                road,
-                Mathf.Clamp(roadD, 0f, road.Path.Length)).y;
-            float approach01 = TerrainMeta.NormalizeY(pathY);
-            float localTarget01 = Mathf.Lerp(approach01, midTarget01, endBlend);
-
+            // Outer bank target eases up from bed toward current terrain so ridges
+            // get shaved down without digging a second trench outside the river.
             float cur01 = heightMap.GetHeight01(x, z);
-            if (cur01 <= localTarget01 + 0.0001f)
+            float curY = TerrainMeta.DenormalizeY(cur01);
+            float bankT = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(widthHalf * coreFrac, rim, distRiver));
+            float targetY = Mathf.Lerp(bedY, Mathf.Max(bedY, curY), bankT * 0.85f);
+            float target01 = TerrainMeta.NormalizeY(targetY);
+
+            // Lateral strength: full in channel, still meaningful past widthHalf to knock crests.
+            float latT = InnerSlope(distRiver, widthHalf * coreFrac, rim);
+            if (distRiver > widthHalf)
+            {
+                float skirt = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(widthHalf, rim, distRiver));
+                latT = Mathf.Max(latT, skirt * 0.7f);
+            }
+
+            float endT = 1f;
+            if (riverD < anchors.Corridor0)
+                endT = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(corridor0, anchors.Corridor0, riverD));
+            else if (riverD > anchors.Corridor1)
+                endT = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(corridor1, anchors.Corridor1, riverD));
+
+            float slope = latT * endT;
+            if (slope <= 0.01f)
                 return;
 
-            heightMap.LowerHeight(x, z, localTarget01, opacity);
+            float apply01 = Mathf.Lerp(cur01, target01, slope);
+            if (cur01 <= apply01 + 0.0001f)
+                return;
+
+            heightMap.LowerHeight(x, z, apply01, 1f);
+            touched.Add(Pack(x, z));
             cells++;
         });
 
+        if (touched.Count > 0)
+            SmoothTouched(heightMap, touched, passes: 4, expandRings: 3);
+
         return cells;
+    }
+
+    private static void SmoothTouched(
+        TerrainHeightMap heightMap,
+        HashSet<long> touched,
+        int passes,
+        int expandRings)
+    {
+        // Expand outward so bank ridges beyond the carve get pulled into the blend.
+        var domain = new HashSet<long>(touched);
+        for (int ring = 0; ring < expandRings; ring++)
+        {
+            var add = new List<long>();
+            foreach (long key in domain)
+            {
+                Unpack(key, out int x, out int z);
+                for (int ox = -1; ox <= 1; ox++)
+                for (int oz = -1; oz <= 1; oz++)
+                    add.Add(Pack(x + ox, z + oz));
+            }
+            foreach (long k in add)
+                domain.Add(k);
+        }
+
+        for (int pass = 0; pass < passes; pass++)
+        {
+            var next = new Dictionary<long, float>(domain.Count);
+            foreach (long key in domain)
+            {
+                Unpack(key, out int x, out int z);
+                float sum = 0f;
+                int n = 0;
+                // 5x5 kernel on carved cells for wider bank softening.
+                int rad = touched.Contains(key) ? 2 : 1;
+                for (int ox = -rad; ox <= rad; ox++)
+                for (int oz = -rad; oz <= rad; oz++)
+                {
+                    sum += heightMap.GetHeight01(x + ox, z + oz);
+                    n++;
+                }
+
+                float avg = sum / n;
+                float cur = heightMap.GetHeight01(x, z);
+                float strength = touched.Contains(key) ? 0.65f : 0.4f;
+                next[key] = Mathf.Lerp(cur, avg, strength);
+            }
+
+            foreach (var kv in next)
+            {
+                Unpack(kv.Key, out int x, out int z);
+                float nx = heightMap.Coordinate(x);
+                float nz = heightMap.Coordinate(z);
+                heightMap.SetHeight(nx, nz, kv.Value, 1f);
+            }
+        }
+    }
+
+    private static long Pack(int x, int z) => ((long)x << 32) ^ (uint)z;
+
+    private static void Unpack(long key, out int x, out int z)
+    {
+        x = (int)(key >> 32);
+        z = (int)(key & 0xFFFFFFFF);
+    }
+
+    private static float InnerSlope(float dist, float core, float rim)
+    {
+        if (dist <= core)
+            return 1f;
+        if (dist >= rim)
+            return 0f;
+        float t = Mathf.InverseLerp(core, rim, dist);
+        return 1f - Mathf.SmoothStep(0f, 1f, Mathf.SmoothStep(0f, 1f, t));
     }
 
     private static bool TryClosestOnPath(
@@ -301,7 +458,7 @@ internal static class RiverTerrainReapply
         if (d1 < d0)
             (d0, d1) = (d1, d0);
 
-        float step = 2f;
+        float step = 1f;
         float best = float.MaxValue;
         float bestY = 0f;
         float bestD = d0;
