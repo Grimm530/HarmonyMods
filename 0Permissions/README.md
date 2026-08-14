@@ -4,6 +4,8 @@ Oxide-style **groups + permissions** for Oxide-free servers. Kits, RaidableBases
 
 Named **`0Permissions`** so filesystem / HarmonyLoader startup order places it before other mods.
 
+On load it also applies `+server.identity` from the command line (and creates `server/<identity>/`) **before** other mods can touch `FileStorage`. Harmony runs at `BeforeSceneLoad`; if FileStorage opens while identity is still `my_server_identity`, SQLite error 14 poisons the type and world save load fails. A full process restart is required after that — `harmony.reload` cannot recover FileStorage.
+
 ## Identity
 
 | Field | Value |
@@ -73,8 +75,22 @@ perm show groups
 ```
 
 Dotted form also works: `perm.usergroup`, `perm.grant`, `perm.show`.
+Oxide-compatible aliases also work: `oxide.usergroup`, `oxide.grant`, `oxide.revoke`, `oxide.group`, `oxide.show`.
 
 Short aliases: `usergroup`, `grant`, `revoke`.
+
+### Tebex (RCON)
+
+Keep Tebex Game Server Commands exactly like this (`{id}` = SteamID64). Groups must already exist in `HarmonyData/Permissions/groups.json`:
+
+```text
+perm usergroup add {id} vipd
+perm usergroup add {id} rpboost3x
+perm usergroup remove {id} vipd
+perm usergroup remove {id} rpboost3x
+```
+
+Every successful change (Tebex, RCON, in-game AdminMenu, or Harmony API) prints to the server console, e.g. `[Permissions] Added user 7656… (Name) to group 'vipd'`.
 
 | Command | Oxide equivalent |
 |---------|------------------|
@@ -100,9 +116,24 @@ harmony.reload 0Permissions
 
 You should see: `[Permissions] Server admin bypass-all=False …` and `Invoking N ready callback(s)…`.
 
-Consumer mods (AdminMenu, Kits, Backpacks, …) **auto-rebind** when `Permissions_Generation` changes. You do **not** need to `harmony.reload` those mods after reloading 0Permissions. Mods that register permissions subscribe a ready callback so their `RegisterPermission` / group grants run again on 0Permissions load/reload.
+Consumer mods (AdminMenu, Kits, Backpacks, BetterChat, …) **auto-rebind** when `Permissions_Generation` changes. You do **not** need to `harmony.reload` those mods after reloading 0Permissions. Mods that register permissions subscribe a ready callback so their `RegisterPermission` / group grants run again on 0Permissions load/reload.
 
 The `0` prefix makes this mod sort before other `HarmonyMods/*.dll` names; lazy bind + ready callbacks remain the failsafe if a consumer still loads first.
+
+## BetterChat membership feed
+
+0Permissions **pushes** group lists so BetterChat does not have to reflect into a Cecil-renamed assembly:
+
+| AppDomain key | Type | Purpose |
+|---------------|------|---------|
+| `Permissions_GetUserGroupsFn` | `Func<string, string[]>` | SteamID → group names |
+| `Permissions_UserHasGroupFn` | `Func<string, string, bool>` | Membership check |
+| `Permissions_GetAllGroupNamesFn` | `Func<string[]>` | All group names |
+| `Permissions_UserGroupsCsv` | `Dictionary<string, string>` | SteamID → `"admin,owner,default"` |
+| `Permissions_AllGroupNamesCsv` | `string` | Comma-separated group names |
+| `Permissions_MembershipChangedCallbacks` | `List<Action<string>>` | Fired on add/remove user/group |
+
+AdminMenu already talks to 0Permissions for grants; it does **not** need to talk to BetterChat. Adding a player to `admin` in AdminMenu updates the snapshot and notifies BetterChat.
 
 ## Examples (kits)
 
@@ -124,6 +155,8 @@ Players without the kit's `Permission` field will not see/redeem that kit (same 
 ```
 
 Load **0Permissions** before consumers when possible. Consumers resolve the API lazily and **auto-rebind** after `harmony.reload 0Permissions` via `Permissions_Generation` + ready callbacks — you do not need to reload AdminMenu / Kits / etc. after 0Permissions.
+
+After a FileStorage identity fix, **fully restart** the dedicated process (not `harmony.reload 0Permissions`). Look for `[Permissions] Applied server.identity from command line before FileStorage: grimm` near the top of the log, before Minimap / other image mods load.
 
 ## Note on Rust `ownerid`
 

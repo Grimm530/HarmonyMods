@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace RoadFix.Bridge;
@@ -44,23 +43,25 @@ internal static class RiverTerrainReapply
 
     private static void ReapplyFullRivers()
     {
-        if (TerrainMeta.Path?.Rivers == null || TerrainMeta.Path.Rivers.Count == 0)
+        List<PathList> rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+        if (rivers == null || rivers.Count == 0)
             return;
 
         TerrainHeightMap heightMap = TerrainMeta.HeightMap;
-        int rivers = 0;
-        foreach (PathList river in TerrainMeta.Path.Rivers.AsEnumerable().Reverse())
+        int riverCount = 0;
+        for (int i = rivers.Count - 1; i >= 0; i--)
         {
+            PathList river = rivers[i];
             if (river?.Path == null)
                 continue;
             heightMap.Push();
             river.AdjustTerrainHeight(1f, 1f, scaleWidthWithLength: true);
             heightMap.Pop();
-            rivers++;
+            riverCount++;
         }
 
         if (RoadFixConfig.Config?.DebugLogging == true)
-            Debug.Log($"[RoadFix] Full river height re-apply on {rivers} river(s) (wide OuterFade — can float props)");
+            Debug.Log($"[RoadFix] Full river height re-apply on {riverCount} river(s) (wide OuterFade — can float props)");
     }
 
     private static void ReapplyAtCrossingsOnly()
@@ -130,12 +131,13 @@ internal static class RiverTerrainReapply
         riverPt = default;
         river = null;
         riverDist = 0f;
-        if (TerrainMeta.Path?.Rivers == null)
+        List<PathList> rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+        if (rivers == null)
             return false;
 
         Vector3 center = crossing.Center;
         float best = float.MaxValue;
-        foreach (PathList r in TerrainMeta.Path.Rivers)
+        foreach (PathList r in rivers)
         {
             if (r?.Path == null)
                 continue;

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadFix.Bridge;
@@ -81,14 +82,15 @@ internal static class RiverProximity
         river = null;
         riverDist = 0f;
         radius = 0f;
-        if (TerrainMeta.Path?.Rivers == null)
+        List<PathList> rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+        if (rivers == null)
             return false;
 
         float best = float.MaxValue;
         PathList bestRiver = null;
         float bestD = 0f;
 
-        foreach (PathList r in TerrainMeta.Path.Rivers)
+        foreach (PathList r in rivers)
         {
             if (r?.Path == null)
                 continue;
@@ -145,12 +147,13 @@ internal static class RiverProximity
     public static bool TryGetRiverBedY(Vector3 worldPos, float pad, out float bedY)
     {
         bedY = worldPos.y;
-        if (TerrainMeta.Path?.Rivers == null)
+        List<PathList> rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+        if (rivers == null)
             return false;
 
         float best = (24f + pad) * (24f + pad);
         bool found = false;
-        foreach (PathList river in TerrainMeta.Path.Rivers)
+        foreach (PathList river in rivers)
         {
             if (river?.Path == null)
                 continue;
@@ -187,13 +190,14 @@ internal static class RiverProximity
         _built = true;
         _res = 256;
         _mask = new byte[_res * _res];
-        if (TerrainMeta.Path?.Rivers == null)
+        List<PathList> rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+        if (rivers == null)
             return;
 
         float mapSize = Mathf.Max(1f, TerrainMeta.Size.x);
         float cell = mapSize / _res;
         // River core ~ half width; riverside band ~ +12m (matches prior fade band).
-        foreach (PathList river in TerrainMeta.Path.Rivers)
+        foreach (PathList river in rivers)
         {
             if (river?.Path == null)
                 continue;

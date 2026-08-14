@@ -17,7 +17,7 @@ Startup load order is filesystem-defined. AdminMenu auto-rebinds and re-register
 ## Access (Permissions only)
 
 - `/admin` requires `adminmenu.use` — **no** game `IsAdmin` bypass.
-- On load, AdminMenu grants all `adminmenu.*` section perms to the Permissions group **`admin`**.
+- On load, AdminMenu grants all built-in `adminmenu.*` section perms **and** any non-empty `RequiredPermission` values from `HarmonyConfig/AdminMenu.json` (Player Info buttons like Backpacks / InventoryViewer / Freeze) to the Permissions group **`admin`**.
 - Put staff in that group (they then see Commands, Permissions, Groups, Convars, Plugins, Give, Player Info, etc.):
 
 ```text
@@ -32,6 +32,13 @@ perm grant group admin adminmenu.permissions
 ...
 ```
 
+Player Info custom command perms used by the default config (also auto-granted to `admin`):
+
+| Feature | Permission |
+|---------|------------|
+| View Backpack | `backpacks.admin` |
+| View Inventory | `inventoryviewer.allowed` |
+| Freeze / Unfreeze | `freeze.use` |
 ## Paths
 
 | Kind | Path |

@@ -10,7 +10,8 @@ internal static class BridgeCrossingFinder
     {
         var cfg = RoadFixConfig.Config;
         var results = new List<BridgeCrossing>();
-        if (cfg == null || TerrainMeta.Path?.Rivers == null || TerrainMeta.Path.Rivers.Count == 0)
+        List<PathList> rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+        if (cfg == null || rivers == null || rivers.Count == 0)
             return results;
 
         float step = Mathf.Max(1f, cfg.CrossingSampleStep);

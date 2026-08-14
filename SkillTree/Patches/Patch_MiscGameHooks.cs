@@ -1,7 +1,6 @@
 // Misc game hooks — targets verified against .cursor/!Assembly-RUST for this server build.
 using System;
 using System.Collections.Generic;
-using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 using STPlugin = Oxide.Plugins.SkillTree;
@@ -191,17 +190,18 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(Hammer), nameof(Hammer.DoAttackShared))]
     public static class Hammer_DoAttackShared_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        [HarmonyPrefix]
+        public static bool Prefix(Hammer __instance, HitInfo info)
         {
-            return CallHookReplace.Replace(instructions, "OnHammerHit",
-                AccessTools.Method(typeof(Hammer_DoAttackShared_Patch), nameof(CallHookShim)));
-        }
-
-        public static object CallHookShim(string hook, object player, object info)
-        {
-            try { return STPlugin.Dispatch_OnHammerHit(player as BasePlayer, info as HitInfo); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnHammerHit: " + ex.Message); return null; }
+            var player = __instance?.GetOwnerPlayer();
+            if (player == null || info == null) return true;
+            try
+            {
+                if (STPlugin.Dispatch_OnHammerHit(player, info) != null)
+                    return false;
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnHammerHit: " + ex.Message); }
+            return true;
         }
     }
 

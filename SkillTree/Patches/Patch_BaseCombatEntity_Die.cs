@@ -1,6 +1,12 @@
-// OnEntityDeath / OnPlayerDeath — postfix on BaseCombatEntity.Die.
-// ScientistNPC / ScarecrowNPC / etc. inherit BasePlayer, so typed NPC XP must run
-// BEFORE the generic BasePlayer branch (otherwise scientist kill XP is dead).
+// OnEntityDeath / OnPlayerDeath — Prefix at Oxide CallHook timing (NOT Die postfix).
+//
+// Oxide fires OnEntityDeath inside BaseCombatEntity.Die BEFORE OnDied/DropItems/Kill.
+// A Die Postfix runs after loot has already dropped and IsDestroyed is true, so
+// OnEntityDeath's early `entity.IsDestroyed` return kills Loot Magnet (HandleLootPickup),
+// barrel XP, Node_Spawn_Chance (via ResourceEntity), etc.
+//
+// This server has no Oxide CallHook strings in game IL, so transpilers never match.
+// Prefix calls the same typed dispatch SkillTree already uses.
 using HarmonyLib;
 using STPlugin = Oxide.Plugins.SkillTree;
 
@@ -9,29 +15,18 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Die), new[] { typeof(HitInfo) })]
     public static class Patch_BaseCombatEntity_Die
     {
-        [HarmonyPostfix]
-        public static void Postfix(BaseCombatEntity __instance, HitInfo info)
+        [HarmonyPrefix]
+        public static void Prefix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null) return;
-
-            // Typed NPC deaths (ScientistNPC is a BasePlayer subclass).
-            if (__instance is ScarecrowNPC ||
-                __instance is GingerbreadNPC ||
-                __instance is ScientistNPC ||
-                __instance is TunnelDweller ||
-                __instance is UnderwaterDweller)
+            try
             {
-                STPlugin.Dispatch_OnPlayerDeathNpc(__instance, info);
-                return;
+                if (__instance != null)
+                    STPlugin.Dispatch_OnEntityDeath(__instance, info);
             }
-
-            if (__instance is BasePlayer player)
+            catch (System.Exception ex)
             {
-                STPlugin.Dispatch_OnPlayerDeath(player, info);
-                return;
+                UnityEngine.Debug.LogWarning("[SkillTree] OnEntityDeath: " + ex.Message);
             }
-
-            STPlugin.Dispatch_OnEntityDeath(__instance, info);
         }
     }
 
@@ -39,11 +34,38 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(ResourceEntity), nameof(ResourceEntity.OnDied))]
     public static class ResourceEntity_OnDied_Patch
     {
-        [HarmonyPostfix]
-        public static void Postfix(ResourceEntity __instance, HitInfo info)
+        [HarmonyPrefix]
+        public static void Prefix(ResourceEntity __instance, HitInfo info)
         {
-            if (__instance == null) return;
-            STPlugin.Dispatch_OnEntityDeath(__instance, info);
+            try
+            {
+                if (__instance != null)
+                    STPlugin.Dispatch_OnEntityDeath(__instance, info);
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[SkillTree] OnEntityDeath(ResourceEntity): " + ex.Message);
+            }
+        }
+    }
+
+    // OnPlayerDeath — BasePlayer.Die (can cancel death when non-null).
+    [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Die), new[] { typeof(HitInfo) })]
+    public static class Patch_BasePlayer_Die
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(BasePlayer __instance, HitInfo info)
+        {
+            try
+            {
+                if (__instance != null && STPlugin.Dispatch_OnPlayerDeathHook(__instance, info) != null)
+                    return false;
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[SkillTree] OnPlayerDeath: " + ex.Message);
+            }
+            return true;
         }
     }
 }

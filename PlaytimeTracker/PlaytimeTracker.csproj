@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyName>PlaytimeTracker</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>PlaytimeTrackerHarmony</RootNamespace>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Description>Harmony mod: PlaytimeTracker 0.2.21. Config: HarmonyConfig/PlaytimeTracker.json. Data: HarmonyData/PlaytimeTracker/</Description>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
+    <Publicize Include="Assembly-CSharp" IncludeVirtualMembers="true" IncludeCompilerGeneratedMembers="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony"><HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(RustManaged)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.System"><HintPath>$(RustManaged)\Facepunch.System.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.UnityEngine"><HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.Network"><HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.Console"><HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

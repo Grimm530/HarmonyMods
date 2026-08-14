@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyName>SortButton</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>SortButton</RootNamespace>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Description>Harmony mod: SortButton 2.7.0 storage sort CUI.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Publicize Include="Assembly-CSharp" IncludeVirtualMembers="true" IncludeCompilerGeneratedMembers="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony"><HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(RustManaged)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp-firstpass"><HintPath>$(RustManaged)\Assembly-CSharp-firstpass.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.System"><HintPath>$(RustManaged)\Facepunch.System.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.Unity"><HintPath>$(RustManaged)\Facepunch.Unity.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.UnityEngine"><HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.Network"><HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.Console"><HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Facepunch.Steamworks.Win64"><HintPath>$(RustManaged)\Facepunch.Steamworks.Win64.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Rust.Global"><HintPath>$(RustManaged)\Rust.Global.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Rust.Data"><HintPath>$(RustManaged)\Rust.Data.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Rust.Localization"><HintPath>$(RustManaged)\Rust.Localization.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(RustManaged)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(RustManaged)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(RustManaged)\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(RustManaged)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule"><HintPath>$(RustManaged)\UnityEngine.UnityWebRequestModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="obj\**" />
+    <None Remove="obj\**" />
+  </ItemGroup>
+</Project>

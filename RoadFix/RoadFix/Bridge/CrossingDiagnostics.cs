@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
@@ -20,7 +21,8 @@ internal static class CrossingDiagnostics
         if (RoadFixConfig.Config?.DebugLogging != true || crossing.Path?.Path == null)
             return;
 
-        bool isRail = TerrainMeta.Path?.Rails != null && TerrainMeta.Path.Rails.Contains(crossing.Path);
+        List<PathList> rails = TerrainPathAccess.GetRails(TerrainMeta.Path);
+        bool isRail = rails != null && rails.Contains(crossing.Path);
         PathList path = crossing.Path;
         var sb = new StringBuilder(2048);
 

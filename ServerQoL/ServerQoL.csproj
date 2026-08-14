@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ServerQoL</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>ServerQoL</RootNamespace>
+    <Description>Harmony mod combining UnlockInventory, InfiniteBurn, ElectricGeneratorTweaker, InfiniteVendingStock. Config: HarmonyConfig/ServerQoL.json</Description>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Publicize Include="Assembly-CSharp" IncludeVirtualMembers="true" IncludeCompilerGeneratedMembers="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony">
+      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Network">
+      <HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Console">
+      <HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.System">
+      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Data">
+      <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Global">
+      <HintPath>$(RustManaged)\Rust.Global.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>false</Private>
+    </Reference>
+  </ItemDefinitionGroup>
+</Project>

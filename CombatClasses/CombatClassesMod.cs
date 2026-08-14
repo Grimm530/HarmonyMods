@@ -63,6 +63,8 @@ namespace CombatClassesHarmony
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _uiConsoleCommands = new List<string>();
         private Action _permissionsReadyCallback;
+        private Action _betterChatReadyCallback;
+        private Func<BasePlayer, string> _betterChatTitle;
 
         public const string AppDomainApiKey = "CombatClasses_ApiType";
         public const string CuiMarker = "CC";
@@ -103,6 +105,10 @@ namespace CombatClassesHarmony
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
 
+            _betterChatTitle = p => OxidePlugin.GetModInstance()?.HarmonyGetChatTitle(p);
+            _betterChatReadyCallback = BindBetterChat;
+            RegisterBetterChatReadyCallback(_betterChatReadyCallback);
+
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
 
             Debug.Log("[CombatClasses] Harmony mod loaded. Chat: /class /gearbox. Config: HarmonyConfig/CombatClasses.json. SkillTree overlaps disabled.");
@@ -123,9 +129,78 @@ namespace CombatClassesHarmony
             }
         }
 
+        private static void RegisterBetterChatReadyCallback(Action callback)
+        {
+            if (callback == null) return;
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                var mi = t?.GetMethod("RegisterReadyCallback", BindingFlags.Public | BindingFlags.Static,
+                    null, new[] { typeof(Action) }, null);
+                if (mi != null)
+                {
+                    mi.Invoke(null, new object[] { callback });
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var list = AppDomain.CurrentDomain.GetData("BetterChat_ReadyCallbacks") as IList;
+                if (list == null)
+                {
+                    list = new List<Action>();
+                    AppDomain.CurrentDomain.SetData("BetterChat_ReadyCallbacks", list);
+                }
+                if (!list.Contains(callback)) list.Add(callback);
+            }
+            catch { }
+
+            if (AppDomain.CurrentDomain.GetData("BetterChat_ApiType") is Type)
+            {
+                try { callback(); } catch { }
+            }
+        }
+
+        private void BindBetterChat()
+        {
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                var mi = t?.GetMethod("RegisterThirdPartyTitle", BindingFlags.Public | BindingFlags.Static);
+                mi?.Invoke(null, new object[] { "CombatClasses", _betterChatTitle });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[CombatClasses] BetterChat bind: " + ex.Message);
+            }
+        }
+
+        private void UnbindBetterChat()
+        {
+            try
+            {
+                if (_betterChatReadyCallback != null)
+                {
+                    var tReady = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                    var unreg = tReady?.GetMethod("UnregisterReadyCallback", BindingFlags.Public | BindingFlags.Static,
+                        null, new[] { typeof(Action) }, null);
+                    unreg?.Invoke(null, new object[] { _betterChatReadyCallback });
+                }
+                var t = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                var mi = t?.GetMethod("UnregisterThirdPartyTitle", BindingFlags.Public | BindingFlags.Static);
+                mi?.Invoke(null, new object[] { "CombatClasses" });
+            }
+            catch { }
+            _betterChatReadyCallback = null;
+            _betterChatTitle = null;
+        }
+
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
             ChatSayBridge.Unregister("CombatClasses");
+            UnbindBetterChat();
 
             if (_permissionsReadyCallback != null)
             {

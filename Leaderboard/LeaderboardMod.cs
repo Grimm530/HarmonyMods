@@ -439,23 +439,8 @@ public class LeaderboardMod : IHarmonyModHooks
         }
 
         if (players.Count == 0 && updates.Count == 0) return;
-        // Batch to avoid huge single payloads (LeaderBot / MySQL).
-        const int playerChunk = 25;
-        const int updateChunk = 200;
-        int sentPlayers = 0, sentUpdates = 0;
-        for (int p = 0; p < players.Count || sentUpdates < updates.Count;)
-        {
-            var chunkPlayers = new List<PlayerStatsPayload>();
-            var chunkUpdates = new List<StatUpdatePayload>();
-            for (int i = 0; i < playerChunk && p < players.Count; i++, p++)
-                chunkPlayers.Add(players[p]);
-            for (int i = 0; i < updateChunk && sentUpdates < updates.Count; i++, sentUpdates++)
-                chunkUpdates.Add(updates[sentUpdates]);
-            if (chunkPlayers.Count == 0 && chunkUpdates.Count == 0) break;
-            RelaySender.SendBatch(url, chunkUpdates, chunkPlayers);
-            sentPlayers += chunkPlayers.Count;
-        }
-        UnityEngine.Debug.Log($"[Leaderboard] Relay SyncAll queued: {players.Count} players, {updates.Count} stat rows → {url}");
+        var posts = RelaySender.SendBatch(url, updates, players);
+        UnityEngine.Debug.Log($"[Leaderboard] Relay SyncAll queued: {players.Count} players, {updates.Count} stat rows in {posts} POSTs → {url}");
     }
 
     private static PlayerStatsPayload ToPlayerPayload(PlayerStats s)

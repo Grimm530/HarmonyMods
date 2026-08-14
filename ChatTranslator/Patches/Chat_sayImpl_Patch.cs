@@ -16,6 +16,14 @@ internal class Chat_sayImpl_Patch
         if (ChatTranslatorMod.Instance == null || !ChatTranslatorMod.IsTranslationAPIAvailable())
             return true; // Let original run
 
+        // BetterChat owns formatted send (titles + colours). Skip to avoid double messages.
+        try
+        {
+            if (AppDomain.CurrentDomain.GetData("BetterChat_SkipTranslator") is true)
+                return true;
+        }
+        catch { }
+
         var config = ChatTranslatorConfig.Config;
         if (config == null) return true;
 

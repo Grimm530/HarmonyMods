@@ -77,6 +77,8 @@ namespace SkillTreeHarmony
         private readonly List<string> _uiConsoleCommands = new List<string>();
         private Action _permissionsReadyCallback;
         private Action _movementSpeedReadyCallback;
+        private Action _betterChatReadyCallback;
+        private Func<Dictionary<string, object>, object> _betterChatModifier;
 
         public const string AppDomainApiKey = "SkillTree_ApiType";
         public const string CuiMarker = "ST";
@@ -133,6 +135,10 @@ namespace SkillTreeHarmony
             _movementSpeedReadyCallback = OnMovementSpeedReady;
             RegisterMovementSpeedReadyCallback(_movementSpeedReadyCallback);
 
+            _betterChatModifier = dict => OxidePlugin.GetModInstance()?.HarmonyOnBetterChat(dict);
+            _betterChatReadyCallback = BindBetterChat;
+            RegisterBetterChatReadyCallback(_betterChatReadyCallback);
+
             // Start init coroutine (waits for ServerMgr + ItemManager).
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
 
@@ -152,6 +158,75 @@ namespace SkillTreeHarmony
             {
                 Debug.LogWarning("[SkillTree] Permissions ready re-register: " + ex.Message);
             }
+        }
+
+        private static void RegisterBetterChatReadyCallback(Action callback)
+        {
+            if (callback == null) return;
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                var mi = t?.GetMethod("RegisterReadyCallback", BindingFlags.Public | BindingFlags.Static,
+                    null, new[] { typeof(Action) }, null);
+                if (mi != null)
+                {
+                    mi.Invoke(null, new object[] { callback });
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var list = AppDomain.CurrentDomain.GetData("BetterChat_ReadyCallbacks") as IList;
+                if (list == null)
+                {
+                    list = new List<Action>();
+                    AppDomain.CurrentDomain.SetData("BetterChat_ReadyCallbacks", list);
+                }
+                if (!list.Contains(callback)) list.Add(callback);
+            }
+            catch { }
+
+            if (AppDomain.CurrentDomain.GetData("BetterChat_ApiType") is Type)
+            {
+                try { callback(); } catch { }
+            }
+        }
+
+        private void BindBetterChat()
+        {
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                var mi = t?.GetMethod("RegisterOnBetterChat", BindingFlags.Public | BindingFlags.Static);
+                mi?.Invoke(null, new object[] { _betterChatModifier });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SkillTree] BetterChat bind: " + ex.Message);
+            }
+        }
+
+        private void UnbindBetterChat()
+        {
+            try
+            {
+                if (_betterChatReadyCallback != null)
+                {
+                    var tReady = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                    var unreg = tReady?.GetMethod("UnregisterReadyCallback", BindingFlags.Public | BindingFlags.Static,
+                        null, new[] { typeof(Action) }, null);
+                    unreg?.Invoke(null, new object[] { _betterChatReadyCallback });
+                }
+                if (_betterChatModifier != null)
+                {
+                    var t = AppDomain.CurrentDomain.GetData("BetterChat_ApiType") as Type;
+                    var mi = t?.GetMethod("UnregisterOnBetterChat", BindingFlags.Public | BindingFlags.Static);
+                    mi?.Invoke(null, new object[] { _betterChatModifier });
+                }
+            }
+            catch { }
         }
 
         private void OnMovementSpeedReady()
@@ -230,6 +305,9 @@ namespace SkillTreeHarmony
                 _permissionsReadyCallback = null;
             }
             _movementSpeedReadyCallback = null;
+            UnbindBetterChat();
+            _betterChatReadyCallback = null;
+            _betterChatModifier = null;
 
             if (_initCoroutine != null && ModRunner.Instance != null)
             {
@@ -740,13 +818,18 @@ namespace SkillTreeHarmony
             string dictKey  = hasDot ? name : fullName;
 
             var captured = name;
+            // Facepunch Arg.HasPermission: RCON (Tebex) only runs commands with ServerAdmin=true.
+            // ServerUser=true keeps player CUI buttons working when serverAdmin is false for UI cmds.
+            // Admin/store cmds (givesp, etc.) must be ServerAdmin so RCON is not silently denied.
+            bool allowAdmin = serverAdmin || IsRconAdminConsoleCommand(cmdName);
             var cmd = new ConsoleSystem.Command
             {
                 Name              = cmdName,
                 Parent            = parent,
                 FullName          = fullName,
                 Variable          = false,
-                ServerAdmin       = serverAdmin,
+                ServerAdmin       = allowAdmin,
+                ServerUser        = true,
                 AllowRunFromServer= true,
                 Replicated        = false,
                 Call              = a =>
@@ -761,6 +844,39 @@ namespace SkillTreeHarmony
                 ConsoleSystem.Index.Server.GlobalDict[cmdName] = cmd;
 
             _registeredCommands.Add(cmd);
+        }
+
+        /// <summary>
+        /// Console commands Tebex/RCON/admin typically fire. Must have ServerAdmin=true or
+        /// Facepunch returns "Permission denied" / "You cannot run this command".
+        /// </summary>
+        private static bool IsRconAdminConsoleCommand(string cmdName)
+        {
+            if (string.IsNullOrEmpty(cmdName)) return false;
+            switch (cmdName.ToLowerInvariant())
+            {
+                case "givesp":
+                case "givesptoall":
+                case "givexp":
+                case "givexptoall":
+                case "givexpdebt":
+                case "setxp":
+                case "resetdata":
+                case "stresetalldata":
+                case "strespecplayer":
+                case "strespecallplayers":
+                case "stremoveplayerdata":
+                case "stgiveitem":
+                case "getplayerinfo":
+                case "stresetxpdebt":
+                case "addleveloverride":
+                case "addpointoverride":
+                case "addprestigelevel":
+                case "stversion":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private void UnregisterConsoleCommands()

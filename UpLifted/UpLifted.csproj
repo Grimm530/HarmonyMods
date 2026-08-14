@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyName>UpLifted</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>UpLiftedHarmony</RootNamespace>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Harmony mod: UpLifted 2.6.0 (Oxide port). Config: HarmonyConfig/UpLifted.json. Data: HarmonyData/UpLifted/</Description>
+    <Nullable>disable</Nullable>
+    <DefineConstants>$(DefineConstants);OXIDE_PUBLICIZED</DefineConstants>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>false</Private>
+    </Reference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
+    <Publicize Include="Assembly-CSharp" IncludeVirtualMembers="true" IncludeCompilerGeneratedMembers="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\ConsoleIndexCompat.cs" Link="ConsoleIndexCompat.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Rust.Harmony"><HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath></Reference>
+    <Reference Include="Assembly-CSharp-firstpass"><HintPath>$(RustManaged)\Assembly-CSharp-firstpass.dll</HintPath></Reference>
+    <Reference Include="0Harmony"><HintPath>$(RustManaged)\0Harmony.dll</HintPath></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="Facepunch.System"><HintPath>$(RustManaged)\Facepunch.System.dll</HintPath></Reference>
+    <Reference Include="Facepunch.Unity" Condition="Exists('$(RustManaged)\Facepunch.Unity.dll')"><HintPath>$(RustManaged)\Facepunch.Unity.dll</HintPath></Reference>
+    <Reference Include="Facepunch.UnityEngine"><HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath></Reference>
+    <Reference Include="Facepunch.Network"><HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath></Reference>
+    <Reference Include="Facepunch.Console"><HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath></Reference>
+    <Reference Include="Rust.Data"><HintPath>$(RustManaged)\Rust.Data.dll</HintPath></Reference>
+    <Reference Include="Rust.Global"><HintPath>$(RustManaged)\Rust.Global.dll</HintPath></Reference>
+    <Reference Include="Rust.World" Condition="Exists('$(RustManaged)\Rust.World.dll')"><HintPath>$(RustManaged)\Rust.World.dll</HintPath></Reference>
+    <Reference Include="Rust.Clans" Condition="Exists('$(RustManaged)\Rust.Clans.dll')"><HintPath>$(RustManaged)\Rust.Clans.dll</HintPath></Reference>
+    <Reference Include="Rust.Localization" Condition="Exists('$(RustManaged)\Rust.Localization.dll')"><HintPath>$(RustManaged)\Rust.Localization.dll</HintPath></Reference>
+    <Reference Include="mscorlib"><HintPath>$(RustManaged)\mscorlib.dll</HintPath></Reference>
+    <Reference Include="System"><HintPath>$(RustManaged)\System.dll</HintPath></Reference>
+    <Reference Include="System.Core"><HintPath>$(RustManaged)\System.Core.dll</HintPath></Reference>
+    <Reference Include="System.Memory"><HintPath>$(RustManaged)\System.Memory.dll</HintPath></Reference>
+    <Reference Include="System.Runtime"><HintPath>$(RustManaged)\System.Runtime.dll</HintPath></Reference>
+    <Reference Include="netstandard"><HintPath>$(RustManaged)\netstandard.dll</HintPath></Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe"><HintPath>$(RustManaged)\System.Runtime.CompilerServices.Unsafe.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine" Condition="Exists('$(RustManaged)\UnityEngine.dll')"><HintPath>$(RustManaged)\UnityEngine.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(RustManaged)\UnityEngine.UIModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(RustManaged)\UnityEngine.TextRenderingModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(RustManaged)\UnityEngine.UI.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(RustManaged)\UnityEngine.PhysicsModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.AIModule"><HintPath>$(RustManaged)\UnityEngine.AIModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule" Condition="Exists('$(RustManaged)\UnityEngine.ImageConversionModule.dll')"><HintPath>$(RustManaged)\UnityEngine.ImageConversionModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule" Condition="Exists('$(RustManaged)\UnityEngine.UnityWebRequestModule.dll')"><HintPath>$(RustManaged)\UnityEngine.UnityWebRequestModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule" Condition="Exists('$(RustManaged)\UnityEngine.UnityWebRequestTextureModule.dll')"><HintPath>$(RustManaged)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.TerrainModule" Condition="Exists('$(RustManaged)\UnityEngine.TerrainModule.dll')"><HintPath>$(RustManaged)\UnityEngine.TerrainModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.VehiclesModule" Condition="Exists('$(RustManaged)\UnityEngine.VehiclesModule.dll')"><HintPath>$(RustManaged)\UnityEngine.VehiclesModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.AnimationModule" Condition="Exists('$(RustManaged)\UnityEngine.AnimationModule.dll')"><HintPath>$(RustManaged)\UnityEngine.AnimationModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.AudioModule" Condition="Exists('$(RustManaged)\UnityEngine.AudioModule.dll')"><HintPath>$(RustManaged)\UnityEngine.AudioModule.dll</HintPath></Reference>
+  </ItemGroup>
+  <Target Name="EnsureRustManaged" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(RustManaged)' == '' Or !Exists('$(RustManaged)\Assembly-CSharp.dll')"
+           Text="Could not find Rust Managed folder (Assembly-CSharp.dll)." />
+  </Target>
+</Project>

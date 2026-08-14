@@ -1,5 +1,7 @@
+using System;
 using HarmonyLib;
 using RoadFix.Bridge;
+using UnityEngine;
 
 namespace RoadFix.Patches;
 
@@ -13,11 +15,18 @@ public static class ProcessProceduralObjects_Process_Patch
     [HarmonyPostfix]
     public static void Postfix()
     {
-        if (!RoadFixConfig.IsEnabled())
-            return;
-        if (RoadFixConfig.Config?.SpawnCustomBridges != true)
-            return;
+        try
+        {
+            if (!RoadFixConfig.IsEnabled())
+                return;
+            if (RoadFixConfig.Config?.SpawnCustomBridges != true)
+                return;
 
-        DeferredBridgeSpawn.Schedule();
+            DeferredBridgeSpawn.Schedule();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[RoadFix] ProcessProceduralObjects postfix failed. {ex}");
+        }
     }
 }

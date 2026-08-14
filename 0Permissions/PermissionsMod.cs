@@ -20,18 +20,33 @@ namespace PermissionsHarmony
         public const string AppDomainApiKey = "Permissions_ApiType";
         public const string AppDomainGenerationKey = "Permissions_Generation";
         public const string AppDomainReadyCallbacksKey = "Permissions_ReadyCallbacks";
+        public const string AppDomainGetUserGroupsFn = "Permissions_GetUserGroupsFn";
+        public const string AppDomainUserHasGroupFn = "Permissions_UserHasGroupFn";
+        public const string AppDomainGetAllGroupNamesFn = "Permissions_GetAllGroupNamesFn";
+        public const string AppDomainUserGroupsCsvKey = "Permissions_UserGroupsCsv";
+        public const string AppDomainAllGroupNamesCsvKey = "Permissions_AllGroupNamesCsv";
+        public const string AppDomainMembershipCallbacksKey = "Permissions_MembershipChangedCallbacks";
 
         private PermissionService _service;
         private readonly List<ConsoleSystem.Command> _registered = new List<ConsoleSystem.Command>();
 
         public PermissionService Service => _service;
 
+        static PermissionsMod()
+        {
+            // CreateInstance runs before PatchAll / other mods. Set identity before anyone
+            // touches FileStorage.server (Minimap's EnterGame patch does this during PatchAll).
+            ServerIdentityGuard.EnsureReady();
+        }
+
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            ServerIdentityGuard.EnsureReady();
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             _service = new PermissionService(root);
             BumpGenerationAndPublishApi();
+            PublishMembershipApi();
             RegisterCommands();
             Debug.Log($"[Permissions] Loaded gen={GetGeneration()}. Groups={_service.GetGroups().Count()} RegisteredPerms={_service.GetPermissions().Count()} Data=HarmonyData/Permissions/");
             InvokeReadyCallbacks();
@@ -42,8 +57,12 @@ namespace PermissionsHarmony
             UnregisterCommands();
             _service?.Shutdown();
             _service = null;
-            // Keep Permissions_Generation and ready callbacks so consumers rebind/re-register on next load.
+            // Keep Permissions_Generation, snapshots, and ready callbacks so consumers rebind on next load.
+            // Drop Func delegates so they cannot call into this unloaded assembly.
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); } catch { }
+            try { AppDomain.CurrentDomain.SetData(AppDomainGetUserGroupsFn, null); } catch { }
+            try { AppDomain.CurrentDomain.SetData(AppDomainUserHasGroupFn, null); } catch { }
+            try { AppDomain.CurrentDomain.SetData(AppDomainGetAllGroupNamesFn, null); } catch { }
             Instance = null;
         }
 
@@ -99,6 +118,106 @@ namespace PermissionsHarmony
             int gen = GetGeneration() + 1;
             try { AppDomain.CurrentDomain.SetData(AppDomainGenerationKey, gen); } catch { }
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(PermissionsMod)); } catch { }
+        }
+
+        /// <summary>
+        /// BCL Funcs + string snapshots so BetterChat can read groups without MethodInfo
+        /// on a Cecil-renamed 0Permissions assembly.
+        /// </summary>
+        private static void PublishMembershipApi()
+        {
+            try { AppDomain.CurrentDomain.SetData(AppDomainGetUserGroupsFn, (Func<string, string[]>)GetUserGroups); } catch { }
+            try { AppDomain.CurrentDomain.SetData(AppDomainUserHasGroupFn, (Func<string, string, bool>)UserHasGroup); } catch { }
+            try { AppDomain.CurrentDomain.SetData(AppDomainGetAllGroupNamesFn, (Func<string[]>)GetAllGroupNames); } catch { }
+            RefreshMembershipSnapshot(log: true);
+        }
+
+        public static string[] GetAllGroupNames()
+        {
+            var svc = Instance?._service;
+            if (svc == null) return Array.Empty<string>();
+            return svc.GetGroups().ToArray();
+        }
+
+        public static void RegisterMembershipChangedCallback(Action<string> callback)
+        {
+            if (callback == null) return;
+            var list = GetOrCreateMembershipCallbacks();
+            lock (list)
+            {
+                if (!list.Contains(callback))
+                    list.Add(callback);
+            }
+        }
+
+        public static void UnregisterMembershipChangedCallback(Action<string> callback)
+        {
+            if (callback == null) return;
+            try
+            {
+                if (AppDomain.CurrentDomain.GetData(AppDomainMembershipCallbacksKey) is List<Action<string>> list)
+                {
+                    lock (list)
+                        list.Remove(callback);
+                }
+            }
+            catch { }
+        }
+
+        private static List<Action<string>> GetOrCreateMembershipCallbacks()
+        {
+            try
+            {
+                if (AppDomain.CurrentDomain.GetData(AppDomainMembershipCallbacksKey) is List<Action<string>> existing)
+                    return existing;
+            }
+            catch { }
+
+            var created = new List<Action<string>>();
+            try { AppDomain.CurrentDomain.SetData(AppDomainMembershipCallbacksKey, created); } catch { }
+            return created;
+        }
+
+        /// <summary>Rebuild the cross-mod snapshot. playerId empty = all users (group create/delete).</summary>
+        public static void NotifyMembershipChanged(string playerId)
+        {
+            RefreshMembershipSnapshot();
+
+            List<Action<string>> snapshot;
+            try
+            {
+                if (!(AppDomain.CurrentDomain.GetData(AppDomainMembershipCallbacksKey) is List<Action<string>> list) || list.Count == 0)
+                    return;
+                lock (list)
+                    snapshot = new List<Action<string>>(list);
+            }
+            catch
+            {
+                return;
+            }
+
+            string id = playerId ?? "";
+            foreach (var cb in snapshot)
+            {
+                try { cb(id); }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Permissions] Membership callback: " + ex.Message);
+                }
+            }
+        }
+
+        internal static void RefreshMembershipSnapshot(bool log = false)
+        {
+            var svc = Instance?._service;
+            var csv = svc != null
+                ? svc.BuildUserGroupsCsv()
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string allNames = svc != null ? string.Join(",", svc.GetGroups()) : "";
+            try { AppDomain.CurrentDomain.SetData(AppDomainUserGroupsCsvKey, csv); } catch { }
+            try { AppDomain.CurrentDomain.SetData(AppDomainAllGroupNamesCsvKey, allNames); } catch { }
+            if (log)
+                Debug.Log($"[Permissions] Membership snapshot: {csv.Count} users, groups=[{allNames}]");
         }
 
         private static List<Action> GetOrCreateReadyCallbacks()
@@ -208,11 +327,15 @@ namespace PermissionsHarmony
             return arr;
         }
 
+        public static int GetGroupRank(string groupName) =>
+            Instance?._service?.GetGroupData(groupName)?.Rank ?? 0;
+
         #region Commands
 
         private void RegisterCommands()
         {
             // Root dispatcher: perm usergroup add <id> <group>
+            // Tebex/RCON uses this space form; ServerAdmin=true is required for FromRcon.
             Register("perm", HandlePermRoot, parent: null);
             // Dotted style (like al.additems): perm.usergroup / perm.grant / ...
             Register("usergroup", HandleUserGroup, parent: "perm");
@@ -220,12 +343,18 @@ namespace PermissionsHarmony
             Register("revoke", HandleRevoke, parent: "perm");
             Register("group", HandleGroup, parent: "perm");
             Register("show", HandleShow, parent: "perm");
+            // Oxide-compatible aliases (common Tebex package templates)
+            Register("usergroup", HandleUserGroup, parent: "oxide");
+            Register("grant", HandleGrant, parent: "oxide");
+            Register("revoke", HandleRevoke, parent: "oxide");
+            Register("group", HandleGroup, parent: "oxide");
+            Register("show", HandleShow, parent: "oxide");
             // Global short aliases (no parent)
             Register("grant", HandleGrant, parent: null);
             Register("revoke", HandleRevoke, parent: null);
             Register("usergroup", HandleUserGroup, parent: null);
             Register("p.show", HandleShow, parent: null);
-            Debug.Log("[Permissions] Commands ready: perm.usergroup | perm grant/revoke/usergroup/group/show | usergroup | grant | revoke");
+            Debug.Log("[Permissions] Commands ready (RCON/Tebex): perm usergroup | perm.usergroup | oxide.usergroup | grant | revoke");
         }
 
         private void Register(string name, Action<ConsoleSystem.Arg> handler, string parent = null)
@@ -260,7 +389,9 @@ namespace PermissionsHarmony
                 Name = cmdName,
                 Parent = cmdParent,
                 FullName = fullName,
+                // ServerAdmin required for Tebex/RCON (Facepunch Arg.HasPermission).
                 ServerAdmin = true,
+                ServerUser = false,
                 Variable = false,
                 AllowRunFromServer = true,
                 Call = arg =>
@@ -338,6 +469,7 @@ namespace PermissionsHarmony
             string[] keys =
             {
                 "global.perm", "perm.usergroup", "perm.grant", "perm.revoke", "perm.group", "perm.show",
+                "oxide.usergroup", "oxide.grant", "oxide.revoke", "oxide.group", "oxide.show",
                 "global.grant", "global.revoke", "global.usergroup", "p.show"
             };
             foreach (var k in keys)

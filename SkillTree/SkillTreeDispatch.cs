@@ -179,6 +179,42 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerDeath(NPC): " + ex.Message); }
         }
 
+        /// <summary>
+        /// Oxide OnPlayerDeath CallHook site in BasePlayer.Die. Routes typed NPC overloads
+        /// before the generic BasePlayer branch. Returns non-null to cancel death (unused by SkillTree).
+        /// </summary>
+        public static object Dispatch_OnPlayerDeathHook(BaseCombatEntity entity, HitInfo info)
+        {
+            var inst = Instance;
+            if (inst == null || !inst.IsSubscribed(nameof(OnPlayerDeath))) return null;
+            try
+            {
+                switch (entity)
+                {
+                    case ScarecrowNPC sc:
+                        inst.OnPlayerDeath(sc, info);
+                        return null;
+                    case GingerbreadNPC gb:
+                        inst.OnPlayerDeath(gb, info);
+                        return null;
+                    case ScientistNPC sn:
+                        inst.OnPlayerDeath(sn, info);
+                        return null;
+                    case TunnelDweller td:
+                        inst.OnPlayerDeath(td, info);
+                        return null;
+                    case UnderwaterDweller ud:
+                        inst.OnPlayerDeath(ud, info);
+                        return null;
+                    case BasePlayer player:
+                        inst.OnPlayerDeath(player, info);
+                        return null;
+                }
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerDeathHook: " + ex.Message); }
+            return null;
+        }
+
         // ---- Player lifecycle --------------------------------------------
 
         public static void Dispatch_OnPlayerConnected(BasePlayer player)

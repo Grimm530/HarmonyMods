@@ -56,7 +56,7 @@ When creating Vanish documentation, include these sections. Adapt content to wha
 ### 2) Project Structure & Topology
 - Single main assembly; entry: `Manager : IHarmonyModHooks` in `HarmonyMods.RustGame.Vanish`.
 - Config path: `HarmonyConfig/Vanish.json`; icon `HarmonyConfig/Vanish.png` or `Vanish.b64`.
-- State flow: Config load → `HiddenPlayers` (Dictionary by UserIDString → VanishComponent); `UserConfig.Get(ulong)` creates/saves per-user config on first access.
+- State flow: Config load → `HiddenPlayers` (Dictionary by UserIDString → VanishComponent); `UserConfig.Get(ulong)` reads existing settings (or defaults); `GetOrCreate` saves a Users entry only for players with vanish access.
 
 ### 3) Persistent Data Model (CRITICAL)
 - **HiddenPlayers:** `Dictionary<string, VanishComponent>` keyed by `BasePlayer.UserIDString`. Only contains currently vanished players. Cleared implicitly when each is destroyed on `Reappear`.
@@ -68,7 +68,7 @@ Document top-level and per-user fields:
 
 | Level | Field | Type | Default / note |
 |-------|--------|------|----------------|
-| Config | Users | Dictionary&lt;ulong, UserConfig&gt; | Per-user settings, created on first Get(id) |
+| Config | Users | Dictionary&lt;ulong, UserConfig&gt; | Per-user settings, created only for authLevel / IsAdmin / AccessList |
 | Config | CanSeeEveryone | List&lt;ulong&gt; | SteamIDs that always see vanished players; gates ShouldNetworkTo patch |
 | Config | AccessList | List&lt;ulong&gt; | SteamIDs allowed to use vanish (with HasAccess) |
 | Config | Messages | Dictionary&lt;string, string&gt; | Localized strings (Disabled, Enabled, Saved, etc.) |
@@ -78,7 +78,7 @@ Document top-level and per-user fields:
 | UserConfig | SafePoints | List&lt;Vector3&gt; | Stored as "x y z" in JSON (UnityVector3Converter) |
 | UserConfig | ImageBase64, ImageColor, ImageOffsetMin/Max, ImageScaleFactor | string/float | UI indicator |
 
-Config load: `Config.ReloadConfig()` (OnLoaded); save on UserConfig.Get when new user, and on various SetConfig commands.
+Config load: `Config.ReloadConfig()` (OnLoaded) prunes Users who are in the world without vanish access; save on UserConfig.GetOrCreate when a permitted user is new, and on various SetConfig commands.
 
 ### 5) Console / Chat Command Surface
 Commands are intercepted via **ConsoleSystem.RunWithResult** prefix: only when `HasAccess(Connection)` (authLevel != 0) and command string contains "vanish" (after stripping chat prefixes and normalizing).
@@ -100,7 +100,7 @@ Result: command is consumed (return false) so game does not process it again.
 ### 6) Harmony Patches & Event Flow (CRITICAL)
 **Permanent patches** (always applied after validation):
 - **ConsoleSystem.RunWithResult** — Prefix: intercept "vanish" commands, toggle or SetConfig; return false to suppress original.
-- **ServerMgr.OnDisconnected** — Prefix: handle disconnect (e.g. reappear or teleport to safepoint).
+- **ServerMgr.OnDisconnected** — Prefix: vanished players only; optional bag/safepoint/underground teleport. Does **not** disable colliders on admin logoff (that killed sleepers and wiped inventory).
 - **BasePlayer.PlayerInit** — Postfix: apply auto-vanish / re-vanish for loaded players after save load or connect.
 - **ServerMgr.Shutdown** — Prefix: set `IsShuttingDown = true`.
 - **SaveRestore.Load** — Prefix: on load, re-vanish or auto-vanish players; optionally clear SafePoints (SafePointsRemoval).

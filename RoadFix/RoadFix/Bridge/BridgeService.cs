@@ -25,11 +25,12 @@ internal static class BridgeService
         var cfg = RoadFixConfig.Config;
         RoadCrossings.Clear();
         _roadBridgesPlaced = false;
-        if (cfg == null || TerrainMeta.Path?.Roads == null)
+        List<PathList> roads = TerrainPathAccess.GetRoads(TerrainMeta.Path);
+        if (cfg == null || roads == null)
             return;
 
         RiverProximity.EnsureCache();
-        List<BridgeCrossing> crossings = BridgeCrossingFinder.FindCrossings(TerrainMeta.Path.Roads, roadsOnlyHierarchy: true);
+        List<BridgeCrossing> crossings = BridgeCrossingFinder.FindCrossings(roads, roadsOnlyHierarchy: true);
         RoadCrossings.AddRange(crossings);
 
         if (cfg.DebugLogging)
@@ -41,11 +42,12 @@ internal static class BridgeService
     {
         var cfg = RoadFixConfig.Config;
         RailCrossings.Clear();
-        if (cfg == null || !cfg.SpawnCustomBridges || TerrainMeta.Path?.Rails == null)
+        List<PathList> rails = TerrainPathAccess.GetRails(TerrainMeta.Path);
+        if (cfg == null || !cfg.SpawnCustomBridges || rails == null)
             return;
 
         RiverProximity.EnsureCache();
-        List<BridgeCrossing> crossings = BridgeCrossingFinder.FindCrossings(TerrainMeta.Path.Rails, roadsOnlyHierarchy: false);
+        List<BridgeCrossing> crossings = BridgeCrossingFinder.FindCrossings(rails, roadsOnlyHierarchy: false);
         RailCrossings.AddRange(crossings);
 
         if (cfg.DebugLogging)

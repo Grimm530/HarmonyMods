@@ -545,7 +545,9 @@ namespace Oxide.Plugins
                     _preventLootingData = new PreventLootingStoredData();
                 // Register PreventLooting chat commands
                 AddCovalenceCommand("share", nameof(PreventLootingShare));
+                AddCovalenceCommand("plshare", nameof(PreventLootingShare));
                 AddCovalenceCommand("unshare", nameof(PreventLootingUnshare));
+                AddCovalenceCommand("plunshare", nameof(PreventLootingUnshare));
                 AddCovalenceCommand("sharelist", nameof(PreventLootingSharelist));
                 AddCovalenceCommand("shareclear", nameof(PreventLootingShareclear));
                 AddCovalenceCommand("checkit", nameof(PreventLootingCheckit));

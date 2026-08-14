@@ -22,8 +22,10 @@ Bosses and helper NPCs spawn through **0GrimmNPC** — the Harmony port of Oxide
   `.cursor/HarmonyMods/0GrimmNPC/`.
 - **0PveMode** (optional) — `"Use the PVE mode of the plugin?"` in config.
 - **Kits** (optional Harmony Kits mod) — kit loadouts via `GiveKit`.
+- **AnimalSpawn** (optional Harmony mod) — boss Animal Ability (`SpawnAnimal`). Source:
+  `.cursor/HarmonyMods/AnimalSpawn/`. Horse shop limits stay in **Shop**, not AnimalSpawn.
 - Soft-null optional Oxide plugins: Economics, ServerRewards, IQEconomic, XPerience,
-  GUIAnnouncements, DiscordMessages, Notify, AnimalSpawn.
+  GUIAnnouncements, DiscordMessages, Notify.
 
 ## Commands
 
@@ -57,10 +59,12 @@ Copies **only** `GrimmBoss.dll` into `HarmonyMods/`.
 
 ```
 harmony.load 0GrimmNPC
+harmony.load AnimalSpawn
 harmony.load GrimmBoss
 ```
 
-Or rely on startup autoload (`0GrimmNPC.dll` sorts before `GrimmBoss.dll`).
+Or rely on startup autoload (`0GrimmNPC.dll` sorts before `GrimmBoss.dll`). Unload Oxide
+`oxide/plugins/AnimalSpawn.cs` when using the Harmony AnimalSpawn helper.
 
 ## Harmony patches
 

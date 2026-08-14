@@ -379,7 +379,7 @@ namespace PlayerSkinsHarmony
                     return 0;
                 
                 case CurrencyType.Scrap:
-                    return player.inventory.GetAmount(m_ScrapItemId);
+                    return player.inventory.GetAmount(m_ScrapItemId, false, false);
                 
                 case CurrencyType.None:
                 default:
@@ -455,7 +455,7 @@ namespace PlayerSkinsHarmony
                     return false;
                 
                 case CurrencyType.Scrap:
-                    if (player.inventory.GetAmount(m_ScrapItemId) >= price)
+                    if (player.inventory.GetAmount(m_ScrapItemId, false, false) >= price)
                     {
                         player.inventory.Take(null, m_ScrapItemId, price);
                         return true;

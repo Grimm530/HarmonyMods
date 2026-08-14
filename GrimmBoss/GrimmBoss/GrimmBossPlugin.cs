@@ -628,7 +628,7 @@ namespace Oxide.Plugins
         // Soft-disabled optional plugins (never assigned by Oxide PluginReference injection in Harmony).
 #pragma warning disable CS0649, CS0169
         [PluginReference] private Plugin PveMode = new PveModePluginBridge();
-        [PluginReference] private readonly Plugin AnimalSpawn;
+        [PluginReference] private Plugin AnimalSpawn = new AnimalSpawnPluginBridge();
         [PluginReference] private readonly Plugin Economics, ServerRewards, IQEconomic, XPerience;
         [PluginReference] private readonly Plugin GUIAnnouncements, DiscordMessages, Notify;
 #pragma warning restore CS0649, CS0169

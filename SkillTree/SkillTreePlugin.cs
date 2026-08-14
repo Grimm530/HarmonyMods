@@ -7621,7 +7621,9 @@ namespace Oxide.Plugins
                         foreach (var component in bp.ingredients)
                         {
                             if (config.tools_black_white_list_settings.craft_refund_blacklist.Contains(component.itemDef.shortname)) continue;
-                            var nitem = ItemManager.CreateByName(component.itemDef.shortname, Convert.ToInt32(component.amount));
+                            var refundAmount = Convert.ToInt32(component.amount);
+                            if (refundAmount < 1) continue;
+                            var nitem = ItemManager.CreateByName(component.itemDef.shortname, refundAmount);
                             if (nitem == null) continue;
                             if (!player.inventory.containerBelt.IsFull() || !player.inventory.containerMain.IsFull())
                             {
@@ -7636,15 +7638,20 @@ namespace Oxide.Plugins
                 }
                 if (bd.GetBuff(Buff.Craft_Duplicate, out value) && RollSuccessful(value) && !config.tools_black_white_list_settings.craft_duplicate_blacklist.Contains(item.info.shortname))
                 {
-                    var ditem = ItemManager.CreateByName(item.info.shortname, item.amount, item.skin);
-                    if (ditem != null)
+                    var dupAmount = item.amount;
+                    if (dupAmount < 1 && task.blueprint != null) dupAmount = task.blueprint.amountToCreate;
+                    if (dupAmount >= 1)
                     {
-                        if (item.info.TryGetComponent<ItemModContainerArmorSlot>(out var modRef) && ditem.info.TryGetComponent<ItemModContainerArmorSlot>(out var modNew))
-                            modNew.CreateAtCapacity(modRef.capacity, ditem);
+                        var ditem = ItemManager.CreateByName(item.info.shortname, dupAmount, item.skin);
+                        if (ditem != null)
+                        {
+                            if (item.info.TryGetComponent<ItemModContainerArmorSlot>(out var modRef) && ditem.info.TryGetComponent<ItemModContainerArmorSlot>(out var modNew))
+                                modNew.CreateAtCapacity(modRef.capacity, ditem);
 
-                        if (config.notification_settings.chatMessageNotificationSettings.Craft_Duplicate_Proc && NotificationsOn(player))
-                            Player.Message(player, string.Format(lang.GetMessage("DuplicateProc", this, player.UserIDString), item.info.displayName.english), config.misc_settings.ChatID);
-                        player.GiveItem(ditem);
+                            if (config.notification_settings.chatMessageNotificationSettings.Craft_Duplicate_Proc && NotificationsOn(player))
+                                Player.Message(player, string.Format(lang.GetMessage("DuplicateProc", this, player.UserIDString), item.info.displayName.english), config.misc_settings.ChatID);
+                            player.GiveItem(ditem);
+                        }
                     }
                 }
             }
@@ -13640,27 +13647,37 @@ namespace Oxide.Plugins
             }
             var amount = arg.GetInt(arg.Args.Length - 1);
             var name = String.Join(" ", arg.Args.Take(arg.Args.Length - 1));
-            var target = name.IsNumeric() ? FindPlayerByID(name, player ?? null) : FindPlayerByName(name, player ?? null);
+            var target = name.IsNumeric() ? FindPlayerByID(name, player ?? null, consoleMsg: false) : FindPlayerByName(name, player ?? null, consoleMsg: false);
             if (target == null)
             {
-                if (config.xp_settings.givesp_offline && ulong.TryParse(name, out var userid)) GiveSPOffline(userid, amount);
+                if (config.xp_settings.givesp_offline && ulong.TryParse(name, out var userid))
+                {
+                    if (GiveSPOffline(userid, amount))
+                        arg.ReplyWith($"Gave {amount} skill points to offline player {userid}");
+                    else
+                        arg.ReplyWith($"No SkillTree data found for offline player {userid} (has not joined yet?).");
+                }
+                else
+                    arg.ReplyWith($"No player found matching '{name}' (enable givesp offline for SteamIDs).");
                 return;
             }
             GiveSkillPoints(target, amount);
             arg.ReplyWith(string.Format(lang.GetMessage("GaveSP", this), amount, target.displayName));
         }
 
-        void GiveSPOffline(ulong id, int amount)
+        bool GiveSPOffline(ulong id, int amount)
         {
-            if (amount == 0) return;
-            if (!id.IsSteamId()) return;
+            if (amount == 0) return false;
+            if (!id.IsSteamId()) return false;
             foreach (var file in Directory.GetFiles(NewDirectory))
             {
                 if (!ulong.TryParse(FormatUserIDFromPath(file), out var fileID) || fileID != id) continue;
                 var obj = JsonConvert.DeserializeObject<PlayerInfo>(File.ReadAllText(file));
                 obj.available_points += amount;
                 File.WriteAllText(file, JsonConvert.SerializeObject(obj));
+                return true;
             }
+            return false;
         }
 
         [ConsoleCommand("givesptoall")]
@@ -14573,10 +14590,20 @@ namespace Oxide.Plugins
 
         private object OnBetterChat(Dictionary<string, object> data)
         {
-            var player = (IPlayer)data["Player"];
-            if (permission.UserHasPermission(player.Id, "skilltree.notitles")) return null;
+            if (data == null) return null;
 
-            if (!ulong.TryParse(player.Id, out var id)) return null;
+            string playerId = null;
+            if (data.TryGetValue("Player", out var playerObj))
+            {
+                if (playerObj is BasePlayer bp)
+                    playerId = bp.UserIDString;
+                else if (playerObj is IPlayer ip)
+                    playerId = ip.Id;
+            }
+            if (string.IsNullOrEmpty(playerId)) return null;
+            if (permission.UserHasPermission(playerId, "skilltree.notitles")) return null;
+
+            if (!ulong.TryParse(playerId, out var id)) return null;
             if (!pcdData.pEntity.TryGetValue(id, out var playerData)) return null;
             if (!playerData.better_chat_enabled) return null;
 
@@ -14595,11 +14622,14 @@ namespace Oxide.Plugins
 
             if (string.IsNullOrEmpty(title)) return null;
 
-            var titles = (List<string>)data["Titles"];
+            var titles = data["Titles"] as List<string>;
+            if (titles == null) return null;
             titles.Add(title);
             data["Titles"] = titles;
             return data;
         }
+
+        internal object HarmonyOnBetterChat(Dictionary<string, object> data) => OnBetterChat(data);
 
         public class IngredientItemInfo
         {

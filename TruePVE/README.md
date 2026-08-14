@@ -95,7 +95,11 @@ Every dispatch honors `IsSubscribed(hookName)`, matching Oxide's subscribe/unsub
 
 Chat + console commands are registered from the plugin's covalence command list at startup, so all
 the standard TruePVE commands work: `tpve` (and `tpve.*` subcommands), `tpve_prod`, `tpve_enable`,
-`share`, `unshare`, `sharelist`, `shareclear`, `checkit`, `lockouts`, `lockui`.
+`plshare`, `plunshare`, `sharelist`, `shareclear`, `checkit`, `lockouts`, `lockui`.
+
+PreventLooting loot-share used to be `/share` / `/unshare`. Those names belong to **DynamicCupShare**
+when that mod is loaded; use `/plshare` and `/plunshare` instead. If DynamicCupShare is not loaded,
+`/share` and `/unshare` still map to PreventLooting.
 
 ## Build / deploy
 

@@ -1,5 +1,5 @@
-// Missing perk hooks — Dispatch_* existed but had no Harmony callers (dead perks).
-// Timing mirrors Oxide CallHook sites in Assembly-CSharp.
+// Perk hooks — Prefix/Postfix at Oxide CallHook timing.
+// This dedicated server has no Oxide CallHook strings in game IL, so transpilers never match.
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -12,8 +12,7 @@ namespace SkillTreeHarmony.Patches
 {
     internal static class CallHookReplace
     {
-        /// <summary>Replace Interface.CallHook after ldstr <paramref name="hookName"/> with <paramref name="replacement"/>.</summary>
-        public static List<CodeInstruction> Replace(IEnumerable<CodeInstruction> instructions, string hookName, MethodInfo replacement)
+        public static List<CodeInstruction> Replace(IEnumerable<CodeInstruction> instructions, string hookName, MethodInfo replacement, bool warn = true)
         {
             var list = new List<CodeInstruction>(instructions);
             if (replacement == null) return list;
@@ -31,7 +30,8 @@ namespace SkillTreeHarmony.Patches
                 }
                 break;
             }
-            Debug.LogWarning($"[SkillTree] CallHookReplace: did not find '{hookName}' — perk may stay dead until Rust IL is re-checked.");
+            if (warn)
+                Debug.LogWarning($"[SkillTree] CallHookReplace: did not find '{hookName}' — perk may stay dead until Rust IL is re-checked.");
             return list;
         }
     }
@@ -41,24 +41,25 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(BaseProjectile), "CLProject")]
     public static class BaseProjectile_CLProject_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnWeaponFired",
-                AccessTools.Method(typeof(BaseProjectile_CLProject_Patch), nameof(CallHookShim)));
-
-        // Oxide: CallHook("OnWeaponFired", projectile, player, mod, projectileShoot)
-        public static object CallHookShim(string hook, object projectile, object player, object mod, object shoot)
+        [HarmonyPrefix]
+        public static void Prefix(BaseProjectile __instance, out int __state)
         {
+            __state = __instance?.primaryMagazine?.contents ?? 0;
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix(BaseProjectile __instance, int __state)
+        {
+            if (__instance == null || __instance.primaryMagazine == null) return;
+            if (__instance.primaryMagazine.contents >= __state) return;
+            var player = __instance.GetOwnerPlayer();
+            if (player == null) return;
             try
             {
-                STPlugin.Dispatch_OnWeaponFired(
-                    projectile as BaseProjectile,
-                    player as BasePlayer,
-                    mod as ItemModProjectile,
-                    shoot as ProtoBuf.ProjectileShoot);
+                var mod = __instance.primaryMagazine.ammoType?.GetComponent<ItemModProjectile>();
+                STPlugin.Dispatch_OnWeaponFired(__instance, player, mod, null);
             }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnWeaponFired: " + ex.Message); }
-            return null;
         }
     }
 
@@ -67,30 +68,34 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(BaseProjectile), "StartReload")]
     public static class BaseProjectile_StartReload_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnWeaponReload",
-                AccessTools.Method(typeof(BaseProjectile_StartReload_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object weapon, object player)
+        [HarmonyPrefix]
+        public static bool Prefix(BaseProjectile __instance, BaseEntity.RPCMessage msg)
         {
-            try { return STPlugin.Dispatch_OnWeaponReload(weapon as BaseProjectile, player as BasePlayer); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnWeaponReload: " + ex.Message); return null; }
+            var player = msg.player;
+            if (player == null) return true;
+            try
+            {
+                if (STPlugin.Dispatch_OnWeaponReload(__instance, player) != null)
+                    return false;
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnWeaponReload: " + ex.Message); }
+            return true;
         }
     }
 
     [HarmonyPatch(typeof(BaseProjectile), nameof(BaseProjectile.DelayedModsChanged))]
     public static class BaseProjectile_DelayedModsChanged_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnWeaponModChange",
-                AccessTools.Method(typeof(BaseProjectile_DelayedModsChanged_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object weapon, object player)
+        [HarmonyPrefix]
+        public static bool Prefix(BaseProjectile __instance)
         {
-            try { return STPlugin.Dispatch_OnWeaponModChange(weapon as BaseProjectile, player as BasePlayer); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnWeaponModChange: " + ex.Message); return null; }
+            try
+            {
+                if (STPlugin.Dispatch_OnWeaponModChange(__instance, __instance.GetOwnerPlayer()) != null)
+                    return false;
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnWeaponModChange: " + ex.Message); }
+            return true;
         }
     }
 
@@ -169,7 +174,6 @@ namespace SkillTreeHarmony.Patches
     }
 
     // ---- Recycler_Speed / Efficiency --------------------------------------
-    // SkillTree early-outs when recycler.IsOn(); safe to call on every toggle.
 
     [HarmonyPatch(typeof(Recycler), "SVSwitch")]
     public static class Recycler_SVSwitch_Patch
@@ -185,43 +189,32 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Fishing: Extra_Fish / Fishing_Luck / fish XP / tension reset -----
 
-    [HarmonyPatch(typeof(BaseFishingRod), "CatchProcessBudgeted")]
-    public static class BaseFishingRod_CatchProcessBudgeted_Patch
+    [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.GiveItem), new[] { typeof(Item), typeof(BaseEntity.GiveItemReason), typeof(GiveItemOptions) })]
+    public static class BasePlayer_GiveItem_Fish_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "CanCatchFish",
-                AccessTools.Method(typeof(BaseFishingRod_CatchProcessBudgeted_Patch), nameof(CanCatchShim)));
-
-        public static object CanCatchShim(string hook, object player, object rod, object fish)
+        [HarmonyPrefix]
+        public static void Prefix(BasePlayer __instance, Item item, BaseEntity.GiveItemReason reason)
         {
+            if (reason != BaseEntity.GiveItemReason.Crafted || item == null || __instance == null) return;
+            var rod = __instance.GetHeldEntity() as BaseFishingRod;
+            if (rod == null || rod.CurrentState != BaseFishingRod.CatchState.Caught) return;
             try
             {
-                STPlugin.Dispatch_CanCatchFish(player as BasePlayer, rod as BaseFishingRod, fish as Item);
-                STPlugin.Dispatch_OnFishCatch(fish as Item, rod as BaseFishingRod, player as BasePlayer);
+                STPlugin.Dispatch_CanCatchFish(__instance, rod, item);
+                STPlugin.Dispatch_OnFishCatch(item, rod, __instance);
             }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] FishCatch: " + ex.Message); }
-            return null;
         }
     }
 
     [HarmonyPatch(typeof(BaseFishingRod), "Server_Cancel", new[] { typeof(BaseFishingRod.FailReason) })]
     public static class BaseFishingRod_Server_Cancel_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnFishingStopped",
-                AccessTools.Method(typeof(BaseFishingRod_Server_Cancel_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object rod, object reason)
+        [HarmonyPrefix]
+        public static void Prefix(BaseFishingRod __instance, BaseFishingRod.FailReason reason)
         {
-            try
-            {
-                if (rod is BaseFishingRod r && reason is BaseFishingRod.FailReason fr)
-                    STPlugin.Dispatch_OnFishingStopped(r, fr);
-            }
+            try { STPlugin.Dispatch_OnFishingStopped(__instance, reason); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnFishingStopped: " + ex.Message); }
-            return null;
         }
     }
 
@@ -246,37 +239,28 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(ItemModConsume), nameof(ItemModConsume.DoAction))]
     public static class ItemModConsume_DoAction_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnPlayerAddModifiers",
-                AccessTools.Method(typeof(ItemModConsume_DoAction_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object player, object item, object consumable)
+        [HarmonyPostfix]
+        public static void Postfix(ItemModConsume __instance, Item item, BasePlayer player)
         {
-            try { return STPlugin.Dispatch_OnPlayerAddModifiers(player as BasePlayer, item as Item, consumable as ItemModConsumable); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerAddModifiers: " + ex.Message); return null; }
+            if (player == null || item == null || __instance == null) return;
+            try { STPlugin.Dispatch_OnPlayerAddModifiers(player, item, __instance.GetConsumable()); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerAddModifiers: " + ex.Message); }
         }
     }
 
     // ---- Rocket_Velocity --------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseLauncher), "SV_Launch")]
-    public static class BaseLauncher_SV_Launch_Patch
+    [HarmonyPatch(typeof(BaseLauncher), nameof(BaseLauncher.ProjectileLaunched_Server))]
+    public static class BaseLauncher_ProjectileLaunched_Server_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnRocketLaunched",
-                AccessTools.Method(typeof(BaseLauncher_SV_Launch_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object player, object entity)
+        [HarmonyPostfix]
+        public static void Postfix(BaseLauncher __instance, ServerProjectile justLaunched)
         {
-            try
-            {
-                if (player is BasePlayer p && entity is TimedExplosive t)
-                    STPlugin.Dispatch_OnRocketLaunched(p, t);
-            }
+            var player = __instance?.GetOwnerPlayer();
+            var explosive = justLaunched?.baseEntity as TimedExplosive;
+            if (player == null || explosive == null) return;
+            try { STPlugin.Dispatch_OnRocketLaunched(player, explosive); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnRocketLaunched: " + ex.Message); }
-            return null;
         }
     }
 
@@ -285,15 +269,26 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(DudTimedExplosive), nameof(DudTimedExplosive.Explode))]
     public static class DudTimedExplosive_Explode_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnExplosiveDud",
-                AccessTools.Method(typeof(DudTimedExplosive_Explode_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object dud)
+        [HarmonyPrefix]
+        public static void Prefix(DudTimedExplosive __instance, out float __state)
         {
-            try { return STPlugin.Dispatch_OnExplosiveDud(dud as DudTimedExplosive); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnExplosiveDud: " + ex.Message); return null; }
+            __state = -1f;
+            if (__instance == null) return;
+            if (__instance.creatorEntity != null && __instance.creatorEntity.IsNpc) return;
+            try
+            {
+                if (STPlugin.Dispatch_OnExplosiveDud(__instance) == null) return;
+                __state = __instance.dudChance;
+                __instance.dudChance = 0f;
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnExplosiveDud: " + ex.Message); }
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix(DudTimedExplosive __instance, float __state)
+        {
+            if (__state >= 0f && __instance != null)
+                __instance.dudChance = __state;
         }
     }
 
@@ -302,16 +297,31 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(LootContainer), nameof(LootContainer.DropBonusItems))]
     public static class LootContainer_DropBonusItems_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnBonusItemDropped",
-                AccessTools.Method(typeof(LootContainer_DropBonusItems_Patch), nameof(CallHookShim)));
+        [ThreadStatic] internal static BasePlayer BonusPlayer;
 
-        public static object CallHookShim(string hook, object item, object player, object container)
+        [HarmonyPrefix]
+        public static void Prefix(BaseEntity initiator)
         {
-            try { STPlugin.Dispatch_OnBonusItemDropped(item as Item, player as BasePlayer); }
+            BonusPlayer = initiator as BasePlayer;
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            BonusPlayer = null;
+        }
+    }
+
+    [HarmonyPatch(typeof(Item), nameof(Item.Drop), new[] { typeof(Vector3), typeof(Vector3), typeof(Quaternion) })]
+    public static class Item_Drop_Bonus_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(Item __instance)
+        {
+            var player = LootContainer_DropBonusItems_Patch.BonusPlayer;
+            if (player == null || __instance == null) return;
+            try { STPlugin.Dispatch_OnBonusItemDropped(__instance, player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnBonusItemDropped: " + ex.Message); }
-            return null;
         }
     }
 
@@ -320,20 +330,13 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(BaseMetalDetector), "RPC_RequestFlag")]
     public static class BaseMetalDetector_RPC_RequestFlag_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnMetalDetectorFlagRequest",
-                AccessTools.Method(typeof(BaseMetalDetector_RPC_RequestFlag_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object detector, object pos, object player)
+        [HarmonyPrefix]
+        public static void Prefix(BaseMetalDetector __instance, BaseEntity.RPCMessage rpc)
         {
-            try
-            {
-                if (detector is BaseMetalDetector d && pos is Vector3 v && player is BasePlayer p)
-                    STPlugin.Dispatch_OnMetalDetectorFlagRequest(d, v, p);
-            }
+            var player = rpc.player;
+            if (__instance == null || player == null) return;
+            try { STPlugin.Dispatch_OnMetalDetectorFlagRequest(__instance, __instance.GetDetectionPoint(), player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnMetalDetectorFlagRequest: " + ex.Message); }
-            return null;
         }
     }
 
@@ -373,15 +376,20 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(CardReader), nameof(CardReader.ServerCardSwiped))]
     public static class CardReader_ServerCardSwiped_Patch
     {
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
-            CallHookReplace.Replace(instructions, "OnCardSwipe",
-                AccessTools.Method(typeof(CardReader_ServerCardSwiped_Patch), nameof(CallHookShim)));
-
-        public static object CallHookShim(string hook, object reader, object card, object player)
+        [HarmonyPrefix]
+        public static bool Prefix(CardReader __instance, BaseEntity.RPCMessage msg)
         {
-            try { return STPlugin.Dispatch_OnCardSwipe(reader as CardReader, card as Keycard, player as BasePlayer); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnCardSwipe: " + ex.Message); return null; }
+            var player = msg.player;
+            if (player == null || __instance == null) return true;
+            var card = player.GetHeldEntity() as Keycard;
+            if (card == null) return true;
+            try
+            {
+                if (STPlugin.Dispatch_OnCardSwipe(__instance, card, player) != null)
+                    return false;
+            }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnCardSwipe: " + ex.Message); }
+            return true;
         }
     }
 }

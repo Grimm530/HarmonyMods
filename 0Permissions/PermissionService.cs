@@ -150,6 +150,24 @@ namespace PermissionsHarmony
         private void SaveUsers() => Save();
         private void SaveGroups() => Save();
 
+        /// <summary>Console audit trail for any real permission/group change (Tebex, RCON, AdminMenu, API).</summary>
+        private static void Audit(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return;
+            Debug.Log("[Permissions] " + message);
+        }
+
+        private string FormatUser(string playerId)
+        {
+            if (string.IsNullOrEmpty(playerId)) return "(unknown)";
+            if (_users.TryGetValue(playerId, out var user) &&
+                !string.IsNullOrEmpty(user.LastSeenNickname) &&
+                !string.Equals(user.LastSeenNickname, "Unnamed", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(user.LastSeenNickname, playerId, StringComparison.OrdinalIgnoreCase))
+                return $"{playerId} ({user.LastSeenNickname})";
+            return playerId;
+        }
+
         #endregion
 
         #region Seeding
@@ -160,7 +178,9 @@ namespace PermissionsHarmony
             if (!File.Exists(path)) return;
             try
             {
-                var arr = JArray.Parse(File.ReadAllText(path));
+                var parsed = JToken.Parse(File.ReadAllText(path));
+                var arr = parsed as JArray ?? (parsed as JObject)?["Groups"] as JArray;
+                if (arr == null) return;
                 int added = 0;
                 foreach (var token in arr)
                 {
@@ -612,6 +632,8 @@ namespace PermissionsHarmony
         {
             if (!EnsureGroup(groupName, title, rank)) return false;
             SaveGroups();
+            Audit($"Created group '{groupName}' title=\"{title}\" rank={rank}");
+            PermissionsMod.NotifyMembershipChanged("");
             return true;
         }
 
@@ -628,22 +650,29 @@ namespace PermissionsHarmony
                     g.ParentGroup = "";
             }
             Save();
+            Audit($"Removed group '{groupName}'");
+            PermissionsMod.NotifyMembershipChanged("");
             return true;
         }
 
         public bool SetGroupTitle(string groupName, string title)
         {
             if (!_groups.TryGetValue(groupName, out var g)) return false;
-            g.Title = title ?? "";
+            title = title ?? "";
+            if (string.Equals(g.Title, title, StringComparison.Ordinal)) return false;
+            g.Title = title;
             SaveGroups();
+            Audit($"Set group '{groupName}' title=\"{title}\"");
             return true;
         }
 
         public bool SetGroupRank(string groupName, int rank)
         {
             if (!_groups.TryGetValue(groupName, out var g)) return false;
+            if (g.Rank == rank) return false;
             g.Rank = rank;
             SaveGroups();
+            Audit($"Set group '{groupName}' rank={rank}");
             return true;
         }
 
@@ -652,8 +681,11 @@ namespace PermissionsHarmony
             if (!_groups.TryGetValue(groupName, out var g)) return false;
             if (!string.IsNullOrEmpty(parentGroup) && !GroupExists(parentGroup)) return false;
             if (!string.IsNullOrEmpty(parentGroup) && HasCircularParent(groupName, parentGroup)) return false;
-            g.ParentGroup = parentGroup ?? "";
+            parentGroup = parentGroup ?? "";
+            if (string.Equals(g.ParentGroup ?? "", parentGroup, StringComparison.OrdinalIgnoreCase)) return false;
+            g.ParentGroup = parentGroup;
             SaveGroups();
+            Audit($"Set group '{groupName}' parent=\"{(string.IsNullOrEmpty(parentGroup) ? "none" : parentGroup)}\"");
             return true;
         }
 
@@ -671,6 +703,18 @@ namespace PermissionsHarmony
         }
 
         public IEnumerable<string> GetGroups() => _groups.Keys.OrderBy(g => g, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>SteamID → comma-separated group names. Shared via AppDomain with BetterChat.</summary>
+        public Dictionary<string, string> BuildUserGroupsCsv()
+        {
+            var csv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _users)
+            {
+                if (kv.Value?.Groups == null || kv.Value.Groups.Count == 0) continue;
+                csv[kv.Key] = string.Join(",", kv.Value.Groups);
+            }
+            return csv;
+        }
 
         public GroupData GetGroupData(string groupName) =>
             _groups.TryGetValue(groupName, out var g) ? g : null;
@@ -713,6 +757,8 @@ namespace PermissionsHarmony
             var user = GetOrCreateUser(playerId);
             if (!user.Groups.Add(groupName)) return false;
             SaveUsers();
+            Audit($"Added user {FormatUser(playerId)} to group '{groupName}'");
+            PermissionsMod.NotifyMembershipChanged(playerId);
             return true;
         }
 
@@ -722,6 +768,8 @@ namespace PermissionsHarmony
             if (groupName.Equals("default", StringComparison.OrdinalIgnoreCase)) return false;
             if (!user.Groups.Remove(groupName)) return false;
             SaveUsers();
+            Audit($"Removed user {FormatUser(playerId)} from group '{groupName}'");
+            PermissionsMod.NotifyMembershipChanged(playerId);
             return true;
         }
 
@@ -741,7 +789,11 @@ namespace PermissionsHarmony
             if (string.IsNullOrEmpty(playerId) || string.IsNullOrEmpty(permission)) return false;
             var user = GetOrCreateUser(playerId);
             bool changed = GrantToSet(user.Perms, permission);
-            if (changed) SaveUsers();
+            if (changed)
+            {
+                SaveUsers();
+                Audit($"Granted '{permission}' to user {FormatUser(playerId)}");
+            }
             return changed;
         }
 
@@ -749,7 +801,11 @@ namespace PermissionsHarmony
         {
             if (!_users.TryGetValue(playerId, out var user)) return false;
             bool changed = RevokeFromSet(user.Perms, permission);
-            if (changed) SaveUsers();
+            if (changed)
+            {
+                SaveUsers();
+                Audit($"Revoked '{permission}' from user {FormatUser(playerId)}");
+            }
             return changed;
         }
 
@@ -757,7 +813,11 @@ namespace PermissionsHarmony
         {
             if (!_groups.TryGetValue(groupName, out var group)) return false;
             bool changed = GrantToSet(group.Perms, permission);
-            if (changed) SaveGroups();
+            if (changed)
+            {
+                SaveGroups();
+                Audit($"Granted '{permission}' to group '{groupName}'");
+            }
             return changed;
         }
 
@@ -765,7 +825,11 @@ namespace PermissionsHarmony
         {
             if (!_groups.TryGetValue(groupName, out var group)) return false;
             bool changed = RevokeFromSet(group.Perms, permission);
-            if (changed) SaveGroups();
+            if (changed)
+            {
+                SaveGroups();
+                Audit($"Revoked '{permission}' from group '{groupName}'");
+            }
             return changed;
         }
 

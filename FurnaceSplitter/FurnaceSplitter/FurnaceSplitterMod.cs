@@ -139,6 +139,9 @@ namespace FurnaceSplitter
             {
                 if (os.Item == null)
                 {
+                    // Never call ItemManager.Create with amount <= 0 (logs "Creating item with less than 1 amount!")
+                    if (os.DeltaAmount <= 0)
+                        continue;
                     var newItem = ItemManager.Create(item.info, os.DeltaAmount, item.skin);
                     newItem?.MoveToContainer(container, os.Position ?? os.Index);
                 }

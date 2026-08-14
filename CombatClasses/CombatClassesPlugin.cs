@@ -1621,6 +1621,16 @@ namespace Oxide.Plugins
             // Prevent the original chat message from being sent
             return true;
         }
+
+        internal string HarmonyGetChatTitle(BasePlayer player)
+        {
+            if (player == null || config?.mainSettings == null || !config.mainSettings.showchatclass)
+                return null;
+            CombatPlayer combatPlayer = GetCombatPlayer(player);
+            if (combatPlayer == null || string.IsNullOrEmpty(combatPlayer.currentclass))
+                return null;
+            return "[" + combatPlayer.currentclass.ToUpperInvariant() + "]";
+        }
         private object OnConstructionPlace(BaseEntity entity, Construction component, Construction.Target constructionTarget, BasePlayer player)
         {
             if (player == null || !player.userID.Get().IsSteamId() || entity == null) return null;
@@ -2340,11 +2350,36 @@ namespace Oxide.Plugins
             CombatPlayer combatPlayer = GetCombatPlayer(player);
             if (combatPlayer == null) return;
 
-            // Revoke all class permissions
-            RevokeAllClassPermissions(player.UserIDString);
+            string currentPerm = combatPlayer.currentclass switch
+            {
+                "assault" => PermAssault,
+                "medic" => PermMedic,
+                "heavy" => PermHeavy,
+                "demolition" => PermDemolition,
+                "sniper" => PermSniper,
+                "assassin" => PermAssassin,
+                "scavenger" => PermScavenger,
+                _ => null
+            };
 
-            // Grant permission based on the current class
+            if (currentPerm != null && permission.UserHasPermission(player.UserIDString, currentPerm))
+            {
+                RevokeOtherClassPermissions(player.UserIDString, currentPerm);
+                return;
+            }
+
+            RevokeAllClassPermissions(player.UserIDString);
             GrantClassPermission(player.UserIDString, combatPlayer.currentclass);
+        }
+        private void RevokeOtherClassPermissions(string userId, string keepPerm)
+        {
+            if (keepPerm != PermAssault) permission.RevokeUserPermission(userId, PermAssault);
+            if (keepPerm != PermMedic) permission.RevokeUserPermission(userId, PermMedic);
+            if (keepPerm != PermHeavy) permission.RevokeUserPermission(userId, PermHeavy);
+            if (keepPerm != PermDemolition) permission.RevokeUserPermission(userId, PermDemolition);
+            if (keepPerm != PermSniper) permission.RevokeUserPermission(userId, PermSniper);
+            if (keepPerm != PermAssassin) permission.RevokeUserPermission(userId, PermAssassin);
+            if (keepPerm != PermScavenger) permission.RevokeUserPermission(userId, PermScavenger);
         }
         private void RevokeAllClassPermissions(string userId)
         {

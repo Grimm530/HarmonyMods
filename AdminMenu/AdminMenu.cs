@@ -122,6 +122,9 @@ namespace AdminMenuHarmony
 				    permission.RegisterPermission(perm, this);
 		    }
 
+		    List<string> allAdminPerms = Pool.Get<List<string>>();
+		    allAdminPerms.AddRange(builtInPerms);
+
 		    if (Configuration != null)
 		    {
 			    List<string> commandPermissions = Pool.Get<List<string>>();
@@ -132,17 +135,22 @@ namespace AdminMenuHarmony
 
 			    foreach (string perm in commandPermissions)
 			    {
-				    if (!string.IsNullOrEmpty(perm) && perm.StartsWith("adminmenu.", StringComparison.OrdinalIgnoreCase))
-				    {
-					    if (!permission.PermissionExists(perm, this))
-						    permission.RegisterPermission(perm, this);
-				    }
+				    if (string.IsNullOrEmpty(perm))
+					    continue;
+
+				    if (perm.StartsWith("adminmenu.", StringComparison.OrdinalIgnoreCase) &&
+				        !permission.PermissionExists(perm, this))
+					    permission.RegisterPermission(perm, this);
+
+				    if (!allAdminPerms.Contains(perm, StringComparer.OrdinalIgnoreCase))
+					    allAdminPerms.Add(perm);
 			    }
 
 			    Pool.FreeUnmanaged(ref commandPermissions);
 		    }
 
-		    EnsureAdminGroupPermissions(builtInPerms);
+		    EnsureAdminGroupPermissions(allAdminPerms);
+		    Pool.FreeUnmanaged(ref allAdminPerms);
 		    UpdatePermissionList();
 	    }
 
@@ -175,14 +183,15 @@ namespace AdminMenuHarmony
 	    private const string ADMIN_GROUP = "admin";
 
 	    /// <summary>
-	    /// Ensures Permissions group "admin" exists and has all built-in AdminMenu permissions.
+	    /// Ensures Permissions group "admin" exists and has built-in AdminMenu perms plus any
+	    /// RequiredPermission values from config (chat/console/player-info command buttons).
 	    /// Access is group/perm based only — game auth level (IsAdmin) does not open the menu.
 	    /// </summary>
-	    private void EnsureAdminGroupPermissions(string[] builtInPerms)
+	    private void EnsureAdminGroupPermissions(IList<string> perms)
 	    {
 		    if (!PermissionsBridge.IsAvailable)
 		    {
-			    Debug.LogWarning("[AdminMenu] Permissions not available — cannot grant adminmenu.* to admin group.");
+			    Debug.LogWarning("[AdminMenu] Permissions not available — cannot grant panel perms to admin group.");
 			    return;
 		    }
 
@@ -190,14 +199,16 @@ namespace AdminMenuHarmony
 			    permission.CreateGroup(ADMIN_GROUP, "Administrators", 0);
 
 		    int granted = 0;
-		    foreach (string perm in builtInPerms)
+		    int total = 0;
+		    foreach (string perm in perms)
 		    {
 			    if (string.IsNullOrEmpty(perm)) continue;
+			    total++;
 			    if (permission.GrantGroupPermission(ADMIN_GROUP, perm, this))
 				    granted++;
 		    }
 
-		    Debug.Log($"[AdminMenu] Ensured Permissions group '{ADMIN_GROUP}' has adminmenu.* ({granted}/{builtInPerms.Length} grants). Put staff in that group to use /admin.");
+		    Debug.Log($"[AdminMenu] Ensured Permissions group '{ADMIN_GROUP}' has AdminMenu panel perms ({granted}/{total} grants). Put staff in that group to use /admin.");
 	    }
 
 	    public void CmdAdmin(BasePlayer player, string command, string[] args)

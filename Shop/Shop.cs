@@ -2425,6 +2425,11 @@ namespace ShopHarmony
                 }
             }
 
+            internal bool OpensExternalUi()
+            {
+                return Type == ItemType.Command && IsChtOpenShopCommand(Command);
+            }
+
             private void ToKit(BasePlayer player, int count)
             {
                 if (string.IsNullOrEmpty(Kit)) return;
@@ -2528,6 +2533,10 @@ namespace ShopHarmony
                                 trimmed.StartsWith("animalspawn.horse", StringComparison.OrdinalIgnoreCase))
                             {
                                 _instance?.DispatchHorseShopCommand(trimmed);
+                            }
+                            else if (IsChtOpenShopCommand(trimmed))
+                            {
+                                _instance?.DispatchChtOpenShop(player, trimmed);
                             }
                             else
                             {
@@ -4223,6 +4232,19 @@ namespace ShopHarmony
         #region Players Data
 
         private Dictionary<ulong, PlayerData> _usersData = new();
+        private readonly Dictionary<ulong, float> _externalUiBuyAt = new();
+        private const float ExternalUiBuyCooldownSeconds = 1.5f;
+
+        private bool TryBeginExternalUiBuy(BasePlayer player)
+        {
+            if (player == null) return false;
+            ulong id = player.userID;
+            float now = Time.realtimeSinceStartup;
+            if (_externalUiBuyAt.TryGetValue(id, out float last) && now - last < ExternalUiBuyCooldownSeconds)
+                return false;
+            _externalUiBuyAt[id] = now;
+            return true;
+        }
 
         private class PlayerData
         {
@@ -6843,6 +6865,8 @@ namespace ShopHarmony
 
                     var price = item.GetPrice(player, selectedEconomy) * amount;
                     var playerEconomy = GetPlayerEconomy(player);
+                    if (item.OpensExternalUi() && !TryBeginExternalUiBuy(player))
+                        return;
                     if (!player.HasPermission(PERM_FREE_BYPASS) &&
                         !playerEconomy.RemoveBalance(player, price))
                     {
@@ -6857,6 +6881,11 @@ namespace ShopHarmony
                     UseLimit(player, item, true, amount, true);
 
                     LogBuySell(player, item, amount, price, true);
+
+                    // cht.openshop replaces the shop with the heli menu. Do not NextTick-redraw
+                    // UI.Shop on OverlayNonScaled or it covers the CHT overlay.
+                    if (item.OpensExternalUi())
+                        break;
 
                     UpdateUI(player, container =>
                     {
@@ -12000,6 +12029,16 @@ namespace ShopHarmony
                 return;
             }
 
+            bool opensExternalUi = false;
+            foreach (var cartItem in items)
+            {
+                if (cartItem.Key != null && cartItem.Key.OpensExternalUi())
+                {
+                    opensExternalUi = true;
+                    break;
+                }
+            }
+
             ServerMgr.Instance.StartCoroutine(GiveCartItems(player, items.ToList(), price));
 
             if (!again)
@@ -12019,7 +12058,8 @@ namespace ShopHarmony
 
             CloseShopUI(player);
 
-            _config?.Notifications?.ShowNotify(player, ReceivedItems, 0);
+            if (!opensExternalUi)
+                _config?.Notifications?.ShowNotify(player, ReceivedItems, 0);
         }
 
         private static int GetPlayerItems(BasePlayer player, List<Item> items)
@@ -15900,6 +15940,88 @@ namespace ShopHarmony
             catch (Exception ex)
             {
                 Debug.LogWarning("[Shop Horse] DispatchHorseShopCommand: " + ex.Message);
+            }
+        }
+
+        internal static bool IsChtOpenShopCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command)) return false;
+
+            var parts = command.Replace("\n", "|").Split('|');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var trimmed = parts[i].Trim();
+                if (trimmed.StartsWith("cht.openshop", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.StartsWith("heli.shop", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Close Shop UI then open CHT heli shop. ConsoleSystem.Run cannot find cht.openshop
+        /// reliably, and Shop's OverlayNonScaled layer sits on top of Overlay.
+        /// </summary>
+        internal void DispatchChtOpenShop(BasePlayer player, string commandLine)
+        {
+            if (player == null || player.IsDestroyed || !player.IsConnected) return;
+
+            ulong steamId = player.userID;
+            if (ServerHelper.TrySplitCommandLine(commandLine?.Trim() ?? string.Empty, out _, out string[] args) &&
+                args != null && args.Length > 0 && ulong.TryParse(args[0], out ulong parsed) && parsed != 0)
+                steamId = parsed;
+
+            CuiHelper.DestroyUi(player, Layer);
+            CuiHelper.DestroyUi(player, ModalLayer);
+            CuiHelper.DestroyUi(player, EditingLayer);
+            CloseShopUI(player);
+
+            if (_serverPanelCategory.spStatus)
+                ServerPanel?.Call("API_OnServerPanelCallClose", player);
+
+            var capturedId = steamId;
+            NextTick(() =>
+            {
+                var target = BasePlayer.FindByID(capturedId) ?? BasePlayer.FindSleeping(capturedId);
+                if (target == null || !target.IsConnected)
+                    return;
+
+                if (!TryInvokeChtOpenShop(capturedId))
+                    Debug.LogWarning("[Shop] cht.openshop failed — is CHT loaded?");
+            });
+        }
+
+        private static bool TryInvokeChtOpenShop(ulong steamId)
+        {
+            try
+            {
+                var api = AppDomain.CurrentDomain.GetData("CHT_ApiType") as Type;
+                if (api != null)
+                {
+                    var mi = api.GetMethod("TryOpenShop", BindingFlags.Public | BindingFlags.Static, null,
+                        new[] { typeof(ulong) }, null);
+                    if (mi != null)
+                    {
+                        var result = mi.Invoke(null, new object[] { steamId });
+                        return result is true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop] CHT TryOpenShop: " + ex.Message);
+            }
+
+            try
+            {
+                ConsoleSystem.Run(ConsoleSystem.Option.Server, "cht.openshop", steamId.ToString());
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop] cht.openshop fallback: " + ex.Message);
+                return false;
             }
         }
 

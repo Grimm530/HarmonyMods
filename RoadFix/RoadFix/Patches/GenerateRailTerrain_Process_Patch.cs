@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using RoadFix.Bridge;
 using UnityEngine;
@@ -14,13 +15,20 @@ public static class GenerateRailTerrain_Process_Patch
     [HarmonyPostfix]
     public static void Postfix()
     {
-        if (!RoadFixConfig.IsEnabled())
-            return;
-        if (RoadFixConfig.Config?.SpawnCustomBridges != true)
-            return;
+        try
+        {
+            if (!RoadFixConfig.IsEnabled())
+                return;
+            if (RoadFixConfig.Config?.SpawnCustomBridges != true)
+                return;
 
-        BridgeService.PrepareRailCrossings();
-        if (RoadFixConfig.Config.DebugLogging)
-            Debug.Log($"[RoadFix] After Rail Terrain: railCrossings={BridgeService.RailCrossingCount} (paths untouched)");
+            BridgeService.PrepareRailCrossings();
+            if (RoadFixConfig.Config.DebugLogging)
+                Debug.Log($"[RoadFix] After Rail Terrain: railCrossings={BridgeService.RailCrossingCount} (paths untouched)");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[RoadFix] GenerateRailTerrain postfix failed. {ex}");
+        }
     }
 }

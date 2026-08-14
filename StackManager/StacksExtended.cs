@@ -262,13 +262,26 @@ namespace StackManagerHarmony
             if (Configuration.Exclude.IsExcluded(item))
                 return null;
 
-            bool canStack = otherItem != item && item.info.stackable > 1 && otherItem.info.stackable > 1 && 
-                            otherItem.info.itemid == item.info.itemid && (!item.hasCondition || Mathf.Approximately(item.condition, item.maxCondition)) &&
-                            (!otherItem.hasCondition ||  Mathf.Approximately(otherItem.condition, otherItem.maxCondition)) && 
-                            item.IsValid() && (!item.IsBlueprint() || item.blueprintTarget == otherItem.blueprintTarget);
+            bool canStack = otherItem != item && item.info.stackable > 1 && otherItem.info.stackable > 1 &&
+                            otherItem.info.itemid == item.info.itemid && item.IsValid() &&
+                            (!item.IsBlueprint() || item.blueprintTarget == otherItem.blueprintTarget);
 
             if (!canStack)
                 return false;
+
+            if (item.MaxStackable() <= 1)
+                return false;
+
+            // Vanilla only stacks condition items at exact max HP. Allow matching durability
+            // so deployables (furnaces, boxes, etc.) can stack when both items are equal.
+            if (item.hasCondition || otherItem.hasCondition)
+            {
+                if (!item.hasCondition || !otherItem.hasCondition)
+                    return false;
+                if (!Mathf.Approximately(item.condition, otherItem.condition) ||
+                    !Mathf.Approximately(item.maxCondition, otherItem.maxCondition))
+                    return false;
+            }
             
             if (item.GetHeldEntity() is BaseLiquidVessel)
             {
@@ -331,20 +344,34 @@ namespace StackManagerHarmony
                 }
             }
 
-            if (item.skin != 0UL || otherItem.skin != 0UL)
+            if (item.skin != otherItem.skin && Configuration.Options.BlockDifferentSkinStacks)
+                return false;
+
+            if ((!string.IsNullOrEmpty(item.name) || !string.IsNullOrEmpty(otherItem.name)) && item.name != otherItem.name)
+                return false;
+
+            if (item.iconImageId != otherItem.iconImageId)
+                return false;
+
+            if (item.info.amountType == ItemDefinition.AmountType.Genetics || otherItem.info.amountType == ItemDefinition.AmountType.Genetics)
             {
-                if (item.skin != otherItem.skin && Configuration.Options.BlockDifferentSkinStacks) 
+                int geneticsA = item.instanceData != null ? item.instanceData.dataInt : -1;
+                int geneticsB = otherItem.instanceData != null ? otherItem.instanceData.dataInt : -1;
+                if (geneticsA != geneticsB)
                     return false;
-
-                if (item.hasCondition && otherItem.hasCondition)
-                {
-                    if (!Mathf.Approximately(otherItem.maxCondition, item.maxCondition) || !Mathf.Approximately(otherItem.condition, item.condition))
-                        return false;
-                }
-
-                return true;
             }
-            return null;
+
+            if (HasUniqueSignData(item) || HasUniqueSignData(otherItem))
+                return false;
+
+            return true;
+        }
+
+        private static bool HasUniqueSignData(Item item)
+        {
+            if (item?.instanceData == null || !item.instanceData.subEntity.IsValid)
+                return false;
+            return item.info != null && item.info.GetComponent<ItemModSign>();
         }
 
         public object CanMoveItem(Item item, PlayerInventory playerInventory, ItemContainerId targetContainerID, int targetSlot, int amount, ItemMoveModifier itemMoveModifier)
@@ -463,11 +490,15 @@ namespace StackManagerHarmony
                                     if (item.parent.itemList.Count >= item.parent.capacity)
                                     {
                                         splitItem = otherItem.SplitItem(storageLimit * (splitAmount - i));
+                                        if (splitItem == null)
+                                            break;
                                         splitItem.Drop(itemContainer.dropPosition, itemContainer.dropVelocity);
                                         break;
                                     }
 
                                     splitItem = otherItem.SplitItem(storageLimit);
+                                    if (splitItem == null)
+                                        break;
                                     if (!splitItem.MoveToContainer(item.parent))
                                         splitItem.Drop(itemContainer.dropPosition, itemContainer.dropVelocity);
                                 }
@@ -494,16 +525,20 @@ namespace StackManagerHarmony
                 if (split_Amount > 0)
                 {
                     Item splitItem = item.SplitItem(split_Amount);
-                    if (!splitItem.MoveToContainer(itemContainer, targetSlot, true, false, playerInventory.baseEntity, true))
+                    if (splitItem != null)
                     {
-                        item.amount += splitItem.amount;
-                        splitItem.Remove(0f);
-                    }
-                }
+                        if (!splitItem.MoveToContainer(itemContainer, targetSlot, true, false, playerInventory.baseEntity, true))
+                        {
+                            item.amount += splitItem.amount;
+                            splitItem.Remove(0f);
+                        }
 
-                ItemManager.DoRemoves();
-				playerInventory.ServerUpdate(0f);
-                return false;
+                        ItemManager.DoRemoves();
+                        playerInventory.ServerUpdate(0f);
+                        return false;
+                    }
+                    // Split failed (e.g. amount edge case) — fall through to full-item move
+                }
 			}
 
             if (!item.MoveToContainer(itemContainer, targetSlot, true, false, playerInventory.baseEntity, true))
@@ -530,7 +565,7 @@ namespace StackManagerHarmony
 
         public object OnItemSplit(Item item, int splitAmount)
         {
-            if (item == null || Configuration.Exclude.IsExcluded(item))
+            if (item == null || splitAmount <= 0 || Configuration.Exclude.IsExcluded(item))
                 return null;
 
             BaseEntity heldEntity = item.GetHeldEntity();
@@ -539,6 +574,8 @@ namespace StackManagerHarmony
                 if (heldEntity is BaseLiquidVessel)
                 {
                     Item splitItem = SplitItem(item, splitAmount);
+                    if (splitItem == null)
+                        return null;
                     
                     if (item.contents != null && item.contents.itemList.Count > 0 && splitItem.contents != null && splitItem.contents.itemList.Count > 0)
                         splitItem.contents.itemList[0].amount = item.contents.itemList[0].amount;
@@ -549,10 +586,15 @@ namespace StackManagerHarmony
                 if (heldEntity is BaseProjectile)
                 {
                     Item splitItem = SplitItem(item, splitAmount);
+                    if (splitItem == null)
+                        return null;
 
                     BaseProjectile splitBaseProjectile = splitItem.GetHeldEntity() as BaseProjectile;
-                    splitBaseProjectile.primaryMagazine.contents = (heldEntity as BaseProjectile).primaryMagazine.contents;
-                    splitBaseProjectile.SendNetworkUpdateImmediate();
+                    if (splitBaseProjectile != null)
+                    {
+                        splitBaseProjectile.primaryMagazine.contents = (heldEntity as BaseProjectile).primaryMagazine.contents;
+                        splitBaseProjectile.SendNetworkUpdateImmediate();
+                    }
 
                     return splitItem;
                 }
@@ -667,6 +709,10 @@ namespace StackManagerHarmony
         
         private Item SplitItem(Item item, int splitAmount)
         {
+            if (item?.info == null || splitAmount <= 0 || splitAmount >= item.amount)
+                return null;
+
+            // Always create with amount >= 1 — ItemManager.Create logs and returns null for <= 0
             Item splitItem = ItemManager.CreateByItemID(item.info.itemid, 1, item.skin);
             if (splitItem == null) 
                 return null;
@@ -702,7 +748,11 @@ namespace StackManagerHarmony
                 {
                     int amount = Mathf.Min(amountRemaining, Configuration.Player.InventoryStackLimit);
                     amountRemaining -= amount;
-                    player.GiveItem(ItemManager.CreateByItemID(item.info.itemid, amount, item.skin), BaseEntity.GiveItemReason.PickedUp);
+                    if (amount <= 0)
+                        break;
+                    Item sold = ItemManager.CreateByItemID(item.info.itemid, amount, item.skin);
+                    if (sold != null)
+                        player.GiveItem(sold, BaseEntity.GiveItemReason.PickedUp);
                 }
 
                 item.Remove(0f);
@@ -816,6 +866,7 @@ namespace StackManagerHarmony
         
         private void CheckUpdateConfiguration()
         {
+            int raised = 0;
             foreach (ItemDefinition itemDefinition in ItemManager.itemList)
             {
                 if (m_IgnoreItems.Contains(itemDefinition.shortname))
@@ -849,6 +900,11 @@ namespace StackManagerHarmony
 
                 if (!m_StackLimits.Data.TryGetValue(itemDefinition.shortname, out StackLimit stackLimit))
                     m_StackLimits.Data.Add(itemDefinition.shortname, stackLimit = new StackLimit(itemDefinition.stackable));
+
+                int previousStack = stackLimit.MaxStackSize;
+                ApplyDefaultStackPolicy(itemDefinition, stackLimit);
+                if (stackLimit.MaxStackSize != previousStack)
+                    raised++;
 
                 stackLimit.ItemDefinition = itemDefinition;
                 itemDefinition.stackable = stackLimit.GetStackSize();
@@ -886,6 +942,108 @@ namespace StackManagerHarmony
             
             m_StackLimits.Save();
             m_StorageLimits.Save();
+
+            if (raised > 0)
+                Debug.Log($"[StackManager] Default stack policy updated {raised} item limits (vanilla stack-1 items → {Configuration.Defaults?.MinStackForUnstackableItems ?? 10}, honey → {Configuration.Defaults?.MinHoneyStack ?? 100}).");
+        }
+
+        private void ApplyDefaultStackPolicy(ItemDefinition def, StackLimit stackLimit)
+        {
+            if (def == null || stackLimit == null)
+                return;
+
+            if (ShouldKeepUnstacked(def))
+            {
+                if (IsProjectileWeapon(def) && !Configuration.Options.EnableProjectileWeaponStacks)
+                    stackLimit.MaxStackSize = 1;
+                return;
+            }
+
+            int minUnstackable = Configuration.Defaults != null ? Configuration.Defaults.MinStackForUnstackableItems : 10;
+            if (minUnstackable > 0 && stackLimit.MaxStackSize <= 1)
+                stackLimit.MaxStackSize = minUnstackable;
+
+            if (def.shortname == "honey")
+            {
+                int minHoney = Configuration.Defaults != null ? Configuration.Defaults.MinHoneyStack : 100;
+                if (minHoney > 0 && stackLimit.MaxStackSize < minHoney)
+                    stackLimit.MaxStackSize = minHoney;
+            }
+        }
+
+        private bool ShouldKeepUnstacked(ItemDefinition def)
+        {
+            if (def == null)
+                return true;
+
+            if (Configuration?.Exclude != null && Configuration.Exclude.IsExcluded(def.shortname))
+                return true;
+
+            for (int i = 0; i < m_IgnoreItems.Length; i++)
+            {
+                if (m_IgnoreItems[i] == def.shortname)
+                    return true;
+            }
+
+            if (IsProjectileWeapon(def))
+                return true;
+
+            if (IsVehicleItem(def))
+                return true;
+
+            return false;
+        }
+
+        private static bool IsProjectileWeapon(ItemDefinition def)
+        {
+            if (def == null)
+                return false;
+
+            ItemModEntity modEntity = def.GetComponent<ItemModEntity>();
+            if (modEntity == null || modEntity.entityPrefab == null)
+                return false;
+
+            BaseEntity entity = null;
+            try
+            {
+                entity = modEntity.entityPrefab.GetEntity();
+            }
+            catch
+            {
+            }
+
+            if (entity is BaseProjectile)
+                return true;
+
+            // Prefab not loaded: keep Weapon-category unstackables as guns rather than raising them.
+            if (entity == null && def.category == ItemCategory.Weapon && def.stackable <= 1)
+                return true;
+
+            return false;
+        }
+
+        private static bool IsVehicleItem(ItemDefinition def)
+        {
+            if (def == null)
+                return false;
+
+            if (def.GetComponent<Rust.Modular.ItemModVehicleChassis>() != null)
+                return true;
+            if (def.GetComponent<Rust.Modular.ItemModVehicleModule>() != null)
+                return true;
+
+            ItemModDeployable deployable = def.GetComponent<ItemModDeployable>();
+            if (deployable == null || deployable.entityPrefab == null)
+                return false;
+
+            try
+            {
+                return deployable.entityPrefab.GetEntity() is BaseVehicle;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool IsUsingFurnaceSplitter(PlayerInventory playerInventory, Item item)
@@ -2801,6 +2959,9 @@ namespace StackManagerHarmony
             
             [JsonProperty("Exclude Options")]
             public ExcludeOptions Exclude { get; set; }
+
+            [JsonProperty("Default Stack Sizes")]
+            public DefaultStackOptions Defaults { get; set; }
             
             public class StackOptions
             {
@@ -2833,6 +2994,15 @@ namespace StackManagerHarmony
                 
                 [JsonProperty("Use default stack sizes in the players belt container")]
                 public bool UseDefaultBeltStacks { get; set; }
+            }
+
+            public class DefaultStackOptions
+            {
+                [JsonProperty("Minimum stack size for vanilla stack-1 items (0 = do not raise)")]
+                public int MinStackForUnstackableItems { get; set; } = 10;
+
+                [JsonProperty("Minimum stack size for honey")]
+                public int MinHoneyStack { get; set; } = 100;
             }
 
             public class ExcludeOptions
@@ -2890,6 +3060,8 @@ namespace StackManagerHarmony
                 Configuration.Exclude.ExcludedSkins = new HashSet<ulong>();
             if (Configuration.Exclude.ExcludedContainers == null)
                 Configuration.Exclude.ExcludedContainers = new HashSet<string>();
+            if (Configuration.Defaults == null)
+                Configuration.Defaults = GenerateDefaultConfiguration().Defaults;
             if (Configuration.Version == default)
                 Configuration.Version = new VersionNumber(2, 0, 24);
 
@@ -2935,6 +3107,11 @@ namespace StackManagerHarmony
                         "hat.miner"
                     },
                     ExcludedSkins = new HashSet<ulong>()
+                },
+                Defaults = new ConfigData.DefaultStackOptions
+                {
+                    MinStackForUnstackableItems = 10,
+                    MinHoneyStack = 100
                 },
                 Version = new VersionNumber(2, 0, 24)
             };

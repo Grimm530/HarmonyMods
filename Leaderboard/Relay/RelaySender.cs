@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
+using System.IO;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using UnityEngine;
 
 namespace Leaderboard.Relay;
 
@@ -15,48 +15,159 @@ namespace Leaderboard.Relay;
 /// </summary>
 public static class RelaySender
 {
-    private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+    private static readonly object QueueLock = new object();
+    private static readonly Queue<(string Url, string Json)> Queue = new Queue<(string, string)>();
+    private static bool _workerRunning;
 
-    public static void SendBatch(string url, List<StatUpdatePayload> updates, List<PlayerStatsPayload> players = null)
+    /// <summary>Max StatsStorage rows per HTTP POST. Remote MySQL cannot finish large batches before the HTTP timeout.</summary>
+    private const int MaxUpdatesPerPost = 25;
+
+    /// <summary>Enqueue one or more POSTs. Returns how many HTTP calls were queued.</summary>
+    public static int SendBatch(string url, List<StatUpdatePayload> updates, List<PlayerStatsPayload> players = null)
     {
-        if (string.IsNullOrEmpty(url)) return;
-        if (updates == null && (players == null || players.Count == 0)) return;
-        var wrapper = new BatchPayload
+        if (string.IsNullOrEmpty(url)) return 0;
+        updates = updates ?? new List<StatUpdatePayload>();
+        players = players ?? new List<PlayerStatsPayload>();
+        if (updates.Count == 0 && players.Count == 0) return 0;
+
+        if (updates.Count <= MaxUpdatesPerPost)
         {
-            Updates = updates ?? new List<StatUpdatePayload>(),
-            Players = players ?? new List<PlayerStatsPayload>()
-        };
-        if (wrapper.Updates.Count == 0 && wrapper.Players.Count == 0) return;
-        PostJson(url, JsonConvert.SerializeObject(wrapper), _ => { });
+            Enqueue(url, new BatchPayload { Updates = updates, Players = players });
+            return 1;
+        }
+
+        var posts = 0;
+        if (players.Count > 0)
+        {
+            Enqueue(url, new BatchPayload { Updates = new List<StatUpdatePayload>(), Players = players });
+            posts++;
+        }
+
+        var byId = new Dictionary<ulong, PlayerStatsPayload>(players.Count);
+        foreach (var p in players)
+        {
+            if (p != null) byId[p.UserId] = p;
+        }
+
+        for (int offset = 0; offset < updates.Count; offset += MaxUpdatesPerPost)
+        {
+            var take = Math.Min(MaxUpdatesPerPost, updates.Count - offset);
+            var chunk = updates.GetRange(offset, take);
+            var chunkPlayers = new List<PlayerStatsPayload>();
+            var seen = new HashSet<ulong>();
+            foreach (var u in chunk)
+            {
+                if (!seen.Add(u.UserId)) continue;
+                if (byId.TryGetValue(u.UserId, out var pp))
+                    chunkPlayers.Add(pp);
+            }
+            Enqueue(url, new BatchPayload { Updates = chunk, Players = chunkPlayers });
+            posts++;
+        }
+        return posts;
     }
 
-    private static void PostJson(string url, string json, Action<long> onDone)
+    private static void Enqueue(string url, BatchPayload wrapper)
+    {
+        Enqueue(url, JsonConvert.SerializeObject(wrapper));
+    }
+
+    private static void Enqueue(string url, string json)
+    {
+        lock (QueueLock)
+        {
+            Queue.Enqueue((url, json));
+            if (_workerRunning) return;
+            _workerRunning = true;
+        }
+        _ = Task.Run(ProcessQueue);
+    }
+
+    private static void ProcessQueue()
+    {
+        while (true)
+        {
+            string url;
+            string json;
+            lock (QueueLock)
+            {
+                if (Queue.Count == 0)
+                {
+                    _workerRunning = false;
+                    return;
+                }
+                var item = Queue.Dequeue();
+                url = item.Url;
+                json = item.Json;
+            }
+            PostJson(url, json);
+        }
+    }
+
+    private static void PostJson(string url, string json)
     {
         if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(json)) return;
-        // Use HttpClient (not UnityWebRequest) so loopback http:// relays work.
+        // HttpWebRequest + Proxy=null: Unity HttpClient uses the WinHTTP/IE proxy and
+        // fails loopback HTTP with "An error occurred while sending the request".
         // Do not rewrite http→https — LeaderBot relay is plain HTTP.
-        _ = Task.Run(async () =>
+        // One POST at a time so SyncAll chunks do not lock the same MySQL rows.
+        try
         {
-            try
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "POST";
+            request.ContentType = "application/json; charset=utf-8";
+            request.Proxy = null;
+            request.KeepAlive = false;
+            request.Timeout = 20000;
+            request.ReadWriteTimeout = 20000;
+            request.AutomaticDecompression = DecompressionMethods.None;
+            request.ServicePoint.Expect100Continue = false;
+
+            var bytes = Encoding.UTF8.GetBytes(json);
+            request.ContentLength = bytes.Length;
+            using (var stream = request.GetRequestStream())
+                stream.Write(bytes, 0, bytes.Length);
+
+            using var resp = (HttpWebResponse)request.GetResponse();
+            var code = (int)resp.StatusCode;
+            if (code < 200 || code >= 300)
             {
-                using var content = new StringContent(json, Encoding.UTF8, "application/json");
-                using var resp = await Http.PostAsync(url, content).ConfigureAwait(false);
-                var code = (long)resp.StatusCode;
-                try { onDone?.Invoke(code); } catch { }
-                if (!resp.IsSuccessStatusCode)
+                string body;
+                using (var reader = new StreamReader(resp.GetResponseStream() ?? Stream.Null))
+                    body = reader.ReadToEnd();
+                if (!string.IsNullOrEmpty(body) && body.Length > 200)
+                    body = body.Substring(0, 200);
+                UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url} -> {code} {body}");
+            }
+        }
+        catch (WebException wex)
+        {
+            var extra = "";
+            if (wex.Response is HttpWebResponse httpResp)
+            {
+                try
                 {
-                    var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    if (!string.IsNullOrEmpty(body) && body.Length > 200)
-                        body = body.Substring(0, 200);
-                    UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url} -> {code} {body}");
+                    using var reader = new StreamReader(httpResp.GetResponseStream() ?? Stream.Null);
+                    extra = reader.ReadToEnd();
+                    if (!string.IsNullOrEmpty(extra) && extra.Length > 200)
+                        extra = extra.Substring(0, 200);
                 }
+                catch { /* ignore body read failures */ }
             }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url}: {ex.Message}");
-                try { onDone?.Invoke(0); } catch { }
-            }
-        });
+            UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url}: {FormatEx(wex)}{(string.IsNullOrEmpty(extra) ? "" : " " + extra)}");
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] Relay POST {url}: {FormatEx(ex)}");
+        }
+    }
+
+    private static string FormatEx(Exception ex)
+    {
+        var msg = ex.Message ?? ex.GetType().Name;
+        for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            msg += " -> " + (inner.Message ?? inner.GetType().Name);
+        return msg;
     }
 }
 

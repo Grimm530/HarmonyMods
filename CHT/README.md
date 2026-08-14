@@ -28,7 +28,7 @@ Copies only `CHT.dll` to root `HarmonyMods/`.
 
 | Command | Role |
 |---------|------|
-| `heli.shop` (F1 / config name) or Shop `cht.openshop %steamid%` | Player shop UI (no chat patch — avoids breaking Shop `/s`) |
+| `heli.shop` (F1 / config name) or Shop `cht.openshop %steamid%` | Player shop UI. Shop closes its OverlayNonScaled UI and calls `CHT_ApiType.TryOpenShop` (does not rely on ConsoleSystem.Find). |
 | `cht.heli` | Call / spawn / kill / list helis |
 | `cht.tier` | Create / manage tier JSON |
 | `cht.callprofile` | Manage call profiles |

@@ -39,7 +39,9 @@ Players set their language with the chat command:
 
 Languages are stored in `HarmonyConfig/ChatTranslator_languages.json`.
 
-## Supported Channels
+## BetterChat
+
+If the **BetterChat** Harmony mod is loaded, ChatTranslator does **not** take over sending. BetterChat already formats titles/colours and broadcasts the line. Translation of titled chat is not applied in that configuration.
 
 - **Global chat** – Translated per recipient
 - **Team chat** – Translated per team member

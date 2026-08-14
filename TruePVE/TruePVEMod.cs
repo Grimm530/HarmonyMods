@@ -204,6 +204,10 @@ namespace TruePVEHarmony
             string commandName = parts[0].ToLowerInvariant();
             if (!_chatCommandNames.Contains(commandName)) return false;
 
+            // DynamicCupShare owns /share when loaded. PreventLooting still has /plshare.
+            if ((commandName == "share" || commandName == "unshare") && DynamicCupShareLoaded())
+                return false;
+
             var plugin = Plugin;
             if (plugin == null) return false;
 
@@ -215,6 +219,12 @@ namespace TruePVEHarmony
                 return true;
             }
             return false;
+        }
+
+        private static bool DynamicCupShareLoaded()
+        {
+            try { return AppDomain.CurrentDomain.GetData("DynamicCupShare_Plugin") != null; }
+            catch { return false; }
         }
 
         private static IPlayer WrapPlayer(BasePlayer player)

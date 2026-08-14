@@ -191,6 +191,7 @@ namespace Oxide.Core
         /// 2) RaidableBases (allow damage inside active raid zones)
         /// 3) Convoy (allow damage to convoy entities / event turrets target players)
         /// 4) ArmoredTrain (allow damage to train turrets/sams; turrets hurt/target players)
+        /// 5) AnimalSpawn (custom GrimmBoss animals vs NPCs/animals)
         /// </summary>
         public static object CallHook(string hook, params object[] args)
         {
@@ -210,6 +211,9 @@ namespace Oxide.Core
 
                 object train = TryAppDomainBool("ArmoredTrain_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage ArmoredTrain");
                 if (train is bool) return train;
+
+                object animal = TryAppDomainBool("AnimalSpawn_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage AnimalSpawn");
+                if (animal is bool) return animal;
             }
             else if (hook == "CanEntityBeTargeted")
             {
@@ -225,6 +229,9 @@ namespace Oxide.Core
 
                 object train = TryAppDomainBool("ArmoredTrain_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted ArmoredTrain");
                 if (train is bool) return train;
+
+                object animal = TryAppDomainBool("AnimalSpawn_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted AnimalSpawn");
+                if (animal is bool) return animal;
             }
 
             return null;

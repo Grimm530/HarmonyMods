@@ -164,7 +164,7 @@ namespace HarmonyMods.RustGame.Vanish
             _temporary.Add(new(HarmonyPatchType.Prefix, typeof(CodeLock), "OnTryToClose", [typeof(BasePlayer)], typeof(CodeLock_OnTryToClose), nameof(CodeLock_OnTryToClose.Prefix)));
             // Oxide/Carbon optional: only patch CanLootEntity when present
             // Game calls Interface.CallHook("CanLootEntity", player, this) — signature is (string, object, object), not (string, object[])
-            var oxideInterfaceType = Type.GetType("Oxide.Core.Interface, Oxide.Core") ?? Type.GetType("Oxide.Core.Interface, Carbon.Common");
+            var oxideInterfaceType = TryGetOxideInterfaceType();
             if (oxideInterfaceType != null)
             {
                 _temporary.Add(new(HarmonyPatchType.Prefix, oxideInterfaceType, "CallHook", [typeof(string), typeof(object), typeof(object)], typeof(Interface_CallHook_CanLoot), nameof(Interface_CallHook_CanLoot.Prefix), priority: HarmonyLib.Priority.First));
@@ -303,6 +303,19 @@ namespace HarmonyMods.RustGame.Vanish
             }
         }
 
+        private static Type _oxideInterfaceType;
+        private static bool _oxideInterfaceResolved;
+
+        /// <summary>Cache Oxide/Carbon Interface lookup so missing Oxide.Core does not spam Harmony AssemblyResolve.</summary>
+        private static Type TryGetOxideInterfaceType()
+        {
+            if (_oxideInterfaceResolved)
+                return _oxideInterfaceType;
+            _oxideInterfaceResolved = true;
+            _oxideInterfaceType = Type.GetType("Oxide.Core.Interface, Oxide.Core") ?? Type.GetType("Oxide.Core.Interface, Carbon.Common");
+            return _oxideInterfaceType;
+        }
+
         private void TryPatchTemporary()
         {
             if (HiddenPlayers.Count > 0)
@@ -423,6 +436,8 @@ namespace HarmonyMods.RustGame.Vanish
                         }
                         else BasePlayer_PlayerInit.OnPlayerConnected(player.Connection, false);
                     }
+                    if (Config.PruneUsersWithoutAccess() > 0)
+                        config.SaveConfig();
                 }
                 catch (Exception ex)
                 {
@@ -475,7 +490,7 @@ namespace HarmonyMods.RustGame.Vanish
             internal static void OnCuiDraggableDrag(BasePlayer player, string name, Vector3 position, CommunityEntity.DraggablePositionSendType type)
             {
                 if (config == null || player == null || player.Connection == null || !ConsoleSystem_Run.HasAccess(player.Connection)) return;
-                var uc = UserConfig.Get(ID(player));
+                var uc = UserConfig.GetOrCreate(player);
                 uc.OnCuiDraggableDrag(player, name, position, type);
             }
         }
@@ -569,7 +584,7 @@ namespace HarmonyMods.RustGame.Vanish
                     Puts("Player not found.");
                     return false;
                 }
-                var uc = UserConfig.Get(ID(player));
+                var uc = UserConfig.GetOrCreate(player);
                 switch (args[0].ToLower())
                 {
                     case "setanchormin":
@@ -634,7 +649,7 @@ namespace HarmonyMods.RustGame.Vanish
             }
             internal static void SetSafePoint(BasePlayer player)
             {
-                var uc = UserConfig.Get(ID(player));
+                var uc = UserConfig.GetOrCreate(player);
                 if (uc.UseSafePoints)
                 {
                     uc.SafePoints.Add(player.transform.position);
@@ -707,7 +722,7 @@ namespace HarmonyMods.RustGame.Vanish
             }
             internal static void ToggleResetImg(BasePlayer player)
             {
-                var uc = UserConfig.Get(ID(player));
+                var uc = UserConfig.GetOrCreate(player);
                 uc.ImageBase64 = null;
                 uc.LoadImage();
                 config.SaveConfig();
@@ -728,12 +743,13 @@ namespace HarmonyMods.RustGame.Vanish
                     return;
                 }
                 var userid = ID(target);
-                if (!config.AccessList.Remove(userid))
-                {
+                bool granted = !config.AccessList.Remove(userid);
+                if (granted)
                     config.AccessList.Add(userid);
-                    config.SaveConfig();
-                }
-                Message(player, config.AccessList.Contains(userid) ? "Granted" : "Revoked", target.displayName, userid);
+                else
+                    config.Users.Remove(userid);
+                config.SaveConfig();
+                Message(player, granted ? "Granted" : "Revoked", target.displayName, userid);
             }
             public static void ToggleVanish(BasePlayer player, string[] args)
             {
@@ -928,7 +944,7 @@ namespace HarmonyMods.RustGame.Vanish
                     var player = c.player as BasePlayer;
                     if (player != null && ConsoleSystem_Run.HasAccess(c))
                     {
-                        var uc = UserConfig.Get(ID(player));
+                        var uc = UserConfig.GetOrCreate(player);
 
                         if (uc.AutoVanish)
                         {
@@ -964,28 +980,26 @@ namespace HarmonyMods.RustGame.Vanish
                         return;
                     }
                     var player = c.player as BasePlayer;
-                    if (player != null && ConsoleSystem_Run.HasAccess(c))
+                    // Only vanished players: do not disable colliders or teleport every admin on logoff.
+                    // DisablePlayerCollider on a normal sleeper lets them fall through the world and die (inventory wipe).
+                    if (player == null || !ConsoleSystem_Run.HasAccess(c) || !IsVanished(player))
                     {
-                        player.Invoke(() =>
-                        {
-                            player.SetServerFall(false);
-                            player.Invoke("DisablePlayerCollider", 0f);
-                        }, 0.1f);
-                        var uc = UserConfig.Get(ID(player));
-                        if (FoundSleepingBags(player, uc, out SleepingBag bag))
-                        {
-                            player.Teleport(bag.transform.position);
-                        }
-                        else if (HasSafePoint(uc))
-                        {
-                            player.Teleport(GetSafePoint(player, uc));
-                        }
-                        else if (uc.UndergroundTeleportDepth != 0f)
-                        {
-                            var position = player.transform.position;
-                            position.y = TerrainMeta.HeightMap.GetHeight(position) - uc.UndergroundTeleportDepth;
-                            player.Teleport(position);
-                        }
+                        return;
+                    }
+                    var uc = UserConfig.Get(ID(player));
+                    if (FoundSleepingBags(player, uc, out SleepingBag bag))
+                    {
+                        player.Teleport(bag.transform.position);
+                    }
+                    else if (HasSafePoint(uc))
+                    {
+                        player.Teleport(GetSafePoint(player, uc));
+                    }
+                    else if (uc.UndergroundTeleportDepth != 0f)
+                    {
+                        var position = player.transform.position;
+                        position.y = TerrainMeta.HeightMap.GetHeight(position) - uc.UndergroundTeleportDepth;
+                        player.Teleport(position);
                     }
                 }
                 catch
@@ -1238,6 +1252,7 @@ namespace HarmonyMods.RustGame.Vanish
 
             private void OnDestroy()
             {
+                Instance?.ForgetHidden(userid != 0UL ? userid.ToString() : player?.UserIDString);
                 if (!IsDestroyed)
                 {
                     SetLastAdminCheatTime(player, Time.realtimeSinceStartup);
@@ -1403,10 +1418,13 @@ namespace HarmonyMods.RustGame.Vanish
 
             public void StopNetworkGroupsUpdate()
             {
-                if (IsInvoking(UpdateNetworkGroups))
+                try
                 {
-                    CancelInvoke(UpdateNetworkGroups);
+                    if (this == null) return;
+                    if (IsInvoking(UpdateNetworkGroups))
+                        CancelInvoke(UpdateNetworkGroups);
                 }
+                catch { }
             }
 
             public void StartNetworkGroupsUpdate()
@@ -1507,8 +1525,16 @@ namespace HarmonyMods.RustGame.Vanish
             }
         }
 
+        internal void ForgetHidden(string userId)
+        {
+            if (!string.IsNullOrEmpty(userId))
+                HiddenPlayers.Remove(userId);
+        }
+
         public void ToggleVanish(BasePlayer player)
         {
+            if (player == null || player.IsDestroyed)
+                return;
             if (player.limitNetworking)
             {
                 //if (player.UserIDString == "76561198212544308") player.ChatMessage("Step 2");
@@ -1519,7 +1545,9 @@ namespace HarmonyMods.RustGame.Vanish
 
         public void Disappear(BasePlayer player)
         {
-            if (!HiddenPlayers.TryGetValue(player.UserIDString, out VanishComponent vc))
+            if (player == null || player.IsDestroyed)
+                return;
+            if (!HiddenPlayers.TryGetValue(player.UserIDString, out VanishComponent vc) || vc == null)
             {
                 HiddenPlayers[player.UserIDString] = vc = player.gameObject.AddComponent<VanishComponent>();
                 TryPatchTemporary();
@@ -1581,7 +1609,7 @@ namespace HarmonyMods.RustGame.Vanish
                 heldEntity.SetHeld(false);
                 heldEntity.UpdateVisiblity_Invis();
             }
-            var uc = UserConfig.Get(ID(player));
+            var uc = UserConfig.GetOrCreate(player);
             if (player.IsConnected)
             {
                 if (uc.ShowIndicator)
@@ -1630,13 +1658,22 @@ namespace HarmonyMods.RustGame.Vanish
 
         public void Reappear(BasePlayer player)
         {
+            if (player == null || player.IsDestroyed)
+                return;
             player.syncPosition = true;
             if (HiddenPlayers.TryGetValue(player.UserIDString, out var vc))
             {
                 HiddenPlayers.Remove(player.UserIDString);
-                vc.CancelInvoke("RefreshVanishUI");
-                vc.StopNetworkGroupsUpdate();
-                UnityEngine.Object.Destroy(vc);
+                if (vc != null)
+                {
+                    try
+                    {
+                        vc.CancelInvoke("RefreshVanishUI");
+                        vc.StopNetworkGroupsUpdate();
+                    }
+                    catch { }
+                    UnityEngine.Object.Destroy(vc);
+                }
                 TryUnpatchTemporary();
             }
             SimpleAIMemory.PlayerIgnoreList.Remove(player);
@@ -1933,14 +1970,32 @@ namespace HarmonyMods.RustGame.Vanish
             [JsonConverter(typeof(UnityVector3Converter))]
             public List<Vector3> SafePoints = new();
 
+            /// <summary>Shared defaults for players who are not persisted. Do not mutate.</summary>
+            [JsonIgnore]
+            internal static readonly UserConfig Fallback = new();
+
+            /// <summary>Read existing per-user settings. Does not create or save. Unknown IDs get Fallback.</summary>
             public static UserConfig Get(ulong id)
             {
-                if (!config.Users.TryGetValue(id, out UserConfig uc))
-                {
-                    config.Users[id] = uc = new();
-                    uc.LoadImage();
-                    config.SaveConfig();
-                }
+                if (config?.Users != null && config.Users.TryGetValue(id, out UserConfig uc) && uc != null)
+                    return uc;
+                return Fallback;
+            }
+
+            /// <summary>Create and save a Users entry only for players allowed to use vanish (authLevel, IsAdmin, or AccessList).</summary>
+            public static UserConfig GetOrCreate(BasePlayer player)
+            {
+                if (player == null || config?.Users == null)
+                    return Fallback;
+                ulong id = ID(player);
+                if (config.Users.TryGetValue(id, out UserConfig uc) && uc != null)
+                    return uc;
+                if (!ConsoleSystem_Run.HasAccessOrAuthLevel(player))
+                    return Fallback;
+                uc = new();
+                config.Users[id] = uc;
+                uc.LoadImage();
+                config.SaveConfig();
                 return uc;
             }
 
@@ -2040,7 +2095,8 @@ namespace HarmonyMods.RustGame.Vanish
                 if (string.IsNullOrEmpty(ImageBase64))
                 {
                     LoadImage();
-                    config.SaveConfig();
+                    if (!ReferenceEquals(this, Fallback))
+                        config?.SaveConfig();
                 }
                 
                 // If still no image data, can't store
@@ -2237,6 +2293,31 @@ namespace HarmonyMods.RustGame.Vanish
             /// <summary>AccessList only — Users holds per-user settings, not permissions.</summary>
             internal bool HasAccess(ulong userid) => AccessList.Contains(userid);
 
+            /// <summary>Drop Users entries for Steam IDs that are currently in the world but cannot use vanish. Skips when no players are loaded so a BeforeSceneLoad reload cannot wipe the dictionary.</summary>
+            internal static int PruneUsersWithoutAccess()
+            {
+                if (config?.Users == null || config.Users.Count == 0)
+                    return 0;
+                if ((BasePlayer.activePlayerList == null || BasePlayer.activePlayerList.Count == 0)
+                    && (BasePlayer.sleepingPlayerList == null || BasePlayer.sleepingPlayerList.Count == 0))
+                    return 0;
+                using var remove = Pool.Get<PooledList<ulong>>();
+                foreach (var pair in config.Users)
+                {
+                    if (config.HasAccess(pair.Key))
+                        continue;
+                    var player = BasePlayer.FindAwakeOrSleepingByID(pair.Key);
+                    if (player != null && ConsoleSystem_Run.HasAccessOrAuthLevel(player))
+                        continue;
+                    if (player == null)
+                        continue;
+                    remove.Add(pair.Key);
+                }
+                for (int i = 0; i < remove.Count; i++)
+                    config.Users.Remove(remove[i]);
+                return remove.Count;
+            }
+
             public static void ReloadConfig()
             {
                 string path = ConfigPath();
@@ -2257,6 +2338,7 @@ namespace HarmonyMods.RustGame.Vanish
                 {
                     LoadDefaultConfig();
                 }
+                PruneUsersWithoutAccess();
                 config.SaveConfig();
             }
 

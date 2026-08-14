@@ -46,8 +46,9 @@ Harmony mod that filters inappropriate language in chat. Replaces or blocks bad 
 ChatFilter is designed to run **first** so that anything downstream sees only filtered text:
 
 1. **ChatFilter** (Prefix, `Priority.First`) – Runs first. Reads the message, removes bad words, writes the cleaned message back into the same `Arg`. Returns true so the rest of the pipeline runs.
-2. **ChatTranslator** – Reads the message from the Arg (now already filtered), translates it, and sends it to players. So translated chat is always based on clean language.
-3. **Rustcord** (Postfix) – Reads the message from the Arg (filtered) and sends it to Discord / other servers. So relayed chat is always clean.
+2. **BetterChat** (Prefix, `Priority.High`) – Titles, group colours, and ColouredChat name/message colours. Sends `chat.add` and skips the original `sayImpl`.
+3. **ChatTranslator** – Skipped while BetterChat is loaded (BetterChat already sent the line). Without BetterChat, translates per recipient.
+4. **Rustcord** (Postfix) – Reads the message from the Arg (filtered) and sends it to Discord / other servers. So relayed chat is always clean.
 
 **Load order:** Load ChatFilter before ChatTranslator and Rustcord when possible (e.g. `harmony.load ChatFilter` then the others). The patch uses `[HarmonyPriority(Priority.First)]` so it runs first regardless, but correct load order avoids edge cases.
 

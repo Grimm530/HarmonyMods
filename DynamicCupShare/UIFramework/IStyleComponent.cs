@@ -1,0 +1,6 @@
+namespace Oxide.Ext.Chaos.UIFramework;
+
+public interface IStyleComponent
+{
+	BaseCuiComponent WithStyle(Style style);
+}

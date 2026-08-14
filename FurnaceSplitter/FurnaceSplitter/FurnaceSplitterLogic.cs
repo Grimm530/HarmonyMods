@@ -26,7 +26,8 @@ namespace FurnaceSplitter
             var info = FurnaceSplitterMod.GetOvenInfo(oven);
 
             int neededFuel = (int)Math.Ceiling(info.FuelNeeded);
-            int fuelInOven = oven.inventory.GetAmount(oven.fuelType.itemid, false);
+            // Explicit 3-arg call — ItemContainer.GetAmount(int,bool,bool) after Facepunch API change
+            int fuelInOven = oven.inventory.GetAmount(oven.fuelType.itemid, false, false);
             neededFuel -= fuelInOven;
 
             var playerFuel = new List<Item>();
@@ -58,7 +59,7 @@ namespace FurnaceSplitter
                         break;
                 }
 
-                int currentTotal = oven.inventory.GetAmount(oven.fuelType.itemid, false);
+                int currentTotal = oven.inventory.GetAmount(oven.fuelType.itemid, false, false);
                 if (currentTotal >= capacity)
                     break;
 

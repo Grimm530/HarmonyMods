@@ -50,6 +50,17 @@ namespace Oxide.Core
     public static class Interface
     {
         public static readonly OxideMod Oxide = new OxideMod();
+        private static Type _oxideInterfaceType;
+        private static bool _oxideInterfaceResolved;
+
+        private static Type GetOxideInterfaceType()
+        {
+            if (_oxideInterfaceResolved)
+                return _oxideInterfaceType;
+            _oxideInterfaceResolved = true;
+            _oxideInterfaceType = Type.GetType("Oxide.Core.Interface, Oxide.Core");
+            return _oxideInterfaceType;
+        }
 
         /// <summary>
         /// Forwards select hooks to Harmony mods (Kits GiveKit). Otherwise null — no Oxide hook bus.
@@ -63,9 +74,10 @@ namespace Oxide.Core
                 return KitsPluginBridge.TryGiveKit(args);
 
             // Soft-forward to real Oxide when present (optional cross-plugin notifications).
+            // Cache the lookup: HarmonyLoader logs every AssemblyResolve, and Oxide.Core is not installed.
             try
             {
-                Type t = Type.GetType("Oxide.Core.Interface, Oxide.Core");
+                Type t = GetOxideInterfaceType();
                 if (t != null)
                 {
                     MethodInfo mi = t.GetMethod("CallHook", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string), typeof(object[]) }, null);
@@ -359,6 +371,64 @@ namespace Oxide.Core.Plugins
         }
     }
 
+    /// <summary>
+    /// Forwards SpawnAnimal to the AnimalSpawn Harmony mod (AppDomain AnimalSpawn.Instance).
+    /// Horse shop limits stay in Shop — this bridge is spawn/AI only.
+    /// </summary>
+    public sealed class AnimalSpawnPluginBridge : Plugin
+    {
+        public AnimalSpawnPluginBridge()
+        {
+            Name = "AnimalSpawn";
+            IsLoaded = true;
+        }
+
+        public static bool IsApiLive()
+        {
+            try
+            {
+                object instance = AppDomain.CurrentDomain.GetData("AnimalSpawn.Instance");
+                if (instance != null) return true;
+                return AppDomain.CurrentDomain.GetData("AnimalSpawn.Type") is Type
+                    || AppDomain.CurrentDomain.GetData("AnimalSpawn_ApiType") is Type;
+            }
+            catch { return false; }
+        }
+
+        public override object Call(string hook, params object[] args)
+        {
+            if (string.IsNullOrEmpty(hook)) return null;
+            args ??= Array.Empty<object>();
+            try
+            {
+                object instance = AppDomain.CurrentDomain.GetData("AnimalSpawn.Instance");
+                Type apiType = instance?.GetType()
+                    ?? AppDomain.CurrentDomain.GetData("AnimalSpawn.Type") as Type
+                    ?? AppDomain.CurrentDomain.GetData("AnimalSpawn_ApiType") as Type;
+                if (apiType == null) return null;
+                if (instance == null)
+                    instance = apiType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                if (instance == null) return null;
+
+                MethodInfo call = instance.GetType().GetMethod("Call", new[] { typeof(string), typeof(object[]) });
+                if (call != null)
+                    return call.Invoke(instance, new object[] { hook, args });
+
+                if (string.Equals(hook, "SpawnAnimal", StringComparison.OrdinalIgnoreCase) && args.Length >= 2 && args[0] is UnityEngine.Vector3 pos)
+                {
+                    MethodInfo spawn = instance.GetType().GetMethod("SpawnAnimal", BindingFlags.Public | BindingFlags.Instance, null,
+                        new[] { typeof(UnityEngine.Vector3), typeof(object) }, null);
+                    return spawn?.Invoke(instance, new object[] { pos, args[1] });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[GrimmBoss] AnimalSpawn.Call " + hook + " failed: " + (ex.InnerException?.Message ?? ex.Message));
+            }
+            return null;
+        }
+    }
+
     public class PluginManager
     {
         public bool Exists(string name)
@@ -371,6 +441,8 @@ namespace Oxide.Core.Plugins
                 return PveModePluginBridge.IsApiLive();
             if (string.Equals(name, "Kits", StringComparison.OrdinalIgnoreCase))
                 return KitsPluginBridge.IsApiLive();
+            if (string.Equals(name, "AnimalSpawn", StringComparison.OrdinalIgnoreCase))
+                return AnimalSpawnPluginBridge.IsApiLive();
             return false;
         }
 
@@ -382,6 +454,8 @@ namespace Oxide.Core.Plugins
                 return PveModePluginBridge.IsApiLive() ? new PveModePluginBridge() : null;
             if (string.Equals(name, "Kits", StringComparison.OrdinalIgnoreCase))
                 return KitsPluginBridge.IsApiLive() ? new KitsPluginBridge() : null;
+            if (string.Equals(name, "AnimalSpawn", StringComparison.OrdinalIgnoreCase))
+                return AnimalSpawnPluginBridge.IsApiLive() ? new AnimalSpawnPluginBridge() : null;
             return null;
         }
     }

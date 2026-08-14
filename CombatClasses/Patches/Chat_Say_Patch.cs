@@ -1,3 +1,4 @@
+using System;
 using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
@@ -30,7 +31,15 @@ namespace CombatClassesHarmony.Patches
                     return true;
                 }
 
-                // Class chat prefix (showchatclass)
+                // BetterChat owns formatted chat (titles). Class tag is registered as a BetterChat title.
+                try
+                {
+                    if (AppDomain.CurrentDomain.GetData("BetterChat_ApiType") != null)
+                        return true;
+                }
+                catch { }
+
+                // Class chat prefix (showchatclass) — only when BetterChat is not loaded
                 object chatResult = CCPlugin.Dispatch_OnPlayerChat(player, message, ChatChannel.Global);
                 if (chatResult != null)
                     return false;

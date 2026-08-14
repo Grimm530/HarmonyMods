@@ -11,6 +11,8 @@ namespace CHT
     /// </summary>
     public sealed class CHTMod : IHarmonyModHooks
     {
+        public const string AppDomainApiKey = "CHT_ApiType";
+
         public static CHTMod Instance { get; private set; }
         public static PluginBody Plugin { get; private set; }
 
@@ -34,6 +36,7 @@ namespace CHT
             {
                 Plugin = new PluginBody { Name = "CHT" };
                 Plugin.HarmonyLoadConfig();
+                AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(CHTMod));
                 PermissionsBridge.Initialize(PluginBody.GetRegisteredPermissions());
                 RegisterCommands();
 
@@ -102,6 +105,7 @@ namespace CHT
 
             PermissionsBridge.Shutdown();
             ModRunner.Destroy();
+            try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); } catch { }
             Plugin = null;
             Instance = null;
             Debug.Log("[CHT] Unloaded.");
@@ -239,16 +243,18 @@ namespace CHT
 
         /// <summary>
         /// Opens the heli purchase UI. Supports player console or server: cht.openshop &lt;steamid&gt;.
+        /// Shop calls <see cref="TryOpenShop(ulong)"/> via AppDomain so this does not depend on ConsoleSystem.Find.
         /// </summary>
         public static void OpenShopFromArg(ConsoleSystem.Arg arg)
         {
             if (Plugin == null || arg == null) return;
 
             BasePlayer player = arg.Player();
+            ulong steamId = 0;
             if (player == null && arg.HasArgs(1))
             {
                 string id = arg.GetString(0);
-                if (ulong.TryParse(id, out ulong steamId))
+                if (ulong.TryParse(id, out steamId))
                     player = BasePlayer.FindByID(steamId) ?? BasePlayer.FindSleeping(steamId);
             }
 
@@ -258,7 +264,26 @@ namespace CHT
                 return;
             }
 
+            TryOpenShop(player);
+        }
+
+        /// <summary>
+        /// AppDomain API for Shop: open the heli shop UI for a connected player.
+        /// </summary>
+        public static bool TryOpenShop(ulong steamId)
+        {
+            if (steamId == 0) return false;
+            var player = BasePlayer.FindByID(steamId) ?? BasePlayer.FindSleeping(steamId);
+            return TryOpenShop(player);
+        }
+
+        public static bool TryOpenShop(BasePlayer player)
+        {
+            if (Plugin == null || player == null || !player.IsConnected)
+                return false;
+
             Plugin.cmdHeliShop(player, "heli.shop", Array.Empty<string>());
+            return true;
         }
 
         public bool RunChatCommand(BasePlayer player, string command, string[] args)

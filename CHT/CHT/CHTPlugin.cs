@@ -1619,7 +1619,7 @@ namespace Oxide.Plugins
                 _manager = manager;
 
                 // Apply immediately — do not wait only on Unity Start() (guns/AI can be ready now).
-                ApplyTierSettings(force: true);
+                ApplyTierSettings();
             }
 
             public static TieredHelicopterComponent GetComponent(PatrolHelicopter patrolHelicopter)
@@ -1638,7 +1638,8 @@ namespace Oxide.Plugins
 
             private void Start()
             {
-                ApplyTierSettings(force: true);
+                if (!_tierSettingsApplied)
+                    ApplyTierSettings();
             }
 
             /// <summary>
@@ -1704,7 +1705,8 @@ namespace Oxide.Plugins
 
             private void RetryApplyTierSettings()
             {
-                ApplyTierSettings(force: true);
+                if (!_tierSettingsApplied)
+                    ApplyTierSettings();
             }
 
             private void Update()
@@ -5907,6 +5909,9 @@ namespace Oxide.Plugins
         private const string UI_CONTENT = "cht-ui-content";
         private const string UI_DETAILS_OVERLAY = "cht-ui-details-overlay";
         private const string UI_DETAILS_CONTENT = "cht-ui-details-content";
+        // Shop / ServerPanel use OverlayNonScaled. Overlay sits underneath, so a Shop purchase
+        // that leaves UI.Shop open would bury the heli menu.
+        private const string UI_PARENT = "OverlayNonScaled";
 
         private const string FX_CLICK_SUCCESS = "assets/bundled/prefabs/fx/notice/loot.drag.grab.fx.prefab";
         private const string FX_CLICK_DENIED = "assets/prefabs/locks/keypad/effects/lock.code.denied.prefab";
@@ -6073,7 +6078,7 @@ namespace Oxide.Plugins
             container.Add(new CuiElement
             {
                 Name = UI_OVERLAY,
-                Parent = "Overlay",
+                Parent = UI_PARENT,
                 Components =
         {
             new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" },
@@ -6349,7 +6354,7 @@ namespace Oxide.Plugins
             container.Add(new CuiElement
             {
                 Name = UI_DETAILS_OVERLAY,
-                Parent = "Overlay",
+                Parent = UI_PARENT,
                 Components =
         {
             new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" },
