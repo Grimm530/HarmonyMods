@@ -10,11 +10,17 @@ Standalone Harmony mod that sets a customizable Steam avatar icon for all **non-
 
 ```json
 {
-  "Steam Avatar User ID": 0
+  "Steam Avatar User ID": 0,
+  "Replace MOTD icon": true
 }
 ```
 
-Set `Steam Avatar User ID` to a Steam64 ID. Chat messages with userId 0 (server, plugins, system) will use this avatar instead of the default icon.
+| Key | Effect |
+|-----|--------|
+| `Steam Avatar User ID` | Steam64 ID whose avatar is used for chat messages with userId 0 (server, plugins, system). `0` = leave the default icon. |
+| `Replace MOTD icon` | When true (and a Steam ID is set), hide the client-drawn `server.motd` (default Rust gear icon) and re-send the same text as `chat.add` with the Steam avatar. Keep `server.motd` as the message text. |
+
+`server.motd` is a replicated convar. The client paints it locally with the default Rust icon; that path never goes through `chat.add`, so ChatIcons cannot retarget the sprite itself. Replacement is: suppress the replicated string to clients, then send the MOTD as a normal server chat line with the configured avatar.
 
 ## Loading
 
@@ -28,7 +34,7 @@ cd .cursor\HarmonyMods\ChatIcons
 .\build.ps1
 ```
 
-DLL is copied to `D:\!RustServer\HarmonyMods\ChatIcons.dll`.
+DLL is copied to this server's `HarmonyMods/ChatIcons.dll`.
 
 ## Related mods
 

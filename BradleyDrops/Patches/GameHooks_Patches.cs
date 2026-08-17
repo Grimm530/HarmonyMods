@@ -58,17 +58,49 @@ namespace BradleyDropsHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(ThrownWeapon), "SetUpThrownWeapon")]
+    [HarmonyPatch(typeof(ThrownWeapon), "SetUpThrownWeapon", new[] { typeof(BaseEntity), typeof(Item) })]
     public static class ThrownWeapon_SetUpThrownWeapon_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(ThrownWeapon __instance, BaseEntity ent)
+        public static void Postfix(ThrownWeapon __instance, BaseEntity ent, Item ownerItem)
         {
             if (__instance == null || ent == null) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
-            try { BD.Dispatch_OnExplosiveThrown(player, ent, __instance); }
+            try { BD.Dispatch_OnExplosiveThrown(player, ent, __instance, ownerItem); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnExplosiveThrown: " + ex.Message); }
+        }
+    }
+
+    [HarmonyPatch(typeof(ThrownWeapon), nameof(ThrownWeapon.DoThrowImpl))]
+    public static class ThrownWeapon_DoThrowImpl_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(ThrownWeapon __instance, BasePlayer owningPlayer, BaseEntity thrownEntity)
+        {
+            if (__instance == null || owningPlayer == null || thrownEntity == null) return;
+            try { BD.Dispatch_OnExplosiveThrown(owningPlayer, thrownEntity, __instance, __instance.GetItem()); }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnExplosiveThrown DoThrowImpl: " + ex.Message); }
+        }
+    }
+
+    [HarmonyPatch(typeof(SupplySignal), nameof(SupplySignal.Explode))]
+    public static class SupplySignal_Explode_Patch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(SupplySignal __instance)
+        {
+            if (__instance == null) return true;
+            try
+            {
+                ulong skin = __instance.skinID;
+                if (skin == 0 || !BD.Dispatch_IsBradleyDropSkin(skin)) return true;
+                var player = __instance.creatorEntity as BasePlayer;
+                if (player != null)
+                    BD.Dispatch_OnExplosiveThrown(player, __instance, null, null);
+                return false;
+            }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] SupplySignal.Explode: " + ex.Message); return true; }
         }
     }
 
@@ -96,6 +128,18 @@ namespace BradleyDropsHarmony.Patches
                 if (attack != null) return false;
             }
             return BD.Dispatch_OnEntityTakeDamage(__instance, info) == null;
+        }
+    }
+
+    [HarmonyPatch(typeof(BradleyAPC), nameof(BradleyAPC.OnAttacked))]
+    public static class BradleyAPC_OnAttacked_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BradleyAPC __instance, HitInfo info)
+        {
+            if (__instance == null || info == null) return;
+            try { BD.Dispatch_OnBradleyAttacked(__instance, info); }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnBradleyAttacked: " + ex.Message); }
         }
     }
 
@@ -132,6 +176,18 @@ namespace BradleyDropsHarmony.Patches
         {
             try { BD.Dispatch_OnLootSpawn(__instance); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnLootSpawn: " + ex.Message); }
+        }
+    }
+
+    [HarmonyPatch(typeof(BradleyAPC), nameof(BradleyAPC.Initialize))]
+    public static class BradleyAPC_Initialize_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BradleyAPC __instance)
+        {
+            if (__instance == null) return;
+            try { BD.Dispatch_OnBradleyApcInitialize(__instance); }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnBradleyApcInitialize: " + ex.Message); }
         }
     }
 

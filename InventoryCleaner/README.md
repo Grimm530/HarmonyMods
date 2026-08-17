@@ -32,10 +32,19 @@ Load: `harmony.load InventoryCleaner` (or automatic at startup).
 |------------|--------|
 | `inventorycleaner.allowed` | Use `/clearinv` (and aliases) |
 | `inventorycleaner.cleaneveryone` | `/clearinv [opt] everyone` |
-| `inventorycleaner.cleanondeath` | Strip inventory on death (before loot drop) |
-| `inventorycleaner.cleanonexit` | Strip inventory on disconnect (if not already dead) |
+| `inventorycleaner.cleanondeath` | **Opt-in:** strip **this player's** inventory on death (before loot drop) |
+| `inventorycleaner.cleanonexit` | **Opt-in:** strip **this player's** inventory on disconnect (if not already dead) |
 
-On load (and when Permissions becomes ready), all four are granted to the Permissions group **`admin`**. Put staff in that group:
+On load (and when Permissions becomes ready), only the command perms (`allowed`, `cleaneveryone`) are granted to the Permissions group **`admin`**. `cleanondeath` and `cleanonexit` are **not** admin tools — they wipe whoever has them. If they were previously granted to `admin`, they are revoked on load.
+
+To opt a player (or group) into auto-wipe:
+
+```
+perm grant <steamid> inventorycleaner.cleanonexit
+perm grant <steamid> inventorycleaner.cleanondeath
+```
+
+Put staff in the admin group for `/clearinv` only:
 
 ```
 perm usergroup add <steamid> admin

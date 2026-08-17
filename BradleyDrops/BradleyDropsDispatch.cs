@@ -13,6 +13,8 @@ namespace Oxide.Plugins
 
         public void CallInit()
         {
+            try { HarmonyLoadDefaultMessages(); }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] LoadDefaultMessages failed: " + ex.Message); }
             try { Init(); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] Init failed: " + ex.Message); }
             try { OverlayLanguageFile(); } catch { }
@@ -39,13 +41,21 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnItemAddedToContainer: " + ex.Message); }
         }
 
-        public static object Dispatch_OnExplosiveThrown(BasePlayer player, BaseEntity entity, ThrownWeapon item)
+        public static object Dispatch_OnExplosiveThrown(BasePlayer player, BaseEntity entity, ThrownWeapon item, Item ownerItem = null)
         {
             var inst = Instance;
             if (inst == null || entity is not SupplySignal signal) return null;
             if (!inst.IsSubscribed(nameof(OnExplosiveThrown))) return null;
-            try { return inst.OnExplosiveThrown(player, signal, item); }
+            try { return inst.OnExplosiveThrown(player, signal, item, ownerItem); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnExplosiveThrown: " + ex.Message); return null; }
+        }
+
+        public static bool Dispatch_IsBradleyDropSkin(ulong skinId)
+        {
+            var inst = Instance;
+            if (inst == null) return false;
+            try { return inst.IsBradleyDropSkin(skinId); }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] IsBradleyDropSkin: " + ex.Message); return false; }
         }
 
         public static object Dispatch_CanStackItem(Item item, Item targetItem)
@@ -78,13 +88,25 @@ namespace Oxide.Plugins
             if (inst == null || !inst.IsSubscribed(nameof(OnEntityTakeDamage))) return null;
             try
             {
-                if (entity is BradleyAPC bradley) return inst.OnEntityTakeDamage(bradley, info);
+                if (entity is BradleyAPC bradley)
+                {
+                    inst.TrySendAttackDifficulty(bradley, info);
+                    return inst.OnEntityTakeDamage(bradley, info);
+                }
                 if (entity is CH47Helicopter ch47) return inst.OnEntityTakeDamage(ch47, info);
                 if (entity is ScientistNPC npc) return inst.OnEntityTakeDamage(npc, info);
                 if (entity is BasePlayer player) return inst.OnEntityTakeDamage(player, info);
                 return inst.OnEntityTakeDamage(entity, info);
             }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnEntityTakeDamage: " + ex.Message); return null; }
+        }
+
+        public static void Dispatch_OnBradleyAttacked(BradleyAPC bradley, HitInfo info)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+            try { inst.TrySendAttackDifficulty(bradley, info); }
+            catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnBradleyAttacked: " + ex.Message); }
         }
 
         public static object Dispatch_OnTurretTarget(AutoTurret turret, BaseCombatEntity target)

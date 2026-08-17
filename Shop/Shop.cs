@@ -2538,6 +2538,10 @@ namespace ShopHarmony
                             {
                                 _instance?.DispatchChtOpenShop(player, trimmed);
                             }
+                            else if (trimmed.StartsWith("bdgive", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _instance?.DispatchBradleyDropsCommand(trimmed);
+                            }
                             else
                             {
                                 _instance?.Server.Command(check);
@@ -15907,9 +15911,6 @@ namespace ShopHarmony
             });
         }
 
-        /// <summary>
-        /// Direct dispatch from ToCommand — avoids ConsoleSystem.Run treating the full line as the command name.
-        /// </summary>
         internal void DispatchHorseShopCommand(string commandLine)
         {
             if (string.IsNullOrWhiteSpace(commandLine)) return;
@@ -15940,6 +15941,39 @@ namespace ShopHarmony
             catch (Exception ex)
             {
                 Debug.LogWarning("[Shop Horse] DispatchHorseShopCommand: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Shop Command products use `bdgive Easy %steamid% 1`. ConsoleSystem.Run as server
+        /// used to no-op because BradleyDrops only accepted a connected player with bradleydrops.admin.
+        /// </summary>
+        internal void DispatchBradleyDropsCommand(string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine)) return;
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("BradleyDrops_ApiType") as Type;
+                var inst = t?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                var mi = t?.GetMethod("TryRunServerCommand", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string) }, null);
+                if (inst != null && mi != null)
+                {
+                    var ok = mi.Invoke(inst, new object[] { commandLine });
+                    if (ok is bool b && b)
+                    {
+                        Debug.Log("[Shop] Dispatched BradleyDrops command: " + commandLine);
+                        return;
+                    }
+                    Debug.LogWarning("[Shop] BradleyDrops rejected command: " + commandLine);
+                    return;
+                }
+
+                Debug.LogWarning("[Shop] BradleyDrops not loaded; falling back to console: " + commandLine);
+                Server.Command(commandLine);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop] DispatchBradleyDropsCommand: " + ex.Message);
             }
         }
 

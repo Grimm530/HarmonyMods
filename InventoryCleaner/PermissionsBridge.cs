@@ -22,12 +22,14 @@ namespace InventoryCleaner
         private static MethodInfo _register;
         private static MethodInfo _exists;
         private static MethodInfo _grantGroup;
+        private static MethodInfo _revokeGroup;
         private static MethodInfo _groupExists;
         private static MethodInfo _createGroup;
         private static MethodInfo _svcUserHas;
         private static MethodInfo _svcRegister;
         private static MethodInfo _svcExists;
         private static MethodInfo _svcGrantGroup;
+        private static MethodInfo _svcRevokeGroup;
         private static MethodInfo _svcGroupExists;
         private static MethodInfo _svcCreateGroup;
 
@@ -149,8 +151,8 @@ namespace InventoryCleaner
         {
             _permType = null;
             _service = null;
-            _userHas = _register = _exists = _grantGroup = _groupExists = _createGroup = null;
-            _svcUserHas = _svcRegister = _svcExists = _svcGrantGroup = _svcGroupExists = _svcCreateGroup = null;
+            _userHas = _register = _exists = _grantGroup = _revokeGroup = _groupExists = _createGroup = null;
+            _svcUserHas = _svcRegister = _svcExists = _svcGrantGroup = _svcRevokeGroup = _svcGroupExists = _svcCreateGroup = null;
         }
 
         private static void EnsureBound()
@@ -205,6 +207,7 @@ namespace InventoryCleaner
             _register = _permType.GetMethod("RegisterPermission", S, null, new[] { typeof(string) }, null);
             _exists = _permType.GetMethod("PermissionExists", S, null, new[] { typeof(string) }, null);
             _grantGroup = _permType.GetMethod("GrantGroupPermission", S, null, new[] { typeof(string), typeof(string) }, null);
+            _revokeGroup = _permType.GetMethod("RevokeGroupPermission", S, null, new[] { typeof(string), typeof(string) }, null);
             _groupExists = _permType.GetMethod("GroupExists", S, null, new[] { typeof(string) }, null);
             _createGroup = _permType.GetMethod("CreateGroup", S, null, new[] { typeof(string), typeof(string), typeof(int) }, null);
         }
@@ -226,6 +229,7 @@ namespace InventoryCleaner
                 _svcRegister = st.GetMethod("RegisterPermission", I, null, new[] { typeof(string) }, null);
                 _svcExists = st.GetMethod("PermissionExists", I, null, new[] { typeof(string) }, null);
                 _svcGrantGroup = st.GetMethod("GrantGroupPermission", I, null, new[] { typeof(string), typeof(string) }, null);
+                _svcRevokeGroup = st.GetMethod("RevokeGroupPermission", I, null, new[] { typeof(string), typeof(string) }, null);
                 _svcGroupExists = st.GetMethod("GroupExists", I, null, new[] { typeof(string) }, null);
                 _svcCreateGroup = st.GetMethod("CreateGroup", I, null, new[] { typeof(string), typeof(string), typeof(int) }, null);
             }
@@ -296,6 +300,12 @@ namespace InventoryCleaner
         {
             if (string.IsNullOrEmpty(group) || string.IsNullOrEmpty(perm)) return false;
             return InvokeBool(_grantGroup, _svcGrantGroup, group, perm);
+        }
+
+        public static bool RevokeGroupPermission(string group, string perm)
+        {
+            if (string.IsNullOrEmpty(group) || string.IsNullOrEmpty(perm)) return false;
+            return InvokeBool(_revokeGroup, _svcRevokeGroup, group, perm);
         }
 
         public static bool GroupExists(string group)

@@ -27,6 +27,8 @@ namespace RustLeagueHarmony
             carCount = 0;
             eventRoundOver = false;
             inEventRound = 0;
+            soloTest = false;
+            testing = configData.settings.testing;
 
             if (EventPlayerLastPos.Count > 0)
             {
@@ -38,6 +40,7 @@ namespace RustLeagueHarmony
                     CuiHelper.DestroyUi(player, "ScoreBlocknameTimer");
                     CuiHelper.DestroyUi(player, "RtimerSBlocknameTimer");
                     CuiHelper.DestroyUi(player, "MessagesBlocknameTimer");
+                    CuiHelper.DestroyUi(player, "TeamHudBlocknameTimer");
                     CuiHelper.DestroyUi(player, "waitingPlay");
                 }
             }
@@ -61,6 +64,7 @@ namespace RustLeagueHarmony
                     timer.NextTick(() => { entity?.Kill(); });
                 }
             }
+            timer.NextTick(PurgeDestroyedFromSaveList);
 
             if (teamWIn != "none")
                 AnnounceWinners(teamWIn);
@@ -151,7 +155,7 @@ namespace RustLeagueHarmony
                 if (rb != null) { rb.velocity = Vector3.zero; rb.useGravity = false; }
                 ball.SendNetworkUpdateImmediate();
             }
-            timer.Once(5f, () =>
+            timer.Once(0.25f, () =>
             {
                 foreach (var key in RedEventCars)
                     SnapCar(key.Key, key.Value.position);
@@ -162,11 +166,26 @@ namespace RustLeagueHarmony
 
         private void SnapCar(ulong netId, Vector3 position)
         {
-            var entity = FindEntity(netId);
+            var entity = FindEntity(netId) as ModularCar;
             if (entity == null || ball == null) return;
+            var rb = entity.rigidBody;
+            if (rb != null)
+            {
+                if (rb.IsSleeping()) rb.WakeUp();
+                rb.velocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
             entity.transform.position = position;
             entity.transform.LookAt(ball.transform);
-            entity.SendNetworkUpdate();
+            if (rb != null)
+            {
+                rb.position = entity.transform.position;
+                rb.rotation = entity.transform.rotation;
+            }
+            entity.transform.hasChanged = true;
+            entity.InvalidateNetworkCache();
+            entity.UpdateNetworkGroup();
+            entity.SendNetworkUpdateImmediate();
         }
 
         private void spawnEntitys()
@@ -195,7 +214,7 @@ namespace RustLeagueHarmony
             arenaBounds.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
 
             Vector3 center = configData.eventSettings.eventCenter;
-            var ballEntity = GameManager.server.CreateEntity("assets/content/vehicles/ball/ball.entity.prefab", center, Quaternion.identity);
+            var ballEntity = GameManager.server.CreateEntity("assets/content/vehicles/ball/ball.entity.prefab", center + Vector3.up * 2f, Quaternion.identity);
             if (ballEntity == null)
             {
                 closeEvent();
@@ -203,6 +222,7 @@ namespace RustLeagueHarmony
             }
             ballEntity.enableSaving = false;
             ballEntity.Spawn();
+            DisablePersistence(ballEntity);
             ball = ballEntity;
             eventEntitys.Add(ballEntity.net.ID.Value);
             ballMono = ballEntity.GetOrAdd<rustLeague>();
@@ -210,7 +230,7 @@ namespace RustLeagueHarmony
             int totalPlayers = RuningEventPlayer.Count;
             float radius = configData.eventSettings.CarSpawnRadius > 0f ? configData.eventSettings.CarSpawnRadius : 20f;
             List<Vector3> carPlacement;
-            if (testing && totalPlayers == 1) carPlacement = GetCircumferencePositions(center, radius, 180f, center.y);
+            if ((soloTest || testing) && totalPlayers == 1) carPlacement = GetCircumferencePositions(center, radius, 180f, center.y);
             else if (totalPlayers >= 2 && totalPlayers < 4) carPlacement = GetCircumferencePositions(center, radius, 180f, center.y);
             else if (totalPlayers >= 4 && totalPlayers < 6) carPlacement = GetCircumferencePositions(center, radius, 90f, center.y);
             else carPlacement = GetCircumferencePositions(center, radius, 60f, center.y);
@@ -228,7 +248,8 @@ namespace RustLeagueHarmony
                     closeEvent();
                     return;
                 }
-                carEntity.SendNetworkUpdate();
+                carEntity.UpdateNetworkGroup();
+                carEntity.SendNetworkUpdateImmediate();
                 eventEntitys.Add(carEntity.net.ID.Value);
             }
 
@@ -263,8 +284,8 @@ namespace RustLeagueHarmony
             ModularCar entity = GameManager.server.CreateEntity(PreFab, Vector, rotation) as ModularCar;
             if (entity == null) return null;
 
-            entity.Spawn();
             entity.enableSaving = false;
+            entity.Spawn();
             entity.transform.LookAt(ballEntity.transform);
             ItemContainer storageBox = entity.Inventory.ModuleContainer;
             SpawnChasseItem(configData.CarSettings.carSlot0, entity, storageBox, 0);
@@ -307,7 +328,34 @@ namespace RustLeagueHarmony
                 }
             }
             carCount++;
+            DisablePersistence(entity);
             return entity;
+        }
+
+        internal static void DisablePersistence(BaseEntity entity)
+        {
+            if (entity == null || entity.IsDestroyed) return;
+            if (entity.enableSaving)
+                entity.EnableSaving(false);
+            var vehicle = entity as BaseModularVehicle;
+            if (vehicle != null)
+            {
+                List<BaseVehicleModule> modules = vehicle.AttachedModuleEntities;
+                if (modules != null)
+                {
+                    for (int i = 0; i < modules.Count; i++)
+                        DisablePersistence(modules[i]);
+                }
+            }
+            List<BaseEntity> kids = entity.children;
+            if (kids == null || kids.Count == 0) return;
+            for (int i = 0; i < kids.Count; i++)
+                DisablePersistence(kids[i]);
+        }
+
+        internal static void PurgeDestroyedFromSaveList()
+        {
+            BaseEntity.saveList.RemoveWhere(e => e == null || e.IsDestroyed);
         }
 
         bool SpawnChasseItem(int PreFabID, BaseModularVehicle Chasse, ItemContainer storage, int pos)
@@ -324,7 +372,52 @@ namespace RustLeagueHarmony
             EventPlayerLastPos[player.GetUserId()] = player.transform.position;
             player.EnsureDismounted();
             RuningEventPlayer[player.GetUserId()] = team;
+            NotifyPlayerTeam(player, team);
             timer.Once(2f, () => TeleportPlayerPosition(player, destination + Vector3.forward * 2f, car));
+        }
+
+        internal string GetPlayerTeam(BasePlayer player)
+        {
+            if (player == null) return null;
+            ulong id = player.GetUserId();
+            if (RuningEventPlayer.TryGetValue(id, out var team) && !string.IsNullOrEmpty(team))
+                return team;
+            if (ballMono != null)
+            {
+                if (ballMono.redPlayer.ContainsKey(id)) return "red";
+                if (ballMono.bluePlayer.ContainsKey(id)) return "blue";
+            }
+            return null;
+        }
+
+        internal void NotifyPlayerTeam(BasePlayer player, string team)
+        {
+            if (player == null || string.IsNullOrEmpty(team)) return;
+            bool red = team.Equals("red", StringComparison.OrdinalIgnoreCase);
+            Reply(player, red ? "YourTeamRedChat" : "YourTeamBlueChat");
+            ShowTeamHud(player, red ? "red" : "blue");
+        }
+
+        internal void ShowTeamHud(BasePlayer player, string team = null)
+        {
+            if (player == null) return;
+            if (string.IsNullOrEmpty(team))
+                team = GetPlayerTeam(player);
+            CuiHelper.DestroyUi(player, "TeamHudBlocknameTimer");
+            if (string.IsNullOrEmpty(team)) return;
+            bool red = team.Equals("red", StringComparison.OrdinalIgnoreCase);
+            var elements = new CuiElementContainer();
+            var panel = elements.Add(new CuiPanel
+            {
+                Image = { Color = red ? "0.55 0.10 0.07 0.94" : "0.05 0.22 0.55 0.94" },
+                RectTransform = { AnchorMin = "0.012 0.715", AnchorMax = "0.180 0.775" }
+            }, "Hud", "TeamHudBlocknameTimer");
+            elements.Add(new CuiLabel
+            {
+                RectTransform = { AnchorMin = "0.04 0", AnchorMax = "0.96 1" },
+                Text = { Color = "1 1 1 1", Text = Lang(red ? "YourTeamRed" : "YourTeamBlue"), FontSize = 14, Align = TextAnchor.MiddleCenter, Font = "RobotoCondensed-Bold.ttf" }
+            }, panel);
+            CuiHelper.AddUi(player, elements);
         }
 
         private void TeleportPlayerPosition(BasePlayer player, Vector3 destination, BaseModularVehicle car)
@@ -354,6 +447,7 @@ namespace RustLeagueHarmony
                     if (mountPoint?.mountable == null || !mountPoint.isDriver) continue;
                     mountPoint.mountable.MountPlayer(player);
                     player.SendNetworkUpdateImmediate();
+                    ShowTeamHud(player);
                     timer.Once(2f, () => VerifyMounted(player, mountPoint.mountable, car));
                     break;
                 }
@@ -408,21 +502,84 @@ namespace RustLeagueHarmony
             _shopMarker = null;
         }
 
+        internal bool PointInGoal(Vector3 world, bool red)
+        {
+            Vector3 origin = red ? configData.eventSettings.RedZone : configData.eventSettings.BlueZone;
+            float yaw = red ? configData.eventSettings.RedZoneRotation : configData.eventSettings.BlueZoneRotation;
+            Vector3 size = red ? configData.eventSettings.RedZoneSize : configData.eventSettings.BlueZoneSize;
+            if (origin == Vector3.zero || size == Vector3.zero) return false;
+            Vector3 local = Quaternion.Inverse(Quaternion.Euler(0f, yaw, 0f)) * (world - origin);
+            Vector3 half = size * 0.5f;
+            return Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.y) <= half.y && Mathf.Abs(local.z) <= half.z;
+        }
+
         public void TryNegateEventDamage(BaseEntity theBall, HitInfo hitinfo)
         {
             if (!eventOpen && !eventRunning) return;
             if (theBall == null || hitinfo == null) return;
             bool negate = false;
+            rustLeagueCar hitCar = FindEventCar(theBall);
             if (theBall == ball) negate = true;
             else if (theBall is BasePlayer bp && EventPlayerLastPos.ContainsKey(bp.GetUserId())) negate = true;
-            else if (theBall.GetComponent<rustLeagueCar>() != null) negate = true;
-            else if (theBall is BaseVehicleModule module && module.Vehicle != null && module.Vehicle.GetComponent<rustLeagueCar>() != null)
-                negate = true;
+            else if (hitCar != null) negate = true;
+            if (hitCar != null)
+            {
+                rustLeagueCar shooter = FindRocketShooter(hitinfo);
+                if (shooter != null && !hitCar.IsSameCar(shooter))
+                {
+                    Vector3 blast = hitinfo.HitPositionWorld;
+                    if (blast == Vector3.zero && hitinfo.Initiator != null)
+                        blast = hitinfo.Initiator.transform.position;
+                    hitCar.ApplyRocketBlast(blast, shooter);
+                }
+            }
             if (!negate) return;
             hitinfo.damageTypes = new DamageTypeList();
             hitinfo.HitEntity = null;
             hitinfo.HitMaterial = 0;
             hitinfo.PointStart = Vector3.zero;
+        }
+
+        private static rustLeagueCar FindEventCar(BaseEntity entity)
+        {
+            if (entity == null) return null;
+            var car = entity.GetComponent<rustLeagueCar>();
+            if (car != null) return car;
+            var module = entity as BaseVehicleModule;
+            if (module?.Vehicle != null)
+            {
+                car = module.Vehicle.GetComponent<rustLeagueCar>();
+                if (car != null) return car;
+            }
+            var modular = entity.GetComponentInParent<ModularCar>();
+            return modular != null ? modular.GetComponent<rustLeagueCar>() : null;
+        }
+
+        private static rustLeagueCar FindRocketShooter(HitInfo info)
+        {
+            if (info == null) return null;
+            BaseEntity init = info.Initiator;
+            if (init != null)
+            {
+                var tracker = init.GetComponent<LeagueRocket>();
+                if (tracker != null) return tracker.Shooter;
+            }
+            if (info.WeaponPrefab != null)
+            {
+                var tracker = info.WeaponPrefab.GetComponent<LeagueRocket>();
+                if (tracker != null) return tracker.Shooter;
+            }
+            if (info.InitiatorPlayer != null)
+            {
+                var cars = Instance.LiveCars;
+                for (int i = 0; i < cars.Count; i++)
+                {
+                    var ride = cars[i];
+                    if (ride != null && ride.driver == info.InitiatorPlayer)
+                        return ride;
+                }
+            }
+            return null;
         }
 
         public bool TryBlockDismount(BasePlayer player, BaseMountable entity)

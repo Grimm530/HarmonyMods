@@ -700,28 +700,45 @@ namespace RustRewardsHarmony
 
         void CheckActivity()
 		{
-			foreach (var player in BasePlayer.activePlayerList) 
+			var interval = conf.Settings.Rewards.ActivityReward_Seconds;
+			if (interval <= 0)
+				return;
+
+			foreach (var player in BasePlayer.activePlayerList)
 			{
 				if (player?.net?.connection == null)
 					continue;
 
 				if (conf.Settings.Rewards.Use_Permissions && !HasPerm(player.UserIDString, ActivityPermission))
-                    continue;
+					continue;
 
+				var userId = player.userID.Get();
 				var duration = (int)(UnityEngine.Time.realtimeSinceStartup - player.net.connection.connectionTime);
-				if (duration - RewardSeconds[player.userID] < 0)
-                    continue;
-				 
-				int Rewards = (int)Mathf.Floor((duration - RewardSeconds[player.userID]) / conf.Settings.Rewards.ActivityReward_Seconds);
 
-				if (Rewards == 0)
-                    continue;
-
-				RewardSeconds[player.userID] += conf.Settings.Rewards.ActivityReward_Seconds * Rewards;
-
-				if (conf.Settings.Rewards.Activity_Reward_For_AFK || LastLoc[player.userID] != player.transform.position)
+				int lastReward;
+				if (!RewardSeconds.TryGetValue(userId, out lastReward))
 				{
-					LastLoc[player.userID] = player.transform.position;
+					RewardSeconds[userId] = duration;
+					LastLoc[userId] = player.transform.position;
+					continue;
+				}
+
+				if (duration - lastReward < 0)
+					continue;
+
+				int Rewards = (int)Mathf.Floor((duration - lastReward) / (float)interval);
+				if (Rewards == 0)
+					continue;
+
+				RewardSeconds[userId] = lastReward + interval * Rewards;
+
+				Vector3 lastPos;
+				if (!LastLoc.TryGetValue(userId, out lastPos))
+					lastPos = player.transform.position;
+
+				if (conf.Settings.Rewards.Activity_Reward_For_AFK || lastPos != player.transform.position)
+				{
+					LastLoc[userId] = player.transform.position;
 					GiveReward(player, RewardType.Activity, conf.Settings.Rewards.ActivityRewardAmount * Rewards);
 				}
 			}
@@ -1204,17 +1221,22 @@ namespace RustRewardsHarmony
 		#region OxideHooks
 		internal void OnPlayerConnected(BasePlayer player)
 		{
-			if (conf == null || player?.net?.connection == null)
+			if (conf == null || player == null)
 				return;
 
-			if (!RewardSeconds.ContainsKey(player.userID))
-				RewardSeconds[player.userID] = (int)(UnityEngine.Time.realtimeSinceStartup - player.net.connection.connectionTime);
+			var userId = player.userID.Get();
+			int duration = 0;
+			if (player.net?.connection != null)
+				duration = (int)(UnityEngine.Time.realtimeSinceStartup - player.net.connection.connectionTime);
 
-            if (!LastLoc.ContainsKey(player.userID))
-                LastLoc[player.userID] = player.transform.position;
+			if (!RewardSeconds.ContainsKey(userId))
+				RewardSeconds[userId] = duration;
 
-            if (!LastKills.ContainsKey(player.userID))
-				LastKills[player.userID] = new DateTime();
+			if (!LastLoc.ContainsKey(userId))
+				LastLoc[userId] = player.transform.position;
+
+			if (!LastKills.ContainsKey(userId))
+				LastKills[userId] = new DateTime();
 
 			// Initialize player statistics for Discord reporting
 			if (conf.Settings.DiscordReporting.EnableDiscordReporting)

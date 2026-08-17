@@ -172,10 +172,22 @@ namespace ZombieHorde
         {
             CancelInvoke(nameof(LeaderTick));
             CancelInvoke(nameof(LightCheck));
-            CancelInvoke(nameof(MakeZombieNoises));
             CancelInvoke(nameof(EnsureRoaming));
-            if (noiseEmitter != null && !noiseEmitter.IsDestroyed)
-                noiseEmitter.Kill();
+            DestroyNoiseEmitter();
+        }
+
+        /// <summary>
+        /// Drop the head-parented visualization sphere before corpse TakeChildren.
+        /// SphereEntity does not override SwitchParent, so vanilla logs "SwitchParent Missed".
+        /// </summary>
+        internal void DestroyNoiseEmitter()
+        {
+            CancelInvoke(nameof(MakeZombieNoises));
+            SphereEntity sphere = noiseEmitter;
+            noiseEmitter = null;
+            if (sphere == null || sphere.IsDestroyed)
+                return;
+            sphere.Kill();
         }
 
         public void Kill(BaseNetworkable.DestroyMode mode = BaseNetworkable.DestroyMode.None)

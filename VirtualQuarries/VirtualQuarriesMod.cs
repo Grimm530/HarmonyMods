@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using HarmonyChat;
 using UnityEngine;
 using Oxide.Core.Libraries.Covalence;
 using OxidePlugin = Oxide.Plugins.VirtualQuarries;
@@ -88,6 +89,7 @@ namespace VirtualQuarriesHarmony
             catch { }
 
             RegisterAttributedConsoleCommands();
+            ChatSayBridge.Register("VirtualQuarries", OnChatCommand);
 
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
@@ -104,6 +106,7 @@ namespace VirtualQuarriesHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            ChatSayBridge.Unregister("VirtualQuarries");
             if (_permissionsReadyCallback != null)
             {
                 PermissionsBridge.UnregisterReadyCallback(_permissionsReadyCallback);
@@ -199,6 +202,9 @@ namespace VirtualQuarriesHarmony
                     return;
                 }
 
+                mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer) }, null);
+                if (mi != null) { mi.Invoke(plugin, new object[] { player }); return; }
+
                 mi = type.GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
                 if (mi != null)
                 {
@@ -208,7 +214,10 @@ namespace VirtualQuarriesHarmony
                     var opt = ConsoleSystem.Option.Server.Quiet();
                     if (player?.net?.connection != null) opt = opt.FromConnection(player.net.connection);
                     mi.Invoke(plugin, new object[] { new ConsoleSystem.Arg(opt, sb.ToString()) });
+                    return;
                 }
+
+                Debug.LogWarning("[VirtualQuarries] No matching handler for " + methodName);
             }
             catch (Exception ex)
             {

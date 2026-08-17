@@ -358,6 +358,9 @@ namespace LoadingMessages
         internal void OnUserApprove(Connection connection)
         {
             if (!_hooksActive || connection == null || Instance == null) return;
+            // Postfix still runs on early Reject() returns; only track connections that entered auth.
+            if (!connection.active || connection.rejected) return;
+            if (!ConnectionAuth.m_AuthConnection.Contains(connection)) return;
             _clients[connection.userid] = connection;
             if (_timer == null)
                 _timer = new TimerHandle(_runner, _config.CyclicityFreq, HandleClients);

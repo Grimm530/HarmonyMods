@@ -16,7 +16,7 @@ Harmony mod port of **LoadingMessages 1.1.3** (CosaNostra/Def/klauz24). Shows cu
 - `RustPlugin` → `LoadingMessagesMod : IHarmonyModHooks` (`OnLoaded` / `OnUnloaded`)
 - Config under `HarmonyConfig/LoadingMessages.json` instead of `oxide/config`
 - Oxide hooks → Harmony patches:
-  - `OnUserApprove` → `ConnectionAuth.Approve` Postfix
+  - `OnUserApprove` → `ConnectionAuth.OnNewConnection` Postfix (Oxide injects `IOnUserApprove` here, not `Approve`)
   - `OnPlayerConnected` → `BasePlayer.PlayerInit` Postfix
 - `timer.Every` → coroutine timer on a DontDestroyOnLoad runner
 - `Puts` / `PrintWarning` / `PrintError` → `UnityEngine.Debug` logs
@@ -29,7 +29,7 @@ Harmony mod port of **LoadingMessages 1.1.3** (CosaNostra/Def/klauz24). Shows cu
 | File | Content |
 |------|--------|
 | `LoadingMessages/LoadingMessagesMod.cs` | Entry + config + original plugin logic |
-| `LoadingMessages/Patches/ConnectionAuth_Approve_Patch.cs` | OnUserApprove |
+| `LoadingMessages/Patches/ConnectionAuth_OnNewConnection_Patch.cs` | OnUserApprove (`OnNewConnection`) |
 | `LoadingMessages/Patches/BasePlayer_PlayerInit_Patch.cs` | OnPlayerConnected |
 
 ## Build / deploy

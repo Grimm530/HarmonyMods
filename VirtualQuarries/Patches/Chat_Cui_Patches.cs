@@ -1,7 +1,7 @@
 using System;
+using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
-using VQ = Oxide.Plugins.VirtualQuarries;
 
 namespace VirtualQuarriesHarmony.Patches
 {
@@ -9,6 +9,7 @@ namespace VirtualQuarriesHarmony.Patches
     public static class Chat_Say_Patch
     {
         [HarmonyPrefix]
+        [HarmonyPriority(HarmonyLib.Priority.Normal)]
         public static bool Prefix(ConsoleSystem.Arg arg)
         {
             if (arg == null) return true;
@@ -16,10 +17,10 @@ namespace VirtualQuarriesHarmony.Patches
             if (string.IsNullOrEmpty(message) || (!message.StartsWith("/") && !message.StartsWith("\\")))
                 return true;
             var player = arg.Player();
-            if (player == null) return true;
+            if (player == null || !player.IsConnected) return true;
             try
             {
-                if (VirtualQuarriesMod.Instance != null && VirtualQuarriesMod.Instance.OnChatCommand(player, message))
+                if (ChatSayBridge.Dispatch(player, message))
                     return false;
             }
             catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Chat.say: " + ex.Message); }

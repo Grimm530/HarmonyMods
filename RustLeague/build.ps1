@@ -21,6 +21,12 @@ if ($LASTEXITCODE -eq 0) {
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! RustLeague.dll copied to $destPath" -ForegroundColor Green
+
+    $svr1 = "c:\svr1\HarmonyMods"
+    if (Test-Path $svr1) {
+        Copy-Item -Path $dllPath -Destination (Join-Path $svr1 "RustLeague.dll") -Force
+        Write-Host "Also copied to $svr1\RustLeague.dll" -ForegroundColor Green
+    }
     Write-Host "Load order: 0Permissions -> RustLeague" -ForegroundColor Yellow
     Write-Host "Config: HarmonyConfig/RustLeague.json" -ForegroundColor Gray
     Write-Host "Unload oxide plugin RustLeague if it is still loaded." -ForegroundColor Yellow

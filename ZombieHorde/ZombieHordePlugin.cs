@@ -630,14 +630,18 @@ namespace ZombieHorde
 
         public void OnPlayerDeath(BasePlayer player, HitInfo hitInfo)
         {
-            if (!player || hitInfo == null) return;
+            if (!player) return;
 
             ZombieNPC zombieNpc = ZombieNPC.Get(player);
             if (zombieNpc != null)
             {
+                zombieNpc.DestroyNoiseEmitter();
+                if (hitInfo == null) return;
                 zombieNpc.Horde?.OnMemberKilled(zombieNpc, hitInfo.Initiator);
                 return;
             }
+
+            if (hitInfo == null) return;
 
             if (ConfigData.Configuration.Horde.CreateOnDeath)
             {

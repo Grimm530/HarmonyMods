@@ -1114,8 +1114,9 @@ namespace Oxide.Plugins
             }
         }
 
-        private void VirtualQuarriesCommand(BasePlayer player)
+        private void VirtualQuarriesCommand(BasePlayer player, string command, string[] args)
         {
+            if (player == null) return;
             if (config.requirePermission && !permission.UserHasPermission(player.UserIDString, "virtualquarries.use"))
             {
                 Mess(player, "NoPermission");

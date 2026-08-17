@@ -4173,6 +4173,9 @@ namespace Oxide.Plugins
 
             private void UpdatePosition()
             {
+                if (_ins == null || _ins._eventController == null || _patrolHelicopter == null || _patrolHelicopter.myAI == null)
+                    return;
+
                 _patrolHelicopter.myAI.spawnTime = Time.realtimeSinceStartup;
 
                 if (_patrolHelicopter.myAI._currentState is PatrolHelicopterAI.aiState.DEATH or PatrolHelicopterAI.aiState.STRAFE)
@@ -4242,7 +4245,7 @@ namespace Oxide.Plugins
 
             public bool IsHeliCanTarget()
             {
-                return _ins._eventController.IsAggressive();
+                return _ins != null && _ins._eventController != null && _ins._eventController.IsAggressive();
             }
 
             public void OnHeliAttacked(ulong userId)
@@ -4275,6 +4278,13 @@ namespace Oxide.Plugins
 
             public static void Attach(AutoTurret autoTurret, float targetRadius)
             {
+                if (autoTurret == null)
+                    return;
+
+                TurretOptimizer existing = autoTurret.GetComponent<TurretOptimizer>();
+                if (existing != null)
+                    return;
+
                 TurretOptimizer turretTargetOptimizer = autoTurret.gameObject.AddComponent<TurretOptimizer>();
                 turretTargetOptimizer.Init(autoTurret, targetRadius);
             }
@@ -4282,14 +4292,20 @@ namespace Oxide.Plugins
             private void Init(AutoTurret autoTurret, float targetRadius)
             {
                 _autoTurret = autoTurret;
-                _targetRadius = targetRadius;
+                _targetRadius = targetRadius > 0f ? targetRadius : 30f;
                 AutoTurret.interferenceUpdateList.Remove(autoTurret);
 
-                SphereCollider sphereCollider = autoTurret.targetTrigger.GetComponent<SphereCollider>();
-                sphereCollider.enabled = false;
+                if (autoTurret.targetTrigger != null)
+                {
+                    SphereCollider sphereCollider = autoTurret.targetTrigger.GetComponent<SphereCollider>();
+                    if (sphereCollider != null)
+                        sphereCollider.enabled = false;
+                }
 
                 autoTurret.Invoke(() =>
                 {
+                    if (autoTurret == null || autoTurret.IsDestroyed)
+                        return;
                     autoTurret.CancelInvoke(autoTurret.ServerDo);
                     autoTurret.CancelInvoke(autoTurret.ServerThink);
                     autoTurret.SetTarget(null);
@@ -4301,12 +4317,15 @@ namespace Oxide.Plugins
 
             private void ScanTargets()
             {
+                if (_autoTurret == null || _autoTurret.IsDestroyed || _autoTurret.targetTrigger == null)
+                    return;
+
                 if (_autoTurret.targetTrigger.entityContents == null)
                     _autoTurret.targetTrigger.entityContents = new HashSet<BaseEntity>();
                 else
                     _autoTurret.targetTrigger.entityContents.Clear();
 
-                if (!_ins._eventController.IsAggressive())
+                if (_ins == null || _ins._eventController == null || !_ins._eventController.IsAggressive())
                     return;
 
                 int count = BaseEntity.Query.Server.GetPlayersInSphereFast(transform.position, _targetRadius, AIBrainSenses.playerQueryResults, IsPlayerCanBeTargeted);
@@ -4319,6 +4338,8 @@ namespace Oxide.Plugins
                 for (int i = 0; i < count; i++)
                 {
                     BasePlayer player = AIBrainSenses.playerQueryResults[i];
+                    if (player == null)
+                        continue;
 
                     if (Interface.CallHook("OnEntityEnter", _autoTurret.targetTrigger, player) != null)
                         continue;
@@ -4332,7 +4353,7 @@ namespace Oxide.Plugins
 
             public void OptimizedServerTick()
             {
-                if (_autoTurret.isClient || _autoTurret.IsDestroyed)
+                if (_autoTurret == null || _autoTurret.isClient || _autoTurret.IsDestroyed)
                     return;
 
                 float timeSinceLastServerTick = (float)_autoTurret.timeSinceLastServerTick;
@@ -4419,7 +4440,7 @@ namespace Oxide.Plugins
 
             private bool IsPlayerCanBeTargeted(BasePlayer player)
             {
-                if (!player.IsRealPlayer())
+                if (player == null || !player.IsRealPlayer())
                     return false;
 
                 if (player.IsDead() || player.IsSleeping() || player.IsWounded())
@@ -4460,7 +4481,7 @@ namespace Oxide.Plugins
             {
                 using (StartSetFlags(FlagsUpdateMode.SendNetworkUpdate_Flags)) SetFlagLocal(Flags.Reserved5, TOD_Sky.Instance.IsNight);
 
-                if (_ins._eventController.IsAggressive())
+                if (_ins != null && _ins._eventController != null && _ins._eventController.IsAggressive())
                 {
                     UpdateTarget();
                     DoWeapons();

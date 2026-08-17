@@ -12,7 +12,7 @@ namespace RustLeagueHarmony
 
         public const int VersionMajor = 1;
         public const int VersionMinor = 3;
-        public const int VersionPatch = 6;
+        public const int VersionPatch = 27;
 
         public const string AppDomainApiKey = "RustLeague_ApiType";
 
@@ -52,13 +52,14 @@ namespace RustLeagueHarmony
             RegisterRlAlias("rl.tp", "tp");
             RegisterRlAlias("rl.open", "open");
             RegisterRlAlias("rl.close", "close");
+            RegisterRlAlias("rl.test", "test");
             EnsureRunner();
             _runner.GetComponent<RustLeagueRunner>().Begin(this);
 
             Debug.Log($"[RustLeague] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
             Debug.Log("[RustLeague] -> Config: HarmonyConfig/RustLeague.json");
             Debug.Log("[RustLeague] -> Load order: 0Permissions -> RustLeague");
-            Debug.Log("[RustLeague] -> Chat: /rl   Console: rl.spawn / rl.tp / rl.open / rl.close");
+            Debug.Log("[RustLeague] -> Chat: /rl   Console: rl.spawn / rl.tp / rl.open / rl.close / rl.test");
         }
 
         private void OnPermissionsReady()

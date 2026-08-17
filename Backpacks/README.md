@@ -75,7 +75,8 @@ Chat / console (IPlayer covalence style):
 - **OnNetworkSubscriptionsUpdate** — not patched (no clean Harmony target yet).
 - **Arena / EventManager / BackpackButton** — PluginReferences stubbed null (same as Oxide when those plugins are absent).
 - **OnGroupPermission / OnUserPermission** hooks — not patched yet (capacity refresh on grant/revoke may need a Permissions event bridge later). GUI buttons are refreshed on Permissions ready/rebind so file merges / `harmony.load 0Permissions` update online players.
-- **CUI buttons** — rewritten to `cui.endtest BP …` (clients only forward ConsoleGen commands).
+- **CUI buttons** — rewritten to `cui.endtest BP …` (clients only forward ConsoleGen commands). Container gather/retrieve/page buttons go through the same rewrite (v3.17.44); they previously used raw `UiBuilder.AddUi` and clicks never reached the server.
+- **GUI button parent** — `Inventory` (CommunityEntity toggle panel). The client SetActive's this panel with Tab, so the icon is hidden until inventory opens. Spawn retries AddUI if the client panel is not ready yet. Container page buttons stay on `Hud.Menu`. Live config anchors (`0.084 0.238` → `0.124 0.309`) sit over the inventory backpack slot.
 
 ## Startup order (auto)
 

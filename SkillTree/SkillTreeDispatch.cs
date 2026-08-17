@@ -241,6 +241,15 @@ namespace Oxide.Plugins
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerRespawned: " + ex.Message); }
         }
 
+        /// <summary>Always runs (not buff-gated). Restores the XP bar after the client HUD is ready.</summary>
+        public static void Dispatch_OnPlayerSleepEnded(BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+            try { inst.OnPlayerSleepEnded(player); }
+            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerSleepEnded: " + ex.Message); }
+        }
+
         // ---- Gather / collect -------------------------------------------
 
         public static object Dispatch_OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item)

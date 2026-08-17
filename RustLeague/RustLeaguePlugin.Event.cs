@@ -57,7 +57,17 @@ namespace RustLeagueHarmony
                 AdminSpawnAndTeleport(arg.Player());
                 return;
             }
-            arg.ReplyWith("Usage: rl | rl.open | rl.close | rl.tp | rl.spawn | rl.scan");
+            if (args[0].Equals("test", StringComparison.OrdinalIgnoreCase))
+            {
+                if (arg.Player() == null)
+                {
+                    arg.ReplyWith("Run this from the game client.");
+                    return;
+                }
+                StartSoloTest(arg.Player());
+                return;
+            }
+            arg.ReplyWith("Usage: rl | rl.open | rl.close | rl.tp | rl.spawn | rl.test | rl.scan");
         }
 
         public void CmdChatRl(BasePlayer player, string[] args)
@@ -137,6 +147,10 @@ namespace RustLeagueHarmony
                     if (!IsAdmin(player)) { Reply(player, "Blocked"); return; }
                     AdminSpawnAndTeleport(player);
                     return;
+                case "test":
+                    if (!IsAdmin(player)) { Reply(player, "Blocked"); return; }
+                    StartSoloTest(player);
+                    return;
                 case "scan":
                     if (!IsAdmin(player)) { Reply(player, "Blocked"); return; }
                     Grid.StartScan();
@@ -168,6 +182,43 @@ namespace RustLeagueHarmony
             return pos + Vector3.up * 3f;
         }
 
+        internal void StartSoloTest(BasePlayer player)
+        {
+            if (player == null) return;
+            if (eventRunning)
+            {
+                Reply(player, "alreadystarted");
+                TeleportAdminToArena(player);
+                return;
+            }
+
+            soloTest = true;
+            testing = true;
+            bool spawnedNow = !eventOpen;
+            if (!eventOpen)
+            {
+                ApplyArenaLayoutFromCatalog(player.transform.position, player.GetNetworkRotation().eulerAngles.y);
+                setupEvent();
+                Reply(player, "soloTestStarting", GridRef(configData.eventSettings.eventCenter));
+            }
+
+            eventPlayer[player.GetUserId()] = true;
+            float delay = spawnedNow ? 4f : 0.5f;
+            timer.Once(delay, () =>
+            {
+                if (player == null || !player.IsConnected) return;
+                if (!eventOpen || eventRunning) return;
+                eventPlayer[player.GetUserId()] = true;
+                if (!checkStartEvent())
+                {
+                    Reply(player, "NoneOpen");
+                    return;
+                }
+                startTheEvent();
+                Reply(player, "soloTestStarted");
+            });
+        }
+
         internal void TeleportAdminToArena(BasePlayer player)
         {
             if (player == null) return;
@@ -189,7 +240,7 @@ namespace RustLeagueHarmony
                 ApplyArenaLayoutFromCatalog(player.transform.position, player.GetNetworkRotation().eulerAngles.y);
                 setupEvent();
                 Reply(player, "arenaSpawning", GridRef(configData.eventSettings.eventCenter));
-                timer.Once(1f, () => TeleportAdminToArena(player));
+                timer.Once(4f, () => TeleportAdminToArena(player));
                 return;
             }
             TeleportAdminToArena(player);
@@ -383,7 +434,7 @@ namespace RustLeagueHarmony
                 count++;
                 if (count >= configData.settings.MaxPlayersToStart) break;
             }
-            if (testing && count >= 1) return true;
+            if ((soloTest || testing) && count >= 1) return true;
             if (count >= configData.settings.MinPlayersToStart) return true;
             RuningEventPlayer.Clear();
             return false;
@@ -410,6 +461,7 @@ namespace RustLeagueHarmony
             eventEntitys.Clear();
             RedEventCars.Clear();
             BlueEventCars.Clear();
+            LiveCars.Clear();
             eventPlayerList.Clear();
         }
     }

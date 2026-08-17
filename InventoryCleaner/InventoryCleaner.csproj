@@ -5,7 +5,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <RootNamespace>InventoryCleaner</RootNamespace>
-    <Description>Harmony mod: InventoryCleaner 2.1.1 - clear own/others inventory. Config: HarmonyConfig/InventoryCleaner.json</Description>
+    <Description>Harmony mod: InventoryCleaner 2.1.2 - clear own/others inventory. Config: HarmonyConfig/InventoryCleaner.json</Description>
     <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
     <Nullable>disable</Nullable>
   </PropertyGroup>

@@ -5,6 +5,7 @@ namespace ChatIcons;
 /// Loaded by HarmonyLoader from HarmonyMods/. No Oxide plugin required.
 /// Config: HarmonyConfig/ChatIcons.json
 /// When chat.add or chat.add2 are sent with userId 0 (server/system messages), replaces with Steam Avatar User ID for custom icon.
+/// Also suppresses the client-drawn server.motd (default Rust gear icon) and re-sends it as chat.add with that avatar.
 /// </summary>
 internal class ChatIconsMod : IHarmonyModHooks
 {

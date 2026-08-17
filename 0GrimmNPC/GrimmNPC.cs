@@ -1485,6 +1485,10 @@ namespace GrimmNPC
                     if (agentTypeId == 0)
                         agentTypeId = -1372625422;
                     NavAgent.agentTypeID = agentTypeId;
+                    if (NavAgent.obstacleAvoidanceType == ObstacleAvoidanceType.NoObstacleAvoidance)
+                        NavAgent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+                    ulong avoidId = net != null ? net.ID.Value : 0;
+                    NavAgent.avoidancePriority = (int)(avoidId % 99);
                     
                     // Ensure BaseNavigator is configured for building navigation
                     if (Brain != null && Brain.Navigator != null)
@@ -3336,6 +3340,49 @@ namespace GrimmNPC
                 return source + new Vector3(vector2.x, 0f, vector2.y);
             }
 
+            /// <summary>
+            /// Stable per-NPC point around a combat target so a pack does not share one destination
+            /// (bodies stacking). Vanish separates them because combat destinations stop.
+            /// Far: lateral spread. Close: fan/ring at weapon range.
+            /// </summary>
+            internal Vector3 GetCombatApproachPos(Vector3 targetPos, float ringRadius)
+            {
+                Vector3 npcPos = transform.position;
+                Vector3 toNpc = npcPos - targetPos;
+                toNpc.y = 0f;
+                float distSq = toNpc.x * toNpc.x + toNpc.z * toNpc.z;
+
+                float radius = ringRadius < 1.8f ? 1.8f : ringRadius;
+                ulong netId = net != null ? net.ID.Value : (ulong)(uint)GetInstanceID();
+                uint h = (uint)(netId ^ (netId >> 16));
+                h *= 2654435769u;
+                int slot = (int)(h % 16u);
+                radius += (h % 3u) * 0.55f;
+
+                if (distSq <= 64f)
+                {
+                    float angle;
+                    if (distSq > 0.04f)
+                    {
+                        float currentAngle = Mathf.Atan2(toNpc.z, toNpc.x);
+                        angle = currentAngle + (slot - 7.5f) * 0.16f;
+                    }
+                    else
+                        angle = slot * 0.3926991f;
+
+                    return new Vector3(targetPos.x + Mathf.Cos(angle) * radius, npcPos.y, targetPos.z + Mathf.Sin(angle) * radius);
+                }
+
+                float dist = Mathf.Sqrt(distSq);
+                Vector3 approach = new Vector3(toNpc.x / dist, 0f, toNpc.z / dist);
+                Vector3 right = new Vector3(-approach.z, 0f, approach.x);
+                float lateral = (slot - 7.5f) * 1.6f;
+                return new Vector3(
+                    targetPos.x + approach.x * radius + right.x * lateral,
+                    npcPos.y,
+                    targetPos.z + approach.z * radius + right.z * lateral);
+            }
+
             // Enhanced: Get near nav point with better spawn finding (from BotReSpawn improvements)
             internal Vector3 GetNearNavPoint(int radius = 30)
             {
@@ -3865,8 +3912,12 @@ namespace GrimmNPC
                     float distance = 2f;
                     float height = targetPos.y - TerrainMeta.HeightMap.GetHeight(targetPos);
                     if (height > 0f) distance += height;
-                    // Enhanced: Always use Fast when chasing a target (from BotReSpawn improvements)
-                    _npc.SetDestination(targetPos, distance, BaseNavigator.NavigationSpeed.Fast);
+                    float ring = 2f;
+                    if (_npc.CurrentWeapon is BaseMelee melee)
+                        ring = Mathf.Max(2f, melee.effectiveRange * 1.2f);
+                    else if (_npc.CurrentWeapon is BaseProjectile)
+                        ring = 8f;
+                    _npc.SetDestination(_npc.GetCombatApproachPos(targetPos, ring), distance, BaseNavigator.NavigationSpeed.Fast);
                     return StateStatus.Running;
                 }
             }
@@ -3915,8 +3966,7 @@ namespace GrimmNPC
                         {
                             // Move toward target to close the gap to ~8 meters (shoot while moving)
                             Vector3 targetPos = _npc.CurrentTarget.transform.position;
-                            Vector3 direction = (targetPos - _npc.transform.position).normalized;
-                            Vector3 desiredPos = targetPos - direction * idealEngagementDistance;
+                            Vector3 desiredPos = _npc.GetCombatApproachPos(targetPos, idealEngagementDistance);
                             _npc.SetDestination(desiredPos, 2f, BaseNavigator.NavigationSpeed.Fast);
                         }
                         else
@@ -3989,8 +4039,10 @@ namespace GrimmNPC
 
                 private Vector3 GetDestinationPos(Vector3 pos)
                 {
-                    if ((_ins._config.CanTargetNpc && _npc.CurrentTarget is NPCPlayer) || (_ins._config.CanTargetAnimal && _npc.CurrentTarget is BaseAnimalNPC)) return _npc.GetRandomPos(pos, 2f);
-                    else return pos;
+                    float ring = 2f;
+                    if (_npc.CurrentWeapon is BaseMelee melee)
+                        ring = Mathf.Max(2f, melee.effectiveRange * 1.2f);
+                    return _npc.GetCombatApproachPos(pos, ring);
                 }
             }
 

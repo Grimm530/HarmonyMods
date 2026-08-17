@@ -1,0 +1,168 @@
+{
+  "serverUpdate": [
+    {
+      "name": "ServerMgr.Update",
+      "ms": 259742.3366999998,
+      "msPerSec": 288.6
+    },
+    {
+      "name": "AIThinkManager.ProcessQueue",
+      "ms": 117622.89079999992,
+      "msPerSec": 130.7
+    },
+    {
+      "name": "BaseMountable.FixedUpdateCycle",
+      "ms": 22023.22619999997,
+      "msPerSec": 24.5
+    },
+    {
+      "name": "BasePlayer.ServerCycle",
+      "ms": 6896.818099999996,
+      "msPerSec": 7.7
+    },
+    {
+      "name": "Buoyancy.Cycle",
+      "ms": 2754.822500000002,
+      "msPerSec": 3.1
+    },
+    {
+      "name": "BaseEntity.Spawn",
+      "ms": 1772.8025000000002,
+      "msPerSec": 2.0
+    },
+    {
+      "name": "BaseNetworkable.Kill",
+      "ms": 1613.2532000000006,
+      "msPerSec": 1.8
+    },
+    {
+      "name": "ServerBuildingManager.Cycle",
+      "ms": 971.4298000000005,
+      "msPerSec": 1.1
+    },
+    {
+      "name": "ServerBuildingManager.Split",
+      "ms": 222.61360000000002,
+      "msPerSec": 0.2
+    },
+    {
+      "name": "IOEntity.ProcessQueue",
+      "ms": 93.23199999999996,
+      "msPerSec": 0.1
+    }
+  ],
+  "workQueue": [
+    {
+      "name": "TickFSMWorkQueue.RunJob",
+      "ms": 24447.0618,
+      "msPerSec": 27.2
+    },
+    {
+      "name": "UpdateAutoTurretScanQueue.RunJob",
+      "ms": 9331.141499999987,
+      "msPerSec": 10.4
+    },
+    {
+      "name": "GunTrapScanWorkQueue.RunJob",
+      "ms": 5042.3845,
+      "msPerSec": 5.6
+    },
+    {
+      "name": "BotColliderWorkQueue.RunJob",
+      "ms": 2373.2439000000036,
+      "msPerSec": 2.6
+    },
+    {
+      "name": "FoodSpoilingWorkQueue.RunJob",
+      "ms": 2282.9110000000005,
+      "msPerSec": 2.5
+    },
+    {
+      "name": "BoatAIWorkQueue.RunJob",
+      "ms": 2136.737099999998,
+      "msPerSec": 2.4
+    },
+    {
+      "name": "DroppedItemUnderwaterQueue.RunJob",
+      "ms": 1629.9090999999985,
+      "msPerSec": 1.8
+    },
+    {
+      "name": "JunkpileWaterWorkQueue.RunJob",
+      "ms": 1629.4705000000006,
+      "msPerSec": 1.8
+    },
+    {
+      "name": "UpdateAutoTurretTick.RunJob",
+      "ms": 816.8307999999998,
+      "msPerSec": 0.9
+    },
+    {
+      "name": "SunUpdateWorkQueue.RunJob",
+      "ms": 734.0677000000009,
+      "msPerSec": 0.8
+    }
+  ],
+  "invokes": [
+    {
+      "name": "BaseEntity.NetworkPositionTick",
+      "ms": 30662.275300000027,
+      "msPerSec": 34.1
+    },
+    {
+      "name": "BaseAIBrain.TickMovement",
+      "ms": 27682.985800000035,
+      "msPerSec": 30.8
+    },
+    {
+      "name": "BaseAIBrain.DoMovementTick",
+      "ms": 16119.52079999999,
+      "msPerSec": 17.9
+    },
+    {
+      "name": "AutoTurret.ServerDo",
+      "ms": 9465.37439999999,
+      "msPerSec": 10.5
+    },
+    {
+      "name": "HackableLockedCrate.LandCheck",
+      "ms": 8079.1557,
+      "msPerSec": 9.0
+    },
+    {
+      "name": "BaseNpc.TickAi",
+      "ms": 5488.423600000003,
+      "msPerSec": 6.1
+    },
+    {
+      "name": "MetricsLogger.LogHarmonyMods",
+      "ms": 3978.322399999999,
+      "msPerSec": 4.4
+    },
+    {
+      "name": "NPCPlayer.TickMovement",
+      "ms": 3473.003499999998,
+      "msPerSec": 3.9
+    },
+    {
+      "name": "RootMotionPlayer.PlayServerTick",
+      "ms": 1858.012499999998,
+      "msPerSec": 2.1
+    },
+    {
+      "name": "AutoTurret.SendAimDir",
+      "ms": 1498.7806999999982,
+      "msPerSec": 1.7
+    },
+    {
+      "name": "BaseEntity.UpdateNetworkGroup",
+      "ms": 1479.6886000000002,
+      "msPerSec": 1.6
+    },
+    {
+      "name": "TrainSignal.RefreshLightState",
+      "ms": 1181.4924999999998,
+      "msPerSec": 1.3
+    }
+  ]
+}

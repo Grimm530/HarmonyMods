@@ -466,6 +466,76 @@ namespace Oxide.Plugins
 
         // ---- Supply drop / explosives ------------------------------------
 
+        /// <summary>
+        /// TruePVE Harmony Interface.CallHook does not route IsBradleyDrop.
+        /// Ask BradleyDrops via Plugin.Call / AppDomain API, using the signal and/or thrown item skin.
+        /// </summary>
+        internal static bool Dispatch_IsBradleyDrop(ulong skinId, ThrownWeapon tw = null)
+        {
+            TryCopyThrownItemSkin(ref skinId, tw);
+            if (IsBradleyDropSkin(skinId)) return true;
+            if (tw != null)
+            {
+                try
+                {
+                    var item = tw.GetItem();
+                    if (item != null && item.skin != 0 && item.skin != skinId && IsBradleyDropSkin(item.skin))
+                        return true;
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        internal static void TryCopyThrownItemSkin(SupplySignal ss, ThrownWeapon tw)
+        {
+            if (ss == null || tw == null || ss.skinID != 0) return;
+            try
+            {
+                var item = tw.GetItem();
+                if (item != null && item.skin != 0)
+                    ss.skinID = item.skin;
+            }
+            catch { }
+        }
+
+        private static void TryCopyThrownItemSkin(ref ulong skinId, ThrownWeapon tw)
+        {
+            if (skinId != 0 || tw == null) return;
+            try
+            {
+                var item = tw.GetItem();
+                if (item != null && item.skin != 0)
+                    skinId = item.skin;
+            }
+            catch { }
+        }
+
+        private static bool IsBradleyDropSkin(ulong skinId)
+        {
+            if (skinId == 0) return false;
+            try
+            {
+                var inst = Instance;
+                if (inst?.BradleyDrops != null)
+                {
+                    object r = inst.BradleyDrops.CallHook("IsBradleyDrop", skinId);
+                    if (r is bool b && b) return true;
+                    if (r != null) return true;
+                }
+            }
+            catch { }
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("BradleyDrops_ApiType") as Type;
+                var mi = t?.GetMethod("TryIsBradleyDrop", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(ulong) }, null);
+                if (mi != null && mi.Invoke(null, new object[] { skinId }) is bool ok && ok)
+                    return true;
+            }
+            catch { }
+            return false;
+        }
+
         public static void Dispatch_OnExplosiveThrown(BasePlayer player, SupplySignal ss, ThrownWeapon tw)
         {
             var inst = Instance;

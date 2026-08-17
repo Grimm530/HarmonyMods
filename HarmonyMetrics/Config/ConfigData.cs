@@ -1,0 +1,51 @@
+using Newtonsoft.Json;
+
+namespace HarmonyMetrics.Config;
+
+public class ConfigData
+{
+    public const string DefaultInfluxDbUrl = "http://exampledb.com";
+    public const string DefaultInfluxDBName = "CHANGEME_rust_server_example";
+    public const string DefaultInfluxDBUser = "admin";
+    public const string DefaultInfluxDBPassword = "adminadmin";
+    public const string DefaultServerTag = "CHANGEME-01";
+
+    [JsonProperty(PropertyName = "Enabled")]
+    public bool Enabled = false;
+
+    [JsonProperty(PropertyName = "Influx Database Url")]
+    public string DatabaseUrl = DefaultInfluxDbUrl;
+
+    [JsonProperty(PropertyName = "Influx Database Name")]
+    public string DatabaseName = DefaultInfluxDBName;
+
+    [JsonProperty(PropertyName = "Influx Database User")]
+    public string DatabaseUser = DefaultInfluxDBUser;
+
+    [JsonProperty(PropertyName = "Influx Database Password")]
+    public string DatabasePassword = DefaultInfluxDBPassword;
+
+    [JsonProperty(PropertyName = "Server Tag")]
+    public string ServerTag = DefaultServerTag;
+
+    [JsonProperty(PropertyName = "Debug Logging")]
+    public bool DebugLogging = false;
+
+    [JsonProperty(PropertyName = "Amount of metrics to submit in each request")]
+    public ushort BatchSize = 1000;
+
+    [JsonProperty(PropertyName = "Gather Player Averages (Client FPS, Client Latency, Player FPS, Player Memory, Player Latency, Player Packet Loss)")]
+    public bool GatherPlayerMetrics = true;
+
+    [JsonProperty(PropertyName = "Gather Harmony Mod Inventory")]
+    public bool GatherHarmonyModMetrics = true;
+
+    [JsonProperty(PropertyName = "Gather NPC Census (vanilla vs mod bots/animals)")]
+    public bool GatherNpcCensus = true;
+
+    [JsonProperty(PropertyName = "Gather RPC Timing (expensive; patches every RPC_Server method)")]
+    public bool GatherRpcTiming = false;
+
+    [JsonProperty(PropertyName = "Gather Work Queue Timing (expensive; patches every ObjectWorkQueue.RunJob)")]
+    public bool GatherWorkQueueTiming = false;
+}

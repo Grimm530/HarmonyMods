@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.AI;
 using Facepunch;
 
 namespace GrimmNPC.Patches
@@ -743,6 +744,19 @@ namespace GrimmNPC.Patches
                 navigator.PlaceOnNavMesh(6f);
         }
 
+        /// <summary>
+        /// Keep agents from occupying the same nav point. Does not patch Navigator.Think;
+        /// only upgrades avoidance when it is currently off (off-mesh links set None).
+        /// </summary>
+        private static void EnsureCombatAgentSeparation(BaseNavigator navigator, ulong netId)
+        {
+            var agent = navigator?.Agent;
+            if (agent == null) return;
+            if (agent.obstacleAvoidanceType == ObstacleAvoidanceType.NoObstacleAvoidance)
+                agent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+            agent.avoidancePriority = (int)(netId % 99);
+        }
+
         private static void EnforceRoamRange(ScientistNPC npc, CustomNpcData npcData, BaseAIBrain brain)
         {
             if (npcData == null || brain == null || brain.Navigator == null) return;
@@ -1046,7 +1060,8 @@ namespace GrimmNPC.Patches
             {
                 // Melee weapons: use weapon's effectiveRange (typically 1-2m) and stay within 2x that range
                 maxMeleeRange = weapon != null ? weapon.effectiveRange : 1.5f;
-                idealDistance = Mathf.Max(1.2f, maxMeleeRange * 1.2f); // Stay just outside melee range to allow strikes
+                // Floor at 2m so a pack occupies a ring wide enough for body radius (~0.5m), not a 1.2m pile.
+                idealDistance = Mathf.Max(2f, maxMeleeRange * 1.2f);
                 maxMeleeRange = maxMeleeRange * 2f; // Max range for melee engagement (2x effectiveRange)
             }
             else
@@ -1133,24 +1148,14 @@ namespace GrimmNPC.Patches
                     }
                 }
                 
-                // Always push forward toward target (full speed if has ranged weapon to shoot while pushing)
+                // Always push forward toward this NPC's unique slot (not the shared player point).
                 shouldMove = true;
                 Vector3 targetPosXZ = new Vector3(targetPos.x, npcPos.y, targetPos.z);
-                
-                // Push directly toward target (no backing away)
-                // If at melee range, stay at ideal distance, otherwise push forward
+                moveDestination = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPosXZ, idealDistance);
                 if (distanceToTarget > maxMeleeRange)
-                {
-                    // Too far - rush in aggressively toward target (full speed)
-                    moveDestination = targetPosXZ - directionToTarget * idealDistance;
-                    moveSpeed = BaseNavigator.NavigationSpeed.Fast; // Full speed to close gap quickly
-                }
+                    moveSpeed = BaseNavigator.NavigationSpeed.Fast;
                 else
-                {
-                    // At or near melee range - push forward but maintain ideal distance
-                    moveDestination = targetPosXZ - directionToTarget * idealDistance;
                     moveSpeed = hasRangedWeapon ? BaseNavigator.NavigationSpeed.Fast : BaseNavigator.NavigationSpeed.Normal;
-                }
             }
             else
             {
@@ -1222,11 +1227,10 @@ namespace GrimmNPC.Patches
                 }
                 else if (distanceToTarget > idealDistance * 1.5f)
                 {
-                    // Too far - rush in toward target
+                    // Too far - rush in toward this NPC's unique slot around the target
                     shouldMove = true;
-                    // Calculate destination on XZ plane, preserve NPC's Y position
                     Vector3 targetPosXZ = new Vector3(targetPos.x, npcPos.y, targetPos.z);
-                    moveDestination = targetPosXZ - directionToTarget * idealDistance;
+                    moveDestination = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPosXZ, idealDistance);
                     moveSpeed = BaseNavigator.NavigationSpeed.Fast;
                 }
                 else if (distanceToTarget < idealDistance * 0.7f)
@@ -1271,6 +1275,7 @@ namespace GrimmNPC.Patches
             if (shouldMove && moveDestination != Vector3.zero)
             {
                 EnsureNavigatorAgentReadyBeforeSetDestination(brain.Navigator);
+                EnsureCombatAgentSeparation(brain.Navigator, netId);
                 // Ensure destination is within chase range from home (use horizontal distance)
                 float destDistanceFromHome = GrimmNPC.GetDistanceFromHome(npcData, moveDestination);
                 if (destDistanceFromHome > npcData.ChaseRange)

@@ -27,63 +27,121 @@ namespace RustLeagueHarmony
         public List<ArenaPart> Parts = new List<ArenaPart>();
     }
 
+    internal struct ArenaPose
+    {
+        public BaseEntity Entity;
+        public Vector3 LocalPos;
+        public Quaternion LocalRot;
+        public Vector3 Scale;
+    }
+
     public static class ArenaCatalog
     {
         public static ArenaDefinition Definition { get; private set; }
-        public static bool Ready => Definition != null && Definition.Parts != null && Definition.Parts.Count > 0;
+        public static bool Ready => HasUsableLayout(Definition);
 
         public static void Load(RustLeaguePlugin plugin)
         {
-            Definition = null;
+            if (plugin?.configData == null) return;
             string cache = Path.Combine(RustLeagueHost.Instance.DataDirectory, "Arena.json");
             string configured = plugin.configData.settings.ArenaPrefabPath;
             string mapPath = ResolveArenaFile(plugin, configured);
+            ArenaDefinition cachedDef = TryReadCache(cache);
 
-            if (File.Exists(cache) && mapPath != null)
+            if (CacheIsUsable(cachedDef, mapPath))
             {
-                try
-                {
-                    var cached = JsonConvert.DeserializeObject<ArenaDefinition>(File.ReadAllText(cache));
-                    if (cached != null && cached.Parts != null && cached.Parts.Count > 0
-                        && string.Equals(cached.Source, mapPath, StringComparison.OrdinalIgnoreCase)
-                        && !ContainsEditorGizmos(cached))
-                    {
-                        Definition = cached;
-                        ApplySizeToGrid(plugin);
-                        Debug.Log($"[RustLeague] Loaded cached arena ({Definition.Parts.Count} parts) from HarmonyData/RustLeague/Arena.json");
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[RustLeague] Arena.json cache unreadable: " + ex.Message);
-                }
+                Definition = cachedDef;
+                ApplySizeToGrid(plugin);
+                Debug.Log($"[RustLeague] Loaded cached arena {Definition.Size.x:F0}x{Definition.Size.z:F0} ({Definition.Count} parts) from HarmonyData/RustLeague/Arena.json");
+                return;
             }
 
             if (mapPath == null)
             {
                 Debug.LogWarning("[RustLeague] Arena prefab not found. Looked for maps/prefabs/RustLeagueArena.map and .prefab");
+                if (HasUsableLayout(cachedDef))
+                {
+                    Definition = cachedDef;
+                    ApplySizeToGrid(plugin);
+                    Debug.LogWarning("[RustLeague] Using Arena.json size without the .map file.");
+                }
                 return;
             }
 
-            Definition = ExtractFromWorldMap(mapPath);
-            if (!Ready)
+            var extracted = ExtractFromWorldMap(mapPath);
+            if (HasUsableLayout(extracted))
             {
-                Debug.LogWarning("[RustLeague] Failed to extract prefabs from " + mapPath);
+                Definition = extracted;
+                try
+                {
+                    File.WriteAllText(cache, JsonConvert.SerializeObject(Definition, Formatting.Indented));
+                    Debug.Log($"[RustLeague] Extracted arena {Definition.Size.x:F0}x{Definition.Size.z:F0} ({Definition.Parts.Count} named parts) -> HarmonyData/RustLeague/Arena.json");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[RustLeague] Could not write Arena.json: " + ex.Message);
+                }
+                ApplySizeToGrid(plugin);
                 return;
             }
 
+            if (HasUsableLayout(cachedDef))
+            {
+                Definition = cachedDef;
+                ApplySizeToGrid(plugin);
+                Debug.LogWarning("[RustLeague] Map extract failed (StringPool not ready or unknown IDs); using Arena.json size.");
+                return;
+            }
+
+            Debug.LogWarning("[RustLeague] Failed to extract prefabs from " + mapPath);
+        }
+
+        public static void EnsureLayout()
+        {
+            if (Ready) return;
+            Definition = new ArenaDefinition
+            {
+                Source = "default",
+                Count = 0,
+                Size = new Vector3(90f, 12f, 217f),
+                Center = Vector3.zero,
+                RedGoal = new Vector3(0f, 1f, 108.5f),
+                BlueGoal = new Vector3(0f, 1f, -108.5f),
+                Parts = new List<ArenaPart>()
+            };
+            Debug.LogWarning("[RustLeague] Using default 90x217 pitch (arena map/cache unavailable).");
+        }
+
+        private static bool HasUsableLayout(ArenaDefinition def)
+        {
+            if (def == null) return false;
+            return def.Size.x >= 8f && def.Size.z >= 8f
+                && !float.IsNaN(def.Size.x) && !float.IsInfinity(def.Size.x)
+                && !float.IsNaN(def.Size.z) && !float.IsInfinity(def.Size.z);
+        }
+
+        private static bool CacheIsUsable(ArenaDefinition cached, string mapPath)
+        {
+            if (!HasUsableLayout(cached) || ContainsEditorGizmos(cached)) return false;
+            if (string.IsNullOrEmpty(cached.Source) || string.IsNullOrEmpty(mapPath)) return true;
+            return string.Equals(
+                Path.GetFileName(cached.Source),
+                Path.GetFileName(mapPath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static ArenaDefinition TryReadCache(string cache)
+        {
+            if (!File.Exists(cache)) return null;
             try
             {
-                File.WriteAllText(cache, JsonConvert.SerializeObject(Definition, Formatting.Indented));
-                Debug.Log($"[RustLeague] Extracted {Definition.Parts.Count} arena parts -> HarmonyData/RustLeague/Arena.json");
+                return JsonConvert.DeserializeObject<ArenaDefinition>(File.ReadAllText(cache));
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[RustLeague] Could not write Arena.json: " + ex.Message);
+                Debug.LogWarning("[RustLeague] Arena.json cache unreadable: " + ex.Message);
+                return null;
             }
-
-            ApplySizeToGrid(plugin);
         }
 
         private static void ApplySizeToGrid(RustLeaguePlugin plugin)
@@ -152,8 +210,8 @@ namespace RustLeagueHarmony
                     p.scale.y == 0f ? 1f : p.scale.y,
                     p.scale.z == 0f ? 1f : p.scale.z);
 
-                if (string.IsNullOrEmpty(prefabPath)
-                    || prefabPath.IndexOf("ioslothandle", StringComparison.OrdinalIgnoreCase) >= 0)
+                bool known = !string.IsNullOrEmpty(prefabPath);
+                if (known && prefabPath.IndexOf("ioslothandle", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     skipped++;
                     continue;
@@ -165,6 +223,12 @@ namespace RustLeagueHarmony
                 if (local.x > maxX) maxX = local.x;
                 if (local.y > maxY) maxY = local.y;
                 if (local.z > maxZ) maxZ = local.z;
+
+                if (!known)
+                {
+                    skipped++;
+                    continue;
+                }
 
                 def.Parts.Add(new ArenaPart
                 {
@@ -212,14 +276,35 @@ namespace RustLeagueHarmony
 
     public partial class RustLeaguePlugin
     {
-        internal readonly List<BaseEntity> arenaEntities = new List<BaseEntity>(16);
+        internal readonly List<BaseEntity> arenaEntities = new List<BaseEntity>(700);
         internal readonly List<GameObject> arenaObjects = new List<GameObject>(16);
+        private readonly List<ArenaPose> _arenaPoses = new List<ArenaPose>(700);
         private Coroutine _arenaSpawn;
+        private string _arenaProxyPrefab;
+        private Vector3 _arenaProxyNative = Vector3.one;
+        private BaseEntity _arenaRoot;
+        private Vector3 _arenaWorldCenter;
 
         private const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
         private const string WallPrefab = "assets/prefabs/building core/wall/wall.prefab";
+        private const string BoatFloorPrefab = "assets/prefabs/building boat/floor/floor.prefab";
+        private const string BoatWallPrefab = "assets/prefabs/building boat/wall/wall.prefab";
+        private const string ArenaRootPrefab = "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab";
+        private static readonly Vector3 BoatFloorNative = new Vector3(3f, 0.15f, 3f);
         private const float NativeBlock = 3f;
+        private const float PlateOverlap = 1.2f;
         internal const float PitchWallHeight = 10f;
+
+        private static readonly string[] CubePrefabCandidates =
+        {
+            "assets/bundled/prefabs/modding/cubes/tiled/cube_tiled_glass_01.prefab",
+            "assets/bundled/prefabs/modding/cubes/tiled/cube_tiled_glass_03.prefab",
+            "assets/bundled/prefabs/modding/cubes/white_cube.prefab",
+            "assets/bundled/prefabs/modding/cubes/black_cube.prefab",
+            "assets/bundled/prefabs/modding/cubes/concrete_cube.prefab",
+            "assets/bundled/prefabs/modding/cubes/tiled/cube_tiled_metal_01.prefab",
+            FloorPrefab
+        };
 
         internal bool ArenaReady => ArenaCatalog.Ready;
 
@@ -233,20 +318,103 @@ namespace RustLeagueHarmony
             configData.eventSettings.BlueZoneRotation = yaw + 180f;
 
             if (!ArenaCatalog.Ready)
-            {
-                ApplyArenaLayout(worldOrigin, yaw);
-                return;
-            }
+                ArenaCatalog.Load(this);
+            if (!ArenaCatalog.Ready)
+                ArenaCatalog.EnsureLayout();
 
             Quaternion rot = Quaternion.Euler(0f, yaw, 0f);
             var def = ArenaCatalog.Definition;
-            configData.eventSettings.eventCenter = worldOrigin + rot * def.Center;
-            configData.eventSettings.RedZone = worldOrigin + rot * def.RedGoal;
-            configData.eventSettings.BlueZone = worldOrigin + rot * def.BlueGoal;
+            float lift = PlayfieldSpawnLift(def);
+            Vector3 surface = Vector3.up * lift;
+            configData.eventSettings.eventCenter = worldOrigin + rot * def.Center + surface;
+            PlaceGoalVolumesFromCatalog(def, worldOrigin, rot);
             float sx = Mathf.Max(20f, def.Size.x + 10f);
             float sy = Mathf.Max(20f, PitchWallHeight + 10f);
             float sz = Mathf.Max(20f, def.Size.z + 10f);
             configData.eventSettings.ArenaBoundsSize = new Vector3(sx, sy, sz);
+        }
+
+        // Catalog RedGoal/BlueGoal are AABB edges, not the visual pockets. Score in the
+        // greenhouse boxes (goal floor + back wall), without the playfield surface lift.
+        private void PlaceGoalVolumesFromCatalog(ArenaDefinition def, Vector3 worldOrigin, Quaternion rot)
+        {
+            Vector3 redLocal = def != null ? def.RedGoal : Vector3.zero;
+            Vector3 blueLocal = def != null ? def.BlueGoal : Vector3.zero;
+            Vector3 center = def != null ? def.Center : Vector3.zero;
+            Vector3? redFloor = null, blueFloor = null, redWall = null, blueWall = null;
+
+            if (def?.Parts != null)
+            {
+                for (int i = 0; i < def.Parts.Count; i++)
+                {
+                    var part = def.Parts[i];
+                    Vector3 s = part.Scale == Vector3.zero ? Vector3.one : part.Scale;
+                    Vector3 p = AdjustGoalBoxLocalPos(part);
+                    if (ScaleNear(s, 1f, 13.85f, 17.21f))
+                    {
+                        if (p.z >= center.z) redFloor = p;
+                        else blueFloor = p;
+                    }
+                    else if (ScaleNear(s, 1f, 30.6f, 17.21f))
+                    {
+                        if (p.z >= center.z) redWall = p;
+                        else blueWall = p;
+                    }
+                }
+            }
+
+            if (redFloor.HasValue && redWall.HasValue)
+                redLocal = (redFloor.Value + redWall.Value) * 0.5f;
+            else if (redWall.HasValue)
+                redLocal = redWall.Value;
+
+            if (blueFloor.HasValue && blueWall.HasValue)
+                blueLocal = (blueFloor.Value + blueWall.Value) * 0.5f;
+            else if (blueWall.HasValue)
+                blueLocal = blueWall.Value;
+
+            redLocal = PullGoalTowardField(redLocal, center, 3f);
+            blueLocal = PullGoalTowardField(blueLocal, center, 3f);
+
+            configData.eventSettings.RedZone = worldOrigin + rot * redLocal;
+            configData.eventSettings.BlueZone = worldOrigin + rot * blueLocal;
+            configData.eventSettings.RedZoneSize = new Vector3(22f, 24f, 16f);
+            configData.eventSettings.BlueZoneSize = new Vector3(22f, 24f, 16f);
+        }
+
+        private static Vector3 PullGoalTowardField(Vector3 goal, Vector3 center, float meters)
+        {
+            Vector3 along = center - goal;
+            along.y = 0f;
+            if (along.sqrMagnitude < 1f) return goal;
+            return goal + along.normalized * meters;
+        }
+
+        // Catalog center is the middle of the 10m floor slab. Lift spawn points to the top plus car clearance.
+        private static float PlayfieldSpawnLift(ArenaDefinition def)
+        {
+            float halfThick = 5f;
+            if (def?.Parts == null) return halfThick + 1.25f;
+
+            for (int i = 0; i < def.Parts.Count; i++)
+            {
+                var part = def.Parts[i];
+                if (part.Path == null || part.Path.IndexOf("glass", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                Vector3 sc = part.Scale == Vector3.zero ? Vector3.one : part.Scale;
+                Quaternion r = Quaternion.Euler(part.Rot);
+                Vector3 ex = r * new Vector3(sc.x, 0f, 0f);
+                Vector3 ey = r * new Vector3(0f, sc.y, 0f);
+                Vector3 ez = r * new Vector3(0f, 0f, sc.z);
+                float xw = Mathf.Abs(ex.x) + Mathf.Abs(ey.x) + Mathf.Abs(ez.x);
+                float zw = Mathf.Abs(ex.z) + Mathf.Abs(ey.z) + Mathf.Abs(ez.z);
+                if (xw * zw < 2000f) continue;
+                float yExtent = Mathf.Abs(ex.y) + Mathf.Abs(ey.y) + Mathf.Abs(ez.y);
+                float half = yExtent * 0.5f;
+                if (half > halfThick) halfThick = half;
+            }
+
+            return halfThick + 1.25f;
         }
 
         internal void StartArenaSpawn(Vector3 worldOrigin, float yaw)
@@ -254,10 +422,9 @@ namespace RustLeagueHarmony
             StopArenaSpawn();
             DespawnArena();
             if (!ArenaCatalog.Ready)
-            {
-                Debug.LogWarning(Lang("arenaMissing"));
-                return;
-            }
+                ArenaCatalog.Load(this);
+            if (!ArenaCatalog.Ready)
+                ArenaCatalog.EnsureLayout();
             if (ServerMgr.Instance == null) return;
             _arenaSpawn = ServerMgr.Instance.StartCoroutine(SpawnArenaRoutine(worldOrigin, yaw));
         }
@@ -272,6 +439,12 @@ namespace RustLeagueHarmony
         internal void DespawnArena()
         {
             StopArenaSpawn();
+            _arenaPoses.Clear();
+            if (_arenaRoot != null && !_arenaRoot.IsDestroyed)
+            {
+                _arenaRoot.Kill();
+                _arenaRoot = null;
+            }
             for (int i = 0; i < arenaEntities.Count; i++)
             {
                 var ent = arenaEntities[i];
@@ -292,56 +465,446 @@ namespace RustLeagueHarmony
         {
             var def = ArenaCatalog.Definition;
             Quaternion yawRot = Quaternion.Euler(0f, yaw, 0f);
-
             Broadcast("arenaSpawning", GridRef(worldOrigin));
 
-            Vector3 floorCenter = worldOrigin + yawRot * def.Center;
-            float width = Mathf.Max(24f, def.Size.x);
-            float length = Mathf.Max(24f, def.Size.z);
-            float hx = width * 0.5f;
-            float hz = length * 0.5f;
+            if (def.Parts == null || def.Parts.Count == 0)
+            {
+                SpawnFallbackPitch(worldOrigin, yawRot, def);
+                SpawnArenaBeacon();
+                _arenaSpawn = null;
+                Broadcast("arenaReady", GridRef(configData.eventSettings.eventCenter));
+                yield break;
+            }
 
-            SpawnMetalBlock(FloorPrefab, floorCenter, yawRot, new Vector3(width / NativeBlock, 1f, length / NativeBlock));
-            SpawnPitchWall(floorCenter + yawRot * new Vector3(0f, 0.05f, hz), yawRot, width);
-            SpawnPitchWall(floorCenter + yawRot * new Vector3(0f, 0.05f, -hz), yawRot * Quaternion.Euler(0f, 180f, 0f), width);
-            SpawnPitchWall(floorCenter + yawRot * new Vector3(hx, 0.05f, 0f), yawRot * Quaternion.Euler(0f, 90f, 0f), length);
-            SpawnPitchWall(floorCenter + yawRot * new Vector3(-hx, 0.05f, 0f), yawRot * Quaternion.Euler(0f, -90f, 0f), length);
+            EnsurePanelPrefabs();
+            _arenaWorldCenter = worldOrigin + yawRot * def.Center;
+            _arenaRoot = SpawnArenaRoot(worldOrigin, yawRot);
+            float delay = Mathf.Max(0.001f, configData.settings.ArenaSpawnDelay);
+            int spawned = 0;
+            int skipped = 0;
+            int failed = 0;
+
+            for (int i = 0; i < def.Parts.Count; i++)
+            {
+                var part = def.Parts[i];
+                if (ShouldSkipArenaPart(part.Path))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                Vector3 localPos = AdjustGoalBoxLocalPos(part);
+                Vector3 pos = worldOrigin + yawRot * localPos;
+                Quaternion rot = yawRot * Quaternion.Euler(part.Rot);
+                Vector3 scale = part.Scale == Vector3.zero ? Vector3.one : part.Scale;
+
+                if (PrefabIsNetworkEntity(part.Path))
+                {
+                    if (SpawnMetalBlock(part.Path, pos, rot, scale) != null)
+                        spawned++;
+                    else
+                        failed++;
+                }
+                else if (part.Path.IndexOf("glass", StringComparison.OrdinalIgnoreCase) >= 0
+                    || part.Path.IndexOf("/cubes/", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    if (SpawnOrientedPanel(pos, rot, scale))
+                        spawned++;
+                    else
+                        failed++;
+                }
+                else
+                {
+                    skipped++;
+                }
+
+                if ((i + 1) % 8 == 0)
+                    yield return CoroutineEx.waitForSeconds(delay);
+            }
+
+            yield return CoroutineEx.waitForSeconds(0.2f);
+            ReapplyArenaPoses();
+            SpawnGoalLipCovers(worldOrigin, yawRot);
+            SpawnGoalTeamLights(worldOrigin, yawRot);
 
             SpawnArenaBeacon();
             _arenaSpawn = null;
-            Debug.Log($"[RustLeague] Arena pitch spawned: {arenaEntities.Count} parts, open floor {width:F0}x{length:F0}, walls {PitchWallHeight:F0}m. TP {GetArenaTeleportPos()}");
+            Debug.Log($"[RustLeague] Arena rebuilt: {spawned} solid boat-floor plates (skipped {skipped} volumes, failed {failed}). TP {GetArenaTeleportPos()}");
             Broadcast("arenaReady", GridRef(configData.eventSettings.eventCenter));
-            yield break;
+        }
+
+        private const string RedGoalLamp = "assets/prefabs/misc/permstore/industriallight/industrial.wall.lamp.red.deployed.prefab";
+        private const string BlueGoalLamp = "assets/prefabs/misc/permstore/industriallight/industrial.wall.lamp.blue.deployed.prefab";
+        private const string RedGoalSiren = "assets/prefabs/io/electric/lights/sirenlightorange.prefab";
+        private const string BlueGoalSiren = "assets/prefabs/io/electric/lights/sirenlightblue.prefab";
+
+        private void SpawnGoalTeamLights(Vector3 worldOrigin, Quaternion yawRot)
+        {
+            SpawnGoalLightFrame(worldOrigin, yawRot, true);
+            SpawnGoalLightFrame(worldOrigin, yawRot, false);
+        }
+
+        private void SpawnGoalLightFrame(Vector3 worldOrigin, Quaternion yawRot, bool red)
+        {
+            string bar = red ? RedGoalLamp : BlueGoalLamp;
+            string post = red ? RedGoalSiren : BlueGoalSiren;
+            float z = red ? 192.2f : 9.6f;
+            float cx = 24.79f;
+            Vector3 towardField = red ? new Vector3(0f, 0f, -1f) : new Vector3(0f, 0f, 1f);
+            Quaternion face = yawRot * Quaternion.LookRotation(towardField, Vector3.up);
+            float[] xs = { -7f, -3.5f, 0f, 3.5f, 7f };
+            for (int i = 0; i < xs.Length; i++)
+                SpawnIoLight(bar, worldOrigin + yawRot * new Vector3(cx + xs[i], -19.5f, z), face);
+            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx - 8.4f, -22f, z), face);
+            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx + 8.4f, -22f, z), face);
+            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx, -16.5f, z), face);
+        }
+
+        private void SpawnIoLight(string prefab, Vector3 pos, Quaternion rot)
+        {
+            if (string.IsNullOrEmpty(prefab)) return;
+            bool parented = _arenaRoot != null && !_arenaRoot.IsDestroyed;
+            Vector3 localPos = pos;
+            Quaternion localRot = rot;
+            if (parented)
+            {
+                localPos = Quaternion.Inverse(_arenaRoot.transform.rotation) * (pos - _arenaRoot.transform.position);
+                localRot = Quaternion.Inverse(_arenaRoot.transform.rotation) * rot;
+            }
+
+            BaseEntity entity = GameManager.server.CreateEntity(prefab, parented ? localPos : pos, parented ? localRot : rot);
+            if (entity == null) return;
+            entity.enableSaving = false;
+            entity.globalBroadcast = true;
+            if (parented)
+                entity.SetParent(_arenaRoot);
+            entity.Spawn();
+            if (entity == null || entity.IsDestroyed) return;
+            if (parented)
+            {
+                entity.transform.localPosition = localPos;
+                entity.transform.localRotation = localRot;
+            }
+            var io = entity as IOEntity;
+            if (io != null)
+                io.UpdateFromInput(100, 0);
+            entity.SetFlag(BaseEntity.Flags.On, true);
+            entity.SendNetworkUpdateImmediate();
+            arenaEntities.Add(entity);
+        }
+
+        private void SpawnFallbackPitch(Vector3 worldOrigin, Quaternion yawRot, ArenaDefinition def)
+        {
+            Vector3 floorCenter = worldOrigin + yawRot * def.Center;
+            float width = Mathf.Max(24f, def.Size.x);
+            float length = Mathf.Max(24f, def.Size.z);
+            if (SpawnMetalBlock(BoatFloorPrefab, floorCenter, yawRot, new Vector3(width / NativeBlock, 1f, length / NativeBlock)) == null)
+                SpawnMetalBlock(FloorPrefab, floorCenter, yawRot, new Vector3(width / NativeBlock, 1f, length / NativeBlock));
+            SpawnPitchWall(floorCenter + yawRot * new Vector3(0f, 0.05f, length * 0.5f), yawRot, width);
+            SpawnPitchWall(floorCenter + yawRot * new Vector3(0f, 0.05f, -length * 0.5f), yawRot * Quaternion.Euler(0f, 180f, 0f), width);
+            SpawnPitchWall(floorCenter + yawRot * new Vector3(width * 0.5f, 0.05f, 0f), yawRot * Quaternion.Euler(0f, 90f, 0f), length);
+            SpawnPitchWall(floorCenter + yawRot * new Vector3(-width * 0.5f, 0.05f, 0f), yawRot * Quaternion.Euler(0f, -90f, 0f), length);
+            Debug.Log($"[RustLeague] Arena fallback pitch {width:F0}x{length:F0} (catalog had no parts).");
+        }
+
+        private void ResolveArenaProxy()
+        {
+            if (!string.IsNullOrEmpty(_arenaProxyPrefab)) return;
+
+            for (int i = 0; i < CubePrefabCandidates.Length; i++)
+            {
+                string path = CubePrefabCandidates[i];
+                bool isFloor = string.Equals(path, FloorPrefab, StringComparison.OrdinalIgnoreCase);
+                if (!isFloor && !PrefabIsNetworkEntity(path))
+                    continue;
+                if (isFloor && GameManager.server.FindPrefab(path) == null)
+                    continue;
+
+                _arenaProxyPrefab = path;
+                _arenaProxyNative = GetPrefabNativeSize(path);
+                Debug.Log($"[RustLeague] Arena visual proxy: {path} native {_arenaProxyNative.x:F2}x{_arenaProxyNative.y:F2}x{_arenaProxyNative.z:F2}");
+                return;
+            }
+
+            _arenaProxyPrefab = FloorPrefab;
+            _arenaProxyNative = new Vector3(3f, 0.15f, 3f);
+            Debug.LogWarning("[RustLeague] Arena visual proxy fell back to metal floor. Rust Edit cubes are world-only and do not replicate.");
+        }
+
+        private static bool PrefabIsNetworkEntity(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            GameObject prefab = GameManager.server.FindPrefab(path);
+            return prefab != null && prefab.GetComponent<BaseEntity>() != null;
+        }
+
+        private static Vector3 GetPrefabNativeSize(string path)
+        {
+            if (path != null && path.IndexOf("building boat/floor", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new Vector3(3f, 0.15f, 3f);
+            if (path != null && path.IndexOf("building boat/wall", StringComparison.OrdinalIgnoreCase) >= 0
+                && path.IndexOf("wall.low", StringComparison.OrdinalIgnoreCase) < 0)
+                return new Vector3(3f, 3f, 0.15f);
+            if (path != null && path.IndexOf("building core/floor", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new Vector3(3f, 0.15f, 3f);
+            if (path != null && path.IndexOf("building core/wall", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new Vector3(3f, 3f, 0.15f);
+            if (path != null && path.IndexOf("/cubes/", StringComparison.OrdinalIgnoreCase) >= 0)
+                return Vector3.one;
+
+            GameObject prefab = GameManager.server.FindPrefab(path);
+            if (prefab == null) return Vector3.one;
+
+            Vector3 size = Vector3.zero;
+            var filters = prefab.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < filters.Length; i++)
+            {
+                Mesh mesh = filters[i].sharedMesh;
+                if (mesh == null) continue;
+                Vector3 s = Vector3.Scale(mesh.bounds.size, filters[i].transform.lossyScale);
+                size = Vector3.Max(size, s);
+            }
+            if (size.x < 0.05f) size.x = 1f;
+            if (size.y < 0.05f) size.y = 1f;
+            if (size.z < 0.05f) size.z = 1f;
+            return size;
+        }
+
+        private Vector3 ToProxyScale(Vector3 sourceScale)
+        {
+            if (sourceScale == Vector3.zero) sourceScale = Vector3.one;
+            Vector3 native = _arenaProxyNative;
+            if (native.x < 0.01f) native.x = 1f;
+            if (native.y < 0.01f) native.y = 1f;
+            if (native.z < 0.01f) native.z = 1f;
+            return new Vector3(sourceScale.x / native.x, sourceScale.y / native.y, sourceScale.z / native.z);
+        }
+
+        private static bool ShouldSkipArenaPart(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return true;
+            if (path.IndexOf("ioslothandle", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (path.IndexOf("prevent_building", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (path.IndexOf("invisible_collider", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        private static bool ScaleNear(Vector3 scale, float x, float y, float z)
+        {
+            return Mathf.Abs(scale.x - x) < 0.2f
+                && Mathf.Abs(scale.y - y) < 0.2f
+                && Mathf.Abs(scale.z - z) < 0.2f;
+        }
+
+        private void SpawnGoalLipCovers(Vector3 worldOrigin, Quaternion yawRot)
+        {
+            Vector3 scale = new Vector3(15f / BoatFloorNative.x, 0.2f / BoatFloorNative.y, 5f / BoatFloorNative.z);
+            SpawnGoalLipCover(worldOrigin, yawRot, new Vector3(24.75f, -25.85f, -1.84f), scale);
+            SpawnGoalLipCover(worldOrigin, yawRot, new Vector3(24.75f, -25.85f, 203.59f), scale);
+        }
+
+        private void SpawnGoalLipCover(Vector3 worldOrigin, Quaternion yawRot, Vector3 local, Vector3 scale)
+        {
+            Vector3 pos = worldOrigin + yawRot * local;
+            if (SpawnMetalBlock(BoatFloorPrefab, pos, yawRot, scale) == null)
+                SpawnMetalBlock(FloorPrefab, pos, yawRot, scale);
+        }
+
+        // Goal pocket: raise the end floor to local Y -16.55 and sit the back wall on
+        // its top edge. Same at both ends. Do not lift or flatten hull strips.
+        private static Vector3 AdjustGoalBoxLocalPos(ArenaPart part)
+        {
+            Vector3 p = part.Pos;
+            Vector3 s = part.Scale == Vector3.zero ? Vector3.one : part.Scale;
+
+            if (ScaleNear(s, 1f, 13.85f, 17.21f) && Mathf.Abs(p.y - (-21.12f)) < 0.3f)
+                p.y = -16.55f;
+            else if (ScaleNear(s, 1f, 30.6f, 17.21f) && Mathf.Abs(p.y - (-6.2f)) < 0.3f)
+                p.y = -0.75f;
+            else if (ScaleNear(s, 0.76f, 17.73f, 0.76f) && Mathf.Abs(p.y - (-21.84f)) < 0.3f)
+                p.y += 4.57f;
+            else if (part.Path != null
+                && part.Path.IndexOf("fluorescent", StringComparison.OrdinalIgnoreCase) >= 0
+                && Mathf.Abs(p.y - (-21.67f)) < 0.3f)
+                p.y += 4.57f;
+
+            return p;
+        }
+
+        private bool SpawnOrientedPanel(Vector3 worldPos, Quaternion cubeRot, Vector3 cubeScale)
+        {
+            if (cubeScale == Vector3.zero) cubeScale = Vector3.one;
+
+            Vector3 edgeX = cubeRot * new Vector3(cubeScale.x, 0f, 0f);
+            Vector3 edgeY = cubeRot * new Vector3(0f, cubeScale.y, 0f);
+            Vector3 edgeZ = cubeRot * new Vector3(0f, 0f, cubeScale.z);
+
+            float ax = edgeX.magnitude;
+            float ay = edgeY.magnitude;
+            float az = edgeZ.magnitude;
+
+            Vector3 thin = edgeX;
+            Vector3 edgeA = edgeY;
+            Vector3 edgeB = edgeZ;
+            if (ay <= ax && ay <= az)
+            {
+                thin = edgeY;
+                edgeA = edgeX;
+                edgeB = edgeZ;
+            }
+            else if (az <= ax && az <= ay)
+            {
+                thin = edgeZ;
+                edgeA = edgeX;
+                edgeB = edgeY;
+            }
+
+            if (thin.sqrMagnitude < 0.0001f)
+                return false;
+
+            return SpawnBoatPlate(worldPos, thin, edgeA, edgeB);
+        }
+
+        private bool SpawnBoatPlate(Vector3 cubeCenter, Vector3 thin, Vector3 edgeA, Vector3 edgeB)
+        {
+            Vector3 up = thin.normalized;
+            bool horizontal = Mathf.Abs(up.y) >= 0.5f;
+            if (horizontal)
+            {
+                if (Vector3.Dot(up, Vector3.up) < 0f)
+                    up = -up;
+            }
+            else
+            {
+                Vector3 toInside = _arenaWorldCenter - cubeCenter;
+                if (toInside.sqrMagnitude > 0.01f && Vector3.Dot(up, toInside) < 0f)
+                    up = -up;
+            }
+
+            Vector3 forward = edgeB.sqrMagnitude >= edgeA.sqrMagnitude ? edgeB : edgeA;
+            forward = Vector3.ProjectOnPlane(forward, up);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.ProjectOnPlane(Vector3.forward, up);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.ProjectOnPlane(Vector3.right, up);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.Cross(up, Vector3.right);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.Cross(up, Vector3.forward);
+            if (forward.sqrMagnitude < 0.0001f)
+                return false;
+            forward.Normalize();
+
+            Quaternion rot = Quaternion.LookRotation(forward, up);
+            Vector3 right = Vector3.Cross(up, forward);
+            Vector3 localSize = new Vector3(
+                (Mathf.Abs(Vector3.Dot(edgeA, right)) + Mathf.Abs(Vector3.Dot(edgeB, right))) * PlateOverlap,
+                Mathf.Max(thin.magnitude, 0.15f),
+                (Mathf.Abs(Vector3.Dot(edgeA, forward)) + Mathf.Abs(Vector3.Dot(edgeB, forward))) * PlateOverlap);
+
+            if (localSize.x < 0.05f) localSize.x = 0.05f;
+            if (localSize.z < 0.05f) localSize.z = 0.05f;
+
+            Vector3 scale = new Vector3(
+                localSize.x / BoatFloorNative.x,
+                localSize.y / BoatFloorNative.y,
+                localSize.z / BoatFloorNative.z);
+
+            if (SpawnMetalBlock(BoatFloorPrefab, cubeCenter, rot, scale) != null)
+                return true;
+            return SpawnMetalBlock(FloorPrefab, cubeCenter, rot, scale) != null;
+        }
+
+        private void EnsurePanelPrefabs()
+        {
+            if (PrefabIsNetworkEntity(BoatFloorPrefab))
+                Debug.Log("[RustLeague] Arena hull: solid boat floors, 5x5 lip covers at both goals.");
+            else
+                Debug.LogWarning("[RustLeague] Boat floor missing — falling back to building-core floor.");
+        }
+
+        private BaseEntity SpawnArenaRoot(Vector3 origin, Quaternion yawRot)
+        {
+            BaseEntity root = GameManager.server.CreateEntity(ArenaRootPrefab, origin, yawRot);
+            if (root == null)
+            {
+                Debug.LogWarning("[RustLeague] Arena root prefab failed — plates will spawn unparented.");
+                return null;
+            }
+
+            root.enableSaving = false;
+            root.globalBroadcast = true;
+            StripWorldOnlyComponents(root.gameObject);
+            root.Spawn();
+            root.transform.position = origin;
+            root.transform.rotation = yawRot;
+            root.transform.localScale = Vector3.one;
+            root.globalBroadcast = true;
+            root.SendNetworkUpdateImmediate();
+            arenaEntities.Add(root);
+            return root;
+        }
+
+        private void ReapplyArenaPoses()
+        {
+            for (int i = 0; i < _arenaPoses.Count; i++)
+            {
+                ArenaPose pose = _arenaPoses[i];
+                if (pose.Entity == null || pose.Entity.IsDestroyed)
+                    continue;
+                pose.Entity.networkEntityScale = true;
+                pose.Entity.transform.localPosition = pose.LocalPos;
+                pose.Entity.transform.localRotation = pose.LocalRot;
+                pose.Entity.transform.localScale = pose.Scale;
+                pose.Entity.SendNetworkUpdateImmediate();
+            }
         }
 
         private void SpawnPitchWall(Vector3 pos, Quaternion rot, float along)
         {
-            Vector3 wallScale = new Vector3(along / NativeBlock, PitchWallHeight / NativeBlock, 1f);
-            if (SpawnMetalBlock(WallPrefab, pos, rot, wallScale) != null)
+            Vector3 wallScale = new Vector3(along / NativeBlock, 1f, PitchWallHeight / NativeBlock);
+            Quaternion plateRot = rot * Quaternion.Euler(90f, 0f, 0f);
+            Vector3 platePos = pos + rot * Vector3.up * (PitchWallHeight * 0.5f);
+            if (SpawnMetalBlock(BoatFloorPrefab, platePos, plateRot, wallScale) != null)
                 return;
-
-            SpawnMetalBlock(
-                FloorPrefab,
-                pos + rot * Vector3.up * (PitchWallHeight * 0.5f),
-                rot * Quaternion.Euler(90f, 0f, 0f),
-                new Vector3(along / NativeBlock, 1f, PitchWallHeight / NativeBlock));
+            SpawnMetalBlock(FloorPrefab, platePos, plateRot, wallScale);
         }
 
         private BaseEntity SpawnMetalBlock(string prefab, Vector3 pos, Quaternion rot, Vector3 scale)
         {
-            BaseEntity entity = GameManager.server.CreateEntity(prefab, pos, rot);
+            if (string.IsNullOrEmpty(prefab)) return null;
+            if (scale == Vector3.zero) scale = Vector3.one;
+
+            bool parented = _arenaRoot != null && !_arenaRoot.IsDestroyed;
+            Vector3 localPos = pos;
+            Quaternion localRot = rot;
+            if (parented)
+            {
+                localPos = Quaternion.Inverse(_arenaRoot.transform.rotation) * (pos - _arenaRoot.transform.position);
+                localRot = Quaternion.Inverse(_arenaRoot.transform.rotation) * rot;
+            }
+
+            BaseEntity entity = GameManager.server.CreateEntity(prefab, localPos, localRot);
             if (entity == null) return null;
 
             entity.enableSaving = false;
+            entity.globalBroadcast = true;
             entity.networkEntityScale = true;
             StripWorldOnlyComponents(entity.gameObject);
-            entity.Spawn();
-
             if (entity is StabilityEntity stability)
                 stability.grounded = true;
+            if (parented)
+                entity.SetParent(_arenaRoot);
+            entity.transform.localScale = scale;
+            entity.Spawn();
+            if (entity == null || entity.IsDestroyed)
+                return null;
+
+            StripWorldOnlyComponents(entity.gameObject);
+            if (entity is StabilityEntity grounded)
+                grounded.grounded = true;
             if (entity is BuildingBlock block)
             {
-                block.ChangeGradeAndSkin(BuildingGrade.Enum.Metal, 0);
                 block.StopBeingDemolishable();
                 block.SetHealth(block.MaxHealth());
             }
@@ -351,9 +914,28 @@ namespace RustLeagueHarmony
                 combat.pickup.enabled = false;
 
             entity.networkEntityScale = true;
-            entity.transform.localScale = scale == Vector3.zero ? Vector3.one : scale;
+            entity.globalBroadcast = true;
+            if (parented)
+            {
+                entity.transform.localPosition = localPos;
+                entity.transform.localRotation = localRot;
+                entity.transform.localScale = scale;
+            }
+            else
+            {
+                entity.transform.position = pos;
+                entity.transform.rotation = rot;
+                entity.transform.localScale = scale;
+            }
             entity.SendNetworkUpdateImmediate();
             arenaEntities.Add(entity);
+            _arenaPoses.Add(new ArenaPose
+            {
+                Entity = entity,
+                LocalPos = parented ? localPos : pos,
+                LocalRot = parented ? localRot : rot,
+                Scale = scale
+            });
             return entity;
         }
 

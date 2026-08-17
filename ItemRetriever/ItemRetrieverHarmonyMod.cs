@@ -16,7 +16,7 @@ namespace ItemRetrieverHarmony
 
         public const int VersionMajor = 0;
         public const int VersionMinor = 7;
-        public const int VersionPatch = 7;
+        public const int VersionPatch = 8;
 
         public static readonly VersionNumber Version = new VersionNumber(VersionMajor, VersionMinor, VersionPatch);
 

@@ -24,5 +24,6 @@ Copies **only** `BradleyDrops.dll` to root `HarmonyMods/`.
 
 - Requires **Permissions**. Unload `oxide/plugins/BradleyDrops.cs` so both copies do not run.
 - Chat/console: report, buy, despawn, `bdgive`, `bdclearcd` (from config + hardcoded).
+- Vanilla/Launch Site Bradleys are converted to a weighted random difficulty. Shooting one shows a GameTip with the tier (`You are taking on a ...`).
 - CUI (if any) bridges via `cui.endtest BRADLEYDROPS …`.
 - Internal Harmony patches (Bradley aiming/weapons, CH47 altitude, hackable crate decay) still apply from `OnServerInitialized`.

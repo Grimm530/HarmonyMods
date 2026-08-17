@@ -644,7 +644,11 @@ namespace ShopHarmony
                 if (args == null || args.Length == 0)
                     ConsoleSystem.Run(ConsoleSystem.Option.Server, cmdName);
                 else
-                    ConsoleSystem.Run(ConsoleSystem.Option.Server, cmdName, args);
+                {
+                    var boxed = new object[args.Length];
+                    for (int i = 0; i < args.Length; i++) boxed[i] = args[i];
+                    ConsoleSystem.Run(ConsoleSystem.Option.Server, cmdName, boxed);
+                }
             }
             catch (Exception ex)
             {

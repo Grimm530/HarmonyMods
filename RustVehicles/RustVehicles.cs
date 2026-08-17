@@ -53,6 +53,7 @@ Copyright © 2025 Grimm530. All rights reserved.
 Patch notes:
 2/22/2026 - Fixed issue with vehicles not returning loot from containers when destroyed.
 5/11/2026 - Karuza Custom Vehicles: discover vehicles from KaruzaEntitiesCommon.json API when RustCar/RustHelicopter/RustPlane JSON folders are empty or incomplete.
+8/15/2026 - Use Clans now includes Facepunch native clans (clanId / ClanManager) without dropping Oxide Clans / Rust:IO Clans. Clear vanilla owner-lock so clan mates can mount.
 
 */
 using System;
@@ -5368,6 +5369,10 @@ namespace RustVehiclesHarmony
                     return null;
                 }
             }
+            else if (!configData.global.preventMounting)
+            {
+                return null;
+            }
             if (HasAdminPermission(friend))
             {
                 return null;
@@ -6158,50 +6163,7 @@ namespace RustVehiclesHarmony
 
         private bool SameClan(ulong playerId, ulong friendId)
         {
-            if (IsNativeClanMate(playerId, friendId))
-            {
-                return true;
-            }
-
-            if (Clans == null)
-            {
-                return false;
-            }
-
-            var isMember = Clans.Call("IsClanMember", playerId, friendId);
-            if (isMember is bool isClanMember && isClanMember)
-            {
-                return true;
-            }
-
-            if (isMember == null)
-            {
-                isMember = Clans.Call("IsClanMember", playerId.ToString(), friendId.ToString());
-                if (isMember is bool legacyClanMember && legacyClanMember)
-                {
-                    return true;
-                }
-            }
-
-            var playerClan = Clans.Call("GetClanOf", playerId) as string;
-            if (string.IsNullOrEmpty(playerClan))
-            {
-                playerClan = Clans.Call("GetClanOf", playerId.ToString()) as string;
-            }
-
-            if (string.IsNullOrEmpty(playerClan))
-            {
-                return false;
-            }
-
-            var friendClan = Clans.Call("GetClanOf", friendId) as string;
-            if (string.IsNullOrEmpty(friendClan))
-            {
-                friendClan = Clans.Call("GetClanOf", friendId.ToString()) as string;
-            }
-
-            return !string.IsNullOrEmpty(friendClan)
-                && string.Equals(playerClan, friendClan, StringComparison.Ordinal);
+            return IsNativeClanMate(playerId, friendId);
         }
 
         private bool ShouldEnforceMountRestrictions()
@@ -6211,18 +6173,23 @@ namespace RustVehiclesHarmony
 
         private void ReleaseVanillaOwnerLock(BaseEntity entity)
         {
-            if (!ShouldEnforceMountRestrictions())
+            if (!ShouldEnforceMountRestrictions() || entity == null)
             {
                 return;
             }
 
             var baseVehicle = entity as BaseVehicle;
-            if (baseVehicle == null || !baseVehicle.OnlyOwnerAccessible())
+            if (baseVehicle != null && baseVehicle.OnlyOwnerAccessible())
             {
+                baseVehicle.ClearOwnerEntry();
                 return;
             }
 
-            baseVehicle.ClearOwnerEntry();
+            var balloon = entity as HotAirBalloon;
+            if (balloon != null && balloon.OnlyOwnerAccessible())
+            {
+                balloon.ClearOwnerEntry();
+            }
         }
 
         #endregion AreFriends
@@ -7575,19 +7542,17 @@ namespace RustVehiclesHarmony
                 backend.TryGet(player.clanId, out clan);
             }
 
-            if (clan?.Members == null)
+            if (clan?.Members != null)
             {
-                return;
-            }
+                for (int i = 0; i < clan.Members.Count; i++)
+                {
+                    AuthPlayerOnVehiclePrivilege(vehiclePrivilege, BasePlayer.FindByID(clan.Members[i].SteamId));
+                }
 
-            for (int i = 0; i < clan.Members.Count; i++)
-            {
-                AuthPlayerOnVehiclePrivilege(vehiclePrivilege, BasePlayer.FindByID(clan.Members[i].SteamId));
-            }
-
-            if (clan.Creator != 0UL)
-            {
-                AuthPlayerOnVehiclePrivilege(vehiclePrivilege, BasePlayer.FindByID(clan.Creator));
+                if (clan.Creator != 0UL)
+                {
+                    AuthPlayerOnVehiclePrivilege(vehiclePrivilege, BasePlayer.FindByID(clan.Creator));
+                }
             }
         }
         #region Train Car

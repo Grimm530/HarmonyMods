@@ -732,8 +732,6 @@ namespace Oxide.Plugins
                     foreach (var check in BasePlayer.activePlayerList)
                         ShowUIMessagesInfo(check);
                 });
- 
-            ServerMgr.Instance.StartCoroutine(InfoUpdate());
 
         }
 
@@ -754,14 +752,13 @@ namespace Oxide.Plugins
             _data.PlayersState.TryAdd(player.UserIDString, States.Full);
 
             ShowUIBG(player);
-            NextTick(() => ShowUIPlayersCounts());
         }
 
-        private void OnConnectionQueue(Network.Connection connection) => NextTick(() => ShowUIPlayersCounts());
-        private void OnPlayerSleep(BasePlayer player) => NextTick(() => ShowUIPlayersCounts());
+        private void OnConnectionQueue(Network.Connection connection) { }
+        private void OnPlayerSleep(BasePlayer player) { }
         
-        private void OnPlayerDisconnected(BasePlayer player) => NextTick(() => ShowUIPlayersCounts());
-        private void OnPlayerSleepEnded(BasePlayer player) => NextTick(() => ShowUIPlayersCounts());
+        private void OnPlayerDisconnected(BasePlayer player) { }
+        private void OnPlayerSleepEnded(BasePlayer player) { }
 
         #region ComputerStation
 
@@ -936,7 +933,7 @@ namespace Oxide.Plugins
                         return;
 
                     _data.PlayersState[player.UserIDString] = state == States.Full ? States.Events : state == States.Events ? States.Hide : States.Full;
-                    ShowUIMain(player);
+                    ShowUIBG(player);
                     break;
                 case "CHANGEADMENUSTATE":
                     ShowUIAdditionalMenu(player, !arg.GetBool(1));
@@ -1439,10 +1436,7 @@ namespace Oxide.Plugins
                     break;
             } 
 
-            if (playerState == States.Close)
-                ShowUIBG(player);
-            
-            ShowUIMain(player);
+            ShowUIBG(player);
         }
 
         #endregion
@@ -1490,29 +1484,6 @@ namespace Oxide.Plugins
                 text += Convert.ToChar(64 + (int)num6).ToString();
     
             return text + num4;
-        }
-        
-        private IEnumerator InfoUpdate()
-        {
-            while (true)
-            {
-                if (!IsLoaded)
-                    yield break;
-
-                foreach (var check in BasePlayer.activePlayerList)
-                {
-                    if (_config.MainSetup.Time.IsEnable)
-                        ShowUITime(check);
-
-                    if (_config.MainSetup.PlayerPosition.IsEnable)
-                        ShowUIPosition(check);
-
-                    if (IsAnyEconomyEnabled())
-                        ShowUIBalance(check); 
-                }
-         
-                yield return new WaitForSeconds(1f);
-            }
         }
  
         private void EventsInit()
@@ -2087,20 +2058,40 @@ namespace Oxide.Plugins
             y -= 20;
         }
 
-        private void ShowUIEvents(BasePlayer player = null)
+        private void ShowUIEvents(BasePlayer player = null, CuiElementContainer into = null)
         {
-            if (player != null && (_data.PlayersState[player.UserIDString] == States.Hide || _data.PlayersState[player.UserIDString] == States.Close))
+            if (into == null)
+            {
+                if (player != null)
+                {
+                    ShowUIBG(player);
+                    return;
+                }
+
+                foreach (var check in BasePlayer.activePlayerList)
+                {
+                    if (_data.PlayersState[check.UserIDString] == States.Hide || _data.PlayersState[check.UserIDString] == States.Close)
+                        continue;
+                    if (_config.MainSetup.HideInComputerStation && _inComputerStation.Contains(check.userID))
+                        continue;
+                    ShowUIBG(check);
+                }
+                return;
+            }
+
+            if (player == null)
                 return;
 
-            if (player != null && _config.MainSetup.HideInComputerStation && _inComputerStation.Contains(player.userID))
+            if (_data.PlayersState[player.UserIDString] == States.Hide || _data.PlayersState[player.UserIDString] == States.Close)
+                return;
+
+            if (_config.MainSetup.HideInComputerStation && _inComputerStation.Contains(player.userID))
                 return;
 
             if (_config.MainSetup.OnlyActive)
                 CalculateEventsWidth();
 
-            var container = new CuiElementContainer();
-
-            UI.Panel(ref container, ".Events.bg", ".Events", ".Events", "0.5 0.5", "0.5 0.5", bgColor: null);
+            UI.Panel(ref into, ".Events.bg", ".Events", ".Events", "0.5 0.5", "0.5 0.5", bgColor: null);
 
             var posX = EventsPosStartPosX;
             foreach (var check in _config.BaseEvents)
@@ -2108,7 +2099,7 @@ namespace Oxide.Plugins
                 if (!check.IsEnable || (_config.MainSetup.OnlyActive && !check.isActive))
                     continue;
                 
-                UI.Image(ref container, ".Events", aMin: "0 0", aMax: "0 0", oXMin: posX, oYMin: -16, oXMax: posX + 30, oYMax: 14, imageId: GetImage(check.Icon), color: GetEventColor(check));
+                UI.Image(ref into, ".Events", aMin: "0 0", aMax: "0 0", oXMin: posX, oYMin: -16, oXMax: posX + 30, oYMax: 14, imageId: GetImage(check.Icon), color: GetEventColor(check));
 
                 posX += 34; 
             }
@@ -2118,18 +2109,10 @@ namespace Oxide.Plugins
                 if (!check.IsEnable || (_config.MainSetup.OnlyActive && !check.isActive))
                     continue;
 
-                UI.Image(ref container, ".Events", aMin: "0 0", aMax: "0 0", oXMin: posX, oYMin: -16, oXMax: posX + 30, oYMax: 14, imageId: GetImage(check.Icon), color: GetEventColor(check));
+                UI.Image(ref into, ".Events", aMin: "0 0", aMax: "0 0", oXMin: posX, oYMin: -16, oXMax: posX + 30, oYMax: 14, imageId: GetImage(check.Icon), color: GetEventColor(check));
 
                 posX += 34;
             }
-
-            if (player == null)
-                foreach (var check in BasePlayer.activePlayerList)
-                    if (_data.PlayersState[check.UserIDString] != States.Hide && _data.PlayersState[check.UserIDString] != States.Close
-                        && (!_config.MainSetup.HideInComputerStation || !_inComputerStation.Contains(check.userID)))
-                        UI.Create(check, container);
-
-            UI.Create(player, container);
         }
 
         private void ShowUIAdditionalMenuCommands(BasePlayer player)
@@ -2164,25 +2147,28 @@ namespace Oxide.Plugins
             UI.Create(player, container);
         }
 
-        private void ShowUIAdditionalMenu(BasePlayer player, bool isOpen = false)
+        private void ShowUIAdditionalMenu(BasePlayer player, bool isOpen = false, CuiElementContainer into = null)
         {
-            var container = new CuiElementContainer();
+            var send = into == null;
+            if (send)
+                into = new CuiElementContainer();
             
-            UI.Panel(ref container, _data.PlayersState[player.UserIDString] == States.Full ? ".Main.bg" : ".Events.bg", ".AdditionalMenuButton.bg", ".AdditionalMenuButton.bg", "0.5 0", "0.5 0", bgColor: null); 
+            UI.Panel(ref into, _data.PlayersState[player.UserIDString] == States.Full ? ".Main.bg" : ".Events.bg", ".AdditionalMenuButton.bg", ".AdditionalMenuButton.bg", "0.5 0", "0.5 0", bgColor: null); 
 
-            UI.Image(ref container, ".AdditionalMenuButton.bg", ".AdditionalMenuButton", oXMin: -16, oYMin: _data.PlayersState[player.UserIDString] == States.Full ? -17 : 4, oXMax: 16, oYMax: _data.PlayersState[player.UserIDString] == States.Full ? 4 : 25, imageId: GetImage(_config.Images.Lip), color:$"1 1 1 {_config.MainSetup.BGOpacity / 100f}");
+            UI.Image(ref into, ".AdditionalMenuButton.bg", ".AdditionalMenuButton", oXMin: -16, oYMin: _data.PlayersState[player.UserIDString] == States.Full ? -17 : 4, oXMax: 16, oYMax: _data.PlayersState[player.UserIDString] == States.Full ? 4 : 25, imageId: GetImage(_config.Images.Lip), color:$"1 1 1 {_config.MainSetup.BGOpacity / 100f}");
 
-            UI.Image(ref container, ".AdditionalMenuButton", imageId: GetImage(isOpen ? _config.Images.CloseDropMenu : _config.Images.DropMenu), color: _config.MainSetup.AdditionalMenu.ButtonColor);
+            UI.Image(ref into, ".AdditionalMenuButton", imageId: GetImage(isOpen ? _config.Images.CloseDropMenu : _config.Images.DropMenu), color: _config.MainSetup.AdditionalMenu.ButtonColor);
 
-            UI.ImageButton(ref container, ".AdditionalMenuButton", $"UI_H CHANGEADMENUSTATE {isOpen}");
+            UI.ImageButton(ref into, ".AdditionalMenuButton", $"UI_H CHANGEADMENUSTATE {isOpen}");
  
-            UI.Create(player, container);
+            if (send)
+                UI.Create(player, into);
 
             if (isOpen)
                 ShowUIAdditionalMenuCommands(player);
         }
         
-        private void ShowUIBalance(BasePlayer player) 
+        private void ShowUIBalance(BasePlayer player, CuiElementContainer into = null) 
         {
             if (_data.PlayersState[player.UserIDString] != States.Full)
                 return;
@@ -2192,166 +2178,150 @@ namespace Oxide.Plugins
             if (!economy.IsEnable && !secondEconomy.IsEnable)
                 return;
             
-            var container = new CuiElementContainer();
+            var send = into == null;
+            if (send)
+                into = new CuiElementContainer();
             var balanceText = string.Empty;
 
             if (economy.IsEnable)
             {
                 balanceText += economy.Currency + GetEconomyBalance(player, economy);
-                UI.Label(ref container, ".Main.bg", ".Balance", ".Balance", "0 0", "0.3 0", oXMin: 10, oYMin: 7, oXMax: 0, oYMax: 24, text: balanceText, fontSize:14, align:TextAnchor.MiddleLeft, color:economy.Color);
+                UI.Label(ref into, ".Main.bg", ".Balance", ".Balance", "0 0", "0.3 0", oXMin: 10, oYMin: 7, oXMax: 0, oYMax: 24, text: balanceText, fontSize:14, align:TextAnchor.MiddleLeft, color:economy.Color);
             }
 
             if (secondEconomy.IsEnable)
             {
                 var secondText = secondEconomy.Currency + GetEconomyBalance(player, secondEconomy);
-                UI.Label(ref container, ".Main.bg", ".Balance2", ".Balance2", economy.IsEnable ? "0.3 0" : "0 0", "0.6 0", oXMin: 10, oYMin: 7, oXMax: 0, oYMax: 24, text: secondText, fontSize:14, align:TextAnchor.MiddleLeft, color:secondEconomy.Color);
+                UI.Label(ref into, ".Main.bg", ".Balance2", ".Balance2", economy.IsEnable ? "0.3 0" : "0 0", "0.6 0", oXMin: 10, oYMin: 7, oXMax: 0, oYMax: 24, text: secondText, fontSize:14, align:TextAnchor.MiddleLeft, color:secondEconomy.Color);
             }
               
-            UI.Create(player, container);  
+            if (send)
+                UI.Create(player, into);  
         } 
         
-        private void ShowUIPosition(BasePlayer player)
+        private void ShowUIPosition(BasePlayer player, CuiElementContainer into = null)
         {
             if (_data.PlayersState[player.UserIDString] != States.Full)
                 return;
 
             if (permission.UserHasPermission(player.UserIDString, PERM_STREAMER))
             {
-                UI.Destroy(player, ".Position");
+                if (into == null)
+                    UI.Destroy(player, ".Position");
                 return;
             }
             
-            var container = new CuiElementContainer();
+            var send = into == null;
+            if (send)
+                into = new CuiElementContainer();
   
-            UI.Label(ref container, ".Main.bg", ".Position", ".Position", "1 1", "1 1", oXMin: -45, oYMin: -75, oXMax: -5, oYMax: -45, text: _config.MainSetup.PlayerPosition.IsGrid ? PositionToGridCoord(player.transform.position) : $"X:{(int) player.transform.position.x}\nZ:{(int) player.transform.position.z}", fontSize:_config.MainSetup.PlayerPosition.IsGrid ? 18 : 10, align:TextAnchor.MiddleLeft, color:_config.MainSetup.PlayerPosition.Color);
+            UI.Label(ref into, ".Main.bg", ".Position", ".Position", "1 1", "1 1", oXMin: -45, oYMin: -75, oXMax: -5, oYMax: -45, text: _config.MainSetup.PlayerPosition.IsGrid ? PositionToGridCoord(player.transform.position) : $"X:{(int) player.transform.position.x}\nZ:{(int) player.transform.position.z}", fontSize:_config.MainSetup.PlayerPosition.IsGrid ? 18 : 10, align:TextAnchor.MiddleLeft, color:_config.MainSetup.PlayerPosition.Color);
             
-            UI.Create(player, container);
+            if (send)
+                UI.Create(player, into);
         }
     
-        private void ShowUITime(BasePlayer player) 
+        private void ShowUITime(BasePlayer player, CuiElementContainer into = null) 
         {
             if (_data.PlayersState[player.UserIDString] != States.Full)
                 return;
             
-            var container = new CuiElementContainer();
+            var send = into == null;
+            if (send)
+                into = new CuiElementContainer();
  
-            UI.Label(ref container, ".Main.bg", ".Time", ".Time", "0 1", "0 1", oXMin: 180, oYMin: -75, oXMax: 250, oYMax: -45, text:_config.MainSetup.Time.IsAutomaticDetection ? TOD_Sky.Instance.Cycle.DateTime.ToString(GetCulture(lang.GetLanguage(player.UserIDString)).DateTimeFormat.ShortTimePattern) : TOD_Sky.Instance.Cycle.DateTime.ToString(_config.MainSetup.Time.IsAmPm ? "hh:mm tt" : "HH:mm"), fontSize:18, color:_config.MainSetup.Time.Color);
+            UI.Label(ref into, ".Main.bg", ".Time", ".Time", "0 1", "0 1", oXMin: 180, oYMin: -75, oXMax: 250, oYMax: -45, text:_config.MainSetup.Time.IsAutomaticDetection ? TOD_Sky.Instance.Cycle.DateTime.ToString(GetCulture(lang.GetLanguage(player.UserIDString)).DateTimeFormat.ShortTimePattern) : TOD_Sky.Instance.Cycle.DateTime.ToString(_config.MainSetup.Time.IsAmPm ? "hh:mm tt" : "HH:mm"), fontSize:18, color:_config.MainSetup.Time.Color);
             
-            UI.Create(player, container);
+            if (send)
+                UI.Create(player, into);
         }
 
-        private void ShowUIPlayersCounts(BasePlayer player = null)
+        private void ShowUIPlayersCounts(BasePlayer player, CuiElementContainer into)
         {
             if (player != null && _data.PlayersState[player.UserIDString] != States.Full)
                 return;
-            
-            var container = new CuiElementContainer();
 
             if (_config.MainSetup.ActivePlayersAppearance.IsEnable)
-                UI.Label(ref container, ".Main.bg", ".ActivePlayers.count", ".ActivePlayers.count", "0 1", "1 1", oXMin: 44, oYMin: -70, oXMax: 0, oYMax: -50, text: BasePlayer.activePlayerList.Count(x => _config.MainSetup.ActivePlayersAppearance.IsAdminsCount ? !x.IsAdmin : true).ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.ActivePlayersAppearance.Color);
+                UI.Label(ref into, ".Main.bg", ".ActivePlayers.count", ".ActivePlayers.count", "0 1", "1 1", oXMin: 44, oYMin: -70, oXMax: 0, oYMax: -50, text: BasePlayer.activePlayerList.Count(x => _config.MainSetup.ActivePlayersAppearance.IsAdminsCount ? !x.IsAdmin : true).ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.ActivePlayersAppearance.Color);
    
             if (_config.MainSetup.SleepPlayersAppearance.IsEnable)
-                UI.Label(ref container, ".Main.bg",".SleepPlayers.count", ".SleepPlayers.count", "0 1", "1 1", oXMin: 99, oYMin: -70, oXMax: 0, oYMax: -50,text: BasePlayer.sleepingPlayerList.Count.ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.SleepPlayersAppearance.Color);
+                UI.Label(ref into, ".Main.bg",".SleepPlayers.count", ".SleepPlayers.count", "0 1", "1 1", oXMin: 99, oYMin: -70, oXMax: 0, oYMax: -50,text: BasePlayer.sleepingPlayerList.Count.ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.SleepPlayersAppearance.Color);
 
             if (_config.MainSetup.QueuePlayersAppearance.IsEnable)
-                UI.Label(ref container, ".Main.bg",".QueuePlayers.count", ".QueuePlayers.count", "0 1", "1 1", oXMin: 154, oYMin: -70, oXMax: 0, oYMax: -50,text: (ServerMgr.Instance.connectionQueue.Queued + ServerMgr.Instance.connectionQueue.Joining ).ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.QueuePlayersAppearance.Color);
-
-            if (player == null)
-            {
-                foreach (var check in BasePlayer.activePlayerList)
-                    if (_data.PlayersState[check.UserIDString] == States.Full)
-                        UI.Create(check, container);
-            }
-             
-            else
-                UI.Create(player, container);
+                UI.Label(ref into, ".Main.bg",".QueuePlayers.count", ".QueuePlayers.count", "0 1", "1 1", oXMin: 154, oYMin: -70, oXMax: 0, oYMax: -50,text: (ServerMgr.Instance.connectionQueue.Queued + ServerMgr.Instance.connectionQueue.Joining ).ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.QueuePlayersAppearance.Color);
         } 
 
-        private void ShowUIBaseInfo(BasePlayer player)
+        private void ShowUIBaseInfo(BasePlayer player, CuiElementContainer into)
         {
-            var container = new CuiElementContainer();
-
-            UI.Label(ref container, ".Main.bg", aMin:$"{(IsAnyEconomyEnabled() ? "0.3" : "0")} 0", aMax:"1 0", oXMin: 5, oYMin: 7, oXMax: -5, oYMax: 24, text:_config.MainSetup.ServerName, fontSize:14, color:!string.IsNullOrEmpty(_config.MainSetup.ServerNameColor) ? _config.MainSetup.ServerNameColor : "#e9967a");
+            UI.Label(ref into, ".Main.bg", ".ServerName", ".ServerName", aMin:$"{(IsAnyEconomyEnabled() ? "0.3" : "0")} 0", aMax:"1 0", oXMin: 5, oYMin: 7, oXMax: -5, oYMax: 24, text:_config.MainSetup.ServerName, fontSize:14, color:!string.IsNullOrEmpty(_config.MainSetup.ServerNameColor) ? _config.MainSetup.ServerNameColor : "#e9967a");
 
             if (_config.MainSetup.ActivePlayersAppearance.IsEnable)
-                UI.Image(ref container, ".Main.bg", aMin:"0 1", aMax:"0 1", oXMin: 20, oYMin: -75, oXMax: 50, oYMax: -45, imageId:GetImage(_config.MainSetup.ActivePlayersAppearance.Icon), color:!string.IsNullOrEmpty(_config.MainSetup.ActivePlayersAppearance.IconColor) ? _config.MainSetup.ActivePlayersAppearance.IconColor : _config.MainSetup.ActivePlayersAppearance.Color);
+                UI.Image(ref into, ".Main.bg", ".ActivePlayers.icon", ".ActivePlayers.icon", aMin:"0 1", aMax:"0 1", oXMin: 20, oYMin: -75, oXMax: 50, oYMax: -45, imageId:GetImage(_config.MainSetup.ActivePlayersAppearance.Icon), color:!string.IsNullOrEmpty(_config.MainSetup.ActivePlayersAppearance.IconColor) ? _config.MainSetup.ActivePlayersAppearance.IconColor : _config.MainSetup.ActivePlayersAppearance.Color);
 
             if (_config.MainSetup.SleepPlayersAppearance.IsEnable)
-                UI.Image(ref container, ".Main.bg", aMin:"0 1", aMax:"0 1", oXMin: 75, oYMin: -70, oXMax: 95, oYMax: -50, imageId:GetImage(_config.MainSetup.SleepPlayersAppearance.Icon), color:!string.IsNullOrEmpty(_config.MainSetup.SleepPlayersAppearance.IconColor) ? _config.MainSetup.SleepPlayersAppearance.IconColor : _config.MainSetup.SleepPlayersAppearance.Color);
+                UI.Image(ref into, ".Main.bg", ".SleepPlayers.icon", ".SleepPlayers.icon", aMin:"0 1", aMax:"0 1", oXMin: 75, oYMin: -70, oXMax: 95, oYMax: -50, imageId:GetImage(_config.MainSetup.SleepPlayersAppearance.Icon), color:!string.IsNullOrEmpty(_config.MainSetup.SleepPlayersAppearance.IconColor) ? _config.MainSetup.SleepPlayersAppearance.IconColor : _config.MainSetup.SleepPlayersAppearance.Color);
 
             if (_config.MainSetup.QueuePlayersAppearance.IsEnable)
-                UI.Image(ref container, ".Main.bg", aMin:"0 1", aMax:"0 1", oXMin: 130, oYMin: -70, oXMax: 150, oYMax: -50, imageId:GetImage(_config.MainSetup.QueuePlayersAppearance.Icon), color:!string.IsNullOrEmpty(_config.MainSetup.QueuePlayersAppearance.IconColor) ? _config.MainSetup.QueuePlayersAppearance.IconColor : _config.MainSetup.QueuePlayersAppearance.Color);
+                UI.Image(ref into, ".Main.bg", ".QueuePlayers.icon", ".QueuePlayers.icon", aMin:"0 1", aMax:"0 1", oXMin: 130, oYMin: -70, oXMax: 150, oYMax: -50, imageId:GetImage(_config.MainSetup.QueuePlayersAppearance.Icon), color:!string.IsNullOrEmpty(_config.MainSetup.QueuePlayersAppearance.IconColor) ? _config.MainSetup.QueuePlayersAppearance.IconColor : _config.MainSetup.QueuePlayersAppearance.Color);
 
-            UI.Create(player, container);
-
-            ShowUIPlayersCounts(player);
+            ShowUIPlayersCounts(player, into);
 
             if (_config.MainSetup.Time.IsEnable) 
-                ShowUITime(player);
+                ShowUITime(player, into);
             
             if (_config.MainSetup.PlayerPosition.IsEnable)
-                ShowUIPosition(player);
+                ShowUIPosition(player, into);
 
             if (IsAnyEconomyEnabled())
-              ShowUIBalance(player);
+              ShowUIBalance(player, into);
         }
 
-        private void ShowUIMainButton(BasePlayer player)
+        private void ShowUIMainButton(BasePlayer player, CuiElementContainer into)
         {
             if (_config.MainSetup.HideInComputerStation && _inComputerStation.Contains(player.userID))
                 return;
 
-            var container = new CuiElementContainer();
- 
-            UI.Image(ref container, ".Offsets.bg", ".Burger",  ".Burger", $"{(_config.MainSetup.Position.Align.ToLower().Contains("right") ? "1" : "0")} 1",$"{(_config.MainSetup.Position.Align.ToLower().Contains("right") ? "1" : "0")} 1", oXMin: -35, oYMin: -65, oXMax: 45, oYMax: 15, imageId: GetImage(_config.MainSetup.Logo), color: "#f3e7ff");
+            UI.Image(ref into, ".Offsets.bg", ".Burger",  ".Burger", $"{(_config.MainSetup.Position.Align.ToLower().Contains("right") ? "1" : "0")} 1",$"{(_config.MainSetup.Position.Align.ToLower().Contains("right") ? "1" : "0")} 1", oXMin: -35, oYMin: -65, oXMax: 45, oYMax: 15, imageId: GetImage(_config.MainSetup.Logo), color: "#f3e7ff");
 
-            UI.ImageButton(ref container, ".Burger", "UI_H CHANGESTATE"); 
-
-            UI.Create(player, container); 
+            UI.ImageButton(ref into, ".Burger", "UI_H CHANGESTATE"); 
         }
 
-        private void ShowUIMain(BasePlayer player)
+        private void ShowUIMain(BasePlayer player, CuiElementContainer into = null)
         {
+            if (into == null)
+            {
+                ShowUIBG(player);
+                return;
+            }
+
             if (_config.MainSetup.HideInComputerStation && _inComputerStation.Contains(player.userID))
                 return;
-
-            var container = new CuiElementContainer();
 
             if (_data.PlayersState[player.UserIDString] == States.Full)
             {
                 if (string.IsNullOrEmpty(_config.Images.Background))
-                    UI.Panel(ref container, ".Offsets.bg", ".Main.bg", null, "0 0", "1 1", _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 : 0, -100, _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300, 0, "0.5 0.5 0.5 0.55", "assets/content/ui/uibackgroundblur-ingamemenu.mat", "assets/content/ui/ui.background.tile.psd");
+                    UI.Panel(ref into, ".Offsets.bg", ".Main.bg", null, "0 0", "1 1", _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 : 0, -100, _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300, 0, "0.5 0.5 0.5 0.55", "assets/content/ui/uibackgroundblur-ingamemenu.mat", "assets/content/ui/ui.background.tile.psd");
                 else
-                    UI.Image(ref container, ".Offsets.bg", ".Main.bg", null, null, null, oXMin: _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 : 0, oYMin: -100, oXMax: _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300, oYMax: 0, imageId: GetImage(_config.Images.Background), color: $"1 1 1 {_config.MainSetup.EventsBGOpacity / 100f}");
+                    UI.Image(ref into, ".Offsets.bg", ".Main.bg", null, null, null, oXMin: _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 : 0, oYMin: -100, oXMax: _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300, oYMax: 0, imageId: GetImage(_config.Images.Background), color: $"1 1 1 {_config.MainSetup.EventsBGOpacity / 100f}");
             }
 
             if (_data.PlayersState[player.UserIDString] != States.Hide || _data.PlayersState[player.UserIDString] == States.Close)
             {
                 if (string.IsNullOrEmpty(_config.Images.Events))
-                    UI.Panel(ref container, ".Offsets.bg", ".Events.bg", null, "0 1", "0 1", _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 - (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0) : 0, -37, _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300 + (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0), 8, "0 0 0 0.55", "assets/content/ui/uibackgroundblur-ingamemenu.mat", "assets/content/ui/ui.background.tile.psd");
+                    UI.Panel(ref into, ".Offsets.bg", ".Events.bg", null, "0 1", "0 1", _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 - (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0) : 0, -37, _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300 + (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0), 8, "0 0 0 0.55", "assets/content/ui/uibackgroundblur-ingamemenu.mat", "assets/content/ui/ui.background.tile.psd");
                 else
-                    UI.Image(ref container, ".Offsets.bg", ".Events.bg", null, "0 1", "0 1", oXMin: _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 - (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0) : 0, oYMin: -37, oXMax: _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300 + (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0), oYMax: 8, imageId: GetImage(_config.Images.Events), color: $"1 1 1 {_config.MainSetup.BGOpacity / 100f}");
+                    UI.Image(ref into, ".Offsets.bg", ".Events.bg", null, "0 1", "0 1", oXMin: _config.MainSetup.Position.Align.ToLower().Contains("right") ? -300 - (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0) : 0, oYMin: -37, oXMax: _config.MainSetup.Position.Align.ToLower().Contains("right") ? 0 : 300 + (EnableEventsCount > 7 ? (EnableEventsCount - 7) * 34 : 0), oYMax: 8, imageId: GetImage(_config.Images.Events), color: $"1 1 1 {_config.MainSetup.BGOpacity / 100f}");
             }
 
-            UI.Destroy(player, ".Main.bg"); 
-            UI.Destroy(player, ".Events.bg");
-            UI.Destroy(player, ".bg.Messages.bg");
-
-            UI.Create(player, container);
-
             if (_config.MainSetup.AdditionalMenu.IsEnable && _data.PlayersState[player.UserIDString] != States.Hide && _data.PlayersState[player.UserIDString] != States.Close)
-                ShowUIAdditionalMenu(player);
-
-            if (_config.MainSetup.InfoMessages.IsEnable)
-                ShowUIMessagesInfo(player);
+                ShowUIAdditionalMenu(player, false, into);
             
             if (_data.PlayersState[player.UserIDString] == States.Full)
-                ShowUIBaseInfo(player);
+                ShowUIBaseInfo(player, into);
 
-            
-            ShowUIEvents(player);
+            ShowUIEvents(player, into);
 
-            ShowUIMainButton(player);
+            ShowUIMainButton(player, into);
         } 
 
         private void ShowUIMessagesInfo(BasePlayer player)
@@ -2399,6 +2369,8 @@ namespace Oxide.Plugins
             
             var container = new CuiElementContainer();
 
+            // Same parent as Backpacks GUI button: Inventory auto show/hides with Tab.
+            // Send the full HUD tree in one AddUI so children do not look up inactive panels.
             switch (_config.MainSetup.Position.Align.ToLower())
             {
                 case "topright":
@@ -2418,10 +2390,12 @@ namespace Oxide.Plugins
                     UI.Panel(ref container, ".bg", ".Offsets.bg", null, "0.5 0","0.5 0", oXMin: _config.MainSetup.Position.LeftOffSet, oYMin: -_config.MainSetup.Position.TopOffSet, oXMax: _config.MainSetup.Position.LeftOffSet, oYMax: -_config.MainSetup.Position.TopOffSet, bgColor:null);
                     break;
             }
-            
+
+            ShowUIMain(player, container);
             UI.Create(player, container);
 
-            ShowUIMain(player);
+            if (_config.MainSetup.InfoMessages.IsEnable)
+                ShowUIMessagesInfo(player);
         }
 
         #region Culture

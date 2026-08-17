@@ -27,8 +27,8 @@ namespace GrimmNPC
         /// </summary>
         public static readonly ulong CUSTOM_NPC_SKIN_ID = 11162132011012UL;
         
-        private static readonly string CONFIG_PATH = Path.Combine(Application.dataPath, "..", "HarmonyConfig", "GrimmNPC.json");
-        private static readonly string DATA_PATH = Path.Combine(Application.dataPath, "..", "HarmonyConfig", "GrimmNPC", "data.json");
+        private static readonly string CONFIG_PATH = Path.Combine(UnityEngine.Application.dataPath, "..", "HarmonyConfig", "GrimmNPC.json");
+        private static readonly string DATA_PATH = Path.Combine(UnityEngine.Application.dataPath, "..", "HarmonyConfig", "GrimmNPC", "data.json");
         
         private NpcConfig _config;
         private NpcData _data;
@@ -130,7 +130,7 @@ namespace GrimmNPC
                 else
                 {
                     // Try to migrate from old location
-                    string oldConfigPath = Path.Combine(Application.dataPath, "..", ".cursor", "HarmonyMods", "GrimmNPC", "config.json");
+                    string oldConfigPath = Path.Combine(UnityEngine.Application.dataPath, "..", ".cursor", "HarmonyMods", "GrimmNPC", "config.json");
                     if (File.Exists(oldConfigPath))
                     {
                         if (ShouldLogLifecycle())
@@ -857,6 +857,79 @@ namespace GrimmNPC
             Vector3 diff = currentPosition - npcData.HomePosition;
             return Mathf.Sqrt(diff.x * diff.x + diff.z * diff.z);
         }
+
+        /// <summary>
+        /// Unique ground point around a combat target so multiple custom NPCs do not share one destination.
+        /// Slot is stable per netId (no per-tick jitter). Far away: wide lateral spread. Close: fan/ring at weapon range.
+        /// </summary>
+        public static Vector3 GetCombatApproachPosition(ScientistNPC npc, Vector3 targetPos, float ringRadius)
+        {
+            Vector3 npcPos = npc != null ? npc.transform.position : targetPos;
+            return GetCombatApproachPosition(npc, npcPos, targetPos, ringRadius);
+        }
+
+        /// <summary>
+        /// Unique ground point around a combat target. Preserves <paramref name="npcPos"/>.y.
+        /// </summary>
+        public static Vector3 GetCombatApproachPosition(ScientistNPC npc, Vector3 npcPos, Vector3 targetPos, float ringRadius)
+        {
+            NpcConfig cfg = GetConfig();
+            bool spread = cfg == null || cfg.EnableCombatApproachSpread;
+            float spacing = cfg != null && cfg.CombatApproachSpacing > 0.4f ? cfg.CombatApproachSpacing : 1.6f;
+
+            Vector3 toNpc = npcPos - targetPos;
+            toNpc.y = 0f;
+            float distSq = toNpc.x * toNpc.x + toNpc.z * toNpc.z;
+
+            float radius = ringRadius;
+            if (radius < 1.8f)
+                radius = 1.8f;
+
+            if (!spread || npc == null)
+            {
+                if (distSq < 0.0001f)
+                    return new Vector3(targetPos.x, npcPos.y, targetPos.z);
+                float inv = 1f / Mathf.Sqrt(distSq);
+                return new Vector3(targetPos.x + toNpc.x * inv * radius, npcPos.y, targetPos.z + toNpc.z * inv * radius);
+            }
+
+            ulong netId = npc.net != null ? npc.net.ID.Value : (ulong)(uint)npc.GetInstanceID();
+            uint h = (uint)(netId ^ (netId >> 16));
+            h *= 2654435769u;
+            int slot = (int)(h % 16u);
+            radius += (h % 3u) * (spacing * 0.35f);
+
+            // Close enough to occupy distinct melee/ranged slots around the target.
+            if (distSq <= 64f)
+            {
+                float angle;
+                if (distSq > 0.04f)
+                {
+                    float currentAngle = Mathf.Atan2(toNpc.z, toNpc.x);
+                    float uniqueOffset = (slot - 7.5f) * 0.16f;
+                    angle = currentAngle + uniqueOffset;
+                }
+                else
+                {
+                    angle = slot * 0.3926991f;
+                }
+
+                return new Vector3(
+                    targetPos.x + Mathf.Cos(angle) * radius,
+                    npcPos.y,
+                    targetPos.z + Mathf.Sin(angle) * radius);
+            }
+
+            // Far: keep closing, but offset laterally so the pack does not share one path into the same point.
+            float dist = Mathf.Sqrt(distSq);
+            Vector3 approach = new Vector3(toNpc.x / dist, 0f, toNpc.z / dist);
+            Vector3 right = new Vector3(-approach.z, 0f, approach.x);
+            float lateral = (slot - 7.5f) * spacing;
+            return new Vector3(
+                targetPos.x + approach.x * radius + right.x * lateral,
+                npcPos.y,
+                targetPos.z + approach.z * radius + right.z * lateral);
+        }
         
         /// <summary>
         /// Adds an entity to the NPC senses memory (assist / alerting). Gen1 <see cref="ScientistNPC"/> only.
@@ -949,6 +1022,19 @@ namespace GrimmNPC
 
         /// <summary>Max horizontal meters per idle/roam SetDestination leg when <see cref="EnableIdlePatrolLegCap"/> is true.</summary>
         public float IdlePatrolMaxLegMeters { get; set; } = 8f;
+
+        /// <summary>
+        /// When true (default), combat/chase destinations are offset per NPC so a pack does not path onto the same point
+        /// (bodies stacking inside each other). Vanish separates them because combat destinations stop; this keeps them
+        /// spread while they still have a target.
+        /// </summary>
+        public bool EnableCombatApproachSpread { get; set; } = true;
+
+        /// <summary>
+        /// Horizontal meters between combat approach slots. Far approach uses this as lateral spacing;
+        /// close melee/ranged rings use a fraction of it so NPCs stay in weapon range without overlapping.
+        /// </summary>
+        public float CombatApproachSpacing { get; set; } = 1.6f;
         
         // Assist System Configuration
         public bool EnableAssistCallouts { get; set; } = true;

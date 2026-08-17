@@ -32,6 +32,27 @@ using Random = UnityEngine.Random;
 
 /* Changelog
 
+1.3.46
+ - Fixed: Missing English lang keys shown as raw codes (NoWaveProfiles, RaidBlocked, CombatBlocked, CustomGiven)
+ - Fixed: Monument names in player messages used translated text instead of English
+ - Changed: Players can throw Bradley Drops at monuments and roads; safe zones still blocked
+ - Changed: Strict proximity no longer treats world/road/monument/tree colliders as blocked
+
+1.3.45
+ - Fixed: Thrown Bradley Drop spawned a vanilla supply drop instead of a Bradley (throw hook missed item skin; TruePVE cargo-plane bypass hijacked the signal)
+
+1.3.44
+ - Fixed: Shop / server console `bdgive` silently did nothing (required a player connection and bradleydrops.admin)
+
+1.3.43
+ - Fixed: Difficulty toast/chat never showed on gunfire (projectile initiator not resolved)
+ - Fixed: Attack notify now also runs from BradleyAPC.OnAttacked so it is not skipped when Hurt is cancelled
+
+1.3.42
+ - Added: Announce Bradley difficulty on first attack (GameTip + optional chat)
+ - Added: Hijack vanilla/Launch Site Bradleys onto a weighted random difficulty profile
+ - Added: Spawn GameTip when a tiered Bradley appears
+
 1.3.4
  - Fixed: Failed to run a xx.xx timer NRE console message
  - Fixed: Throwing in enabled ZoneManager ID's failing after first zone in list
@@ -105,7 +126,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Bradley Drops", "ZEODE", "1.3.41")]
+    [Info("Bradley Drops", "ZEODE", "1.3.46")]
     [Description("Call a Bradley APC to your location with custom supply signals.")]
     public partial class BradleyDrops : RustPlugin
     {
@@ -230,6 +251,8 @@ namespace Oxide.Plugins
                 ["PriceList"] = "Bradley Drop Prices:\n\n{0}",
                 ["BradleyKilledTime"] = "<color=orange>{0}</color> killed by <color=green>{1}</color> in grid <color=green>{2}</color> (Time Taken: {3})",
                 ["BradleyCalled"] = "<color=green>{0}</color> just called in a <color=orange>{1}</color> to their location in grid <color=green>{2}</color>",
+                ["ApcSpawned"] = "A {0} Bradley has spawned around {1}",
+                ["BradleyAttack"] = "You are taking on a {0}",
                 ["XPGiven"] = "<color=green>{0} XP</color> received for destroying <color=orange>{1}</color>!",
                 ["RewardGiven"] = "<color=green>{0} {1}</color> points received for destroying <color=orange>{2}</color>!",
                 ["ScrapGiven"] = "<color=green>{0}</color> Scrap received for destroying <color=orange>{1}</color>!",
@@ -257,6 +280,10 @@ namespace Oxide.Plugins
                 ["PlayerCooldownCleared"] = "Cooldown cleared for player {0} ({1})",
                 ["PlayerNoCooldown"] = "No active cooldown for player {0} ({1})",
                 ["WaveProfileError"] = "There is an error in the plugin config <color=orange>{0}</color>, please report to an Admin.",
+                ["NoWaveProfiles"] = "Wave profile <color=orange>{0}</color> has no Bradley profiles configured.",
+                ["RaidBlocked"] = "You cannot call <color=orange>{0}</color> while raid blocked.",
+                ["CombatBlocked"] = "You cannot call <color=orange>{0}</color> while combat blocked.",
+                ["CustomGiven"] = "<color=green>{0} {1}</color> received for destroying <color=orange>{2}</color>!",
                 ["FirstApcCalled"] = "Stand by, <color=red>{0}</color> on route to your location!",
                 ["NextApcInbound"] = "Look sharp, a <color=red>{0}</color> is closing in on the LZ!",
                 ["NextApcCalledDelayed"] = "<color=green>{0}</color> destroyed! Stand by, a <color=red>{1}</color> is enroute to the LZ, ETA {2} minutes!",
@@ -311,6 +338,53 @@ namespace Oxide.Plugins
         private string Lang(string messageKey, string playerId, params object[] args)
         {
             return string.Format(lang.GetMessage(messageKey, this, playerId), args);
+        }
+
+        private static string StripRichColorTags(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return message;
+            string cleanMessage = message;
+            while (cleanMessage.Contains("<color="))
+            {
+                int startIndex = cleanMessage.IndexOf("<color=");
+                int endIndex = cleanMessage.IndexOf(">", startIndex);
+                if (endIndex > startIndex)
+                    cleanMessage = cleanMessage.Remove(startIndex, (endIndex - startIndex) + 1);
+                else
+                    break;
+            }
+            return cleanMessage.Replace("</color>", "");
+        }
+
+        private void SendGameTip(BasePlayer player, string message)
+        {
+            if (player == null) return;
+            var phrase = new Translate.Phrase("bradley_attack_tip", StripRichColorTags(message));
+            player.ShowToast(GetToastStyle(), phrase, false);
+        }
+
+        private void BroadcastGameTip(string message)
+        {
+            var phrase = new Translate.Phrase("bradley_spawn_tip", StripRichColorTags(message));
+            foreach (var p in BasePlayer.activePlayerList)
+            {
+                if (p != null)
+                    p.ShowToast(GetToastStyle(), phrase, false);
+            }
+        }
+
+        private GameTip.Styles GetToastStyle()
+        {
+            string style = config?.options?.toastStyle ?? "Server_Event";
+            switch (style)
+            {
+                case "Blue_Normal": return GameTip.Styles.Blue_Normal;
+                case "Red_Normal": return GameTip.Styles.Red_Normal;
+                case "Blue_Long": return GameTip.Styles.Blue_Long;
+                case "Blue_Short": return GameTip.Styles.Blue_Short;
+                case "Error": return GameTip.Styles.Error;
+                default: return GameTip.Styles.Server_Event;
+            }
         }
 
         private void Message(IPlayer player, string messageKey, params object[] args)
@@ -406,6 +480,8 @@ namespace Oxide.Plugins
                 {
                     if (DEBUG) PrintWarning($"WARNING: No monument info found. Config options relating to 'Allow Players to Call Helis at Monuments' will not function.");
                 }
+
+                ScanAndHijackAllBradleys();
             });
         }
 
@@ -434,6 +510,7 @@ namespace Oxide.Plugins
 
             // Clear collections immediately
             BradleyDropData.Clear();
+            SpawnAnnounced.Clear();
             CH47List.Clear();
             CargoPlaneList.Clear();
             bradCompCache.Clear();
@@ -582,37 +659,49 @@ namespace Oxide.Plugins
                 NextTick(()=> CheckAndFixSignal(item));
         }
 
-        private object OnExplosiveThrown(BasePlayer player, SupplySignal entity, ThrownWeapon item)
+        private object OnExplosiveThrown(BasePlayer player, SupplySignal entity, ThrownWeapon item, Item ownerItem = null)
         {
             try
             {
-                if (item == null || entity == null || player == null)
+                if (entity == null || player == null)
                     return null;
-                
-                var signal = item.GetItem();
-                if (signal == null)
+
+                if (entity.GetComponent<BradleySignalComponent>() != null)
                     return null;
-                
-                if (BradleyProfileCache.ContainsKey(signal.skin))
-                {
-                    entity.EntityToCreate = null;
-                    entity.CancelInvoke(entity.Explode);
-                    entity.skinID = signal.skin;
-                    BradleySignalThrown(player, entity, signal);
-                }
+
+                var signal = ownerItem ?? item?.GetItem();
+                ulong skin = 0;
+                if (signal != null)
+                    skin = signal.skin;
+                if (skin == 0)
+                    skin = entity.skinID;
+                if (skin == 0 && signal != null && !string.IsNullOrEmpty(signal.name)
+                    && config.bradley.apcConfig != null && config.bradley.apcConfig.ContainsKey(signal.name))
+                    skin = config.bradley.apcConfig[signal.name].Init.SignalSkinID;
+
+                if (skin == 0 || !BradleyProfileCache.ContainsKey(skin))
+                    return null;
+
+                entity.EntityToCreate = null;
+                entity.CancelInvoke(entity.Explode);
+                entity.skinID = skin;
+                if (signal != null)
+                    signal.skin = skin;
+                BradleySignalThrown(player, entity, signal);
             }
             catch (System.Exception ex)
             {
                 if (DEBUG) PrintError($"ERROR in OnExplosiveThrown: {ex.Message}\n{ex.StackTrace}");
                 
                 // Try to refund the airdrop if possible
-                if (player != null && player.IsAlive() && item != null)
+                if (player != null && player.IsAlive())
                 {
-                    var signal = item.GetItem();
-                    if (signal != null && BradleyProfileCache.ContainsKey(signal.skin))
+                    var signal = ownerItem ?? item?.GetItem();
+                    ulong skin = signal != null ? signal.skin : entity != null ? entity.skinID : 0UL;
+                    if (skin != 0 && BradleyProfileCache.ContainsKey(skin))
                     {
-                        NextTick(() => GiveBradleyDrop(player, signal.skin, BradleyProfileCache[signal.skin], 1, "refund"));
-                        Message(player, "AirdropError", BradleyProfileCache[signal.skin], $"Error: {ex.Message}");
+                        NextTick(() => GiveBradleyDrop(player, skin, BradleyProfileCache[skin], 1, "refund"));
+                        Message(player, "AirdropError", BradleyProfileCache[skin], $"Error: {ex.Message}");
                     }
                 }
             }
@@ -761,11 +850,23 @@ namespace Oxide.Plugins
 
         private object OnEntityTakeDamage(BradleyAPC bradley, HitInfo info)
         {
-            var initiator = info?.Initiator;
-            if (bradley == null || initiator == null || initiator == bradley) return null;
+            if (bradley == null || info == null) return null;
+
+            var initiator = info.Initiator ?? (BaseEntity)info.InitiatorPlayer;
+            if (initiator == bradley) return null;
+
+            TrySendAttackDifficulty(bradley, info);
+
+            if (initiator == null) return null;
 
             string apcProfile = ResolveApcProfile(bradley);
             if (apcProfile == null && bradley.skinID != 0) return null;
+
+            if (IsVanillaBradley(bradley, apcProfile))
+            {
+                HijackOrInitializeBradley(bradley);
+                apcProfile = ResolveApcProfile(bradley);
+            }
 
             bool isVanilla = IsVanillaBradley(bradley, apcProfile);
             if (isVanilla && !config.announce.reportVanilla) return null;
@@ -777,13 +878,20 @@ namespace Oxide.Plugins
             if (!BradleyDropData.TryGetValue(bradleyId, out var dropData))
             {
                 BradleyDrop bradComp = bradley.GetComponent<BradleyDrop>();
-                if (bradComp == null && !isVanilla) return null;
+                if (bradComp == null && !isVanilla)
+                {
+                    HijackOrInitializeBradley(bradley);
+                    bradComp = bradley.GetComponent<BradleyDrop>();
+                    apcProfile = ResolveApcProfile(bradley);
+                    isVanilla = IsVanillaBradley(bradley, apcProfile);
+                    apcName = GetBradleyDisplayName(apcProfile, isVanilla);
+                }
 
                 dropData = new ApcStats
                 {
                     Owner = bradComp?.owner,
                     OwnerID = ownerId,
-                    OwnerName = isVanilla ? config.announce.vanillaOwner : bradComp.owner?.displayName
+                    OwnerName = isVanilla ? config.announce.vanillaOwner : bradComp?.owner?.displayName
                 };
                 BradleyDropData[bradleyId] = dropData;
             }
@@ -791,41 +899,62 @@ namespace Oxide.Plugins
             if (!TryGetAttacker(info, initiator, apcName, out var attacker, out var attackerId, out var turret, out var blockDamage))
                 return blockDamage;
 
+            if (attacker == null)
+                return null;
+
             if (!dropData.Attackers.ContainsKey(attackerId))
-                dropData.Attackers[attackerId] = new AttackersStats { Name = attacker.displayName };
+                dropData.Attackers[attackerId] = new AttackersStats { Name = attacker.displayName ?? "Unknown" };
+
+            if (bradley.OwnerID == 0)
+            {
+                bradley.OwnerID = attackerId;
+                dropData.OwnerID = attackerId;
+                dropData.Owner = attacker;
+                dropData.OwnerName = attacker.displayName ?? "Unknown";
+            }
 
             if (!isVanilla)
             {
                 var bradComp = bradley.GetComponent<BradleyDrop>();
-                if (!ValidateDamagePermissions(bradComp, attacker, initiator, info, apcName, apcProfile))
-                    return true;
+                if (bradComp != null)
+                {
+                    if (!ValidateDamagePermissions(bradComp, attacker, initiator, info, apcName, apcProfile))
+                        return true;
 
-                if (initiator is AutoTurret)
-                    HandleTurretDamage(dropData, turret, bradComp, info);
+                    if (initiator is AutoTurret)
+                        HandleTurretDamage(dropData, turret, bradComp, info);
+                    else
+                        dropData.PlayerDamage += info.damageTypes.Total();
+
+                    if (info.damageTypes.Total() > bradley._health)
+                        bradComp.isDying = true;
+                }
                 else
+                {
                     dropData.PlayerDamage += info.damageTypes.Total();
-
-                if (info.damageTypes.Total() > bradley._health)
-                    bradComp.isDying = true;
+                }
             }
 
             if (config.bradley.DespawnWarning && attacker.IsBuildingBlocked() && IsOwnerOrFriend(attackerId, ownerId))
             {
-                dropData.WarningLevel++;
                 var comp = bradley.GetComponent<BradleyDrop>();
-
-                if (!comp.isDespawning && dropData.WarningLevel >= config.bradley.WarningThreshold)
+                if (comp != null)
                 {
-                    comp.isDespawning = true;
+                    dropData.WarningLevel++;
+
+                    if (!comp.isDespawning && dropData.WarningLevel >= config.bradley.WarningThreshold)
+                    {
+                        comp.isDespawning = true;
+                        info.damageTypes.Clear();
+                        DespawnAPC(bradley, apcProfile);
+                        Message(attacker, "DespawnApc", apcName, dropData.WarningLevel, config.bradley.WarningThreshold);
+                        return true;
+                    }
+
                     info.damageTypes.Clear();
-                    DespawnAPC(bradley, apcProfile);
-                    Message(attacker, "DespawnApc", apcName, dropData.WarningLevel, config.bradley.WarningThreshold);
+                    Message(attacker, "DespawnWarn", apcName, dropData.WarningLevel, config.bradley.WarningThreshold);
                     return true;
                 }
-
-                info.damageTypes.Clear();
-                Message(attacker, "DespawnWarn", apcName, dropData.WarningLevel, config.bradley.WarningThreshold);
-                return true;
             }
 
             dropData.LastAttacker = attacker;
@@ -927,7 +1056,11 @@ namespace Oxide.Plugins
         private object OnEntityDestroy(BaseNetworkable entity)
         {
             if (entity is BradleyAPC bradley)
+            {
+                if (bradley.net != null)
+                    SpawnAnnounced.Remove(bradley.net.ID.Value);
                 return HandleBradleyDestroy(bradley);
+            }
 
             if (entity is CH47Helicopter ch47)
                 return HandleCH47Destroy(ch47);
@@ -1094,13 +1227,19 @@ namespace Oxide.Plugins
         {
         	NextTick(()=>
             {
-                if (bradley != null && BradleyProfileCache.TryGetValue(bradley.skinID, out string apcProfile))
+                if (bradley == null) return;
+
+                if (BradleyProfileCache.TryGetValue(bradley.skinID, out string apcProfile))
                 {
                     bradley._maxHealth = config.bradley.apcConfig[apcProfile].Init.Health;
                     bradley.health = bradley._maxHealth;
-                    bradley.viewDistance = 0f;  // Set to 0 so APC doesn't target while parachuting (prevents tumbling)
-                    bradley.searchRange = 0f;   // Same
+                    bradley.viewDistance = 0f;
+                    bradley.searchRange = 0f;
+                    TryAnnounceSpawn(bradley, apcProfile);
+                    return;
                 }
+
+                HijackOrInitializeBradley(bradley);
             });
             return null;
         }
@@ -1290,14 +1429,177 @@ namespace Oxide.Plugins
 
         #region Core
 
+        private string SelectWeightedBradleyProfile()
+        {
+            if (config?.bradley?.apcConfig == null)
+                return null;
+
+            var profiles = config.bradley.apcConfig;
+            var rates = config.bradley.spawnRates;
+            var weightedProfiles = new List<string>();
+
+            if (rates != null)
+            {
+                if (profiles.ContainsKey(easyDrop) && rates.EasyRate > 0)
+                    for (int i = 0; i < rates.EasyRate; i++) weightedProfiles.Add(easyDrop);
+                if (profiles.ContainsKey(medDrop) && rates.MediumRate > 0)
+                    for (int i = 0; i < rates.MediumRate; i++) weightedProfiles.Add(medDrop);
+                if (profiles.ContainsKey(hardDrop) && rates.HardRate > 0)
+                    for (int i = 0; i < rates.HardRate; i++) weightedProfiles.Add(hardDrop);
+                if (profiles.ContainsKey(eliteDrop) && rates.EliteRate > 0)
+                    for (int i = 0; i < rates.EliteRate; i++) weightedProfiles.Add(eliteDrop);
+                if (profiles.ContainsKey(expertDrop) && rates.ExpertRate > 0)
+                    for (int i = 0; i < rates.ExpertRate; i++) weightedProfiles.Add(expertDrop);
+                if (profiles.ContainsKey(nightmareDrop) && rates.NightmareRate > 0)
+                    for (int i = 0; i < rates.NightmareRate; i++) weightedProfiles.Add(nightmareDrop);
+            }
+
+            if (weightedProfiles.Count == 0)
+            {
+                foreach (var key in profiles.Keys)
+                    weightedProfiles.Add(key);
+            }
+
+            if (weightedProfiles.Count == 0)
+                return null;
+
+            return weightedProfiles[random.Next(weightedProfiles.Count)];
+        }
+
+        private void HijackOrInitializeBradley(BradleyAPC bradley)
+        {
+            if (bradley == null || bradley.IsDestroyed) return;
+            if (BradleyProfileCache.Count == 0) return;
+
+            if (BradleyProfileCache.TryGetValue(bradley.skinID, out string apcProfile))
+            {
+                if (!config.bradley.apcConfig.TryGetValue(apcProfile, out var mapped) || mapped == null)
+                    return;
+
+                bradley._maxHealth = mapped.Init.Health;
+                bradley.health = bradley._maxHealth;
+                bradley.viewDistance = mapped.Init.SearchRange;
+                bradley.searchRange = mapped.Init.SearchRange;
+                bradley.SendNetworkUpdate();
+                TryAnnounceSpawn(bradley, apcProfile);
+                return;
+            }
+
+            if (bradley.GetComponent<BradleyDrop>() != null)
+                return;
+
+            string picked = SelectWeightedBradleyProfile();
+            if (string.IsNullOrEmpty(picked) || !config.bradley.apcConfig.TryGetValue(picked, out var data) || data == null)
+                return;
+
+            bradley.skinID = data.Init.SignalSkinID;
+            if (!BradleyProfileCache.ContainsKey(bradley.skinID))
+                BradleyProfileCache[bradley.skinID] = picked;
+
+            bradley._maxHealth = data.Init.Health;
+            bradley.health = bradley._maxHealth;
+            bradley.viewDistance = data.Init.SearchRange;
+            bradley.searchRange = data.Init.SearchRange;
+            bradley.throttle = data.Init.ThrottleResponse;
+            bradley.leftThrottle = bradley.throttle;
+            bradley.rightThrottle = bradley.throttle;
+            bradley.SendNetworkUpdate();
+            TryAnnounceSpawn(bradley, picked);
+        }
+
+        private void ScanAndHijackAllBradleys()
+        {
+            int found = 0, converted = 0;
+            foreach (var entity in BaseNetworkable.serverEntities)
+            {
+                if (entity is BradleyAPC apc && apc != null && !apc.IsDestroyed)
+                {
+                    found++;
+                    ulong beforeSkin = apc.skinID;
+                    HijackOrInitializeBradley(apc);
+                    if (apc.skinID != beforeSkin) converted++;
+                }
+            }
+            if (DEBUG) PrintWarning($"INFO: ScanAndHijackAllBradleys found={found} converted={converted}");
+        }
+
+        private void TryAnnounceSpawn(BradleyAPC bradley, string apcProfile)
+        {
+            if (bradley == null || string.IsNullOrEmpty(apcProfile)) return;
+            ulong id = bradley.net != null ? bradley.net.ID.Value : 0UL;
+            if (id != 0UL && !SpawnAnnounced.Add(id))
+                return;
+
+            string grid = PositionToGrid(bradley.transform.position) ?? "Unknown";
+            string display = GetBradleyDisplayName(apcProfile, IsVanillaBradley(bradley, apcProfile));
+            string msg = string.Format(lang.GetMessage("ApcSpawned", this), display, grid);
+            if (config?.options?.enableSpawnTips ?? true)
+                BroadcastGameTip(msg);
+            if (config?.options?.chatSpawnTips ?? false)
+                Server.Broadcast(msg, config.options.usePrefix ? config.options.chatPrefix : null, config.options.chatIcon);
+        }
+
+        internal void TrySendAttackDifficulty(BradleyAPC bradley, HitInfo info)
+        {
+            if (bradley == null || info == null) return;
+
+            BasePlayer attacker = info.InitiatorPlayer;
+            if (attacker == null)
+                attacker = info.Initiator as BasePlayer;
+            if (attacker == null && info.Initiator != null && info.Initiator.OwnerID.IsSteamId())
+                attacker = BasePlayer.FindByID(info.Initiator.OwnerID) ?? BasePlayer.FindSleeping(info.Initiator.OwnerID);
+            if (attacker == null || attacker.IsNpc || !attacker.userID.IsSteamId())
+                return;
+
+            if (IsVanillaBradley(bradley, ResolveApcProfile(bradley)))
+                HijackOrInitializeBradley(bradley);
+
+            string apcProfile = ResolveApcProfile(bradley);
+            bool isVanilla = IsVanillaBradley(bradley, apcProfile);
+            string apcName = GetBradleyDisplayName(apcProfile, isVanilla);
+
+            ulong bradleyId = bradley.net != null ? bradley.net.ID.Value : 0UL;
+            if (bradleyId == 0UL) return;
+
+            if (!BradleyDropData.TryGetValue(bradleyId, out var dropData) || dropData == null)
+            {
+                dropData = new ApcStats
+                {
+                    OwnerID = bradley.OwnerID,
+                    OwnerName = isVanilla ? config.announce.vanillaOwner : attacker.displayName
+                };
+                BradleyDropData[bradleyId] = dropData;
+            }
+
+            ulong attackerId = attacker.userID;
+            float now = Time.realtimeSinceStartup;
+            float lastTipTime;
+            if (!dropData.LastAttackTipTime.TryGetValue(attackerId, out lastTipTime))
+                lastTipTime = 0f;
+            if (now - lastTipTime < 120f)
+                return;
+
+            dropData.LastAttackTipTime[attackerId] = now;
+
+            string tipMsg = string.Format(lang.GetMessage("BradleyAttack", this, attacker.UserIDString), apcName);
+            SendGameTip(attacker, tipMsg);
+
+            string chatMsg = tipMsg;
+            if (config != null && config.options != null && config.options.usePrefix && !string.IsNullOrEmpty(config.options.chatPrefix))
+                chatMsg = config.options.chatPrefix + " " + tipMsg;
+            attacker.ChatMessage(chatMsg);
+
+            if (DEBUG) PrintWarning($"INFO: Attack difficulty tip sent to {attacker.displayName} -> {apcName}");
+        }
+
         private void BradleySignalThrown(BasePlayer player, SupplySignal entity, Item signal)
         {
             try
             {
-                if (player == null || entity == null || signal == null)
+                if (player == null || entity == null)
                     return;
 
-                ulong skinId = signal.skin;
+                ulong skinId = signal != null ? signal.skin : entity.skinID;
             string permSuffix = string.Empty;
             bool isWaveBradley = false;
             List<string> waveProfileCache = new List<string>();
@@ -2365,8 +2667,9 @@ namespace Oxide.Plugins
         #region API
 
         // Other devs can call these hooks to help with compatability with their plugins if needed
-        object IsBradleyDrop(ulong skinId) => BradleyProfileCache.ContainsKey(skinId) ? true : null; // old
-        object IsBradleyDrop(BradleyAPC bradley) => BradleyProfileCache.ContainsKey(bradley.skinID) ? true : null; // new
+        object IsBradleyDrop(ulong skinId) => IsBradleyDropSkin(skinId) ? true : null; // old
+        object IsBradleyDrop(BradleyAPC bradley) => bradley != null && IsBradleyDropSkin(bradley.skinID) ? true : null; // new
+        internal bool IsBradleyDropSkin(ulong skinId) => skinId != 0 && BradleyProfileCache != null && BradleyProfileCache.ContainsKey(skinId);
 
         // Play nice with Bradley Options
         object CanBradleyOptionsEdit(BradleyAPC bradley)
@@ -2614,7 +2917,7 @@ namespace Oxide.Plugins
                 }
                 else
                 {
-                    Message(player, "CustomGiven", amount, custom.info.displayName.translated, apcProfile);
+                    Message(player, "CustomGiven", amount, custom.info.displayName.english, apcProfile);
                 }
                 
                 player.inventory.GiveItem(custom);
@@ -3007,6 +3310,24 @@ namespace Oxide.Plugins
                     return true;
 
                 default:
+                    var initiatorPlayer = info?.InitiatorPlayer;
+                    if (initiatorPlayer != null)
+                    {
+                        attacker = initiatorPlayer;
+                        attackerId = attacker.userID;
+                        return true;
+                    }
+
+                    ulong owner = initiator != null ? initiator.OwnerID : 0UL;
+                    if (owner != 0UL && owner.IsSteamId())
+                    {
+                        attacker = BasePlayer.FindByID(owner) ?? BasePlayer.FindSleeping(owner);
+                        if (attacker != null)
+                        {
+                            attackerId = attacker.userID;
+                            return true;
+                        }
+                    }
                     return false;
             }
         }
@@ -3564,14 +3885,20 @@ namespace Oxide.Plugins
                 apcDrop.name = dropName;
                 if (player.inventory.GiveItem(apcDrop))
                     return true;
-                
-                apcDrop.Remove(0f);
+
+                apcDrop.Drop(player.GetDropPosition(), player.GetDropVelocity());
+                return true;
             }
             return false;
         }
 
         private IPlayer FindPlayer(string nameOrIdOrIp)
         {
+            if (string.IsNullOrEmpty(nameOrIdOrIp)) return null;
+            var byId = covalence.Players.FindPlayerById(nameOrIdOrIp);
+            if (byId != null) return byId;
+            var byName = covalence.Players.FindPlayer(nameOrIdOrIp);
+            if (byName != null) return byName;
             foreach (var activePlayer in covalence.Players.Connected)
             {
                 if (activePlayer.Id == nameOrIdOrIp)
@@ -3612,10 +3939,38 @@ namespace Oxide.Plugins
             return inSafeZone;
         }
 
+        private static string GetMonumentDisplayName(MonumentInfo monument)
+        {
+            if (monument == null)
+                return "monument";
+            if (monument.displayPhrase != null && monument.displayPhrase.IsValid())
+            {
+                if (!string.IsNullOrEmpty(monument.displayPhrase.english))
+                    return monument.displayPhrase.english;
+                if (!string.IsNullOrEmpty(monument.displayPhrase.translated))
+                    return monument.displayPhrase.translated;
+            }
+            if (!string.IsNullOrEmpty(monument.name))
+                return monument.name;
+            return "monument";
+        }
+
+        private static bool IsSignalOnSurface(Vector3 signalPos, float terrainHeight)
+        {
+            int mask = LayerMask.GetMask("Terrain", "World", "Construction", "Default");
+            if (Physics.Raycast(signalPos + Vector3.up * 0.25f, Vector3.down, out RaycastHit hit, 6f, mask, QueryTriggerInteraction.Ignore))
+                return hit.distance <= 4f;
+            return (signalPos.y - terrainHeight) <= 4f;
+        }
+
         private bool IsNearCollider(BaseEntity entity, bool destroy = false)
         {
-            LayerMask layerMask = (1 << 20) | LayerMask.GetMask("Default", "Construction", "Tree", "Deployed");
-            Collider[] hitColliders = Physics.OverlapSphere(entity.transform.position, config.options.proximityRadius, layerMask, QueryTriggerInteraction.UseGlobal);
+            // Throw validation only cares about player-owned deployables/construction.
+            // World, roads, monuments, trees, and rocks must not block drops.
+            LayerMask layerMask = destroy
+                ? ((1 << 20) | LayerMask.GetMask("Default", "Construction", "Tree", "Deployed"))
+                : LayerMask.GetMask("Construction", "Deployed");
+            Collider[] hitColliders = Physics.OverlapSphere(entity.transform.position, config.options.proximityRadius, layerMask, QueryTriggerInteraction.Ignore);
             
             bool didHit = false;
             
@@ -3628,6 +3983,9 @@ namespace Oxide.Plugins
                     
                 var hitEntity = collider.GetComponentInParent<BaseEntity>();
                 if (hitEntity == null || hitEntity == entity || hitEntity is BradleyAPC || hitEntity is LockedByEntCrate)
+                    continue;
+
+                if (!destroy && !hitEntity.OwnerID.IsSteamId())
                     continue;
 
                 didHit = true;
@@ -4167,7 +4525,8 @@ namespace Oxide.Plugins
 
         private void CmdGiveDrop(IPlayer player, string command, string[] args)
         {
-            if (!permission.UserHasPermission(player.Id, permAdmin))
+            if (player == null) return;
+            if (!player.IsServer && !player.IsAdmin && !permission.UserHasPermission(player.Id, permAdmin))
             {
                 Message(player, "NotAdmin");
                 return;
@@ -4262,7 +4621,8 @@ namespace Oxide.Plugins
 
         private void CmdClearCooldown(IPlayer player, string command, string[] args)
         {
-            if (!permission.UserHasPermission(player.Id, permAdmin))
+            if (player == null) return;
+            if (!player.IsServer && !player.IsAdmin && !permission.UserHasPermission(player.Id, permAdmin))
             {
                 Message(player, "NotAdmin");
                 return;
@@ -4924,7 +5284,7 @@ namespace Oxide.Plugins
                     }
                     
                     var terrainHeight = TerrainMeta.HeightMap.GetHeight(signalPos);
-                    if ((signalPos.y - terrainHeight) > 1f)
+                    if (!IsSignalOnSurface(signalPos, terrainHeight))
                     {
                         Instance.Message(player, "NotOnGround", apcProfile);
                         return false;
@@ -4941,8 +5301,10 @@ namespace Oxide.Plugins
                         Instance.Message(player, "TooCloseToWater", apcProfile);
                         return false;
                     }
-                    
-                    if (!signal.IsOutside())
+
+                    // Monument roofs / hangars / road tunnels are valid drop sites.
+                    // Player bases are still blocked by the building privilege check below.
+                    if (!config.bradley.allowMonuments && !signal.IsOutside())
                     {
                         Instance.Message(player, "Inside", apcProfile);
                         return false;
@@ -5062,13 +5424,7 @@ namespace Oxide.Plugins
 
                     	if ((config.bradley.excludedMonuments == null || !config.bradley.excludedMonuments.Contains(monument.name)) && dist < config.bradley.distFromMonuments)
                         {
-                            string monumentName = "monument";
-                            if (monument.displayPhrase != null && !string.IsNullOrEmpty(monument.displayPhrase.translated))
-                                monumentName = monument.displayPhrase.translated;
-                            else if (!string.IsNullOrEmpty(monument.name))
-                                monumentName = monument.name;
-                            
-                            Instance.Message(player, "InNamedMonument", apcProfile, monumentName);
+                            Instance.Message(player, "InNamedMonument", apcProfile, GetMonumentDisplayName(monument));
                             return false;
                         }
                     }
@@ -5076,13 +5432,7 @@ namespace Oxide.Plugins
                     {
                     	if (config.bradley.excludedMonuments != null && config.bradley.excludedMonuments.Contains(monument.name) && dist < distFromMonuments)
                     	{
-                            string monumentName = "monument";
-                            if (monument.displayPhrase != null && !string.IsNullOrEmpty(monument.displayPhrase.translated))
-                                monumentName = monument.displayPhrase.translated;
-                            else if (!string.IsNullOrEmpty(monument.name))
-                                monumentName = monument.name;
-                            
-                            Instance.Message(player, "InNamedMonument", apcProfile, monumentName);
+                            Instance.Message(player, "InNamedMonument", apcProfile, GetMonumentDisplayName(monument));
                             return false;
                         }
                         return true;
@@ -8432,6 +8782,7 @@ namespace Oxide.Plugins
         private static Dictionary<float, List<ulong>> WavesCalled = new Dictionary<float, List<ulong>>();
         private static List<MonumentInfo> Monuments = new List<MonumentInfo>();
         private static Dictionary<ulong, string> BradleyProfileCache = new Dictionary<ulong, string>();
+        private static HashSet<ulong> SpawnAnnounced = new HashSet<ulong>();
 
         private class ApcStats
         {
@@ -8449,6 +8800,7 @@ namespace Oxide.Plugins
             public float PlayerDamage = 0f;
             public float TurretDamage = 0f;
             public AutoTurret LastTurretAttacker;
+            public Dictionary<ulong, float> LastAttackTipTime = new Dictionary<ulong, float>();
         }
 
         private class AttackersStats
@@ -9027,6 +9379,22 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Bradley Wave Profile List (Bradleys Called in Order From Top to Bottom)")]
             public List<string> WaveProfiles { get; set; }
         }
+
+        public class SpawnRates
+        {
+            [JsonProperty(PropertyName = "Easy Bradley Spawn Rate (Percentage)")]
+            public float EasyRate { get; set; }
+            [JsonProperty(PropertyName = "Medium Bradley Spawn Rate (Percentage)")]
+            public float MediumRate { get; set; }
+            [JsonProperty(PropertyName = "Hard Bradley Spawn Rate (Percentage)")]
+            public float HardRate { get; set; }
+            [JsonProperty(PropertyName = "Elite Bradley Spawn Rate (Percentage)")]
+            public float EliteRate { get; set; }
+            [JsonProperty(PropertyName = "Expert Bradley Spawn Rate (Percentage)")]
+            public float ExpertRate { get; set; }
+            [JsonProperty(PropertyName = "Nightmare Bradley Spawn Rate (Percentage)")]
+            public float NightmareRate { get; set; }
+        }
         
         public static ConfigData config;
 
@@ -9092,6 +9460,18 @@ namespace Oxide.Plugins
                 public string reportCommand { get; set; }
                 [JsonProperty(PropertyName = "Enable Debug Logging")]
                 public bool debug { get; set; }
+                [JsonProperty(PropertyName = "Enable Spawn GameTips")]
+                public bool enableSpawnTips { get; set; }
+                [JsonProperty(PropertyName = "Enable Attack GameTips")]
+                public bool enableAttackTips { get; set; }
+                [JsonProperty(PropertyName = "Announce Spawn In Chat")]
+                public bool chatSpawnTips { get; set; }
+                [JsonProperty(PropertyName = "Announce Attack In Chat")]
+                public bool chatAttackTips { get; set; }
+                [JsonProperty(PropertyName = "GameTip Toast Style (Blue_Normal|Red_Normal|Blue_Long|Blue_Short|Server_Event|Error)")]
+                public string toastStyle { get; set; }
+                [JsonProperty(PropertyName = "GameTip Display Duration (seconds)")]
+                public float toastDuration { get; set; }
             }
 
             public class PlaneDelivery
@@ -9258,14 +9638,7 @@ namespace Oxide.Plugins
                 public bool allowMonuments { get; set; }
                 [JsonProperty(PropertyName = "Minimum Distance From Monuments When Allow at Monuments is False")]
                 public float distFromMonuments { get; set; }
-                
-                // DEBUG: Remove this later
-                [JsonProperty("List of Monuments (Prefabs) to Block When Allow at Monuments is False")]
-                public List<string> GetexcludedMonuments { get { return excludedMonuments; } set { excludedMonuments = value; } }
-                public bool ShouldSerializeGetexcludedMonuments() => false;
-                // #######################
-                
-                [JsonProperty(PropertyName = "Monuments (Prefabs) to Either Block or Allow When Allow at Monuments is Either True or False")] // DEBUG decide on this before update
+                [JsonProperty(PropertyName = "Monuments (Prefabs) to Block Even When Allow at Monuments is True")]
                 public List<string> excludedMonuments { get; set; }
                 [JsonProperty(PropertyName = "VIP/Custom Cooldowns")]
                 public Hash<string, float> vipCooldowns { get; set; }
@@ -9273,6 +9646,8 @@ namespace Oxide.Plugins
                 public List<string> protectedPrefabs { get; set; }
                 [JsonProperty(PropertyName = "Bradley Wave Options")]
                 public Dictionary<string, WaveData> waveConfig { get; set; }
+                [JsonProperty(PropertyName = "Bradley Spawn Rates (Percentages for Random Selection)")]
+                public SpawnRates spawnRates { get; set; }
                 [JsonProperty(PropertyName = "Profiles")]
                 public Dictionary<string, APCData> apcConfig { get; set; }
 				
@@ -9309,14 +9684,20 @@ namespace Oxide.Plugins
                     smokeDuration = 210f,
                     deliveryMethod = "CH47",
                     buildPrivRadius = 20f,
-                    strictProximity = true,
+                    strictProximity = false,
                     proximityRadius = 20f,
                     clearLandingZone = false,
                     clearTimedExplosives = false,
                     noVanillaApc = false,
                     useStacking = true,
                     reportCommand = "bdreport",
-                   	debug = true
+                   	debug = true,
+                    enableSpawnTips = true,
+                    enableAttackTips = true,
+                    chatSpawnTips = false,
+                    chatAttackTips = true,
+                    toastStyle = "Server_Event",
+                    toastDuration = 10f
                 },
                 plane = new ConfigData.PlaneDelivery
                 {
@@ -9411,46 +9792,9 @@ namespace Oxide.Plugins
                     turretAttackTime = 20f,
                     turretCooldown = 30f,
                     turretPenalty = 0,
-                    allowMonuments = false,
+                    allowMonuments = true,
                     distFromMonuments = 50f,
-                    excludedMonuments = new List<string>
-                    {
-                        "assets/bundled/prefabs/autospawn/monument/arctic_bases/arctic_research_base_a.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/harbor/ferry_terminal_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/harbor/harbor_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/harbor/harbor_2.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/airfield_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/excavator_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/military_tunnel_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/powerplant_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/trainyard_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/water_treatment_plant_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/large/trainyard_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/lighthouse/lighthouse.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/medium/junkyard_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/medium/nuclear_missile_silo.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/medium/radtown_small_3.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/military_bases/desert_military_base_a.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/military_bases/desert_military_base_b.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/military_bases/desert_military_base_c.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/military_bases/desert_military_base_d.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/offshore/oilrig_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/offshore/oilrig_2.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/roadside/gas_station_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/roadside/supermarket_1.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/roadside/warehouse.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/small/satellite_dish.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/small/sphere_tank.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/swamp/swamp_a.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/swamp/swamp_b.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/swamp/swamp_c.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/tiny/water_well_a.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/tiny/water_well_b.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/tiny/water_well_c.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/tiny/water_well_d.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/tiny/water_well_e.prefab",
-                        "assets/bundled/prefabs/autospawn/monument/xlarge/launch_site_1.prefab"
-                    },
+                    excludedMonuments = new List<string>(),
                     vipCooldowns = new Hash<string, float>
                     {
                         ["bradleydrops.examplevip1"] = 3000f,
@@ -9482,6 +9826,15 @@ namespace Oxide.Plugins
                             WaveCooldown = 240f,
                             WaveProfiles = new List<string>()
                         }
+                    },
+                    spawnRates = new SpawnRates
+                    {
+                        EasyRate = 90f,
+                        MediumRate = 75f,
+                        HardRate = 50f,
+                        EliteRate = 35f,
+                        ExpertRate = 25f,
+                        NightmareRate = 15f
                     },
                     apcConfig = new Dictionary<string, APCData>
                     {
@@ -10792,9 +11145,11 @@ namespace Oxide.Plugins
                 {
                     LoadDefaultConfig();
                 }
-                else if (config.Version < Version)
+                else
                 {
-                    UpdateConfigValues();
+                    if (config.Version < Version)
+                        UpdateConfigValues();
+                    EnsureAttackTipDefaults();
                 }
             }
             catch (Exception ex)
@@ -10902,9 +11257,63 @@ namespace Oxide.Plugins
                 }
             }
 
+            if (config.Version < new VersionNumber(1, 3, 42))
+            {
+                config.options.enableSpawnTips = true;
+                config.options.enableAttackTips = true;
+                config.options.chatSpawnTips = false;
+                config.options.chatAttackTips = true;
+                if (string.IsNullOrEmpty(config.options.toastStyle))
+                    config.options.toastStyle = "Server_Event";
+                if (config.options.toastDuration <= 0f)
+                    config.options.toastDuration = 10f;
+                if (config.bradley.spawnRates == null)
+                    config.bradley.spawnRates = defaultConfig.bradley.spawnRates;
+            }
+
+            if (config.Version < new VersionNumber(1, 3, 43))
+            {
+                EnsureAttackTipDefaults();
+            }
+
             config.Version = Version;
             SaveConfig();
             PrintWarning("Config updated successfully.");
+        }
+
+        private void EnsureAttackTipDefaults()
+        {
+            if (config?.options == null) return;
+            bool changed = false;
+
+            if (string.IsNullOrEmpty(config.options.toastStyle))
+            {
+                config.options.enableSpawnTips = true;
+                config.options.enableAttackTips = true;
+                config.options.chatSpawnTips = false;
+                config.options.chatAttackTips = true;
+                config.options.toastStyle = "Server_Event";
+                if (config.options.toastDuration <= 0f)
+                    config.options.toastDuration = 10f;
+                changed = true;
+            }
+
+            if (config.bradley != null && config.bradley.spawnRates == null)
+            {
+                config.bradley.spawnRates = new SpawnRates
+                {
+                    EasyRate = 90f,
+                    MediumRate = 75f,
+                    HardRate = 50f,
+                    EliteRate = 35f,
+                    ExpertRate = 25f,
+                    NightmareRate = 15f
+                };
+                changed = true;
+            }
+
+            if (changed)
+                SaveConfig();
         }
 
         #endregion Config

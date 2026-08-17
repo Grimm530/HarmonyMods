@@ -8,12 +8,12 @@ using UnityEngine;
 namespace InventoryCleaner
 {
     /// <summary>
-    /// Inventory Cleaner 2.1.1 logic (Oxide port). Config / lang / clear / chat helpers.
+    /// Inventory Cleaner 2.1.2 logic (Oxide port). Config / lang / clear / chat helpers.
     /// </summary>
     public sealed class InventoryCleanerService
     {
         public const string Author = "Joao Pster";
-        public const string VersionString = "2.1.1";
+        public const string VersionString = "2.1.2";
 
         public static class Perms
         {
@@ -27,6 +27,19 @@ namespace InventoryCleaner
         {
             Perms.Clear,
             Perms.ClearOthers,
+            Perms.ClearOnDeath,
+            Perms.ClearOnLogout
+        };
+
+        /// <summary>Command perms only. Wipe-on-death / wipe-on-logout are opt-in flags, not admin tools.</summary>
+        private static readonly string[] AdminCommandPermissions =
+        {
+            Perms.Clear,
+            Perms.ClearOthers
+        };
+
+        private static readonly string[] OptInWipePermissions =
+        {
             Perms.ClearOnDeath,
             Perms.ClearOnLogout
         };
@@ -205,13 +218,15 @@ namespace InventoryCleaner
         }
 
         /// <summary>
-        /// Grants all inventorycleaner.* perms to Permissions group "admin" (same pattern as AdminMenu).
+        /// Grants command perms to Permissions group "admin". Does not grant wipe-on-death /
+        /// wipe-on-logout — those mean "strip this player", so giving them to admin was wiping
+        /// staff inventory on disconnect.
         /// </summary>
         private void EnsureAdminGroupPermissions()
         {
             if (!PermissionsBridge.IsAvailable)
             {
-                Debug.LogWarning("[InventoryCleaner] Permissions not available — cannot grant inventorycleaner.* to admin group.");
+                Debug.LogWarning("[InventoryCleaner] Permissions not available — cannot grant inventorycleaner command perms to admin group.");
                 return;
             }
 
@@ -219,13 +234,20 @@ namespace InventoryCleaner
                 PermissionsBridge.CreateGroup(AdminGroup, "Administrators", 0);
 
             int granted = 0;
-            foreach (string perm in AllPermissions)
+            foreach (string perm in AdminCommandPermissions)
             {
                 if (PermissionsBridge.GrantGroupPermission(AdminGroup, perm))
                     granted++;
             }
 
-            Debug.Log($"[InventoryCleaner] Ensured Permissions group '{AdminGroup}' has inventorycleaner.* ({granted}/{AllPermissions.Length} grants).");
+            int revoked = 0;
+            foreach (string perm in OptInWipePermissions)
+            {
+                if (PermissionsBridge.RevokeGroupPermission(AdminGroup, perm))
+                    revoked++;
+            }
+
+            Debug.Log($"[InventoryCleaner] Ensured Permissions group '{AdminGroup}' has command perms ({granted}/{AdminCommandPermissions.Length} grants); revoked opt-in wipe perms ({revoked}/{OptInWipePermissions.Length}).");
         }
 
         private bool HasPermission(BasePlayer player, string permissionName, bool send = true)
@@ -318,6 +340,7 @@ namespace InventoryCleaner
             if (player.IsDead()) return;
             if (!HasPermission(player, Perms.ClearOnLogout, false)) return;
 
+            Debug.Log($"[InventoryCleaner] Stripping inventory on logout for {player.displayName} ({player.UserIDString}) — has {Perms.ClearOnLogout}.");
             player.inventory?.Strip();
         }
 

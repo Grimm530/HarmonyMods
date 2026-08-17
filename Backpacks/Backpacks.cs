@@ -384,7 +384,7 @@ namespace BackpacksHarmony
 
                 foreach (var player in BasePlayer.activePlayerList)
                 {
-                    MaybeCreateButtonUi(player);
+                    MaybeCreateButtonUi(player, retryIfClientNotReady: true);
                 }
             }
 
@@ -771,7 +771,7 @@ namespace BackpacksHarmony
 
             if (_config.GUI.Enabled)
             {
-                MaybeCreateButtonUi(player);
+                MaybeCreateButtonUi(player, retryIfClientNotReady: true);
             }
         }
 
@@ -794,7 +794,7 @@ namespace BackpacksHarmony
             if (player == null)
                 return;
 
-            MaybeCreateButtonUi(player);
+            MaybeCreateButtonUi(player, retryIfClientNotReady: true);
             _backpackManager.GetBackpackIfCached(player.userID)?.PauseGatherMode(1f);
         }
 
@@ -1571,14 +1571,14 @@ namespace BackpacksHarmony
                 return;
             }
 
-            // Reset GUI Button Position to inventory-layer defaults (beside character, normalized)
-            _config.GUI.GUIButtonPosition.AnchorsMin = "0.36 0.48";
-            _config.GUI.GUIButtonPosition.AnchorsMax = "0.42 0.54";
+            // Reset to Inventory-layer coordinates (inventory backpack-slot area).
+            _config.GUI.GUIButtonPosition.AnchorsMin = "0.084 0.238";
+            _config.GUI.GUIButtonPosition.AnchorsMax = "0.124 0.309";
             _config.GUI.GUIButtonPosition.OffsetsMin = "0 0";
             _config.GUI.GUIButtonPosition.OffsetsMax = "0 0";
-            _config.GUI.BackgroundScale = 0.55f;
+            _config.GUI.BackgroundScale = 0.9f;
             _config.GUI.IconScale = 1f;
-            _config.GUI.IconOffsetY = -0.08f;
+            _config.GUI.IconOffsetY = -0.01f;
 
             var prefsCleared = _preferencesData.ClearAllGuiPreferences();
             if (prefsCleared)
@@ -1601,7 +1601,7 @@ namespace BackpacksHarmony
                 }
             }
 
-            player.Reply($"Backpack GUI reset: position set to inventory layer (backpack slot), config saved. Cleared per-player preferences: {prefsCleared}. Refreshed button for {count} online player(s).");
+            player.Reply($"Backpack GUI reset: position set to Inventory layer (inventory backpack slot), config saved. Cleared per-player preferences: {prefsCleared}. Refreshed button for {count} online player(s).");
         }
 
         internal void SetGatherCommand(IPlayer player, string cmd, string[] args)
@@ -2034,17 +2034,29 @@ namespace BackpacksHarmony
             if (bridge == null)
                 return;
 
-            if (ItemRetriever == bridge)
-                return;
-
             ItemRetriever = bridge;
             RegisterAsItemSupplier();
+
+            // Retrieve permission is cached per backpack; refresh so craft/reload sees retrieve pages
+            // after ItemRetriever loads later than Backpacks (alphabetical Harmony boot).
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (player == null || player.IsNpc)
+                    continue;
+                var backpack = _backpackManager?.GetBackpackIfCached(player.userID);
+                backpack?.SetFlag(Backpack.Flag.RetrieveCached, false);
+                backpack?.MarkDirty();
+            }
+
             Puts("Registered with ItemRetriever for backpack retrieve mode.");
         }
 
         internal void RegisterAsItemSupplier()
         {
-            ItemRetriever?.Call("API_AddSupplier", this, new Dictionary<string, object>
+            if (ItemRetriever == null)
+                return;
+
+            ItemRetriever.Call("API_AddSupplier", this, new Dictionary<string, object>
             {
                 ["FindPlayerItems"] = new Action<BasePlayer, Dictionary<string, object>, List<Item>>((player, rawItemQuery, collect) =>
                 {
@@ -2425,7 +2437,7 @@ namespace BackpacksHarmony
             return false;
         }
 
-        private void MaybeCreateButtonUi(BasePlayer player)
+        private void MaybeCreateButtonUi(BasePlayer player, bool retryIfClientNotReady = false)
         {
             if (!_config.GUI.Enabled)
                 return;
@@ -2442,6 +2454,18 @@ namespace BackpacksHarmony
             _uiViewers.Add(player.userID);
             _cachedButtonUi ??= ButtonUi.CreateButtonUi(_config);
             CuiHelper.AddUi(player, _cachedButtonUi);
+
+            // Client CUI Inventory panel may not exist yet during snapshot / first wake.
+            if (retryIfClientNotReady && player.net?.connection != null)
+            {
+                var userId = player.userID;
+                timer.Once(1f, () =>
+                {
+                    var retryPlayer = BasePlayer.FindByID(userId);
+                    if (retryPlayer != null)
+                        MaybeCreateButtonUi(retryPlayer);
+                });
+            }
         }
 
         private void DestroyButtonUi(BasePlayer player)
@@ -2456,7 +2480,7 @@ namespace BackpacksHarmony
         {
             if (permission.UserHasPermission(player.UserIDString, GUIPermission))
             {
-                MaybeCreateButtonUi(player);
+                MaybeCreateButtonUi(player, retryIfClientNotReady: true);
             }
             else
             {
@@ -3404,7 +3428,9 @@ namespace BackpacksHarmony
 
             public void AddUi(BasePlayer player)
             {
-                AddUi(new SendInfo(player.Connection));
+                // Same send path as the inventory GUI button so backpack.* commands are rewritten
+                // to cui.endtest BP … (UiBuilder's raw RPC skipped that rewrite).
+                CuiHelper.AddUi(player, ToJson());
             }
 
             private void ValidateState(State desiredState)
@@ -3703,7 +3729,14 @@ namespace BackpacksHarmony
                 builder.AddField("type", Type);
 
                 if (Command != DefaultCommand)
-                    builder.AddField("command", Command);
+                {
+                    // Clients only forward ConsoleGen commands. Oxide-style backpack.* CUI
+                    // callbacks must go through cui.endtest BP (see CuiHelper.RewriteHarmonyButtonCommands).
+                    var command = Command;
+                    if (command != null && command.StartsWith("backpack", StringComparison.Ordinal))
+                        command = "cui.endtest BP " + command;
+                    builder.AddField("command", command);
+                }
 
                 if (Close != DefaultClose)
                     builder.AddField("close", Close);
@@ -4400,6 +4433,9 @@ namespace BackpacksHarmony
         {
             private const string Name = "BackpacksUI";
 
+            // CommunityEntity toggle panel: SetActive with Tab inventory. Hud.Menu stays visible on the HUD.
+            private const string ParentLayer = "Inventory";
+
             private static (string OffsetMin, string OffsetMax) ApplyBackgroundScale(string offsetsMin, string offsetsMax, float scale)
             {
                 if (scale <= 0 || Math.Abs(scale - 1f) < 0.001f)
@@ -4431,7 +4467,7 @@ namespace BackpacksHarmony
                 {
                     Name = Name,
                     DestroyName = Name,
-                    Parent = "Inventory",
+                    Parent = ParentLayer,
                     Components =
                     {
                         new UiRawImageComponent
@@ -10107,13 +10143,13 @@ namespace BackpacksHarmony
                 public string Color = "0.969 0.922 0.882 0.035";
 
                 [JsonProperty("Background Scale (0.5-1.5, 1 = full size)")]
-                public float BackgroundScale = 0.55f;
+                public float BackgroundScale = 0.9f;
 
                 [JsonProperty("Icon Scale (0.3-1, 1 = fill background)")]
                 public float IconScale = 1f;
 
                 [JsonProperty("Icon Offset Y (normalized, negative = down in container)")]
-                public float IconOffsetY = -0.08f;
+                public float IconOffsetY = -0.01f;
 
                 [JsonProperty("Background Material (e.g. assets/content/ui/uibackgroundblur-ingamemenu.mat, empty = none)")]
                 public string BackgroundMaterial = "";
@@ -10124,10 +10160,10 @@ namespace BackpacksHarmony
                 public class Position
                 {
                     [JsonProperty("Anchors Min")]
-                    public string AnchorsMin = "0.36 0.48";
+                    public string AnchorsMin = "0.084 0.238";
 
                     [JsonProperty("Anchors Max")]
-                    public string AnchorsMax = "0.42 0.54";
+                    public string AnchorsMax = "0.124 0.309";
 
                     [JsonProperty("Offsets Min")]
                     public string OffsetsMin = "0 0";

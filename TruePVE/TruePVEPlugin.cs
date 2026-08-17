@@ -22,7 +22,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("TruePVE", "Nivex & Grimm530", "2.4.21")]
+    [Info("TruePVE", "Nivex & Grimm530", "2.4.22")]
     [Description("Improvement of the default Rust PVE behavior")]
     // Thanks to the original author, ignignokt84.
     public partial class TruePVE : RustPlugin
@@ -5746,7 +5746,8 @@ namespace Oxide.Plugins
             }
 
             // Ignore BradleyDrops custom signals so that plugin can handle delivery itself
-            if (Interface.CallHook("IsBradleyDrop", ss.skinID) is bool isBradleyDrop && isBradleyDrop)
+            TryCopyThrownItemSkin(ss, tw);
+            if (Dispatch_IsBradleyDrop(ss.skinID, tw))
             {
                 return;
             }
@@ -5844,7 +5845,7 @@ namespace Oxide.Plugins
                 }
 
                 // Ignore BradleyDrops custom signals so that plugin can handle delivery itself
-                if (Interface.CallHook("IsBradleyDrop", ss.skinID) is bool isBradleyDrop && isBradleyDrop)
+                if (Dispatch_IsBradleyDrop(ss.skinID))
                 {
                     return;
                 }
@@ -5968,7 +5969,7 @@ namespace Oxide.Plugins
                 }
 
                 // Ignore drops originating from BradleyDrops delivery planes
-                if (Interface.CallHook("IsBradleyDrop", plane.skinID) is bool isBradleyDrop && isBradleyDrop)
+                if (Dispatch_IsBradleyDrop(plane.skinID))
                 {
                     return;
                 }

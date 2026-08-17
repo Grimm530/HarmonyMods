@@ -40,4 +40,20 @@ namespace SkillTreeHarmony.Patches
             catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerRespawned: " + ex.Message); }
         }
     }
+
+    /// <summary>
+    /// Re-send the XP pump bar after the client HUD exists.
+    /// CUI sent from PlayerInit is wiped when the loading snapshot finishes.
+    /// </summary>
+    [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.EndSleeping))]
+    public static class BasePlayer_EndSleeping_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BasePlayer __instance)
+        {
+            if (__instance == null || __instance.IsSleeping()) return;
+            try { STPlugin.Dispatch_OnPlayerSleepEnded(__instance); }
+            catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerSleepEnded: " + ex.Message); }
+        }
+    }
 }

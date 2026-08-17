@@ -7,7 +7,7 @@ using UnityEngine;
 namespace InventoryCleaner
 {
     /// <summary>
-    /// Harmony entry for Inventory Cleaner 2.1.1 port.
+    /// Harmony entry for Inventory Cleaner 2.1.2 port.
     /// Load order: 0Permissions -> InventoryCleaner (ready-callback safe).
     /// </summary>
     public class InventoryCleanerMod : IHarmonyModHooks
@@ -17,7 +17,7 @@ namespace InventoryCleaner
 
         public const int VersionMajor = 2;
         public const int VersionMinor = 1;
-        public const int VersionPatch = 1;
+        public const int VersionPatch = 2;
 
         private Action _permissionsReadyCallback;
         private readonly List<ConsoleSystem.Command> _commands = new List<ConsoleSystem.Command>();

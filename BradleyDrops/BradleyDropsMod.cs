@@ -182,6 +182,50 @@ namespace BradleyDropsHarmony
             return false;
         }
 
+        /// <summary>
+        /// Run a BradleyDrops chat/console command as the server (Shop purchases, RCON).
+        /// </summary>
+        public bool TryRunServerCommand(string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine)) return false;
+            commandLine = commandLine.Trim();
+            if (commandLine.StartsWith("/") || commandLine.StartsWith("\\"))
+                commandLine = commandLine.Substring(1).Trim();
+            string[] parts = commandLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return false;
+            string commandName = parts[0].ToLowerInvariant();
+            var plugin = Plugin;
+            if (plugin == null) return false;
+            string[] args = parts.Length > 1 ? parts.Skip(1).ToArray() : Array.Empty<string>();
+            foreach (var reg in plugin.cmd.RegisteredChatCommands)
+            {
+                if (!string.Equals(reg.name, commandName, StringComparison.OrdinalIgnoreCase)) continue;
+                InvokeCommandMethod(plugin, reg.method, null, commandName, args);
+                return true;
+            }
+            foreach (var reg in plugin.cmd.RegisteredConsoleCommands)
+            {
+                if (!string.Equals(reg.name, commandName, StringComparison.OrdinalIgnoreCase)) continue;
+                InvokeCommandMethod(plugin, reg.method, null, commandName, args);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// TruePVE / other Harmony mods: is this supply-signal skin a Bradley Drop?
+        /// </summary>
+        public static bool TryIsBradleyDrop(ulong skinId)
+        {
+            var plugin = Plugin;
+            if (plugin == null || skinId == 0) return false;
+            try { return plugin.IsBradleyDropSkin(skinId); }
+            catch { return false; }
+        }
+
+        /// <summary>Oxide-style API used by TruePVE Plugin.Call("IsBradleyDrop", skinId).</summary>
+        public static object IsBradleyDrop(ulong skinId) => TryIsBradleyDrop(skinId) ? true : (object)null;
+
         internal static void InvokeCommandMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null) return;
@@ -322,14 +366,30 @@ namespace BradleyDropsHarmony
                 {
                     try
                     {
+                        var plugin = Plugin;
+                        if (plugin == null) return;
                         var player = a?.Player();
-                        if (player == null) return;
-                        var sb = new StringBuilder(localName);
-                        var raw = a.Args;
-                        if (raw != null)
-                            for (int i = 0; i < raw.Length; i++)
-                                sb.Append(' ').Append(raw[i].ToString() ?? "");
-                        OnChatCommand(player, sb.ToString());
+                        string[] args = a?.Args == null
+                            ? Array.Empty<string>()
+                            : Array.ConvertAll(a.Args, x => x.ToString() ?? "");
+                        string method = null;
+                        foreach (var reg in plugin.cmd.RegisteredChatCommands)
+                        {
+                            if (!string.Equals(reg.name, localName, StringComparison.OrdinalIgnoreCase)) continue;
+                            method = reg.method;
+                            break;
+                        }
+                        if (string.IsNullOrEmpty(method))
+                        {
+                            foreach (var reg in plugin.cmd.RegisteredConsoleCommands)
+                            {
+                                if (!string.Equals(reg.name, localName, StringComparison.OrdinalIgnoreCase)) continue;
+                                method = reg.method;
+                                break;
+                            }
+                        }
+                        if (string.IsNullOrEmpty(method)) return;
+                        InvokeCommandMethod(plugin, method, player, localName, args);
                     }
                     catch (Exception ex)
                     {

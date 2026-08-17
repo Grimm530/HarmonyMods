@@ -20,6 +20,7 @@ namespace RustLeagueHarmony
         internal RustLeagueGrid Grid;
 
         internal bool testing;
+        internal bool soloTest;
         internal golePostRed zoneRed;
         internal golePostBlue zoneBlue;
         internal rustLeague ballMono;
@@ -46,6 +47,7 @@ namespace RustLeagueHarmony
         public List<ulong> eventPlayerList = new List<ulong>();
         public Dictionary<ulong, carLoc> RedEventCars = new Dictionary<ulong, carLoc>();
         public Dictionary<ulong, carLoc> BlueEventCars = new Dictionary<ulong, carLoc>();
+        internal readonly List<rustLeagueCar> LiveCars = new List<rustLeagueCar>();
         public List<ulong> currentPlayers = new List<ulong>();
         readonly Dictionary<int, Timer> EventTimers = new Dictionary<int, Timer>();
 
@@ -96,7 +98,8 @@ namespace RustLeagueHarmony
             LoadOrCreateConfig();
             testing = configData.settings.testing;
             Grid = new RustLeagueGrid(this);
-            ArenaCatalog.Load(this);
+            if (ServerMgr.Instance != null)
+                ArenaCatalog.Load(this);
         }
 
         public void RegisterPermissions()
@@ -106,7 +109,10 @@ namespace RustLeagueHarmony
 
         public void HarmonyServerInitialized()
         {
+            if (!ArenaCatalog.Ready)
+                ArenaCatalog.Load(this);
             DestroyLeftovers();
+            PurgeDestroyedFromSaveList();
             if (configData.settings.autoEvents)
                 ScheduleNextCycle(2f);
         }
@@ -121,6 +127,7 @@ namespace RustLeagueHarmony
                 if (player == null) continue;
                 CuiHelper.DestroyUi(player, "theUIleagueMenu");
                 CuiHelper.DestroyUi(player, "waitingPlay");
+                CuiHelper.DestroyUi(player, "TeamHudBlocknameTimer");
             }
             Instance = null;
         }
@@ -253,7 +260,7 @@ namespace RustLeagueHarmony
             {
                 CarSettings = new carSettings
                 {
-                    totalRockets = 2,
+                    totalRockets = 5,
                     carFrame = "assets/content/vehicles/modularcar/car_chassis_2module.entity.prefab",
                     carSlot0 = 1559779253,
                     carSlot1 = -1501451746,
@@ -376,6 +383,8 @@ namespace RustLeagueHarmony
                 configData.settings.ArenaSpawnDelay = 0.01f;
             if (configData.settings.ArenaAltitude <= 0f)
                 configData.settings.ArenaAltitude = 700f;
+            if (configData.CarSettings.totalRockets < 5)
+                configData.CarSettings.totalRockets = 5;
 
             configData.Version = new VersionNumber { Major = 1, Minor = 3, Patch = 5 };
             SaveConfig();
@@ -408,6 +417,10 @@ namespace RustLeagueHarmony
                 ["RoundOver"] = "This round is now over.",
                 ["RedScore"] = "Red team just scored ball reset.",
                 ["BlueScore"] = "Blue team just scored ball reset.",
+                ["YourTeamRed"] = "YOU ARE RED",
+                ["YourTeamBlue"] = "YOU ARE BLUE",
+                ["YourTeamRedChat"] = "<color=#ce422b>You are on RED. Put the ball in the RED goal.</color>",
+                ["YourTeamBlueChat"] = "<color=#4da6ff>You are on BLUE. Put the ball in the BLUE goal.</color>",
                 ["endEvent"] = "RustLeague event is now over.",
                 ["tie"] = "RustLeague event is now over and there is a tie.",
                 ["redGUI"] = "The winner is red team.",
@@ -442,7 +455,9 @@ namespace RustLeagueHarmony
                 ["arenaReady"] = "RustLeague arena is up at {0}. Type /rl to join, /rl tp to teleport there.",
                 ["arenaMissing"] = "RustLeague arena prefab was not found. Place maps/prefabs/RustLeagueArena.map (or set ArenaPrefabPath).",
                 ["arenaNotSpawned"] = "No arena is spawned. Use /rl spawn (or /rl here) first.",
-                ["arenaTp"] = "Teleported to RustLeague {0}  ({1:F0}, {2:F0}, {3:F0})  world pieces={4} entities={5}"
+                ["arenaTp"] = "Teleported to RustLeague {0}  ({1:F0}, {2:F0}, {3:F0})  world pieces={4} entities={5}",
+                ["soloTestStarting"] = "Solo test: spawning arena at {0} then starting with you only.",
+                ["soloTestStarted"] = "Solo test started. You are in the event with one car."
             });
         }
 

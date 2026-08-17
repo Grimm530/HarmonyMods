@@ -100,7 +100,7 @@ namespace TruePVEHarmony
 
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
 
-            Debug.Log("[TruePVE] Harmony mod loaded (Oxide port 2.4.21). Config: HarmonyConfig/TruePVE.json. server.pve browser tag supported (RuleSets own damage).");
+            Debug.Log("[TruePVE] Harmony mod loaded (Oxide port 2.4.22). Config: HarmonyConfig/TruePVE.json. server.pve browser tag supported (RuleSets own damage).");
         }
 
         private void OnPermissionsReady()

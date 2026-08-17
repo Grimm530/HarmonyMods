@@ -2,6 +2,8 @@ using Rust;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using UnityEngine;
 
 namespace ItemRetrieverHarmony
 {
@@ -37,7 +39,7 @@ namespace ItemRetrieverHarmony
 
         public ItemRetriever()
         {
-            Version = new VersionNumber(0, 7, 7);
+            Version = new VersionNumber(0, 7, 8);
             _api = new ApiInstance(this);
             _supplierManager = new(_customItemDefinitionTracker);
             _containerManager = new(_customItemDefinitionTracker);
@@ -1026,9 +1028,29 @@ namespace ItemRetrieverHarmony
 
             private static void GetOption<T>(Dictionary<string, object> dict, string key, out T result)
             {
-                result = dict.TryGetValue(key, out var value) && value is T valueOfType
-                    ? valueOfType
-                    : default;
+                result = default;
+                if (dict == null || !dict.TryGetValue(key, out var value) || value == null)
+                    return;
+
+                if (value is T typed)
+                {
+                    result = typed;
+                    return;
+                }
+
+                // Harmony mods live in separate renamed assemblies. `is T` fails for those
+                // delegates even when the signature matches — rebind onto this assembly's T.
+                if (typeof(Delegate).IsAssignableFrom(typeof(T)) && value is Delegate incoming)
+                {
+                    try
+                    {
+                        result = (T)(object)Delegate.CreateDelegate(typeof(T), incoming.Target, incoming.Method, throwOnBindFailure: false);
+                    }
+                    catch
+                    {
+                        result = default;
+                    }
+                }
             }
 
             public Plugin Plugin { get; private set; }
@@ -1086,6 +1108,13 @@ namespace ItemRetrieverHarmony
             {
                 RemoveSupplier(plugin);
                 var supplier = ItemSupplier.FromSpec(plugin, spec);
+
+                Debug.Log("[ItemRetriever] Supplier '" + (plugin?.Name ?? "?")
+                    + "' added (Find=" + (supplier.FindPlayerItems != null)
+                    + " Sum=" + (supplier.SumPlayerItems != null)
+                    + " Take=" + (supplier.TakePlayerItems != null)
+                    + " Ammo=" + (supplier.FindPlayerAmmo != null)
+                    + " Net=" + (supplier.SerializeForNetwork != null) + ")");
 
                 _allSuppliers.Add(supplier);
 

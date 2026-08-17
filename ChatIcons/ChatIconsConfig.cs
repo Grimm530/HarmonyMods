@@ -12,6 +12,9 @@ public class ChatIconsConfig
     {
         [JsonProperty(PropertyName = "Steam Avatar User ID")]
         public ulong SteamAvatarUserID = 0;
+
+        [JsonProperty(PropertyName = "Replace MOTD icon")]
+        public bool ReplaceMotdIcon = true;
     }
 
     public static ConfigData Config { get; private set; }

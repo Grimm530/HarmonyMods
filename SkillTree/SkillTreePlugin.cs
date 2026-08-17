@@ -9645,7 +9645,17 @@ namespace Oxide.Plugins
             SetupPlayer(player.userID, player.displayName);
             UpdateInstancedData(player);
             PlayerInfo playerData = pcdData.pEntity[player.userID];
-            if (playerData.xp_hud) UpdateXP(player, playerData);
+            if (playerData.xp_hud)
+            {
+                UpdateXP(player, playerData);
+                // PlayerInit CUI is wiped by the loading snapshot; send again after HUD exists.
+                timer.Once(2f, () =>
+                {
+                    if (player == null || !player.IsConnected) return;
+                    if (!pcdData.pEntity.TryGetValue(player.userID, out var pi) || !pi.xp_hud) return;
+                    UpdateXP(player, pi);
+                });
+            }
             BuffDetails bd;
             if (GetBuffDetails(player.userID, out bd) && bd.GetBuff(Buff.Metabolism_Boost, out var value)) IncreaseCalories(player, value);
             LoggedOn(player, playerData);
@@ -10479,6 +10489,18 @@ namespace Oxide.Plugins
         }
 
         void OnPlayerConnected(BasePlayer player) => HandleNewConnection(player);
+
+        /// <summary>Client HUD is ready here. Re-send the XP bar (PlayerInit CUI does not survive the snapshot).</summary>
+        internal void OnPlayerSleepEnded(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected) return;
+            NextTick(() =>
+            {
+                if (player == null || !player.IsConnected) return;
+                if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData) || !playerData.xp_hud) return;
+                UpdateXP(player, playerData);
+            });
+        }
 
         void OnPlayerDisconnected(BasePlayer player, string reason)
         {

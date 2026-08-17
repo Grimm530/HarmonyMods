@@ -18,7 +18,7 @@ namespace BackpacksHarmony
 
         public const int VersionMajor = 3;
         public const int VersionMinor = 17;
-        public const int VersionPatch = 42;
+        public const int VersionPatch = 45;
 
         public static readonly VersionNumber Version = new VersionNumber(VersionMajor, VersionMinor, VersionPatch);
 
