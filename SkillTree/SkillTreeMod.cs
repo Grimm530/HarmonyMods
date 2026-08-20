@@ -65,6 +65,8 @@ namespace SkillTreeHarmony
         public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
+        /// <summary>True after Init/Loaded/OnServerInitialized. /st is registered earlier and used to open a blank overlay.</summary>
+        public bool IsReady { get; private set; }
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
         /// <summary>
         /// Chat open aliases (st/skills/score…) registered as unreplicated server console commands.
@@ -91,6 +93,7 @@ namespace SkillTreeHarmony
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            IsReady = false;
             ModRunner.Ensure();
 
             OxidePlugin plugin;
@@ -325,6 +328,7 @@ namespace SkillTreeHarmony
 
             ModRunner.Destroy();
             OxidePlugin.ClearInstance();
+            IsReady = false;
             Instance = null;
             Debug.Log("[SkillTree] Harmony mod unloaded.");
         }
@@ -367,6 +371,7 @@ namespace SkillTreeHarmony
             RefreshDynamicCommands();
 
             _initCoroutine = null;
+            IsReady = true;
             Debug.Log("[SkillTree] Server initialized.");
         }
 
@@ -389,6 +394,13 @@ namespace SkillTreeHarmony
             // Check if it's a dynamic cmd-registered command.
             var plugin = Plugin;
             if (plugin == null) return false;
+
+            // /st is bound in OnLoaded, before OnServerInitialized fills TreeData.
+            if (!IsReady && new[] { "st", "skilltree", "skills" }.Contains(commandName, StringComparer.OrdinalIgnoreCase))
+            {
+                player.ChatMessage("SkillTree is still loading. Try /st again in a moment.");
+                return true;
+            }
 
             // Try registered commands first (from cmd.AddChatCommand).
             foreach (var reg in plugin.cmd.RegisteredChatCommands)
@@ -449,7 +461,8 @@ namespace SkillTreeHarmony
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[SkillTree] InvokeChatMethod " + methodName + ": " + ex.Message);
+                var inner = ex.InnerException ?? ex;
+                Debug.LogWarning("[SkillTree] InvokeChatMethod " + methodName + ": " + inner);
             }
         }
 

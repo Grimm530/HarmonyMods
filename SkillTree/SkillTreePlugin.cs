@@ -12875,14 +12875,9 @@ namespace Oxide.Plugins
             if (!config.general_settings.show_navigation_buttons) return;
 
             TreeInfo ti;
-            if (!TreeData.TryGetValue(player.userID, out ti))
+            if (!TreeData.TryGetValue(player.userID, out ti) || ti.trees == null || ti.trees.Count == 0)
             {
-                //LogToFile("DataFailure", $"[{DateTime.Now}] Failed to acquire data for {player.displayName}[{player.UserIDString}] - SendSkillTreeMenu. [Online = {player.IsConnected}]", this, true);
-                return;
-            }
-            if (ti.trees == null || ti.trees.Count == 0)
-            {
-                CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
+                CloseSkillTreeOverlay(player);
                 Player.Message(player, "You do not have any tree permissions. Please apply permission skilltree.<category> if you want to allocate individual trees, or skilltree.all if you want players to access all categories.", config.misc_settings.ChatID);
                 return;
             }
@@ -13353,16 +13348,74 @@ namespace Oxide.Plugins
             player.ShowToast(GameTip.Styles.Blue_Normal, lang.GetMessage("MoveBarInstructions", this, player.UserIDString), true);
         }
 
+        void CloseSkillTreeOverlay(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected) return;
+            CuiHelper.DestroyUi(player, "SkillTree");
+            CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
+            CuiHelper.DestroyUi(player, "NavigationMenu");
+            CuiHelper.DestroyUi(player, "PrestigeConfirmation");
+            CuiHelper.DestroyUi(player, "PrestigeHistory");
+        }
+
+        string GetDefaultTreeName(ulong userId)
+        {
+            TreeInfo ti;
+            if (TreeData.TryGetValue(userId, out ti) && ti.trees != null && ti.trees.Count > 0)
+            {
+                if (Trees != null)
+                {
+                    for (int i = 0; i < Trees.Count; i++)
+                    {
+                        if (ti.trees.ContainsKey(Trees[i])) return Trees[i];
+                    }
+                }
+                foreach (var key in ti.trees.Keys)
+                    return key;
+            }
+            if (Trees != null && Trees.Count > 0) return Trees[0];
+            return null;
+        }
+
         void SendMenuCMD(BasePlayer player)
         {
-            if (!permission.UserHasPermission(player.UserIDString, "skilltree.chat"))
+            if (player == null || !player.IsConnected) return;
+            try
             {
-                Player.Message(player, lang.GetMessage("NoPermsChat", this, player.UserIDString), config.misc_settings.ChatID);
-                return;
+                if (!permission.UserHasPermission(player.UserIDString, "skilltree.chat"))
+                {
+                    Player.Message(player, lang.GetMessage("NoPermsChat", this, player.UserIDString), config.misc_settings.ChatID);
+                    return;
+                }
+
+                // /st is registered in OnLoaded, but TreeData is filled in OnServerInitialized
+                // (and again on connect). After harmony.load the overlay used to send first,
+                // then SendBaseMenu returned and left a black screen with no menu.
+                if (pcdData == null)
+                {
+                    Player.Message(player, "SkillTree is still loading. Try /st again in a moment.", config.misc_settings.ChatID);
+                    return;
+                }
+                if (!TreeData.ContainsKey(player.userID) || !pcdData.pEntity.ContainsKey(player.userID))
+                    HandleNewConnection(player);
+
+                TreeInfo ti;
+                if (!TreeData.TryGetValue(player.userID, out ti) || ti.trees == null || ti.trees.Count == 0)
+                {
+                    CloseSkillTreeOverlay(player);
+                    Player.Message(player, "You do not have any tree permissions. Please apply permission skilltree.<category> if you want to allocate individual trees, or skilltree.all if you want players to access all categories.", config.misc_settings.ChatID);
+                    return;
+                }
+
+                SkillTreeBackPanel(player);
+                NavigationMenu(player);
+                SendBaseMenu(player);
             }
-            SkillTreeBackPanel(player);
-            NavigationMenu(player);
-            SendBaseMenu(player);
+            catch (Exception ex)
+            {
+                Puts($"SendMenuCMD failed for {player.displayName} [{player.UserIDString}]: {ex}");
+                CloseSkillTreeOverlay(player);
+            }
         }
 
         [ChatCommand("togglebc")]
@@ -14578,11 +14631,7 @@ namespace Oxide.Plugins
         void OnUseNPC(BasePlayer npc, BasePlayer player)
         {
             if (npc.displayName.Equals(config.misc_settings.npc_name, StringComparison.OrdinalIgnoreCase))
-            {
-                SkillTreeBackPanel(player);
-                NavigationMenu(player);
-                SendBaseMenu(player);
-            }
+                SendMenuCMD(player);
         }
 
         private object OnBetterChat(Dictionary<string, object> data)
@@ -23298,18 +23347,40 @@ namespace Oxide.Plugins
 
         void SendBaseMenu(BasePlayer player, string tree = null, bool sendRespec = true)
         {
-            if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return;            
-            var container = new CuiElementContainer();
-            if (string.IsNullOrEmpty(tree)) tree = Trees[0];
-            if (!TreeData.TryGetValue(player.userID, out var treeData) || !treeData.trees.TryGetValue(tree, out var nodes)) return;
-            SendCoreMenu(player, container);
-            STSkillScrollPanel(player, tree, container);
-            SkillBuffInformation(player, container);
-            STNextUnlock(player, container, tree, null);
-            SkillCurrentPrestige(player, container, playerData);            
-            if (nodes.min_points > 0 || nodes.min_level > 0 || nodes.min_prestige > 0) SkillPointsSpent(player, container, tree, treeData, nodes, playerData);
-            if (sendRespec) SkillRespec(player, container, tree, null, playerData);
-            CuiHelper.AddUi(player, container);
+            if (pcdData == null || !pcdData.pEntity.TryGetValue(player.userID, out var playerData))
+            {
+                CloseSkillTreeOverlay(player);
+                return;
+            }
+            if (string.IsNullOrEmpty(tree)) tree = GetDefaultTreeName(player.userID);
+            if (string.IsNullOrEmpty(tree) || !TreeData.TryGetValue(player.userID, out var treeData) || !treeData.trees.TryGetValue(tree, out var nodes))
+            {
+                CloseSkillTreeOverlay(player);
+                return;
+            }
+
+            try
+            {
+                // Split into two AddUI payloads. One giant JSON (core + every node + buff list)
+                // can exceed the client RPC string limit — overlay stays and the menu never appears.
+                var container = new CuiElementContainer();
+                SendCoreMenu(player, container);
+                CuiHelper.AddUi(player, container);
+
+                container = new CuiElementContainer();
+                STSkillScrollPanel(player, tree, container);
+                SkillBuffInformation(player, container);
+                STNextUnlock(player, container, tree, null);
+                SkillCurrentPrestige(player, container, playerData);
+                if (nodes.min_points > 0 || nodes.min_level > 0 || nodes.min_prestige > 0) SkillPointsSpent(player, container, tree, treeData, nodes, playerData);
+                if (sendRespec) SkillRespec(player, container, tree, null, playerData);
+                CuiHelper.AddUi(player, container);
+            }
+            catch (Exception ex)
+            {
+                Puts($"SendBaseMenu failed for {player.displayName} [{player.UserIDString}]: {ex}");
+                CloseSkillTreeOverlay(player);
+            }
         }
 
         private void SendCoreMenu(BasePlayer player, CuiElementContainer container)
@@ -23716,7 +23787,8 @@ namespace Oxide.Plugins
                 Name = $"{parent}_Scroll_Element",
                 Parent = parent,
                 Components = {
-                    scrollComponent
+                    scrollComponent,
+                    new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "0 0", OffsetMax = "0 0" }
                 }
             });
             var result = $"{parent}_Scroll_Element_Area";
