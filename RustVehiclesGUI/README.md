@@ -26,6 +26,7 @@ harmony.load RustVehiclesGUI
 | Purpose | Path |
 | --- | --- |
 | Config | `HarmonyConfig/RustVehiclesGUI.json` |
+| Lang | `HarmonyLanguage/RustVehiclesGUI.json` (English overrides), `HarmonyLanguage/RustVehiclesGUI.ru.json` (Russian) |
 | Vehicle card images (PNG) | `HarmonyData/RustVehiclesGUI/images/` |
 | Per-player UI settings | `HarmonyData/RustVehiclesGUI/players/playerSettings.json` |
 | Core config it reads | `HarmonyConfig/RustVehicles.json` (falls back to `VehicleLicence.json`) |

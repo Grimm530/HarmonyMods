@@ -962,6 +962,9 @@ namespace Oxide.Plugins
                 [JsonProperty("Automatically wipe player data after x days if they have not logged in? [0 = off] [only checks on wipe]")]
                 public int wipe_after_days = 0;
 
+                [JsonProperty("Full reset player data on forced wipe in these months (1=January, 6=June). Other wipes keep progress.")]
+                public List<int> season_wipe_months = new List<int> { 1, 6 };
+
                 [JsonProperty("Manual wipe settings")]
                 public WipeSettings manualWipeSettings = new WipeSettings();
 
@@ -3671,6 +3674,7 @@ namespace Oxide.Plugins
             public DateTime nextXPCapReset = DateTime.MinValue;
             public bool updated = false;
             public int LastProtocolSave;
+            public string LastWipeId;
 
             [NonSerialized]
             public Dictionary<ulong, PlayerInfo> pEntity = new Dictionary<ulong, PlayerInfo>();
@@ -6523,84 +6527,54 @@ namespace Oxide.Plugins
 
         bool IsFirstThursdayOfMonth()
         {
-            var utcNow = DateTime.UtcNow;
-            return utcNow.DayOfWeek == DayOfWeek.Thursday && utcNow.Day <= 7;
+            var now = DateTime.Now;
+            return now.DayOfWeek == DayOfWeek.Thursday && now.Day <= 7;
+        }
+
+        bool IsSeasonForcedWipeNow()
+        {
+            var months = config?.wipe_update_settings?.season_wipe_months;
+            if (months == null || months.Count == 0) return false;
+            if (!IsFirstThursdayOfMonth()) return false;
+            return months.Contains(DateTime.Now.Month);
+        }
+
+        /// <summary>
+        /// Full SkillTree reset only on January and June first-Thursday (forced) wipes.
+        /// Map wipes and other monthly forced wipes keep player progress.
+        /// Uses persisted LastWipeId so this still runs after a process restart.
+        /// </summary>
+        bool TryApplySeasonWipe()
+        {
+            string wipeId = "";
+            try { wipeId = SaveRestore.WipeId ?? ""; }
+            catch { }
+            if (string.IsNullOrEmpty(wipeId) || pcdData == null) return false;
+            var prev = pcdData.LastWipeId ?? "";
+            if (string.Equals(prev, wipeId, StringComparison.Ordinal)) return false;
+            pcdData.LastWipeId = wipeId;
+            if (string.IsNullOrEmpty(prev))
+            {
+                SaveData();
+                return false;
+            }
+            if (!IsSeasonForcedWipeNow())
+            {
+                SaveData();
+                return false;
+            }
+            Puts("SkillTree: January/June season wipe — resetting all player data.");
+            ResetAllDataCommand(null, true);
+            SaveData();
+            return true;
         }
 
         void OnNewSave(string filename)
         {
-            bool protocolChanged = pcdData.LastProtocolSave != Rust.Protocol.save && pcdData.LastProtocolSave != 0;
-            bool isForced = protocolChanged && IsFirstThursdayOfMonth();
             pcdData.LastProtocolSave = Rust.Protocol.save;
-
-            if (isForced)
-            {
-                if (config.wipe_update_settings.forcedWipeSettings.wipe_everything)
-                {
-                    ResetAllData();
-                    return;
-                }
-            }
-            else if (config.wipe_update_settings.manualWipeSettings.wipe_everything)
-            {
-                ResetAllData();
-                return;
-            }
-
-            List<string> files = Pool.Get<List<string>>();
-            files.AddRange(Directory.GetFiles(NewDirectory));
-            Dictionary<string, PlayerInfo> allPlayers = new Dictionary<string, PlayerInfo>();
-            List<string> ToDelete = Pool.Get<List<string>>();
-            foreach (var file in files)
-            {
-                try
-                {
-                    var name = FormatUserIDFromPath(file);
-                    var data = JsonConvert.DeserializeObject<PlayerInfo>(File.ReadAllText(file));
-                    if (config.wipe_update_settings.wipe_after_days > 0 && (DateTime.Now - data.logged_off).TotalDays >= config.wipe_update_settings.wipe_after_days)
-                    {
-                        ToDelete.Add(name);
-                        continue;
-                    }
-                    allPlayers.Add(name, data);
-                }
-                catch { }
-            }
-            Pool.FreeUnmanaged(ref files);
-
-            foreach (var delete in ToDelete)
-            {
-                try
-                {
-                    File.Delete(delete);
-                }
-                catch
-                {
-
-                }
-            }
-
-            Pool.FreeUnmanaged(ref ToDelete);
-
-            
-            HandleExistingData(allPlayers, isForced);
-
-            AwardBestPlayer(allPlayers, isForced);
-            
-
-            foreach (var data in allPlayers)
-            {
-                try
-                {
-                    File.WriteAllText(NewDirectory + $"{data.Key}.json", JsonConvert.SerializeObject(data.Value, Formatting.Indented));
-                }
-                catch { Puts($"Failed to write data for {data.Key ?? "Null key"}"); }
-            }
-
+            if (TryApplySeasonWipe()) return;
+            // Map wipes and non-season forced wipes keep XP, levels, and skills.
             pcdData.wipeTime = DateTime.Now;
-            allPlayers.Clear();
-            allPlayers = null;
-
             SaveData();
         }
 
@@ -9914,6 +9888,7 @@ namespace Oxide.Plugins
             var foundNewContent = false;
             if (HandlePermissions()) foundNewContent = true;
             LoadMessages();
+            TryApplySeasonWipe();
 
             if (config.xp_settings.xPCapSettings.cap > 0)
             {

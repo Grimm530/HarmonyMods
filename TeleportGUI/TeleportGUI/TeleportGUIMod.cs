@@ -34,7 +34,10 @@ namespace TeleportGUI
         private readonly Dictionary<ulong, string> _showingModal = new Dictionary<ulong, string>();
         private readonly Dictionary<ulong, string> _playersInDelayedTeleport = new Dictionary<ulong, string>();
         private readonly HashSet<ulong> _cancelTeleportRequested = new HashSet<ulong>();
-        private readonly HashSet<string> _manualWarpChatCommands = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _manualWarpChatCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Chat command (e.g. outpost) → warp unique name (e.g. Compound (H15)).</summary>
+        private readonly Dictionary<string, string> _warpChatCommandTargets =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private const int UI_PER_PAGE = 8;
 
         private static readonly string[] BasePermissions =
@@ -82,7 +85,8 @@ namespace TeleportGUI
             RegisterWarpChatCommands();
             TeleportGUILanguage.Initialize();
             TeleportGUIIntegrations.Initialize();
-            InitializeMonumentWarps();
+            // Harmony OnLoaded is BeforeSceneLoad — monuments do not exist yet. Defer like Oxide OnServerInitialized.
+            StartMonumentWarpInit();
             SetupUIComponents();
             AppDomain.CurrentDomain.SetData("TeleportGUI_ApiType", typeof(TeleportGUIMod));
             UnityEngine.Debug.Log("[TeleportGUI] Harmony mod loaded. Config: HarmonyConfig/TeleportGUI.json. Data: HarmonyData/TeleportGUI/.");
@@ -93,6 +97,7 @@ namespace TeleportGUI
             AppDomain.CurrentDomain.SetData("TeleportGUI_ApiType", null);
             ClearAllRequests();
             TeardownUIComponents();
+            StopMonumentWarpInit();
             ShutdownMonumentWarps();
             TeleportGUILanguage.Shutdown();
             PermissionsBridge.Shutdown();
@@ -202,6 +207,22 @@ namespace TeleportGUI
                 File.WriteAllText(defaultPath, JsonConvert.SerializeObject(_config, Formatting.Indented));
             }
             catch { }
+        }
+
+        private void SaveConfig()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_configPath) || _config == null) return;
+                var dir = Path.GetDirectoryName(_configPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[TeleportGUI] Config save failed: " + ex.Message);
+            }
         }
 
         private void EnsureConfigDefaults()
@@ -325,6 +346,8 @@ namespace TeleportGUI
 
         private void RegisterWarpChatCommands()
         {
+            foreach (string old in _manualWarpChatCommands)
+                _warpChatCommandTargets.Remove(old);
             _manualWarpChatCommands.Clear();
             if (_warpData == null) return;
             foreach (var kvp in _warpData)
@@ -333,6 +356,7 @@ namespace TeleportGUI
                 if (string.IsNullOrEmpty(cmdName)) continue;
                 if (_manualWarpChatCommands.Contains(cmdName)) continue;
                 _manualWarpChatCommands.Add(cmdName);
+                _warpChatCommandTargets[cmdName] = kvp.Key;
                 try
                 {
                     var cmd = new ConsoleSystem.Command
@@ -1099,6 +1123,41 @@ namespace TeleportGUI
                 CmdDeath(player, args);
                 return true;
             }
+
+            // Monument / custom warp chat commands (/outpost, /bandit, /warpadd aliases).
+            // Chat.say never executes slash text as console commands — must handle here.
+            if (TryHandleWarpChatCommand(player, cmd))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Oxide AddChatCommand equivalent: /outpost warps to the generated monument, not to a warp named "outpost".
+        /// </summary>
+        private bool TryHandleWarpChatCommand(BasePlayer player, string cmd)
+        {
+            if (string.IsNullOrEmpty(cmd)) return false;
+
+            if (_warpChatCommandTargets.TryGetValue(cmd, out string warpName) && !string.IsNullOrEmpty(warpName))
+            {
+                CmdWarp(player, new[] { warpName });
+                return true;
+            }
+
+            var map = _config?.Warp?.MonumentWarps;
+            if (map == null) return false;
+
+            foreach (KeyValuePair<string, TeleportGUIConfig.WarpOptions.MonumentWarp> kvp in map)
+            {
+                if (kvp.Value == null || !kvp.Value.Enabled) continue;
+                if (!string.Equals(NormalizeWarpChatCommand(kvp.Value.Command), cmd, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                SendMessage(player, "That monument warp is still initializing. Try again in a moment.");
+                return true;
+            }
+
             return false;
         }
 

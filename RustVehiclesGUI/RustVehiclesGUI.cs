@@ -124,12 +124,146 @@ namespace RustVehiclesGUIHarmony
         internal void Init()
         {
             Instance = this;
+            LoadDefaultMessages();
             _config = Config.ReadObject<ConfigData>();
             
             foreach (var command in _config.ChatCommands)
             {
                 cmd.AddChatCommand(command, this, nameof(CmdOpenGUI));
             }
+        }
+
+        private string Lang(string key, BasePlayer player, params object[] args)
+        {
+            return Lang(key, player?.UserIDString, args);
+        }
+
+        private string Lang(string key, string userId, params object[] args)
+        {
+            try
+            {
+                var message = lang.GetMessage(key, this, userId);
+                if (args != null && args.Length > 0)
+                    return string.Format(message, args);
+                return message;
+            }
+            catch (Exception)
+            {
+                return key;
+            }
+        }
+
+        private string LangCategory(BasePlayer player, string category)
+        {
+            var translated = Lang("Category_" + category, player);
+            if (string.IsNullOrEmpty(translated) || translated.StartsWith("Category_", StringComparison.Ordinal))
+                return (category ?? string.Empty).ToUpperInvariant();
+            return translated;
+        }
+
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["CorePluginNotLoaded"] = "Vehicle system plugin is not loaded!",
+                ["NoPermission"] = "You don't have permission to use vehicles!",
+                ["VipOnly"] = "This vehicle is VIP only.",
+                ["PickupRequiresRustVehicles"] = "Please purchase RustVehicles to use this feature.",
+                ["ImageRegistry"] = "Image registry: {0} keys (see server log)",
+
+                ["TitleMain"] = "Rust Vehicles System",
+                ["TitleShop"] = "Vehicle Shop",
+                ["TitleManage"] = "Manage Your Vehicles",
+                ["VehiclesCount"] = "Vehicles: {0}",
+                ["Balance"] = "Balance:",
+                ["BuyVehicles"] = "Buy Vehicles",
+                ["ManageVehicles"] = "Manage Vehicles",
+                ["Back"] = "← Back",
+                ["BackMain"] = "← Main",
+                ["PageOf"] = "Page {0} of {1}",
+                ["NoVehiclesPurchase"] = "No vehicles available for purchase",
+                ["NoVehiclesCategory"] = "You don't own any vehicles in this category",
+                ["NoVehiclesYet"] = "You don't own any vehicles yet",
+                ["AddImage"] = "Add image: {0}",
+                ["FailedLoadShop"] = "Failed to load vehicle shop. Please try again.",
+                ["ErrorLoadingMain"] = "Error loading main menu: {0}",
+                ["ErrorLoadingVehicles"] = "Error loading vehicles: {0}",
+                ["ErrorLoadingShop"] = "Error loading vehicle shop: {0}",
+
+                ["Buy"] = "BUY",
+                ["Spawn"] = "SPAWN",
+                ["Recall"] = "RECALL",
+                ["Pickup"] = "PICKUP",
+                ["Spawned"] = "SPAWNED",
+
+                ["Free"] = "Free",
+                ["UnknownPrice"] = "Unknown Price",
+                ["PriceUnknown"] = "Price Unknown",
+                ["AlreadyOwned"] = "Already Owned",
+                ["CurrentlySpawned"] = "Currently Spawned",
+                ["AvailableToSpawn"] = "Available to Spawn",
+                ["Available"] = "Available",
+                ["Cooldown"] = "Cooldown: {0}",
+                ["Unknown"] = "Unknown",
+
+                ["Category_all"] = "ALL",
+                ["Category_air"] = "AIR",
+                ["Category_land"] = "LAND",
+                ["Category_water"] = "WATER",
+                ["Category_train"] = "TRAIN",
+                ["Category_siege"] = "SIEGE"
+            }, this);
+
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["CorePluginNotLoaded"] = "Плагин транспортной системы не загружен!",
+                ["NoPermission"] = "У вас нет прав для использования транспорта!",
+                ["VipOnly"] = "Этот транспорт только для VIP.",
+                ["PickupRequiresRustVehicles"] = "Для этой функции требуется RustVehicles.",
+                ["ImageRegistry"] = "Реестр изображений: {0} ключей (см. лог сервера)",
+
+                ["TitleMain"] = "Система транспорта Rust",
+                ["TitleShop"] = "Магазин транспорта",
+                ["TitleManage"] = "Управление транспортом",
+                ["VehiclesCount"] = "Транспорт: {0}",
+                ["Balance"] = "Баланс:",
+                ["BuyVehicles"] = "Купить транспорт",
+                ["ManageVehicles"] = "Управление транспортом",
+                ["Back"] = "← Назад",
+                ["BackMain"] = "← Меню",
+                ["PageOf"] = "Стр. {0} из {1}",
+                ["NoVehiclesPurchase"] = "Нет транспорта для покупки",
+                ["NoVehiclesCategory"] = "В этой категории нет вашего транспорта",
+                ["NoVehiclesYet"] = "У вас ещё нет транспорта",
+                ["AddImage"] = "Добавьте изображение: {0}",
+                ["FailedLoadShop"] = "Не удалось загрузить магазин. Попробуйте снова.",
+                ["ErrorLoadingMain"] = "Ошибка загрузки главного меню: {0}",
+                ["ErrorLoadingVehicles"] = "Ошибка загрузки транспорта: {0}",
+                ["ErrorLoadingShop"] = "Ошибка загрузки магазина: {0}",
+
+                ["Buy"] = "КУПИТЬ",
+                ["Spawn"] = "СОЗДАТЬ",
+                ["Recall"] = "ВЫЗВАТЬ",
+                ["Pickup"] = "ПОДОБРАТЬ",
+                ["Spawned"] = "СОЗДАН",
+
+                ["Free"] = "Бесплатно",
+                ["UnknownPrice"] = "Цена неизвестна",
+                ["PriceUnknown"] = "Цена неизвестна",
+                ["AlreadyOwned"] = "Уже куплено",
+                ["CurrentlySpawned"] = "Уже создан",
+                ["AvailableToSpawn"] = "Можно создать",
+                ["Available"] = "Доступен",
+                ["Cooldown"] = "Ожидание: {0}",
+                ["Unknown"] = "Неизвестно",
+
+                ["Category_all"] = "ВСЕ",
+                ["Category_air"] = "ВОЗДУХ",
+                ["Category_land"] = "СУША",
+                ["Category_water"] = "ВОДА",
+                ["Category_train"] = "ПОЕЗДА",
+                ["Category_siege"] = "ОСАДА"
+            }, this, "ru");
         }
 
         internal void OnServerInitialized()
@@ -432,13 +566,13 @@ namespace RustVehiclesGUIHarmony
 
 			if (CorePlugin == null)
             {
-				player.ChatMessage("Vehicle system plugin is not loaded!");
+				player.ChatMessage(Lang("CorePluginNotLoaded", player));
                 return;
             }
 
 			if (!HasCoreUsePermission(player))
             {
-                player.ChatMessage("You don't have permission to use vehicles!");
+                player.ChatMessage(Lang("NoPermission", player));
                 return;
             }
 
@@ -539,13 +673,13 @@ namespace RustVehiclesGUIHarmony
 
 			if (!HasCoreUsePermission(player))
             {
-                player.ChatMessage("You don't have permission to use vehicles!");
+                player.ChatMessage(Lang("NoPermission", player));
                 return;
             }
 
             if (!HasVehiclePermission(player, vehicleType))
             {
-                player.ChatMessage("This vehicle is VIP only.");
+                player.ChatMessage(Lang("VipOnly", player));
                 return;
             }
 
@@ -593,13 +727,13 @@ namespace RustVehiclesGUIHarmony
 
 			if (!HasCoreUsePermission(player))
             {
-                player.ChatMessage("You don't have permission to use vehicles!");
+                player.ChatMessage(Lang("NoPermission", player));
                 return;
             }
 
             if (!HasVehiclePermission(player, vehicleType))
             {
-                player.ChatMessage("This vehicle is VIP only.");
+                player.ChatMessage(Lang("VipOnly", player));
                 return;
             }
 
@@ -696,7 +830,7 @@ namespace RustVehiclesGUIHarmony
 
             if (RustVehicles == null || !RustVehicles.IsLoaded)
             {
-                player.ChatMessage("Please purchase RustVehicles to use this feature.");
+                player.ChatMessage(Lang("PickupRequiresRustVehicles", player));
                 return;
             }
 
@@ -990,7 +1124,7 @@ namespace RustVehiclesGUIHarmony
                 DebugUI($"[IMG] {kvp.Key} -> {kvp.Value}");
                 if (++shown >= 50) break;
             }
-            player.ChatMessage($"Image registry: {count} keys (see server log)");
+            player.ChatMessage(Lang("ImageRegistry", player, count));
         }
         
         #region ServerPanel Commands
@@ -1238,7 +1372,7 @@ namespace RustVehiclesGUIHarmony
                 Color = IColor.CreateWhite()
             };
 
-            elements.Add(titleText.GetText("Rust Vehicles System", UI_MAIN));
+            elements.Add(titleText.GetText(Lang("TitleMain", player), UI_MAIN));
 
             var vehicleCount = GetOwnedVehicleCount(player);
             var maxVehicles = GetMaxVehicles(player);
@@ -1253,7 +1387,7 @@ namespace RustVehiclesGUIHarmony
                 Color = IColor.CreateWhite()
             };
 
-            elements.Add(topRightInfoText.GetText($"Vehicles: {vehicleText}\n{player.displayName}", UI_MAIN));
+            elements.Add(topRightInfoText.GetText($"{Lang("VehiclesCount", player, vehicleText)}\n{player.displayName}", UI_MAIN));
 
             var balanceText = GetPlayerBalance(player);
             var leftInfoText = new TextSettings
@@ -1265,7 +1399,7 @@ namespace RustVehiclesGUIHarmony
                 Color = IColor.CreateWhite()
             };
 
-            elements.Add(leftInfoText.GetText($"Balance:\n{balanceText}", UI_MAIN));
+            elements.Add(leftInfoText.GetText($"{Lang("Balance", player)}\n{balanceText}", UI_MAIN));
 
             var buyButtonWidth = 0.30f;
             var manageButtonWidth = 0.38f;
@@ -1285,7 +1419,7 @@ namespace RustVehiclesGUIHarmony
                 Align = TextAnchor.MiddleCenter
             };
 
-            elements.AddRange(shopButton.GetButton("Buy Vehicles", "vgui.shop", UI_MAIN));
+            elements.AddRange(shopButton.GetButton(Lang("BuyVehicles", player), "vgui.shop", UI_MAIN));
 
             var manageButton = new ButtonSettings
             {
@@ -1298,7 +1432,7 @@ namespace RustVehiclesGUIHarmony
                 Align = TextAnchor.MiddleCenter
             };
 
-            elements.AddRange(manageButton.GetButton("Manage Vehicles", "vgui.manage", UI_MAIN));
+            elements.AddRange(manageButton.GetButton(Lang("ManageVehicles", player), "vgui.manage", UI_MAIN));
 
             var closeButton = new ButtonSettings
             {
@@ -1450,7 +1584,7 @@ namespace RustVehiclesGUIHarmony
                 Color = IColor.CreateWhite()
             };
 
-            elements.Add(titleText.GetText("Vehicle Shop", UI_SHOP));
+            elements.Add(titleText.GetText(Lang("TitleShop", player), UI_SHOP));
 
             var closeButton = new ButtonSettings
             {
@@ -1475,7 +1609,7 @@ namespace RustVehiclesGUIHarmony
                 Align = TextAnchor.MiddleCenter
             };
 
-            elements.AddRange(backButton.GetButton("← Back", "vgui.main", UI_SHOP));
+            elements.AddRange(backButton.GetButton(Lang("Back", player), "vgui.main", UI_SHOP));
 
             var categories = new[] { "all", "air", "land", "water", "train", "siege" };
             var catWidth = 0.08f;
@@ -1497,7 +1631,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter
                 };
 
-                var buttonElements = catButton.GetButton(cat.ToUpper(), $"vgui.shop {cat}", UI_SHOP, $"{UI_SHOP}_cat_{cat}");
+                var buttonElements = catButton.GetButton(LangCategory(player, cat), $"vgui.shop {cat}", UI_SHOP, $"{UI_SHOP}_cat_{cat}");
                 elements.AddRange(buttonElements);
             }
 
@@ -1509,7 +1643,7 @@ namespace RustVehiclesGUIHarmony
                 DebugUI($"[CACHE] Populated cache in ShowShopGUI for {cacheKey} ({vehicles.Count} vehicles)");
             
             var currentPage = _playerShopPage.GetValueOrDefault(player.userID, 0);
-            CreateVehicleGrid(elements, UI_SHOP, vehicles, true, currentPage, category);
+            CreateVehicleGrid(elements, UI_SHOP, vehicles, true, player, currentPage, category);
 
             if (player != null && !player.IsDestroyed && player.net?.connection != null)
             {
@@ -1561,7 +1695,7 @@ namespace RustVehiclesGUIHarmony
                 Color = IColor.CreateWhite()
             };
 
-            elements.Add(titleText.GetText("Manage Your Vehicles", UI_MANAGE));
+            elements.Add(titleText.GetText(Lang("TitleManage", player), UI_MANAGE));
 
             var closeButton = new ButtonSettings
             {
@@ -1586,7 +1720,7 @@ namespace RustVehiclesGUIHarmony
                 Align = TextAnchor.MiddleCenter
             };
 
-            elements.AddRange(backButton.GetButton("← Back", "vgui.main", UI_MANAGE));
+            elements.AddRange(backButton.GetButton(Lang("Back", player), "vgui.main", UI_MANAGE));
 
             var categories = new[] { "all", "air", "land", "water", "train", "siege" };
             var catWidth = 0.08f;
@@ -1608,13 +1742,13 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter
                 };
 
-                var buttonElements = catButton.GetButton(cat.ToUpper(), $"vgui.manage {cat}", UI_MANAGE, $"{UI_MANAGE}_cat_{cat}");
+                var buttonElements = catButton.GetButton(LangCategory(player, cat), $"vgui.manage {cat}", UI_MANAGE, $"{UI_MANAGE}_cat_{cat}");
                 elements.AddRange(buttonElements);
             }
 
             var ownedVehicles = GetOwnedVehicles(player, category);
             var currentPage = _playerManagePage.GetValueOrDefault(player.userID, 0);
-            CreateVehicleGrid(elements, UI_MANAGE, ownedVehicles, false, currentPage, category);
+            CreateVehicleGrid(elements, UI_MANAGE, ownedVehicles, false, player, currentPage, category);
 
             if (player != null && !player.IsDestroyed && player.net?.connection != null)
             {
@@ -1630,7 +1764,7 @@ namespace RustVehiclesGUIHarmony
             }
         }
 
-		private void CreateVehicleGrid(List<CuiElement> elements, string parent, List<VehicleDisplayInfo> vehicles, bool isShop, int page = 0, string category = "")
+		private void CreateVehicleGrid(List<CuiElement> elements, string parent, List<VehicleDisplayInfo> vehicles, bool isShop, BasePlayer player, int page = 0, string category = "")
         {
             if (vehicles == null || vehicles.Count == 0)
             {
@@ -1643,8 +1777,8 @@ namespace RustVehiclesGUIHarmony
                     Color = IColor.Create("#888888")
                 };
 
-                var message = isShop ? "No vehicles available for purchase" : 
-                    (category != "all" ? "You don't own any vehicles in this category" : "You don't own any vehicles yet");
+                var message = isShop ? Lang("NoVehiclesPurchase", player) : 
+                    (category != "all" ? Lang("NoVehiclesCategory", player) : Lang("NoVehiclesYet", player));
                 elements.Add(noVehiclesText.GetText(message, parent));
                 return;
             }
@@ -1667,7 +1801,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter,
                     Color = IColor.CreateWhite()
                 };
-                elements.Add(pageInfo.GetText($"Page {page + 1} of {totalPages}", parent, $"{parent}_pageinfo"));
+                elements.Add(pageInfo.GetText(Lang("PageOf", player, page + 1, totalPages), parent, $"{parent}_pageinfo"));
 
                 if (page > 0)
                 {
@@ -1747,7 +1881,7 @@ namespace RustVehiclesGUIHarmony
 						Color = IColor.Create("#FF6B6B")
 					};
 
-					elements.Add(noImageText.GetText($"Add image: {suggestion}", $"vehicle_{i}"));
+					elements.Add(noImageText.GetText(Lang("AddImage", player, suggestion), $"vehicle_{i}"));
 				}
 
                 var nameText = new TextSettings
@@ -1786,7 +1920,7 @@ namespace RustVehiclesGUIHarmony
                         IsBold = true,
                         Align = TextAnchor.MiddleCenter
                     };
-                    elements.AddRange(actionButton.GetButton("BUY", $"vgui.buy {vehicle.VehicleType}", $"vehicle_{i}"));
+                    elements.AddRange(actionButton.GetButton(Lang("Buy", player), $"vgui.buy {vehicle.VehicleType}", $"vehicle_{i}"));
                 }
                 else
                 {
@@ -1802,7 +1936,7 @@ namespace RustVehiclesGUIHarmony
                     };
                     var recallCommand = $"vgui.recall {vehicle.VehicleType}";
                     DebugUI($"[GRID] Creating RECALL button for vehicle '{vehicle.DisplayName}' (Type: '{vehicle.VehicleType}') with command: '{recallCommand}'");
-                    elements.AddRange(recallButton.GetButton("RECALL", recallCommand, $"vehicle_{i}"));
+                    elements.AddRange(recallButton.GetButton(Lang("Recall", player), recallCommand, $"vehicle_{i}"));
 
                     var pickupButton = new ButtonSettings
                     {
@@ -1816,7 +1950,7 @@ namespace RustVehiclesGUIHarmony
                     };
                     var pickupCommand = $"vgui.pickup {vehicle.VehicleType}";
                     DebugUI($"[GRID] Creating PICKUP button for vehicle '{vehicle.DisplayName}' (Type: '{vehicle.VehicleType}') with command: '{pickupCommand}'");
-                    elements.AddRange(pickupButton.GetButton("PICKUP", pickupCommand, $"vehicle_{i}"));
+                    elements.AddRange(pickupButton.GetButton(Lang("Pickup", player), pickupCommand, $"vehicle_{i}"));
 
                     if (!vehicle.IsSpawned)
                     {
@@ -1832,7 +1966,7 @@ namespace RustVehiclesGUIHarmony
                         };
                         var spawnCommand = $"vgui.spawn {vehicle.VehicleType}";
                         DebugUI($"[GRID] Creating SPAWN button for vehicle '{vehicle.DisplayName}' (Type: '{vehicle.VehicleType}') with command: '{spawnCommand}'");
-                        elements.AddRange(spawnButton.GetButton("SPAWN", spawnCommand, $"vehicle_{i}"));
+                        elements.AddRange(spawnButton.GetButton(Lang("Spawn", player), spawnCommand, $"vehicle_{i}"));
                     }
                 }
             }
@@ -1916,7 +2050,7 @@ namespace RustVehiclesGUIHarmony
                 var elements = Facepunch.Pool.Get<List<CuiElement>>();
                 try
                 {
-                    CreateVehicleGrid(elements, parent, vehicles, isShop, currentPage, category);
+                    CreateVehicleGrid(elements, parent, vehicles, isShop, player, currentPage, category);
 
                     if (elements.Count > 0)
                     {
@@ -1969,7 +2103,7 @@ namespace RustVehiclesGUIHarmony
                             Align = TextAnchor.MiddleCenter
                         };
 
-                        var buttonElements = catButton.GetButton(cat.ToUpper(), $"vgui.shop {cat}", UI_SHOP, $"{UI_SHOP}_cat_{cat}");
+                        var buttonElements = catButton.GetButton(LangCategory(player, cat), $"vgui.shop {cat}", UI_SHOP, $"{UI_SHOP}_cat_{cat}");
                         elements.AddRange(buttonElements);
                     }
 
@@ -2023,7 +2157,7 @@ namespace RustVehiclesGUIHarmony
                             Align = TextAnchor.MiddleCenter
                         };
 
-                        var buttonElements = catButton.GetButton(cat.ToUpper(), $"vgui.manage {cat}", UI_MANAGE, $"{UI_MANAGE}_cat_{cat}");
+                        var buttonElements = catButton.GetButton(LangCategory(player, cat), $"vgui.manage {cat}", UI_MANAGE, $"{UI_MANAGE}_cat_{cat}");
                         elements.AddRange(buttonElements);
                     }
 
@@ -2631,7 +2765,7 @@ namespace RustVehiclesGUIHarmony
             
             var formattedBalance = balance.Contains("\n") ? balance : balance.Replace(" | ", "\n");
             
-            return $"Balance:\n{formattedBalance}\nVehicles: {vehicleText} | {player.displayName}";
+            return $"{Lang("Balance", player)}\n{formattedBalance}\n{Lang("VehiclesCount", player, vehicleText)} | {player.displayName}";
         }
 
         private string GetPlayerBalance(BasePlayer player)
@@ -2934,13 +3068,13 @@ namespace RustVehiclesGUIHarmony
                     }
                 }
                 
-                var priceInfo = GetConfigPriceInfo(vData);
+                var priceInfo = GetConfigPriceInfo(vData, player);
                 var canAfford = CanPlayerAfford(player, vData);
                 
                 if (isOwned)
                 {
                     canAfford = false;
-                    priceInfo = "Already Owned";
+                    priceInfo = Lang("AlreadyOwned", player);
                     DebugUI($"[VEHICLE OWNERSHIP] Setting {vehicleType} to unaffordable (already owned)");
                 }
                 else if (player != null && !HasVehiclePermission(player, vehicleType))
@@ -3036,13 +3170,13 @@ namespace RustVehiclesGUIHarmony
                     }
                 }
                 
-                var priceInfo = GetConfigPriceInfoFromJObject(vehicleData);
+                var priceInfo = GetConfigPriceInfoFromJObject(vehicleData, player);
                 var canAfford = CanPlayerAffordFromJObject(player, vehicleData);
                 
                 if (isOwned)
                 {
                     canAfford = false;
-                    priceInfo = "Already Owned";
+                    priceInfo = Lang("AlreadyOwned", player);
                     DebugUI($"[VEHICLE OWNERSHIP] Setting {vehicleType} to unaffordable (already owned)");
                 }
                 else if (player != null && !HasVehiclePermission(player, actualVehicleType))
@@ -3153,7 +3287,7 @@ namespace RustVehiclesGUIHarmony
             return "land";
         }
 
-        private string GetConfigPriceInfo(Dictionary<string, object> vData)
+        private string GetConfigPriceInfo(Dictionary<string, object> vData, BasePlayer player = null)
         {
             try
             {
@@ -3168,18 +3302,18 @@ namespace RustVehiclesGUIHarmony
                             var displayName = priceData["displayName"].ToString();
                             
                             if (amount.ToString() == "0")
-                                return "Free";
+                                return Lang("Free", player);
                                 
                             return $"{amount} {displayName}";
                         }
                     }
                 }
                 
-                return "Free";
+                return Lang("Free", player);
             }
             catch
             {
-                return "Unknown Price";
+                return Lang("UnknownPrice", player);
             }
         }
 
@@ -3268,7 +3402,7 @@ namespace RustVehiclesGUIHarmony
             }
         }
 
-        private string GetConfigPriceInfoFromJObject(Newtonsoft.Json.Linq.JObject vehicleData)
+        private string GetConfigPriceInfoFromJObject(Newtonsoft.Json.Linq.JObject vehicleData, BasePlayer player = null)
         {
             try
             {
@@ -3281,21 +3415,21 @@ namespace RustVehiclesGUIHarmony
                         if (priceData != null)
                         {
                             var amount = priceData["amount"]?.ToObject<int>() ?? 0;
-                            var displayName = priceData["displayName"]?.ToString() ?? "Unknown";
+                            var displayName = priceData["displayName"]?.ToString() ?? Lang("Unknown", player);
 
                             if (amount == 0)
-                                return "Free";
+                                return Lang("Free", player);
 
                             return $"{amount} {displayName}";
                         }
                     }
                 }
 
-                return "Free";
+                return Lang("Free", player);
             }
             catch
             {
-                return "Price Unknown";
+                return Lang("PriceUnknown", player);
             }
         }
 
@@ -3444,16 +3578,16 @@ namespace RustVehiclesGUIHarmony
                                             if (priceData != null)
                                             {
                                                 var amount = priceData["amount"]?.ToObject<int>() ?? 0;
-                                                var displayName = priceData["displayName"]?.ToString() ?? "Unknown";
+                                                var displayName = priceData["displayName"]?.ToString() ?? Lang("Unknown", player);
                                                 
                                                 if (amount == 0)
-                                                    return "Free";
+                                                    return Lang("Free", player);
                                                 
                                                 return $"{amount:N0} {displayName}";
                                             }
                                         }
                                     }
-                                    return "Free";
+                                    return Lang("Free", player);
                                 }
                             }
                         }
@@ -3464,7 +3598,7 @@ namespace RustVehiclesGUIHarmony
             }
             catch
             {
-                return "Price Unknown";
+                return Lang("PriceUnknown", player);
             }
         }
 
@@ -3678,6 +3812,7 @@ namespace RustVehiclesGUIHarmony
                 if (vehicle.StatusInfo.Contains("Free"))
                 {
                     vehicle.CanAfford = true;
+                    vehicle.StatusInfo = Lang("Free", player);
                 }
                 else if (vehicle.StatusInfo.Contains("Scrap"))
                 {
@@ -4044,7 +4179,7 @@ namespace RustVehiclesGUIHarmony
                     VehicleType = commandType,
                     DisplayName = displayName,
                     Image = null,
-                    StatusInfo = isSpawned ? "Currently Spawned" : "Available to Spawn",
+                    StatusInfo = isSpawned ? Lang("CurrentlySpawned", player) : Lang("AvailableToSpawn", player),
                     CanAfford = true,
                     IsSpawned = isSpawned,
                     ImageKey = GetImageKeyFromSection(configSectionName),
@@ -4277,30 +4412,30 @@ namespace RustVehiclesGUIHarmony
 
 
 
-        private string GetVehiclePriceInfo(Dictionary<string, object> vData)
+        private string GetVehiclePriceInfo(Dictionary<string, object> vData, BasePlayer player = null)
         {
             if (vData.ContainsKey("price") && vData.ContainsKey("currency"))
             {
                 return $"{vData["price"]} {vData["currency"]}";
             }
-            return "Free";
+            return Lang("Free", player);
         }
 
-        private string GetVehicleStatusInfo(Dictionary<string, object> vData)
+        private string GetVehicleStatusInfo(Dictionary<string, object> vData, BasePlayer player = null)
         {
             if (vData.ContainsKey("isSpawned") && (bool)vData["isSpawned"])
             {
-                return "Currently Spawned";
+                return Lang("CurrentlySpawned", player);
             }
             
             if (vData.ContainsKey("cooldown") && vData["cooldown"] is int cooldown && cooldown > 0)
             {
                 var minutes = cooldown / 60;
                 var seconds = cooldown % 60;
-                return $"Cooldown: {minutes:00}:{seconds:00}";
+                return Lang("Cooldown", player, $"{minutes:00}:{seconds:00}");
             }
             
-            return "Available";
+            return Lang("Available", player);
         }
 
 
@@ -5102,15 +5237,15 @@ namespace RustVehiclesGUIHarmony
                 if (CorePlugin == null)
                 {
                     DebugServerPanel("[SERVERPANEL] API_OpenPlugin: CorePlugin is null");
-                    player.ChatMessage("Vehicle system plugin is not loaded!");
-                    return CreateErrorMessage("Vehicle system plugin is not loaded!");
+                    player.ChatMessage(Lang("CorePluginNotLoaded", player));
+                    return CreateErrorMessage(Lang("CorePluginNotLoaded", player));
                 }
 
                 if (!HasCoreUsePermission(player))
                 {
                     DebugServerPanel($"[SERVERPANEL] API_OpenPlugin: Player {player.userID} doesn't have permission");
-                    player.ChatMessage("You don't have permission to use vehicles!");
-                    return CreateErrorMessage("You don't have permission to use vehicles!");
+                    player.ChatMessage(Lang("NoPermission", player));
+                    return CreateErrorMessage(Lang("NoPermission", player));
                 }
 
                 if (!_playerServerPanelView.ContainsKey(player.userID))
@@ -5141,7 +5276,7 @@ namespace RustVehiclesGUIHarmony
                 if (container == null || container.Count == 0)
                 {
                     DebugServerPanel("[SERVERPANEL] API_OpenPlugin: Container is null or empty, returning error message");
-                    return CreateErrorMessage("Failed to load vehicle shop. Please try again.");
+                    return CreateErrorMessage(Lang("FailedLoadShop", player));
                 }
                 
                 DebugServerPanel($"[SERVERPANEL] API_OpenPlugin: Successfully created {container.Count} UI elements");
@@ -5153,7 +5288,7 @@ namespace RustVehiclesGUIHarmony
                 DebugServerPanel($"[SERVERPANEL] API_OpenPlugin: Stack trace: {ex.StackTrace}");
                 PrintWarning($"[SERVERPANEL] API_OpenPlugin error: {ex.Message}");
                 
-                return CreateErrorMessage($"Error loading vehicle shop: {ex.Message}");
+                return CreateErrorMessage(Lang("ErrorLoadingShop", player, ex.Message));
             }
         }
 
@@ -5189,7 +5324,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter,
                     Color = IColor.CreateWhite()
                 };
-                container.Add(titleText.GetText("Rust Vehicles System", "UI.Server.Panel.Content"));
+                container.Add(titleText.GetText(Lang("TitleMain", player), "UI.Server.Panel.Content"));
 
                 var vehicleCount = GetOwnedVehicleCount(player);
                 var maxVehicles = GetMaxVehicles(player);
@@ -5203,7 +5338,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.UpperRight,
                     Color = IColor.CreateWhite()
                 };
-                container.Add(topRightInfoText.GetText($"Vehicles: {vehicleText}\n{player.displayName}", "UI.Server.Panel.Content"));
+                container.Add(topRightInfoText.GetText($"{Lang("VehiclesCount", player, vehicleText)}\n{player.displayName}", "UI.Server.Panel.Content"));
 
                 var balanceText = GetPlayerBalance(player);
                 var leftInfoText = new TextSettings
@@ -5214,7 +5349,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.UpperLeft,
                     Color = IColor.CreateWhite()
                 };
-                container.Add(leftInfoText.GetText($"Balance:\n{balanceText}", "UI.Server.Panel.Content"));
+                container.Add(leftInfoText.GetText($"{Lang("Balance", player)}\n{balanceText}", "UI.Server.Panel.Content"));
 
                 var buyButtonWidth = 0.30f;
                 var manageButtonWidth = 0.38f;
@@ -5234,7 +5369,7 @@ namespace RustVehiclesGUIHarmony
                     IsBold = true,
                     Align = TextAnchor.MiddleCenter
                 };
-                container.AddRange(buyButton.GetButton("Buy Vehicles", "vgui.serverpanel.view shop", "UI.Server.Panel.Content"));
+                container.AddRange(buyButton.GetButton(Lang("BuyVehicles", player), "vgui.serverpanel.view shop", "UI.Server.Panel.Content"));
 
                 var manageButton = new ButtonSettings
                 {
@@ -5246,7 +5381,7 @@ namespace RustVehiclesGUIHarmony
                     IsBold = true,
                     Align = TextAnchor.MiddleCenter
                 };
-                container.AddRange(manageButton.GetButton("Manage Vehicles", "vgui.serverpanel.view manage", "UI.Server.Panel.Content"));
+                container.AddRange(manageButton.GetButton(Lang("ManageVehicles", player), "vgui.serverpanel.view manage", "UI.Server.Panel.Content"));
 
                 DebugServerPanel($"[SERVERPANEL] CreateServerPanelMainElements: Created {container.Count} UI elements");
                 return container;
@@ -5265,7 +5400,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter,
                     Color = IColor.Create("#FF6B6B")
                 };
-                container.Add(errorText.GetText($"Error loading main menu: {ex.Message}", "UI.Server.Panel.Content"));
+                container.Add(errorText.GetText(Lang("ErrorLoadingMain", player, ex.Message), "UI.Server.Panel.Content"));
                 return container;
             }
         }
@@ -5286,7 +5421,7 @@ namespace RustVehiclesGUIHarmony
                 Align = TextAnchor.MiddleLeft,
                 Color = IColor.Create("#E2DBD3", 90)
             };
-            container.Add(titleText.GetText("Vehicle Shop", "UI.Server.Panel.Content"));
+            container.Add(titleText.GetText(Lang("TitleShop", player), "UI.Server.Panel.Content"));
 
             var backButton = new ButtonSettings
             {
@@ -5297,7 +5432,7 @@ namespace RustVehiclesGUIHarmony
                 FontSize = 10,
                 Align = TextAnchor.MiddleCenter
             };
-            container.AddRange(backButton.GetButton("← Main", "vgui.serverpanel.view main", "UI.Server.Panel.Content"));
+            container.AddRange(backButton.GetButton(Lang("BackMain", player), "vgui.serverpanel.view main", "UI.Server.Panel.Content"));
 
             var categories = new[] { "all", "air", "land", "water", "train", "siege" };
             var buttonWidth = 0.10f; 
@@ -5320,7 +5455,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter
                 };
 
-                container.AddRange(categoryButton.GetButton(cat.ToUpper(), $"vgui.serverpanel.shop {cat}", "UI.Server.Panel.Content"));
+                container.AddRange(categoryButton.GetButton(LangCategory(player, cat), $"vgui.serverpanel.shop {cat}", "UI.Server.Panel.Content"));
                 currentX += buttonWidth + 0.01f;
             }
 
@@ -5370,7 +5505,7 @@ namespace RustVehiclesGUIHarmony
                 var cellY = gridStartY + ((rows - 1 - row) * cellHeight);
 
                 var cardName = $"vehicle_{i}"; 
-                CreateServerPanelVehicleCardElements(container, vehicle, "UI.Server.Panel.Content", cellX + padding, cellY + padding,
+                CreateServerPanelVehicleCardElements(player, container, vehicle, "UI.Server.Panel.Content", cellX + padding, cellY + padding,
                     cellWidth - (padding * 2), cellHeight - (padding * 2), cardName);
             }
 
@@ -5437,12 +5572,12 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter,
                     Color = IColor.Create("#FF6B6B")
                 };
-                container.Add(errorText.GetText($"Error loading vehicles: {ex.Message}", "UI.Server.Panel.Content"));
+                container.Add(errorText.GetText(Lang("ErrorLoadingVehicles", player, ex.Message), "UI.Server.Panel.Content"));
                 return container;
             }
         }
 
-        private void CreateServerPanelVehicleCardElements(CuiElementContainer container, VehicleDisplayInfo vehicle,
+        private void CreateServerPanelVehicleCardElements(BasePlayer player, CuiElementContainer container, VehicleDisplayInfo vehicle,
             string parent, float x, float y, float width, float height, string cardName)
         {
             var cardPanel = new ImageSettings
@@ -5498,7 +5633,7 @@ namespace RustVehiclesGUIHarmony
                 Align = TextAnchor.MiddleCenter
             };
 
-            var buttonText = vehicle.IsSpawned ? "SPAWNED" : "BUY";
+            var buttonText = vehicle.IsSpawned ? Lang("Spawned", player) : Lang("Buy", player);
             var command = vehicle.CanAfford && !vehicle.IsSpawned ? $"vgui.buy {vehicle.VehicleType}" : string.Empty;
 
             container.AddRange(buyButton.GetButton(buttonText, command, cardName));
@@ -5520,7 +5655,7 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleLeft,
                     Color = IColor.Create("#E2DBD3", 90)
                 };
-                container.Add(titleText.GetText("Manage Your Vehicles", "UI.Server.Panel.Content"));
+                container.Add(titleText.GetText(Lang("TitleManage", player), "UI.Server.Panel.Content"));
 
                 var backButton = new ButtonSettings
                 {
@@ -5531,7 +5666,7 @@ namespace RustVehiclesGUIHarmony
                     FontSize = 10,
                     Align = TextAnchor.MiddleCenter
                 };
-                container.AddRange(backButton.GetButton("← Main", "vgui.serverpanel.view main", "UI.Server.Panel.Content"));
+                container.AddRange(backButton.GetButton(Lang("BackMain", player), "vgui.serverpanel.view main", "UI.Server.Panel.Content"));
 
                 var category = _playerSelectedManageCategory.GetValueOrDefault(player.userID, "all");
                 var categories = new[] { "all", "air", "land", "water", "train", "siege" };
@@ -5555,7 +5690,7 @@ namespace RustVehiclesGUIHarmony
                         Align = TextAnchor.MiddleCenter
                     };
 
-                    container.AddRange(categoryButton.GetButton(cat.ToUpper(), $"vgui.serverpanel.manage.category {cat}", "UI.Server.Panel.Content"));
+                    container.AddRange(categoryButton.GetButton(LangCategory(player, cat), $"vgui.serverpanel.manage.category {cat}", "UI.Server.Panel.Content"));
                     currentX += buttonWidth + 0.01f;
                 }
 
@@ -5598,7 +5733,7 @@ namespace RustVehiclesGUIHarmony
                         Align = TextAnchor.MiddleCenter,
                         Color = IColor.Create("#888888", 90)
                     };
-                    container.Add(noVehiclesText.GetText("You don't own any vehicles in this category", "UI.Server.Panel.Content"));
+                    container.Add(noVehiclesText.GetText(Lang("NoVehiclesCategory", player), "UI.Server.Panel.Content"));
                 }
                 else
                 {
@@ -5612,7 +5747,7 @@ namespace RustVehiclesGUIHarmony
                         var cellY = gridStartY + ((rows - 1 - row) * cellHeight);
 
                         var cardName = $"vehicle_{i}";
-                        CreateServerPanelManageVehicleCardElements(container, vehicle, "UI.Server.Panel.Content", 
+                        CreateServerPanelManageVehicleCardElements(player, container, vehicle, "UI.Server.Panel.Content", 
                             cellX + padding, cellY + padding, cellWidth - (padding * 2), cellHeight - (padding * 2), cardName);
                     }
 
@@ -5680,12 +5815,12 @@ namespace RustVehiclesGUIHarmony
                     Align = TextAnchor.MiddleCenter,
                     Color = IColor.Create("#FF6B6B")
                 };
-                container.Add(errorText.GetText($"Error loading vehicles: {ex.Message}", "UI.Server.Panel.Content"));
+                container.Add(errorText.GetText(Lang("ErrorLoadingVehicles", player, ex.Message), "UI.Server.Panel.Content"));
                 return container;
             }
         }
 
-        private void CreateServerPanelManageVehicleCardElements(CuiElementContainer container, VehicleDisplayInfo vehicle,
+        private void CreateServerPanelManageVehicleCardElements(BasePlayer player, CuiElementContainer container, VehicleDisplayInfo vehicle,
             string parent, float x, float y, float width, float height, string cardName)
         {
             var cardPanel = new ImageSettings
@@ -5747,7 +5882,7 @@ namespace RustVehiclesGUIHarmony
                 IsBold = true,
                 Align = TextAnchor.MiddleCenter
             };
-            container.AddRange(recallButton.GetButton("RECALL", $"vgui.recall {vehicle.VehicleType}", cardName));
+            container.AddRange(recallButton.GetButton(Lang("Recall", player), $"vgui.recall {vehicle.VehicleType}", cardName));
 
             var pickupButton = new ButtonSettings
             {
@@ -5759,7 +5894,7 @@ namespace RustVehiclesGUIHarmony
                 IsBold = true,
                 Align = TextAnchor.MiddleCenter
             };
-            container.AddRange(pickupButton.GetButton("PICKUP", $"vgui.pickup {vehicle.VehicleType}", cardName));
+            container.AddRange(pickupButton.GetButton(Lang("Pickup", player), $"vgui.pickup {vehicle.VehicleType}", cardName));
 
             if (!vehicle.IsSpawned)
             {
@@ -5773,7 +5908,7 @@ namespace RustVehiclesGUIHarmony
                     IsBold = true,
                     Align = TextAnchor.MiddleCenter
                 };
-                container.AddRange(spawnButton.GetButton("SPAWN", $"vgui.spawn {vehicle.VehicleType}", cardName));
+                container.AddRange(spawnButton.GetButton(Lang("Spawn", player), $"vgui.spawn {vehicle.VehicleType}", cardName));
             }
         }
 

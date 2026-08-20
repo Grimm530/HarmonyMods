@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text;
@@ -132,6 +133,7 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized()
         {
+            TryWipeFromMapVoterSignal();
             if (config.economyPlugin == 1 && Economics == null)
                 PrintWarning("Economics plugin not found! You will not be able to upgrade your quarries with server currency!");
             else if (config.economyPlugin == 2 && ServerRewards == null)
@@ -470,6 +472,14 @@ namespace Oxide.Plugins
                 SavePrevDispensers();
                 Puts("Regular wipe found! Plugin data has been wiped successfully!");
             }
+        }
+
+        private void TryWipeFromMapVoterSignal()
+        {
+            var statePath = Path.Combine(Environment.CurrentDirectory, "HarmonyData", Name, "last_wipe_signal.txt");
+            if (!WipeSignal.ShouldWipe(statePath)) return;
+            OnNewSave();
+            WipeSignal.MarkWiped(statePath);
         }
 
         #endregion

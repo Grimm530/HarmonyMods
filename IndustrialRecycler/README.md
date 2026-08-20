@@ -21,6 +21,16 @@ Copies **only** `IndustrialRecycler.dll` to `HarmonyMods\IndustrialRecycler.dll`
 
 Load: `harmony.load IndustrialRecycler` (or automatic at startup).
 
+Shop Command product (gives the industrial recycler item, no player permission required):
+
+```text
+giveindustrialrecycler %steamid%
+```
+
+Standard variant: `givestandardrecycler %steamid%`. Chat `/giveindustrialrecycler` still requires `industrialrecycler.give`.
+
+Hit a placed recycler (or its attached boxes/adapters) with a **hammer** to pick it back up as the skinned box item. Owner, team, and friends (per config) can pick up; monument recyclers cannot.
+
 ## Paths
 
 | Kind | Path |

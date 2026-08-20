@@ -44,7 +44,13 @@ public class MapVoterMod : IHarmonyModHooks
     private volatile bool _downloadCancelled;
     private Coroutine _voteEndAtWipeCoroutine;
     private Coroutine _autoWipeCheckCoroutine;
+    private Coroutine _autoVoteCheckCoroutine;
     private Coroutine _discordVoteRefreshCoroutine;
+    private Coroutine _bootstrapCoroutine;
+    private Coroutine _loadMapsCoroutine;
+    private GameObject _runnerObject;
+    private MapVoterRunner _runner;
+    private readonly HashSet<ulong> _uiViewers = new();
     private bool _restartScheduled;
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
@@ -53,45 +59,100 @@ public class MapVoterMod : IHarmonyModHooks
         TryApplyFindPatch();
         LoadConfig();
         RegisterConsoleCommands();
-        if (TryReadVoteSeedsFromFile(out int mapSize, out List<int> seeds) && mapSize > 0)
-        {
-            Log($"MapVoter: Found persisted vote seeds ({seeds.Count} maps, size {mapSize}) - restoring after server ready");
-            TryReadVoteStateFromFile();
-            ServerMgr.Instance?.StartCoroutine(RestoreVoteFromFileCoroutine(mapSize, seeds));
-        }
-        // Post-wipe: plugins data wipe (if enabled)
+        // Leftover pending wipe (shutdown died before OnUnloaded) — apply cfg then delete identity files.
+        ServerWipe();
         HandlePostWipePluginDataWipe();
-        // Auto-wipe: single check on load; if within 32h start periodic checks (ramps as wipe approaches)
-        if (_config?.AutoWipe?.EnableAutoWipe == true)
-        {
-            _autoWipeCheckCoroutine = ServerMgr.Instance?.StartCoroutine(AutoWipeCheckCoroutine());
-        }
-        Log("MapVoter Harmony mod loaded. Config: HarmonyConfig/MapVoter.json");
+        EnsureRunner();
+        _bootstrapCoroutine = StartModCoroutine(BootstrapCoroutine());
+        Info("MapVoter Harmony mod loaded. Config: HarmonyConfig/MapVoter.json");
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
     {
         _downloadCancelled = true;
-        if (_voteEndAtWipeCoroutine != null && ServerMgr.Instance != null)
-        {
-            ServerMgr.Instance.StopCoroutine(_voteEndAtWipeCoroutine);
-            _voteEndAtWipeCoroutine = null;
-        }
-        if (_autoWipeCheckCoroutine != null && ServerMgr.Instance != null)
-        {
-            ServerMgr.Instance.StopCoroutine(_autoWipeCheckCoroutine);
-            _autoWipeCheckCoroutine = null;
-        }
-        if (_discordVoteRefreshCoroutine != null && ServerMgr.Instance != null)
-        {
-            ServerMgr.Instance.StopCoroutine(_discordVoteRefreshCoroutine);
-            _discordVoteRefreshCoroutine = null;
-        }
+        StopModCoroutine(ref _bootstrapCoroutine);
+        StopModCoroutine(ref _voteEndAtWipeCoroutine);
+        StopModCoroutine(ref _autoWipeCheckCoroutine);
+        StopModCoroutine(ref _autoVoteCheckCoroutine);
+        StopModCoroutine(ref _discordVoteRefreshCoroutine);
+        StopModCoroutine(ref _loadMapsCoroutine);
+        DestroyRunner();
         UnregisterConsoleCommands();
         DestroyAllUI();
         // Update server.cfg for wipe before shutdown (if pending wipe data exists)
         ServerWipe();
         Instance = null;
+    }
+
+    private void EnsureRunner()
+    {
+        if (_runner != null) return;
+        _runnerObject = new GameObject("MapVoterRunner");
+        UnityEngine.Object.DontDestroyOnLoad(_runnerObject);
+        _runnerObject.hideFlags = HideFlags.HideAndDontSave;
+        _runner = _runnerObject.AddComponent<MapVoterRunner>();
+    }
+
+    private void DestroyRunner()
+    {
+        if (_runnerObject != null)
+        {
+            UnityEngine.Object.Destroy(_runnerObject);
+            _runnerObject = null;
+        }
+        _runner = null;
+    }
+
+    private Coroutine StartModCoroutine(IEnumerator routine)
+    {
+        EnsureRunner();
+        return _runner.StartCoroutine(routine);
+    }
+
+    private void StopModCoroutine(ref Coroutine routine)
+    {
+        if (routine == null) return;
+        if (_runner != null)
+        {
+            try { _runner.StopCoroutine(routine); } catch { }
+        }
+        routine = null;
+    }
+
+    private IEnumerator BootstrapCoroutine()
+    {
+        while (Instance != null && ServerMgr.Instance == null)
+            yield return null;
+        if (Instance == null) yield break;
+
+        if (TryReadVoteSeedsFromFile(out int mapSize, out List<int> seeds) && mapSize > 0)
+        {
+            int withImages = 0;
+            for (int i = 0; i < seeds.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(FindImageFileForSeed(mapSize, seeds[i])))
+                    withImages++;
+            }
+            if (withImages == 0)
+            {
+                Info($"MapVoter: Persisted seeds ({seeds.Count}) have no matching images in {GetImagesPath()} - ignoring. Admin: mvote to pick from the pool.");
+                DeleteVoteSeedsFile();
+                DeleteVoteStateFile();
+            }
+            else
+            {
+                Info($"MapVoter: Found persisted vote seeds ({seeds.Count} maps, {withImages} images, size {mapSize}) - restoring");
+                TryReadVoteStateFromFile();
+                StopModCoroutine(ref _loadMapsCoroutine);
+                _loadMapsCoroutine = StartModCoroutine(LoadMapsAndActivateCoroutine(mapSize, seeds, false));
+            }
+        }
+
+        if (_config?.AutoWipe?.EnableAutoWipe == true)
+            _autoWipeCheckCoroutine = StartModCoroutine(AutoWipeCheckCoroutine());
+        if (_config?.AutoVote?.EnableAutoVote == true)
+            _autoVoteCheckCoroutine = StartModCoroutine(AutoVoteCheckCoroutine());
+        LogWipeCalendar();
     }
 
     private void TryApplyFindPatch()
@@ -108,7 +169,7 @@ public class MapVoterMod : IHarmonyModHooks
         }
     }
 
-    private const string MVOTE_READY_MSG = "Run mvoteready when ready to start voting.";
+    private const string MVOTE_READY_MSG = "Picking maps from the image pool and posting to Discord...";
 
     private void RegisterConsoleCommands()
     {
@@ -154,13 +215,14 @@ public class MapVoterMod : IHarmonyModHooks
                 Call = arg =>
                 {
                     var p = arg.Player();
-                    if (p == null || p.IsAdmin)
-                        StartVote();
-                    string msg = MVOTE_READY_MSG;
+                    string msg = HandleMvoteCommand(p);
                     if (p != null)
+                    {
                         SendMessage(p, msg);
+                        OpenUI(p);
+                    }
                     else
-                        UnityEngine.Debug.Log("[MapVoter] " + msg);
+                        Info(msg);
                 }
             };
             ConsoleSystem.Index.Server.Dict["global.mvote"] = _mvoteCommand;
@@ -174,7 +236,7 @@ public class MapVoterMod : IHarmonyModHooks
                 Variable = true,
                 ServerAdmin = true,
                 AllowRunFromServer = true,
-                Call = arg => { StartVote(); var pl = arg?.Player(); if (pl != null) SendMessage(pl, MVOTE_READY_MSG); else UnityEngine.Debug.Log("[MapVoter] " + MVOTE_READY_MSG); }
+                Call = arg => { string msg = StartVoteFromPool(); var pl = arg?.Player(); if (pl != null) SendMessage(pl, msg); else Info(msg); }
             };
             ConsoleSystem.Index.Server.Dict["global.mvtest"] = _mvoteStartCommand;
             if (ConsoleSystem.Index.Server.GlobalDict != null)
@@ -187,7 +249,7 @@ public class MapVoterMod : IHarmonyModHooks
                 Variable = true,
                 ServerAdmin = true,
                 AllowRunFromServer = true,
-                Call = arg => { StartVote(); var pl = arg?.Player(); if (pl != null) SendMessage(pl, MVOTE_READY_MSG); else UnityEngine.Debug.Log("[MapVoter] " + MVOTE_READY_MSG); }
+                Call = arg => { string msg = StartVoteFromPool(); var pl = arg?.Player(); if (pl != null) SendMessage(pl, msg); else Info(msg); }
             };
             ConsoleSystem.Index.Server.Dict["global.mapvotestart"] = _mapvoteStartCommand;
             if (ConsoleSystem.Index.Server.GlobalDict != null)
@@ -200,7 +262,13 @@ public class MapVoterMod : IHarmonyModHooks
                 Variable = true,
                 ServerAdmin = true,
                 AllowRunFromServer = true,
-                Call = arg => PostVoteFromSeeds()
+                Call = arg =>
+                {
+                    string msg = StartVoteFromPool();
+                    var pl = arg?.Player();
+                    if (pl != null) SendMessage(pl, msg);
+                    else Info(msg);
+                }
             };
             ConsoleSystem.Index.Server.Dict["global.mvoteready"] = _mvotereadyCommand;
             if (ConsoleSystem.Index.Server.GlobalDict != null)
@@ -213,7 +281,13 @@ public class MapVoterMod : IHarmonyModHooks
                 Variable = true,
                 ServerAdmin = true,
                 AllowRunFromServer = true,
-                Call = arg => PostVoteFromSeeds()
+                Call = arg =>
+                {
+                    string msg = StartVoteFromPool();
+                    var pl = arg?.Player();
+                    if (pl != null) SendMessage(pl, msg);
+                    else Info(msg);
+                }
             };
             ConsoleSystem.Index.Server.Dict["global.mvotepost"] = _mvotepostCommand;
             if (ConsoleSystem.Index.Server.GlobalDict != null)
@@ -268,7 +342,7 @@ public class MapVoterMod : IHarmonyModHooks
                 AllowRunFromServer = true,
                 Call = arg =>
                 {
-                    string msg = "MapVoter: Use 'mvote' to create the list, then 'mvoteready' to open voting.";
+                    string msg = "MapVoter: Admins use 'mvote' or 'mvoteready' to start a vote from the image pool. Players use 'vote' to open the UI.";
                     if (arg?.Player() != null)
                         SendMessage(arg.Player(), msg);
                     else
@@ -404,9 +478,9 @@ public class MapVoterMod : IHarmonyModHooks
 
         if (msg.Equals("mvote", StringComparison.OrdinalIgnoreCase))
         {
-            if (player.IsAdmin)
-                StartVote();
-            SendMessage(player, MVOTE_READY_MSG);
+            string reply = HandleMvoteCommand(player);
+            SendMessage(player, reply);
+            OpenUI(player);
             return true;
         }
 
@@ -414,11 +488,11 @@ public class MapVoterMod : IHarmonyModHooks
         {
             if (!player.IsAdmin)
             {
-                SendMessage(player, MVOTE_READY_MSG);
+                SendMessage(player, "Only admins can start a map vote.");
                 return true;
             }
-            StartVote();
-            SendMessage(player, MVOTE_READY_MSG);
+            SendMessage(player, StartVoteFromPool());
+            OpenUI(player);
             return true;
         }
 
@@ -426,11 +500,11 @@ public class MapVoterMod : IHarmonyModHooks
         {
             if (!player.IsAdmin)
             {
-                SendMessage(player, "Only admins can open the vote. Use F1 console: mvoteready");
+                SendMessage(player, "Only admins can start a map vote. Use F1 console: mvoteready");
                 return true;
             }
-            PostVoteFromSeeds();
-            SendMessage(player, "Loading maps and posting to Discord... Vote open. Players can use the vote command to open the UI.");
+            SendMessage(player, StartVoteFromPool());
+            OpenUI(player);
             return true;
         }
 
@@ -466,7 +540,9 @@ public class MapVoterMod : IHarmonyModHooks
     {
         if (!TryHandleDedicatedMapVoterLine(input, out var reply))
             return false;
-        UnityEngine.Debug.Log("[MapVoter] " + (reply ?? ""));
+        UnityEngine.Debug.Log("[MapVoter] Console: " + input.Trim());
+        if (!string.IsNullOrEmpty(reply) && !reply.StartsWith("MapVoter:", StringComparison.Ordinal))
+            UnityEngine.Debug.Log("[MapVoter] " + reply);
         return true;
     }
 
@@ -518,6 +594,7 @@ public class MapVoterMod : IHarmonyModHooks
 
         if (action == "CLOSE")
         {
+            if (player != null) _uiViewers.Remove(player.userID);
             DestroyUI(player);
             return;
         }
@@ -559,7 +636,7 @@ public class MapVoterMod : IHarmonyModHooks
 
         if (action == "START")
         {
-            StartVote();
+            StartVoteFromPool();
             RefreshUI(player);
             return;
         }
@@ -641,20 +718,22 @@ public class MapVoterMod : IHarmonyModHooks
 
         if (norm == "mvote")
         {
-            StartVote();
-            reply = MVOTE_READY_MSG;
+            reply = HandleMvoteCommand(null);
             return true;
         }
         if (norm == "mvtest" || norm == "mapvotestart")
         {
-            StartVote();
-            reply = MVOTE_READY_MSG;
+            reply = StartVoteFromPool();
             return true;
         }
         if (norm == "mvoteready" || norm == "mvotepost")
         {
-            PostVoteFromSeeds();
-            reply = "Loading maps and posting to Discord... Vote open.";
+            reply = StartVoteFromPool();
+            return true;
+        }
+        if (norm == "mvotewipes")
+        {
+            reply = BuildWipeCalendarReply();
             return true;
         }
         if (norm == "mvotewipe")
@@ -665,7 +744,7 @@ public class MapVoterMod : IHarmonyModHooks
         }
         if (norm == "mapvote")
         {
-            reply = "MapVoter: Use 'mvote' to create the list, then 'mvoteready' to open voting.";
+            reply = "MapVoter: Admins use 'mvote' or 'mvoteready' to start a vote from the image pool. Players use 'vote' to open the UI.";
             return true;
         }
         if (norm == "discordvote")
@@ -756,51 +835,52 @@ public class MapVoterMod : IHarmonyModHooks
         SendMessage(player, $"Vote recorded for {mapId}.");
     }
 
-    /// <summary>mvtest/mapvotestart: Only generate seeds and write to current_vote_seeds.txt. Does not post to Discord or open the vote. Add images to Images path then run mvotepost.</summary>
-    private void StartVote()
+    /// <summary>Admin /mvote: start a new vote from the image pool if none is active. Players: just open the UI.</summary>
+    private string HandleMvoteCommand(BasePlayer player)
     {
-        int mapSize = _config?.MapSize ?? 0;
-        if (mapSize <= 0)
-        {
-            Log("StartVote: Set 'Map size' (e.g. 4000) in config first.");
-            return;
-        }
-
-        int count = Math.Max(1, Math.Min(12, _config?.NumberOfMaps ?? 8));
-        var seeds = new List<int>();
-        var seen = new HashSet<int>();
-        var r = new System.Random(Guid.NewGuid().GetHashCode());
-        while (seeds.Count < count)
-        {
-            int s = r.Next(100000, 2100000000);
-            if (seen.Add(s)) seeds.Add(s);
-        }
-
-        WriteVoteSeedsToFile(mapSize, seeds);
-
-        var imagesDir = GetImagesPath();
-        Directory.CreateDirectory(imagesDir);
-        string seedsFile = Path.Combine(imagesDir, "seeds_to_generate.txt");
-        try
-        {
-            var lines = new List<string> { mapSize.ToString() };
-            foreach (var s in seeds) lines.Add(s.ToString());
-            File.WriteAllLines(seedsFile, lines);
-            Log($"MapVoter: Wrote {seeds.Count} seeds to {seedsFile} for reference.");
-        }
-        catch (Exception ex) { Log($"MapVoter: Could not write seeds file: {ex.Message}"); }
-
-        Log($"MapVoter: Seeds written to HarmonyData/MapVoter/current_vote_seeds.txt. Add images (e.g. {mapSize}_<seed>.png) to {imagesDir}, then run mvoteready to post to Discord and open the vote.");
+        bool isAdmin = player == null || player.IsAdmin;
+        if (isAdmin && !_voteActive && !_mapsLoading)
+            return StartVoteFromPool();
+        if (_mapsLoading)
+            return "MapVoter: Loading map images from the pool...";
+        if (_voteActive)
+            return "Map vote is open. Pick a map in the UI.";
+        return "No map vote is active. An admin can start one with mvote or mvoteready.";
     }
 
-    /// <summary>mvotepost: Load maps from disk (current_vote_seeds.txt + images in Images path), post to Discord, and open the vote. Run after mvotestart once images are in place.</summary>
-        private void PostVoteFromSeeds()
+    /// <summary>Pick random maps from the local image pool, load them, post to Discord, and open the vote.</summary>
+    private string StartVoteFromPool()
+    {
+        if (_mapsLoading)
+            return "MapVoter: Still loading map images. Wait, then try again.";
+        if (_voteActive && _currentVoteMaps.Count > 0)
         {
-        if (!TryReadVoteSeedsFromFile(out int mapSize, out List<int> seeds) || seeds.Count == 0)
-        {
-            Log("MapVoter: No seeds file. Run mvote first, then add images to the Images path (see config) and run mvoteready again.");
-            return;
+            SendToDiscordVoteStarted();
+            return "MapVoter: Vote already open. Re-posted current maps to Discord.";
         }
+
+        int mapSize = _config?.MapSize ?? 0;
+        if (mapSize <= 0)
+            return "MapVoter: Set 'Map size' (e.g. 4000) in HarmonyConfig/MapVoter.json first.";
+
+        var pool = ScanImagePool(mapSize);
+        if (pool.Count == 0)
+        {
+            string dir = GetImagesPath();
+            Info($"MapVoter: No images in pool. Add files named {mapSize}_<seed>.png or .jpg to {dir}");
+            return $"MapVoter: No map images found in {dir}. Add {mapSize}_<seed>.png files (pool can grow over time).";
+        }
+
+        int count = GetVoteMapCount();
+        if (count > pool.Count) count = pool.Count;
+
+        ShufflePool(pool);
+        var picked = new List<int>(count);
+        for (int i = 0; i < count; i++)
+            picked.Add(pool[i].Seed);
+
+        WriteVoteSeedsToFile(mapSize, picked);
+        WriteAutoVoteCycleLock();
 
         _votes.Clear();
         _votedPlayers.Clear();
@@ -808,22 +888,95 @@ public class MapVoterMod : IHarmonyModHooks
         _currentVoteMaps.Clear();
         DeleteVoteStateFile();
 
-        if (_voteEndAtWipeCoroutine != null && ServerMgr.Instance != null)
-        {
-            ServerMgr.Instance.StopCoroutine(_voteEndAtWipeCoroutine);
-            _voteEndAtWipeCoroutine = null;
-        }
+        StopModCoroutine(ref _voteEndAtWipeCoroutine);
+        StopModCoroutine(ref _discordVoteRefreshCoroutine);
+        StopModCoroutine(ref _loadMapsCoroutine);
 
         _voteActive = true;
         _mapsLoading = true;
-        if (_discordVoteRefreshCoroutine != null && ServerMgr.Instance != null)
+        _discordVoteRefreshCoroutine = StartModCoroutine(DiscordVoteRefreshCoroutine());
+        _loadMapsCoroutine = StartModCoroutine(LoadMapsAndActivateCoroutine(mapSize, picked, true));
+
+        string msg = $"MapVoter: Picked {picked.Count} maps from a pool of {pool.Count} (size {mapSize}). Loading images and posting to Discord...";
+        Info(msg);
+        return msg;
+    }
+
+    private int GetVoteMapCount()
+    {
+        int n = _config?.NumberOfMaps ?? 8;
+        if (n <= 0) n = 8;
+        return Math.Max(1, Math.Min(12, n));
+    }
+
+    private struct PoolEntry
+    {
+        public int Size;
+        public int Seed;
+        public string Path;
+    }
+
+    /// <summary>Scan Images path for files named {size}_{seed}.png/.jpg/.jpeg matching the configured map size.</summary>
+    private List<PoolEntry> ScanImagePool(int mapSize)
+    {
+        var list = new List<PoolEntry>();
+        string dir = GetImagesPath();
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            return list;
+
+        string[] files;
+        try { files = Directory.GetFiles(dir); }
+        catch (Exception ex)
         {
-            ServerMgr.Instance.StopCoroutine(_discordVoteRefreshCoroutine);
-            _discordVoteRefreshCoroutine = null;
+            Info($"MapVoter: Could not read image pool {dir}: {ex.Message}");
+            return list;
         }
-        _discordVoteRefreshCoroutine = ServerMgr.Instance?.StartCoroutine(DiscordVoteRefreshCoroutine());
-        ServerMgr.Instance?.StartCoroutine(LoadMapsFromDiskAndActivateVoteCoroutine(mapSize, seeds));
+
+        for (int i = 0; i < files.Length; i++)
+        {
+            string file = files[i];
+            string ext = Path.GetExtension(file);
+            if (string.IsNullOrEmpty(ext)) continue;
+            if (!ext.Equals(".png", StringComparison.OrdinalIgnoreCase)
+                && !ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+                && !ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string name = Path.GetFileNameWithoutExtension(file);
+            int us = name.IndexOf('_');
+            if (us <= 0 || us >= name.Length - 1) continue;
+            if (!int.TryParse(name.Substring(0, us), out int size) || size <= 0) continue;
+            if (mapSize > 0 && size != mapSize) continue;
+            if (!int.TryParse(name.Substring(us + 1), out int seed) || seed <= 0) continue;
+
+            list.Add(new PoolEntry { Size = size, Seed = seed, Path = file });
         }
+        return list;
+    }
+
+    private static void ShufflePool(List<PoolEntry> list)
+    {
+        var r = new System.Random(Guid.NewGuid().GetHashCode());
+        for (int i = list.Count - 1; i > 0; i--)
+        {
+            int j = r.Next(i + 1);
+            var tmp = list[i];
+            list[i] = list[j];
+            list[j] = tmp;
+        }
+    }
+
+    /// <summary>Legacy alias used by UI START button and older call sites.</summary>
+    private void StartVote()
+    {
+        StartVoteFromPool();
+    }
+
+    /// <summary>Legacy alias: starting a vote now always picks from the image pool and posts to Discord.</summary>
+    private void PostVoteFromSeeds()
+    {
+        StartVoteFromPool();
+    }
 
     private IEnumerator VoteEndAtWipeCoroutine(TimeSpan timeUntilWipe)
     {
@@ -849,16 +1002,15 @@ public class MapVoterMod : IHarmonyModHooks
         private void StopVote()
         {
         _voteActive = false;
-        if (_discordVoteRefreshCoroutine != null && ServerMgr.Instance != null)
-        {
-            ServerMgr.Instance.StopCoroutine(_discordVoteRefreshCoroutine);
-            _discordVoteRefreshCoroutine = null;
-        }
+        _mapsLoading = false;
+        StopModCoroutine(ref _discordVoteRefreshCoroutine);
+        StopModCoroutine(ref _voteEndAtWipeCoroutine);
+        StopModCoroutine(ref _loadMapsCoroutine);
         DeleteVoteSeedsFile();
         DeleteVoteStateFile();
         string winner = GetWinner();
         string msg = winner != null ? $"Vote ended. Winner: {winner}" : "Vote ended.";
-        Log(msg);
+        Info(msg);
         SendToDiscord("vote_ended", "Map vote ended!", winner != null ? $"Winner: **{winner}**" : "No votes were cast.");
         }
 
@@ -875,6 +1027,8 @@ public class MapVoterMod : IHarmonyModHooks
 
     private void OpenUI(BasePlayer player)
     {
+        if (player == null) return;
+        _uiViewers.Add(player.userID);
         DestroyUI(player);
         DestroyUI(player, FULLSCREEN_PANEL);
         string json = BuildMainUI(player);
@@ -915,6 +1069,215 @@ public class MapVoterMod : IHarmonyModHooks
         private string GetVoteSeedsDirectory() => Path.Combine(GetServerRoot(), "HarmonyData", "MapVoter");
         private string GetVoteSeedsFilePath() => Path.Combine(GetVoteSeedsDirectory(), VOTE_SEEDS_FILENAME);
         private string GetVoteStateFilePath() => Path.Combine(GetVoteSeedsDirectory(), VOTE_STATE_FILENAME);
+        private string GetAutoVoteCycleFilePath() => Path.Combine(GetVoteSeedsDirectory(), "auto_vote_cycle.txt");
+
+    private void WriteAutoVoteCycleLock()
+    {
+        try
+        {
+            string id = GetWipeCycleId();
+            if (string.IsNullOrEmpty(id)) return;
+            var dir = GetVoteSeedsDirectory();
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(GetAutoVoteCycleFilePath(), id);
+        }
+        catch (Exception ex) { Log($"MapVoter: Could not write auto-vote cycle lock: {ex.Message}"); }
+    }
+
+    private bool IsAutoVoteCycleLocked()
+    {
+        try
+        {
+            string path = GetAutoVoteCycleFilePath();
+            if (!File.Exists(path)) return false;
+            string saved = File.ReadAllText(path)?.Trim();
+            string current = GetWipeCycleId();
+            return !string.IsNullOrEmpty(saved) && string.Equals(saved, current, StringComparison.Ordinal);
+        }
+        catch { return false; }
+    }
+
+    private void ClearAutoVoteCycleLock()
+    {
+        try
+        {
+            string path = GetAutoVoteCycleFilePath();
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { }
+    }
+
+    private string GetWipeCycleId()
+    {
+        if (!TryGetNextWipe(out var wipe)) return "";
+        return wipe.At.ToString("yyyy-MM-dd-HH-mm");
+    }
+
+    private struct UpcomingWipe
+    {
+        public DateTime At;
+        public bool IsForced;
+    }
+
+    private static DateTime GetFirstWeekday(int year, int month, DayOfWeek day)
+    {
+        var d = new DateTime(year, month, 1);
+        int diff = ((int)day - (int)d.DayOfWeek + 7) % 7;
+        return d.AddDays(diff);
+    }
+
+    private static bool TryParseClock(string raw, TimeSpan fallback, out TimeSpan tod)
+    {
+        if (!string.IsNullOrWhiteSpace(raw) && TimeSpan.TryParse(raw.Trim(), out tod))
+            return true;
+        tod = fallback;
+        return true;
+    }
+
+    private int GetMapWipeIntervalDays()
+    {
+        int interval = _config?.AutoWipe?.MapWipeIntervalDays ?? 0;
+        if (interval > 0) return interval;
+        var sched = _config?.AutoWipe?.MapWipeSchedule;
+        if (sched != null)
+        {
+            for (int i = 0; i < sched.Count; i++)
+            {
+                if (sched[i] > 0) return sched[i];
+            }
+        }
+        return 14;
+    }
+
+    /// <summary>
+    /// Forced wipe: first Thursday of each month at Forced Wipe time.
+    /// Map wipes: every N days after that Thursday at Wipe time, while still before the next forced wipe.
+    /// </summary>
+    private bool TryGetNextWipe(out UpcomingWipe wipe)
+    {
+        wipe = default;
+        if (!TryParseClock(_config?.AutoWipe?.ForcedWipeTime, new TimeSpan(13, 45, 0), out var forcedTod))
+            forcedTod = new TimeSpan(13, 45, 0);
+        if (!TryParseClock(_config?.AutoWipe?.WipeTime, new TimeSpan(17, 30, 0), out var mapTod))
+            mapTod = new TimeSpan(17, 30, 0);
+        int interval = GetMapWipeIntervalDays();
+        DateTime now = DateTime.Now;
+        DateTime monthCursor = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+
+        for (int m = 0; m < 8; m++)
+        {
+            DateTime month = monthCursor.AddMonths(m);
+            DateTime firstThu = GetFirstWeekday(month.Year, month.Month, DayOfWeek.Thursday);
+            DateTime nextMonth = month.AddMonths(1);
+            DateTime nextFirstThu = GetFirstWeekday(nextMonth.Year, nextMonth.Month, DayOfWeek.Thursday);
+            DateTime forcedAt = firstThu.Date + forcedTod;
+            DateTime nextForcedAt = nextFirstThu.Date + forcedTod;
+
+            if (forcedAt > now)
+            {
+                wipe = new UpcomingWipe { At = forcedAt, IsForced = true };
+                return true;
+            }
+
+            int days = interval;
+            while (days <= 62)
+            {
+                DateTime mapAt = firstThu.Date.AddDays(days) + mapTod;
+                if (mapAt >= nextForcedAt)
+                    break;
+                if (mapAt > now)
+                {
+                    wipe = new UpcomingWipe { At = mapAt, IsForced = false };
+                    return true;
+                }
+                days += interval;
+            }
+        }
+        return false;
+    }
+
+    private void CollectUpcomingWipes(List<UpcomingWipe> list, int maxCount)
+    {
+        if (list == null || maxCount <= 0) return;
+        if (!TryParseClock(_config?.AutoWipe?.ForcedWipeTime, new TimeSpan(13, 45, 0), out var forcedTod))
+            forcedTod = new TimeSpan(13, 45, 0);
+        if (!TryParseClock(_config?.AutoWipe?.WipeTime, new TimeSpan(17, 30, 0), out var mapTod))
+            mapTod = new TimeSpan(17, 30, 0);
+        int interval = GetMapWipeIntervalDays();
+        DateTime now = DateTime.Now;
+        DateTime monthCursor = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+
+        for (int m = 0; m < 14 && list.Count < maxCount; m++)
+        {
+            DateTime month = monthCursor.AddMonths(m);
+            DateTime firstThu = GetFirstWeekday(month.Year, month.Month, DayOfWeek.Thursday);
+            DateTime nextMonth = month.AddMonths(1);
+            DateTime nextFirstThu = GetFirstWeekday(nextMonth.Year, nextMonth.Month, DayOfWeek.Thursday);
+            DateTime forcedAt = firstThu.Date + forcedTod;
+            DateTime nextForcedAt = nextFirstThu.Date + forcedTod;
+
+            if (forcedAt > now)
+                list.Add(new UpcomingWipe { At = forcedAt, IsForced = true });
+            if (list.Count >= maxCount) return;
+
+            int days = interval;
+            while (days <= 62 && list.Count < maxCount)
+            {
+                DateTime mapAt = firstThu.Date.AddDays(days) + mapTod;
+                if (mapAt >= nextForcedAt)
+                    break;
+                if (mapAt > now)
+                    list.Add(new UpcomingWipe { At = mapAt, IsForced = false });
+                days += interval;
+            }
+        }
+    }
+
+    private string BuildWipeCalendarReply()
+    {
+        var list = new List<UpcomingWipe>();
+        CollectUpcomingWipes(list, 8);
+        if (list.Count == 0)
+            return "MapVoter: Could not compute wipe calendar.";
+        var sb = new StringBuilder();
+        sb.Append("MapVoter wipe calendar (server local time):");
+        for (int i = 0; i < list.Count; i++)
+            sb.Append(" | ").Append(list[i].At.ToString("yyyy-MM-dd HH:mm")).Append(list[i].IsForced ? " FORCED" : " map");
+        return sb.ToString();
+    }
+
+    private void LogWipeCalendar()
+    {
+        var list = new List<UpcomingWipe>();
+        CollectUpcomingWipes(list, 6);
+        if (list.Count == 0)
+        {
+            Info("MapVoter: Wipe calendar could not be computed.");
+            return;
+        }
+        Info("MapVoter wipe calendar (server local time):");
+        for (int i = 0; i < list.Count; i++)
+        {
+            string kind = list[i].IsForced ? "FORCED (first Thursday " + (_config?.AutoWipe?.ForcedWipeTime ?? "13:45") + ")" : "map wipe (" + (_config?.AutoWipe?.WipeTime ?? "17:30") + ")";
+            Info("  " + list[i].At.ToString("yyyy-MM-dd HH:mm") + "  " + kind);
+        }
+        TryApplyWipeTimerOverride(list[0]);
+    }
+
+    private void TryApplyWipeTimerOverride(UpcomingWipe wipe)
+    {
+        try
+        {
+            var local = DateTime.SpecifyKind(wipe.At, DateTimeKind.Local);
+            long unix = new DateTimeOffset(local).ToUnixTimeSeconds();
+            ConsoleSystem.Run(ConsoleSystem.Option.Server, "wipetimer.wipeUnixTimestampOverride", unix.ToString());
+            Info("MapVoter: Set in-game wipe timer to " + wipe.At.ToString("yyyy-MM-dd HH:mm") + " (unix " + unix + ")");
+        }
+        catch (Exception ex)
+        {
+            Log("MapVoter: Could not set WipeTimer override: " + ex.Message);
+        }
+    }
 
     private void WriteVoteSeedsToFile(int mapSize, List<int> seeds)
     {
@@ -1018,18 +1381,23 @@ public class MapVoterMod : IHarmonyModHooks
 
     private void HandlePostWipePluginDataWipe()
     {
-        // Check wipe_done file (written by ServerWipe before shutdown) - we're loading after a wipe
+        var statePath = Path.Combine(GetVoteSeedsDirectory(), "last_wipe_signal.txt");
+        if (!WipeSignal.ShouldWipe(statePath)) return;
+
         AutoWipeData data = null;
         try
         {
             var donePath = GetWipeDoneFilePath();
             if (File.Exists(donePath))
-            {
                 data = Newtonsoft.Json.JsonConvert.DeserializeObject<AutoWipeData>(File.ReadAllText(donePath));
-                File.Delete(donePath);
-            }
         }
         catch { }
+
+        DeleteVoteSeedsFile();
+        DeleteVoteStateFile();
+        WipeSignal.MarkWiped(statePath);
+        Log("MapVoter: Cleared leftover vote after wipe signal.");
+
         if (data == null || !data.WasWipeDay) return;
 
         var sdw = _config?.ServerDataWipe;
@@ -1038,12 +1406,13 @@ public class MapVoterMod : IHarmonyModHooks
 
         bool doServerForced = sdw != null && data.WasForcedWipe && sdw.EnableOnForcedWipeDay && sdw.FileNamesToDeleteOnForcedWipeDay?.Count > 0;
         bool doServerMap = sdw != null && !data.WasForcedWipe && sdw.EnableOnMapWipeDay && sdw.FileNamesToDeleteOnMapWipeDay?.Count > 0;
-        bool doLogsForced = lw != null && data.WasForcedWipe && lw.EnableOnForcedWipeDay && lw.FilePatterns?.Count > 0;
-        bool doLogsMap = lw != null && !data.WasForcedWipe && lw.EnableOnMapWipeDay && lw.FilePatterns?.Count > 0;
+        bool doLogsForced = lw != null && data.WasForcedWipe && lw.EnableOnForcedWipeDay;
+        bool doLogsMap = lw != null && !data.WasForcedWipe && lw.EnableOnMapWipeDay;
         bool doOxideForced = ow != null && data.WasForcedWipe && ow.EnableOnForcedWipeDay;
         bool doOxideMap = ow != null && !data.WasForcedWipe && ow.EnableOnMapWipeDay;
+        bool doSeasonBlueprints = ShouldWipeBlueprintsThisWipe(data);
 
-        if (!doServerForced && !doServerMap && !doLogsForced && !doLogsMap && !doOxideForced && !doOxideMap) return;
+        if (!doServerForced && !doServerMap && !doLogsForced && !doLogsMap && !doOxideForced && !doOxideMap && !doSeasonBlueprints) return;
 
         // Server data wipe (server/{identity}/ - map files, player data, etc.)
         if (doServerForced || doServerMap)
@@ -1080,29 +1449,39 @@ public class MapVoterMod : IHarmonyModHooks
             }
         }
 
-        // Logs wipe (logs/ folder - prior day log files; keeps today's to avoid deleting active log)
+        if (doSeasonBlueprints)
+        {
+            var serverIdentity = _config?.AutoWipe?.ServerIdentity?.Trim() ?? "grimm";
+            var serverDir = Path.Combine(GetServerRoot(), "server", serverIdentity);
+            if (Directory.Exists(serverDir))
+            {
+                try
+                {
+                    foreach (var file in new DirectoryInfo(serverDir).EnumerateFiles("*player.blueprints*"))
+                    {
+                        file.Delete();
+                        Log($"MapVoter: Deleted season blueprint file: {file.Name}");
+                    }
+                }
+                catch (Exception ex) { Log($"MapVoter: Season blueprint wipe error: {ex.Message}"); }
+            }
+        }
+
+        // Logs wipe: delete every file in logs/. Skip the live logfile if Windows has it locked.
         if (doLogsForced || doLogsMap)
         {
             var logsDir = Path.Combine(GetServerRoot(), "logs");
             if (Directory.Exists(logsDir))
             {
                 var dir = new DirectoryInfo(logsDir);
-                var today = System.DateTime.Now.ToString("yyyyMMdd");
-                foreach (var pattern in lw.FilePatterns ?? new List<string>())
+                foreach (var file in dir.EnumerateFiles())
                 {
-                    if (string.IsNullOrWhiteSpace(pattern)) continue;
                     try
                     {
-                        foreach (var file in dir.EnumerateFiles("*" + pattern + "*"))
-                        {
-                            // Skip today's log (logfile-20260220-120000.txt) - Rust may be writing to it
-                            if (file.Name.IndexOf("-" + today + "-", StringComparison.Ordinal) >= 0)
-                                continue;
-                            file.Delete();
-                            Log($"MapVoter: Deleted log file: {file.Name}");
-                        }
+                        file.Delete();
+                        Log($"MapVoter: Deleted log file: {file.Name}");
                     }
-                    catch (Exception ex) { Log($"MapVoter: Logs wipe error for {pattern}: {ex.Message}"); }
+                    catch (Exception ex) { Log($"MapVoter: Logs wipe skip {file.Name}: {ex.Message}"); }
                 }
             }
         }
@@ -1147,44 +1526,51 @@ public class MapVoterMod : IHarmonyModHooks
         ClearWipeData();
     }
 
+    private bool ShouldWipeBlueprintsThisWipe(AutoWipeData data)
+    {
+        if (data == null || !data.WasWipeDay) return false;
+        var aw = _config?.AutoWipe;
+        if (aw == null) return false;
+        if (!data.WasForcedWipe) return false;
+        if (aw.WipeBPsAtForcedWipeDay) return true;
+        var months = aw.SeasonWipeMonths;
+        if (months == null || months.Count == 0) return false;
+        var at = data.WipeAt.Year > 2000 ? data.WipeAt : DateTime.Now;
+        return months.Contains(at.Month);
+    }
+
     private IEnumerator AutoWipeCheckCoroutine()
     {
-        yield return new WaitForSeconds(30f); // Delay for WipeTimer/server readiness
+        yield return new WaitForSeconds(30f);
 
         if (_config?.AutoWipe?.EnableAutoWipe != true) yield break;
-        if (WipeTimer.serverinstance == null)
+        if (!TryGetNextWipe(out var next))
         {
-            Log("MapVoter: Auto-wipe enabled but WipeTimer not found - no checks.");
+            Info("MapVoter: Auto-wipe enabled but wipe calendar could not be computed.");
             yield break;
         }
 
-        double thresholdHours = Math.Max(1, _config?.AutoWipe?.StartCheckingWithinHours ?? 32);
-        var timeUntilWipe = WipeTimer.serverinstance.GetTimeSpanUntilWipe();
-        double hoursUntil = timeUntilWipe.TotalHours;
-
-        // Single check on load: if > threshold, do nothing. Next server restart will re-check.
-        if (hoursUntil > thresholdHours)
-        {
-            Log($"MapVoter: Auto-wipe - wipe in {hoursUntil:F0}h (>{thresholdHours}h). No checks until within {thresholdHours}h. (Checks resume on next server restart.)");
-            yield break;
-        }
-
-        Log($"MapVoter: Auto-wipe - within {thresholdHours}h of wipe ({hoursUntil:F1}h). Starting checks (intervals from config).");
+        Info("MapVoter: Auto-wipe next event " + next.At.ToString("yyyy-MM-dd HH:mm") + (next.IsForced ? " FORCED" : " map") + ".");
 
         while (Instance != null && !_restartScheduled)
         {
             if (_config?.AutoWipe?.EnableAutoWipe != true) yield break;
-            if (WipeTimer.serverinstance == null) yield break;
+            if (!TryGetNextWipe(out next))
+            {
+                yield return new WaitForSeconds(60f);
+                continue;
+            }
 
-            timeUntilWipe = WipeTimer.serverinstance.GetTimeSpanUntilWipe();
+            TimeSpan timeUntilWipe = next.At - DateTime.Now;
             double minutesUntil = timeUntilWipe.TotalMinutes;
             int window = Math.Max(1, Math.Min(1440, _config?.AutoWipe?.ScheduleRestartWithinMinutes ?? 120));
 
-            // Ramp interval as wipe approaches (all configurable)
             int ivOver2h = Math.Max(1, _config?.AutoWipe?.CheckIntervalMinutesWhenOver2h ?? 60);
             int iv30mTo2h = Math.Max(1, _config?.AutoWipe?.CheckIntervalMinutesWhen30mTo2h ?? 15);
             int ivUnder30m = Math.Max(1, _config?.AutoWipe?.CheckIntervalMinutesWhenUnder30m ?? 2);
             float nextCheckSeconds = minutesUntil > 120 ? ivOver2h * 60f : minutesUntil > 30 ? iv30mTo2h * 60f : ivUnder30m * 60f;
+            if (minutesUntil > 48 * 60)
+                nextCheckSeconds = Math.Max(nextCheckSeconds, 3600f);
 
             if (minutesUntil > 0 && minutesUntil <= window)
             {
@@ -1217,18 +1603,69 @@ public class MapVoterMod : IHarmonyModHooks
                     MapSize = mapSize,
                     IsCustomMap = isCustomMap,
                     CustomMapUrl = isCustomMap ? _config?.AutoWipe?.CustomMap?.CustomMapUrl?.Trim() ?? "" : "",
-                    WasForcedWipe = false
+                    WasForcedWipe = next.IsForced,
+                    WipeAt = next.At
                 };
                 SaveWipeData(wipeData);
                 _restartScheduled = true;
 
-                Log($"MapVoter: Auto-wipe - scheduling restart in {restartSeconds}s. Map: {(isCustomMap ? "custom" : $"seed {seed}, size {mapSize}")}");
+                Info($"MapVoter: Auto-wipe - scheduling restart in {restartSeconds}s for {(next.IsForced ? "FORCED" : "map")} wipe at {next.At:yyyy-MM-dd HH:mm}. Map: {(isCustomMap ? "custom" : $"seed {seed}, size {mapSize}")}");
                 ConsoleSystem.Run(ConsoleSystem.Option.Server, "restart", restartSeconds.ToString());
                 yield break;
             }
 
             yield return new WaitForSeconds(nextCheckSeconds);
         }
+    }
+
+    private IEnumerator AutoVoteCheckCoroutine()
+    {
+        yield return new WaitForSeconds(20f);
+        Info("MapVoter: Auto-vote schedule enabled. Will pick maps from the image pool when the vote window opens.");
+
+        while (Instance != null)
+        {
+            if (_config?.AutoVote?.EnableAutoVote != true)
+            {
+                yield return new WaitForSeconds(60f);
+                continue;
+            }
+            if (_voteActive || _mapsLoading)
+            {
+                yield return new WaitForSeconds(60f);
+                continue;
+            }
+            if (IsAutoVoteCycleLocked())
+            {
+                yield return new WaitForSeconds(60f);
+                continue;
+            }
+            if (!TryGetScheduledVoteOpenTime(out DateTime opensAt))
+            {
+                yield return new WaitForSeconds(60f);
+                continue;
+            }
+            if (DateTime.Now < opensAt)
+            {
+                yield return new WaitForSeconds(30f);
+                continue;
+            }
+
+            Info($"MapVoter: Auto-vote window opened (scheduled {opensAt:yyyy-MM-dd HH:mm}). Starting vote from image pool.");
+            StartVoteFromPool();
+            yield return new WaitForSeconds(60f);
+        }
+    }
+
+    private bool TryGetScheduledVoteOpenTime(out DateTime voteOpensAt)
+    {
+        voteOpensAt = default;
+        if (!TryGetNextWipe(out var wipe)) return false;
+        int daysBefore = Math.Max(0, _config?.AutoVote?.StartVotingDaysBeforeWipe ?? 4);
+        if (!TryParseClock(_config?.AutoVote?.VoteStartTime, new TimeSpan(17, 0, 0), out var tod))
+            tod = new TimeSpan(17, 0, 0);
+        voteOpensAt = wipe.At.Date.AddDays(-daysBefore) + tod;
+        return true;
     }
 
     /// <summary>Admin command: immediately queue wipe data and restart so wipe applies on next boot.</summary>
@@ -1262,7 +1699,8 @@ public class MapVoterMod : IHarmonyModHooks
                 MapSize = mapSize,
                 IsCustomMap = isCustomMap,
                 CustomMapUrl = isCustomMap ? _config?.AutoWipe?.CustomMap?.CustomMapUrl?.Trim() ?? "" : "",
-                WasForcedWipe = true
+                WasForcedWipe = true,
+                WipeAt = DateTime.Now
             };
 
             SaveWipeData(wipeData);
@@ -1361,6 +1799,7 @@ public class MapVoterMod : IHarmonyModHooks
                 {
                     WasWipeDay = true,
                     WasForcedWipe = data?.WasForcedWipe ?? false,
+                    WipeAt = data?.WipeAt ?? DateTime.Now,
                     MapSeed = data?.MapSeed ?? 0,
                     MapSize = data?.MapSize ?? 0,
                     IsCustomMap = data?.IsCustomMap ?? false
@@ -1369,6 +1808,7 @@ public class MapVoterMod : IHarmonyModHooks
                 var dir = Path.GetDirectoryName(donePath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllText(donePath, Newtonsoft.Json.JsonConvert.SerializeObject(done));
+                WipeSignal.Write(done.WipeAt, done.MapSeed, done.WasForcedWipe);
             }
             catch { }
             ClearWipeData();
@@ -1478,100 +1918,87 @@ public class MapVoterMod : IHarmonyModHooks
         return false;
     }
 
-    /// <summary>Resize image using CPU (works on headless server). Returns PNG bytes for FileStorage per CUI spec.</summary>
+    /// <summary>Resize with GDI+ (CPU, safe for ~10MB map PNGs). Returns PNG for FileStorage.</summary>
     private byte[] ResizeAndCompressForStorage(byte[] originalBytes)
     {
-        if (originalBytes == null || originalBytes.Length == 0) return null;
-        Texture2D src = null;
-        Texture2D dst = null;
-        try
-        {
-            src = new Texture2D(2, 2);
-            if (!UnityEngine.ImageConversion.LoadImage(src, originalBytes, false)) return null;
-            int w = src.width;
-            int h = src.height;
-            if (w <= 0 || h <= 0) return null;
-            int maxDim = Mathf.Clamp(_config?.MapImageMaxDimension ?? 768, 256, 2048);
-            float scale = 1f;
-            if (w > maxDim || h > maxDim)
-                scale = Mathf.Min((float)maxDim / w, (float)maxDim / h);
-            int nw = Mathf.Max(1, (int)(w * scale));
-            int nh = Mathf.Max(1, (int)(h * scale));
-            dst = new Texture2D(nw, nh, TextureFormat.RGBA32, false);
-            Color[] srcPixels = src.GetPixels();
-            Color[] dstPixels = new Color[nw * nh];
-            for (int y = 0; y < nh; y++)
-            {
-                for (int x = 0; x < nw; x++)
-                {
-                    float u = (x + 0.5f) / nw;
-                    float v = (y + 0.5f) / nh;
-                    int sx = Mathf.Clamp((int)(u * w), 0, w - 1);
-                    int sy = Mathf.Clamp((int)(v * h), 0, h - 1);
-                    dstPixels[y * nw + x] = srcPixels[sy * w + sx];
-                }
-            }
-            dst.SetPixels(dstPixels);
-            dst.Apply();
-            return UnityEngine.ImageConversion.EncodeToPNG(dst);
-        }
-        catch { return null; }
-        finally
-        {
-            if (src != null) UnityEngine.Object.Destroy(src);
-            if (dst != null) UnityEngine.Object.Destroy(dst);
-        }
+        int maxDim = Mathf.Clamp(_config?.MapImageMaxDimension ?? 768, 256, 2048);
+        return ResizeWithGdi(originalBytes, maxDim, false);
     }
 
-    /// <summary>Resize image for Discord payload (smaller than UI to reduce POST size). Returns PNG bytes.</summary>
+    /// <summary>Resize image for Discord payload (JPEG to keep POST size down).</summary>
     private byte[] ResizeForDiscord(byte[] originalBytes, int maxDimension)
     {
-        if (originalBytes == null || originalBytes.Length == 0) return null;
         int maxDim = Mathf.Clamp(maxDimension, 256, 1024);
-        return ResizeToMaxDimension(originalBytes, maxDim);
+        return ResizeWithGdi(originalBytes, maxDim, true);
     }
 
-    private byte[] ResizeToMaxDimension(byte[] originalBytes, int maxDim)
+    private byte[] ResizeWithGdi(byte[] originalBytes, int maxDim, bool jpeg)
     {
         if (originalBytes == null || originalBytes.Length == 0) return null;
-        Texture2D src = null;
-        Texture2D dst = null;
         try
         {
-            src = new Texture2D(2, 2);
-            if (!UnityEngine.ImageConversion.LoadImage(src, originalBytes, false)) return null;
-            int w = src.width;
-            int h = src.height;
-            if (w <= 0 || h <= 0) return null;
-            float scale = 1f;
-            if (w > maxDim || h > maxDim)
-                scale = Mathf.Min((float)maxDim / w, (float)maxDim / h);
-            int nw = Mathf.Max(1, (int)(w * scale));
-            int nh = Mathf.Max(1, (int)(h * scale));
-            dst = new Texture2D(nw, nh, TextureFormat.RGBA32, false);
-            Color[] srcPixels = src.GetPixels();
-            Color[] dstPixels = new Color[nw * nh];
-            for (int y = 0; y < nh; y++)
+            using (var input = new MemoryStream(originalBytes))
+            using (var src = System.Drawing.Image.FromStream(input, false, false))
             {
-                for (int x = 0; x < nw; x++)
+                int w = src.Width;
+                int h = src.Height;
+                if (w <= 0 || h <= 0) return null;
+                float scale = 1f;
+                if (w > maxDim || h > maxDim)
+                    scale = Math.Min((float)maxDim / w, (float)maxDim / h);
+                int nw = Math.Max(1, (int)(w * scale));
+                int nh = Math.Max(1, (int)(h * scale));
+                using (var bmp = new System.Drawing.Bitmap(nw, nh))
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
                 {
-                    float u = (x + 0.5f) / nw;
-                    float v = (y + 0.5f) / nh;
-                    int sx = Mathf.Clamp((int)(u * w), 0, w - 1);
-                    int sy = Mathf.Clamp((int)(v * h), 0, h - 1);
-                    dstPixels[y * nw + x] = srcPixels[sy * w + sx];
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    g.DrawImage(src, 0, 0, nw, nh);
+                    using (var output = new MemoryStream())
+                    {
+                        if (jpeg)
+                        {
+                            var codec = GetJpegCodec();
+                            if (codec != null)
+                            {
+                                var eps = new System.Drawing.Imaging.EncoderParameters(1);
+                                long q = Math.Max(50, Math.Min(95, _config?.MapImageJpegQuality ?? 75));
+                                eps.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, q);
+                                bmp.Save(output, codec, eps);
+                            }
+                            else
+                                bmp.Save(output, System.Drawing.Imaging.ImageFormat.Jpeg);
+                        }
+                        else
+                            bmp.Save(output, System.Drawing.Imaging.ImageFormat.Png);
+                        return output.ToArray();
+                    }
                 }
             }
-            dst.SetPixels(dstPixels);
-            dst.Apply();
-            return UnityEngine.ImageConversion.EncodeToPNG(dst);
         }
-        catch { return null; }
-        finally
+        catch (Exception ex)
         {
-            if (src != null) UnityEngine.Object.Destroy(src);
-            if (dst != null) UnityEngine.Object.Destroy(dst);
+            Log($"MapVoter: Image resize failed: {ex.Message}");
+            return null;
         }
+    }
+
+    private static System.Drawing.Imaging.ImageCodecInfo _jpegCodec;
+
+    private static System.Drawing.Imaging.ImageCodecInfo GetJpegCodec()
+    {
+        if (_jpegCodec != null) return _jpegCodec;
+        var codecs = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders();
+        for (int i = 0; i < codecs.Length; i++)
+        {
+            if (codecs[i].FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid)
+            {
+                _jpegCodec = codecs[i];
+                break;
+            }
+        }
+        return _jpegCodec;
     }
 
     /// <summary>Parse RustMaps API JSON. Returns (imageIconUrl, viewPageUrl).</summary>
@@ -1920,203 +2347,170 @@ public class MapVoterMod : IHarmonyModHooks
         SendToDiscordVoteStarted();
     }
 
-    private IEnumerator RestoreVoteFromFileCoroutine(int mapSize, List<int> seeds)
+    private CommunityEntity FindCommunityEntity()
     {
-        while (ServerMgr.Instance == null)
-            yield return null;
-
-        _voteActive = true;
-        _mapsLoading = true;
-
-        var imagesDir = GetImagesPath();
-        string tpl = _config?.RustMapsImageUrlTemplate?.Trim();
-        if (string.IsNullOrEmpty(tpl)) tpl = "https://rustmaps.com/map/{0}_{1}";
-
         var ce = CommunityEntity.ServerInstance;
-        if (ce == null || ce.IsDestroyed)
+        if (ce != null && !ce.IsDestroyed) return ce;
+        if (BaseNetworkable.serverEntities == null) return null;
+        foreach (var e in BaseNetworkable.serverEntities)
         {
-            foreach (var e in BaseNetworkable.serverEntities)
+            if (e is CommunityEntity c && c != null && !c.IsDestroyed)
+                return c;
+        }
+        return null;
+    }
+
+    private string FindImageFileForSeed(int mapSize, int seed)
+    {
+        var imagesDir = GetImagesPath();
+        string png = Path.Combine(imagesDir, mapSize + "_" + seed + ".png");
+        if (File.Exists(png)) return png;
+        string jpg = Path.Combine(imagesDir, mapSize + "_" + seed + ".jpg");
+        if (File.Exists(jpg)) return jpg;
+        string jpeg = Path.Combine(imagesDir, mapSize + "_" + seed + ".jpeg");
+        if (File.Exists(jpeg)) return jpeg;
+        return null;
+    }
+
+    private void RefreshOpenVoteUIs()
+    {
+        if (_uiViewers.Count == 0) return;
+        var ids = new List<ulong>(_uiViewers);
+        for (int i = 0; i < ids.Count; i++)
+        {
+            var player = BasePlayer.FindByID(ids[i]);
+            if (player == null || player.net?.connection == null)
             {
-                if (e is CommunityEntity c && c != null && !c.IsDestroyed) { ce = c; break; }
+                _uiViewers.Remove(ids[i]);
+                continue;
             }
-        }
-        if (ce == null || ce.IsDestroyed)
-        {
-            Log("RestoreVoteFromFile: CommunityEntity not found, retrying in 2s...");
-            yield return new WaitForSeconds(2f);
-            ce = CommunityEntity.ServerInstance;
-            if (ce == null || ce.IsDestroyed)
-                foreach (var e in BaseNetworkable.serverEntities)
-                {
-                    if (e is CommunityEntity c && c != null && !c.IsDestroyed) { ce = c; break; }
-                }
-        }
-        if (ce == null || ce.IsDestroyed)
-        {
-            Log("RestoreVoteFromFile: CommunityEntity not found - vote restore failed");
-            _mapsLoading = false;
-            yield break;
-        }
-
-        var newMaps = new List<MapVoterConfig.MapOption>();
-        foreach (var seed in seeds)
-        {
-            string localFile = Path.Combine(imagesDir, $"{mapSize}_{seed}.png");
-            if (!File.Exists(localFile))
-                localFile = Path.Combine(imagesDir, $"{mapSize}_{seed}.jpg");
-            string pngId = "";
-            string imageDataBase64 = "";
-            if (File.Exists(localFile))
-            {
-                try
-                {
-                    var bytes = File.ReadAllBytes(localFile);
-                    if (IsValidImage(bytes))
-                    {
-                        var toStore = ResizeAndCompressForStorage(bytes);
-                        if (toStore == null || toStore.Length == 0) toStore = bytes;
-                        if (toStore != null && toStore.Length > 0)
-                        {
-                            var crc = FileStorage.server.Store(toStore, FileStorage.Type.png, ce.net.ID);
-                            pngId = crc.ToString();
-                            var discordBytes = ResizeForDiscord(bytes, _config?.DiscordImageMaxDimension ?? 512);
-                            imageDataBase64 = (discordBytes != null && discordBytes.Length > 0)
-                                ? Convert.ToBase64String(discordBytes)
-                                : Convert.ToBase64String(toStore);
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            string imageUrl = string.Format(tpl, mapSize, seed);
-            string viewUrl = $"https://rustmaps.com/map/{mapSize}_{seed}";
-            newMaps.Add(new MapVoterConfig.MapOption
-            {
-                Id = seed.ToString(),
-                Name = "Seed: " + seed,
-                ImageUrl = imageUrl,
-                ViewUrl = viewUrl,
-                PngTextureId = pngId,
-                ImageDataBase64 = imageDataBase64
-            });
-        }
-
-        _currentVoteMaps.Clear();
-        _currentVoteMaps.AddRange(newMaps);
-        _mapsLoading = false;
-        Log($"MapVoter: Restored vote from file - {_currentVoteMaps.Count} maps (size {mapSize})");
-        // Do NOT send to Discord on restore - would spam on every server restart. Use mvotediscord to resend if needed.
-
-        if (WipeTimer.serverinstance != null)
-        {
-            var timeUntilWipe = WipeTimer.serverinstance.GetTimeSpanUntilWipe();
-            _voteEndAtWipeCoroutine = ServerMgr.Instance?.StartCoroutine(VoteEndAtWipeCoroutine(timeUntilWipe));
-            Log($"Vote restored. Runs until next wipe ({timeUntilWipe.TotalDays:F1} days).");
+            RefreshUI(player);
         }
     }
 
-    /// <summary>Load maps from disk (seeds from file, images from Images path), then post to Discord and start wipe timer. Used by mvotepost.</summary>
-    private IEnumerator LoadMapsFromDiskAndActivateVoteCoroutine(int mapSize, List<int> seeds)
+    /// <summary>Load picked seeds from the image pool. Optionally post to Discord and run until wipe.</summary>
+    private IEnumerator LoadMapsAndActivateCoroutine(int mapSize, List<int> seeds, bool postToDiscord)
     {
-        while (ServerMgr.Instance == null)
-            yield return null;
+        _voteActive = true;
+        _mapsLoading = true;
 
-        var imagesDir = GetImagesPath();
         string tpl = _config?.RustMapsImageUrlTemplate?.Trim();
         if (string.IsNullOrEmpty(tpl)) tpl = "https://rustmaps.com/map/{0}_{1}";
 
-        var ce = CommunityEntity.ServerInstance;
-        if (ce == null || ce.IsDestroyed)
+        var ce = FindCommunityEntity();
+        if (ce == null)
         {
-            foreach (var e in BaseNetworkable.serverEntities)
-            {
-                if (e is CommunityEntity c && c != null && !c.IsDestroyed) { ce = c; break; }
-            }
-        }
-        if (ce == null || ce.IsDestroyed)
-        {
-            Log("LoadMapsFromDisk: CommunityEntity not found, retrying in 2s...");
+            Info("MapVoter: CommunityEntity not ready, retrying in 2s...");
             yield return new WaitForSeconds(2f);
-            ce = CommunityEntity.ServerInstance;
-            if (ce == null || ce.IsDestroyed)
-                foreach (var e in BaseNetworkable.serverEntities)
-                {
-                    if (e is CommunityEntity c && c != null && !c.IsDestroyed) { ce = c; break; }
-                }
+            ce = FindCommunityEntity();
         }
-        if (ce == null || ce.IsDestroyed)
+        if (ce == null)
         {
-            Log("LoadMapsFromDisk: CommunityEntity not found - mvotepost failed.");
+            Info("MapVoter: CommunityEntity not found - cannot load map images for UI.");
             _mapsLoading = false;
             yield break;
         }
 
         var newMaps = new List<MapVoterConfig.MapOption>();
-        foreach (var seed in seeds)
+        int loadedImages = 0;
+        for (int i = 0; i < seeds.Count; i++)
         {
-            string localFile = Path.Combine(imagesDir, $"{mapSize}_{seed}.png");
-            if (!File.Exists(localFile))
-                localFile = Path.Combine(imagesDir, $"{mapSize}_{seed}.jpg");
+            if (_downloadCancelled) break;
+            int seed = seeds[i];
+            string localFile = FindImageFileForSeed(mapSize, seed);
             string pngId = "";
             string imageDataBase64 = "";
-            if (File.Exists(localFile))
+            if (!string.IsNullOrEmpty(localFile) && File.Exists(localFile))
             {
-                try
+                byte[] bytes = null;
+                try { bytes = File.ReadAllBytes(localFile); }
+                catch (Exception ex) { Info($"MapVoter: Failed reading {localFile}: {ex.Message}"); }
+                if (bytes != null && IsValidImage(bytes))
                 {
-                    var bytes = File.ReadAllBytes(localFile);
-                    if (IsValidImage(bytes))
+                    var toStore = ResizeAndCompressForStorage(bytes);
+                    if (toStore == null || toStore.Length == 0) toStore = bytes;
+                    if (toStore != null && toStore.Length > 0)
                     {
-                        var toStore = ResizeAndCompressForStorage(bytes);
-                        if (toStore == null || toStore.Length == 0) toStore = bytes;
-                        if (toStore != null && toStore.Length > 0)
+                        try
                         {
                             var crc = FileStorage.server.Store(toStore, FileStorage.Type.png, ce.net.ID);
                             pngId = crc.ToString();
-                            var discordBytes = ResizeForDiscord(bytes, _config?.DiscordImageMaxDimension ?? 512);
-                            imageDataBase64 = (discordBytes != null && discordBytes.Length > 0)
-                                ? Convert.ToBase64String(discordBytes)
-                                : Convert.ToBase64String(toStore);
                         }
+                        catch (Exception ex) { Info($"MapVoter: FileStorage store failed for seed {seed}: {ex.Message}"); }
+                        var discordBytes = ResizeForDiscord(bytes, _config?.DiscordImageMaxDimension ?? 512);
+                        imageDataBase64 = (discordBytes != null && discordBytes.Length > 0)
+                            ? Convert.ToBase64String(discordBytes)
+                            : Convert.ToBase64String(toStore);
+                        loadedImages++;
                     }
                 }
-                catch { }
+                yield return null;
             }
             else
             {
-                Log($"MapVoter: No image for seed {seed} - add {mapSize}_{seed}.png or .jpg to: {imagesDir}");
+                Info($"MapVoter: No image for seed {seed} in {GetImagesPath()}");
             }
 
-            string imageUrl = string.Format(tpl, mapSize, seed);
-            string viewUrl = $"https://rustmaps.com/map/{mapSize}_{seed}";
             newMaps.Add(new MapVoterConfig.MapOption
             {
                 Id = seed.ToString(),
                 Name = "Seed: " + seed,
-                ImageUrl = imageUrl,
-                ViewUrl = viewUrl,
+                ImageUrl = string.Format(tpl, mapSize, seed),
+                ViewUrl = $"https://rustmaps.com/map/{mapSize}_{seed}",
                 PngTextureId = pngId,
                 ImageDataBase64 = imageDataBase64
             });
         }
 
+        if (_downloadCancelled)
+        {
+            _mapsLoading = false;
+            _loadMapsCoroutine = null;
+            yield break;
+        }
+
         _currentVoteMaps.Clear();
         _currentVoteMaps.AddRange(newMaps);
         _mapsLoading = false;
-        Log($"MapVoter: Loaded {_currentVoteMaps.Count} maps from {imagesDir}. Posting to Discord and opening vote.");
+        _loadMapsCoroutine = null;
+        Info($"MapVoter: Loaded {_currentVoteMaps.Count} maps ({loadedImages} with images) from {GetImagesPath()}.");
 
-        SendToDiscordVoteStarted();
+        RefreshOpenVoteUIs();
 
-        if (WipeTimer.serverinstance != null)
+        if (postToDiscord)
         {
-            var timeUntilWipe = WipeTimer.serverinstance.GetTimeSpanUntilWipe();
-            _voteEndAtWipeCoroutine = ServerMgr.Instance?.StartCoroutine(VoteEndAtWipeCoroutine(timeUntilWipe));
-            Log($"Vote open. Runs until next wipe ({timeUntilWipe.TotalDays:F1} days). Players can use mvote to vote.");
+            Info("MapVoter: Posting vote to Discord...");
+            SendToDiscordVoteStarted();
         }
         else
         {
-            Log("Vote open. WipeTimer not found - vote runs until manually stopped. Players can use mvote to vote.");
+            Info("MapVoter: Vote restored (Discord not posted on reload). Run mvotediscord to send maps to Discord.");
         }
+
+        StopModCoroutine(ref _voteEndAtWipeCoroutine);
+        if (TryGetNextWipe(out var nextWipe))
+        {
+            var timeUntilWipe = nextWipe.At - DateTime.Now;
+            if (timeUntilWipe.TotalSeconds > 1)
+            {
+                _voteEndAtWipeCoroutine = StartModCoroutine(VoteEndAtWipeCoroutine(timeUntilWipe));
+                Info($"MapVoter: Vote open until next wipe {nextWipe.At:yyyy-MM-dd HH:mm} ({timeUntilWipe.TotalDays:F1} days). Players: /vote");
+            }
+        }
+        else
+        {
+            Info("MapVoter: Vote open. Wipe calendar not available - vote runs until stopped. Players: /vote");
+        }
+    }
+
+    private IEnumerator RestoreVoteFromFileCoroutine(int mapSize, List<int> seeds)
+    {
+        yield return LoadMapsAndActivateCoroutine(mapSize, seeds, false);
+    }
+
+    private IEnumerator LoadMapsFromDiskAndActivateVoteCoroutine(int mapSize, List<int> seeds)
+    {
+        yield return LoadMapsAndActivateCoroutine(mapSize, seeds, true);
     }
 
     private string BuildMainUI(BasePlayer player)
@@ -2127,7 +2521,7 @@ public class MapVoterMod : IHarmonyModHooks
             string msg = _mapsLoading
                 ? "Loading map images..."
                 : _config?.MapSize > 0
-                    ? "No vote active. Admin: mvote then mvoteready when ready. Vote runs until next wipe."
+                    ? "No vote active. Admin: /mvote starts a vote from the image pool. Players: /vote"
                     : "Set 'Map size' (e.g. 4000) in HarmonyConfig/MapVoter.json";
             return BuildSimplePanel(msg);
         }
@@ -2389,6 +2783,11 @@ public class MapVoterMod : IHarmonyModHooks
         ConsoleNetwork.SendClientCommand(player.net.connection, "chat.add", 0, 0, msg);
     }
 
+    private void Info(string msg)
+    {
+        UnityEngine.Debug.Log($"[MapVoter] {msg}");
+    }
+
     private void Log(string msg)
     {
         bool doLog = (_config?.Options?.ConsoleDebug ?? false) || (_config?.Options?.FileDebug ?? false) || _config == null;
@@ -2461,8 +2860,7 @@ public class MapVoterMod : IHarmonyModHooks
                 ["index"] = i++,
                 ["votes"] = voteCount
             };
-            if (!string.IsNullOrEmpty(m.ImageDataBase64))
-                mapEntry["imageDataBase64"] = m.ImageDataBase64;
+            // Bot on this machine reads C:\svr1\maps\images via mapsImagePath — skip huge base64.
             mapsPayload.Add(mapEntry);
         }
 
@@ -2472,21 +2870,35 @@ public class MapVoterMod : IHarmonyModHooks
             ["channelId"] = _config.Discord.VoteChannelId,
             ["title"] = hostname,
             ["description"] = $"Map vote has started • Next wipe: {nextWipe}",
-            ["mentionRole"] = _config.Discord.MentionRole ?? "",
+            ["mentionRole"] = FormatDiscordRoleMention(_config.Discord.MentionRole),
             ["hostname"] = hostname,
             ["nextWipe"] = nextWipe,
             ["maps"] = mapsPayload
         };
 
         string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-        ServerMgr.Instance?.StartCoroutine(SendToDiscordCoroutine(url + "/mapvoter", json));
+        StartModCoroutine(SendToDiscordCoroutine(GetBridgePostUrls(), json));
+    }
+
+    /// <summary>Discord only pings a role as &lt;@&amp;id&gt;. Accepts a raw snowflake, that mention, @everyone, or existing markup.</summary>
+    private static string FormatDiscordRoleMention(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        string s = raw.Trim();
+        if (s.Equals("@everyone", StringComparison.OrdinalIgnoreCase) || s.Equals("@here", StringComparison.OrdinalIgnoreCase))
+            return s.ToLowerInvariant();
+        if (s.StartsWith("<@", StringComparison.Ordinal) && s.EndsWith(">"))
+            return s;
+        if (s.Length >= 17 && s.Length <= 20 && ulong.TryParse(s, out _))
+            return "<@&" + s + ">";
+        return s;
     }
 
     /// <summary>Human-readable wipe ETA for Discord cards: "in 1d 2h 23m".</summary>
-    private static string GetNextWipeDisplay()
+    private string GetNextWipeDisplay()
     {
-        if (WipeTimer.serverinstance == null) return "—";
-        var span = WipeTimer.serverinstance.GetTimeSpanUntilWipe();
+        if (!TryGetNextWipe(out var wipe)) return "—";
+        var span = wipe.At - DateTime.Now;
         if (span.TotalSeconds <= 0) return "soon";
         int days = (int)span.TotalDays;
         int hours = span.Hours;
@@ -2539,7 +2951,7 @@ public class MapVoterMod : IHarmonyModHooks
         };
 
         string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-        ServerMgr.Instance?.StartCoroutine(SendToDiscordCoroutine(url + "/mapvoter", json));
+        StartModCoroutine(SendToDiscordCoroutine(GetBridgePostUrls(), json));
     }
 
     /// <summary>POST event to ticket-support-system mapvoterDiscordBridge. Uses coroutine to log success/failure.</summary>
@@ -2558,7 +2970,7 @@ public class MapVoterMod : IHarmonyModHooks
             ["channelId"] = channelId,
             ["title"] = title ?? "",
             ["description"] = description ?? "",
-            ["mentionRole"] = _config.Discord.MentionRole ?? ""
+            ["mentionRole"] = FormatDiscordRoleMention(_config.Discord.MentionRole)
         };
         // Bridge keys sessions by VoteChannelId; vote_ended posts to WinningMapChannelId — tell bridge which session to purge.
         if (eventType == "vote_ended" && !string.IsNullOrEmpty(_config.Discord.VoteChannelId))
@@ -2566,33 +2978,72 @@ public class MapVoterMod : IHarmonyModHooks
 
         string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 
-        ServerMgr.Instance?.StartCoroutine(SendToDiscordCoroutine(url + "/mapvoter", json));
+        StartModCoroutine(SendToDiscordCoroutine(GetBridgePostUrls(), json));
     }
 
-    private IEnumerator SendToDiscordCoroutine(string url, string json)
+    private static void AddBridgePostUrl(List<string> list, string baseUrl)
     {
-        using (var req = new UnityWebRequest(url, "POST"))
+        if (string.IsNullOrWhiteSpace(baseUrl)) return;
+        string b = baseUrl.Trim().TrimEnd('/');
+        const string suffix = "/mapvoter";
+        if (b.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            b = b.Substring(0, b.Length - suffix.Length).TrimEnd('/');
+        string full = b + suffix;
+        for (int i = 0; i < list.Count; i++)
         {
-            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
-            req.downloadHandler = new DownloadHandlerBuffer();
-            req.SetRequestHeader("Content-Type", "application/json");
-			// MapVoter -> bridge payload can be large (per-map base64), and Discord embeds/threads take time to create.
-			// Increase timeout to avoid false "request timeout" errors when the bridge continues processing.
-			req.timeout = 30;
-            req.certificateHandler = new AcceptAllCertificatesHandler();
-            yield return req.SendWebRequest();
+            if (string.Equals(list[i], full, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+        list.Add(full);
+    }
 
-            if (req.result == UnityWebRequest.Result.Success && req.responseCode == 200)
+    /// <summary>Configured URL first, then loopback. Same-machine bot cannot be reached via the public IP (hairpin NAT).</summary>
+    private List<string> GetBridgePostUrls()
+    {
+        var list = new List<string>();
+        AddBridgePostUrl(list, _config?.Discord?.BridgeUrl);
+        AddBridgePostUrl(list, "https://127.0.0.1:3921");
+        AddBridgePostUrl(list, "http://127.0.0.1:3921");
+        return list;
+    }
+
+    private IEnumerator SendToDiscordCoroutine(List<string> urls, string json)
+    {
+        if (urls == null || urls.Count == 0 || string.IsNullOrEmpty(json))
+            yield break;
+
+        byte[] body = Encoding.UTF8.GetBytes(json);
+        string lastErr = "";
+        for (int i = 0; i < urls.Count; i++)
+        {
+            string url = urls[i];
+            using (var req = new UnityWebRequest(url, "POST"))
             {
-                UnityEngine.Debug.Log($"[MapVoter] Discord: Posted to bridge OK ({(int)req.responseCode})");
-            }
-            else
-            {
-                string err = req.error ?? req.downloadHandler?.text ?? "";
-                UnityEngine.Debug.LogWarning($"[MapVoter] Discord bridge failed: {req.result} HTTP {(int)req.responseCode} - {err}. Check Bridge URL (use bot's IP if Rust server is remote) and that mapvoterDiscordBridge is running.");
+                req.uploadHandler = new UploadHandlerRaw(body);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Content-Type", "application/json");
+                req.timeout = 120;
+                req.certificateHandler = new AcceptAllCertificatesHandler();
+                yield return req.SendWebRequest();
+
+                if (req.result == UnityWebRequest.Result.Success && req.responseCode == 200)
+                {
+                    UnityEngine.Debug.Log($"[MapVoter] Discord: Posted to bridge OK ({url})");
+                    yield break;
+                }
+
+                lastErr = $"{req.result} HTTP {(int)req.responseCode} - {req.error ?? req.downloadHandler?.text ?? ""}";
+                UnityEngine.Debug.LogWarning($"[MapVoter] Discord bridge {url} failed: {lastErr}");
             }
         }
+
+        UnityEngine.Debug.LogWarning("[MapVoter] Discord bridge failed on all URLs. Rust and the ticket bot are on this machine — use https://127.0.0.1:3921 and confirm mapvoterDiscordBridge is listening on 3921.");
     }
+}
+
+/// <summary>MonoBehaviour host so MapVoter coroutines run even before ServerMgr exists.</summary>
+internal sealed class MapVoterRunner : MonoBehaviour
+{
 }
 
 /// <summary>Accepts self-signed certificates for Discord bridge (internal use only).</summary>
@@ -2629,6 +3080,9 @@ internal class AutoWipeData
 
     [Newtonsoft.Json.JsonProperty("wasForcedWipe")]
     public bool WasForcedWipe { get; set; }
+
+    [Newtonsoft.Json.JsonProperty("wipeAt")]
+    public DateTime WipeAt { get; set; }
 }
 
 internal class VoteStateData

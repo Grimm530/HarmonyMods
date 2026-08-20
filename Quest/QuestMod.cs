@@ -264,7 +264,22 @@ namespace QuestHarmony
             if (plugin == null || string.IsNullOrEmpty(method)) return null;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                var types = args == null || args.Length == 0
+                    ? Type.EmptyTypes
+                    : Array.ConvertAll(args, a => a?.GetType() ?? typeof(object));
+                var mi = typeof(OxidePlugin).GetMethod(method, bf, null, types, null);
+                if (mi == null)
+                {
+                    foreach (var candidate in typeof(OxidePlugin).GetMethods(bf))
+                    {
+                        if (candidate.Name != method) continue;
+                        var ps = candidate.GetParameters();
+                        if (ps.Length != types.Length) continue;
+                        mi = candidate;
+                        break;
+                    }
+                }
                 if (mi == null) return null;
                 return mi.Invoke(plugin, args);
             }
@@ -581,8 +596,21 @@ namespace QuestHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                var mi = typeof(OxidePlugin).GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
+                if (mi == null)
+                {
+                    foreach (var candidate in typeof(OxidePlugin).GetMethods(bf))
+                    {
+                        if (candidate.Name != methodName) continue;
+                        var ps = candidate.GetParameters();
+                        if (ps.Length == 1 && typeof(ConsoleSystem.Arg).IsAssignableFrom(ps[0].ParameterType))
+                        {
+                            mi = candidate;
+                            break;
+                        }
+                    }
+                }
                 mi?.Invoke(plugin, new object[] { arg });
             }
             catch (Exception ex)

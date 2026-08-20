@@ -115,9 +115,9 @@ public class MapVoterConfig
         [JsonProperty("Winning Map Channel id")]
         public string WinningMapChannelId { get; set; } = "";
 
-        /// <summary>URL of mapvoterDiscordBridge (e.g. http://localhost:3921). Uses ticket-support-system relay.</summary>
+        /// <summary>URL of mapvoterDiscordBridge. Same machine as the bot: https://127.0.0.1:3921 (public IP hairpin often fails).</summary>
         [JsonProperty("Discord bridge URL (ticket-support-system mapvoterDiscordBridge)")]
-        public string BridgeUrl { get; set; } = "http://localhost:3921";
+        public string BridgeUrl { get; set; } = "https://127.0.0.1:3921";
 
         [JsonProperty("Mention role on vote start and end")]
         public string MentionRole { get; set; } = "@everyone";
@@ -156,7 +156,11 @@ public class MapVoterConfig
         public CustomMapOptions CustomMap { get; set; } = new();
 
         [JsonProperty("Map Wipe schedule")]
-        public List<int> MapWipeSchedule { get; set; } = new() { 15 };
+        public List<int> MapWipeSchedule { get; set; } = new() { 14 };
+
+        /// <summary>Days after the first Thursday forced wipe to repeat map wipes (17:30) until the next forced wipe. 14 = biweekly Thursdays.</summary>
+        [JsonProperty("Map wipe interval (days after first Thursday, repeats until next forced wipe)")]
+        public int MapWipeIntervalDays { get; set; } = 14;
 
         [JsonProperty("BP Wipe schedule")]
         public List<int> BPWipeSchedule { get; set; } = new();
@@ -172,6 +176,9 @@ public class MapVoterConfig
 
         [JsonProperty("Wipe BPs at forced wipe day")]
         public bool WipeBPsAtForcedWipeDay { get; set; } = false;
+
+        [JsonProperty("Wipe blueprints on season wipe months (1=Jan, 6=Jun)")]
+        public List<int> SeasonWipeMonths { get; set; } = new() { 1, 6 };
 
         [JsonProperty("Forced Wipe time (HH:mm) 24-hour clock")]
         public string ForcedWipeTime { get; set; } = "19:00";

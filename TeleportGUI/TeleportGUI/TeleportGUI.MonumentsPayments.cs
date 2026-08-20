@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -20,8 +21,11 @@ namespace TeleportGUI
         private readonly List<MonumentInfoEntry> _oilRigs = new List<MonumentInfoEntry>();
         private readonly Dictionary<string, GeneratedMonumentWarpPoint> _monumentWarps =
             new Dictionary<string, GeneratedMonumentWarpPoint>(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _monumentWarpChatCommands = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _monumentWarpChatCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _monumentRegisteredCommandNames = new List<string>();
+        private Coroutine _monumentInitRoutine;
+        private GameObject _monumentInitHost;
+        private int _monumentInitEnabledSkipped;
 
         private static ItemDefinition _scrapItemDefinition;
         private static FieldInfo _terrainPathMonumentsField;
@@ -78,8 +82,133 @@ namespace TeleportGUI
         #region Monument lifecycle
 
         /// <summary>
+        /// Harmony loads BeforeSceneLoad. Wait until TerrainMeta/monuments exist (Oxide OnServerInitialized timing).
+        /// </summary>
+        public void StartMonumentWarpInit()
+        {
+            StopMonumentWarpInit();
+
+            List<MonumentInfo> monuments = GetTerrainMonuments();
+            if (monuments != null && monuments.Count > 0 && TerrainMeta.Size.x > 0f)
+            {
+                InitializeMonumentWarps();
+                if (_monumentWarps.Count > 0 && _monumentInitEnabledSkipped == 0)
+                    return;
+            }
+
+            _monumentInitRoutine = StartMonumentInitCoroutine(MonumentWarpInitCoroutine());
+        }
+
+        public void StopMonumentWarpInit()
+        {
+            if (_monumentInitRoutine != null)
+            {
+                try
+                {
+                    if (ServerMgr.Instance != null)
+                        ServerMgr.Instance.StopCoroutine(_monumentInitRoutine);
+                }
+                catch { }
+
+                try
+                {
+                    if (_monumentInitHost != null)
+                    {
+                        var host = _monumentInitHost.GetComponent<MonumentInitHost>();
+                        if (host != null)
+                            host.StopAllCoroutines();
+                    }
+                }
+                catch { }
+
+                _monumentInitRoutine = null;
+            }
+
+            if (_monumentInitHost != null)
+            {
+                UnityEngine.Object.Destroy(_monumentInitHost);
+                _monumentInitHost = null;
+            }
+        }
+
+        /// <summary>Called from ServerMgr.Initialize after the world exists (backup if the wait loop is still spinning).</summary>
+        public void NotifyWorldReady()
+        {
+            if (Instance == null) return;
+            if (_monumentWarps.Count > 0 && _monumentInitEnabledSkipped == 0) return;
+
+            List<MonumentInfo> monuments = GetTerrainMonuments();
+            if (monuments == null || monuments.Count == 0) return;
+
+            InitializeMonumentWarps();
+        }
+
+        private Coroutine StartMonumentInitCoroutine(IEnumerator routine)
+        {
+            if (routine == null) return null;
+
+            if (ServerMgr.Instance != null)
+                return ServerMgr.Instance.StartCoroutine(routine);
+
+            _monumentInitHost = new GameObject("TeleportGUI_MonumentInit");
+            UnityEngine.Object.DontDestroyOnLoad(_monumentInitHost);
+            _monumentInitHost.hideFlags = HideFlags.HideAndDontSave;
+            var host = _monumentInitHost.AddComponent<MonumentInitHost>();
+            return host.StartCoroutine(routine);
+        }
+
+        private IEnumerator MonumentWarpInitCoroutine()
+        {
+            float timeout = Time.realtimeSinceStartup + 180f;
+
+            while (Instance != null && ServerMgr.Instance == null && Time.realtimeSinceStartup < timeout)
+                yield return null;
+
+            while (Instance != null && Time.realtimeSinceStartup < timeout)
+            {
+                try
+                {
+                    if (TerrainMeta.Path != null && TerrainMeta.Size.x > 0f)
+                        break;
+                }
+                catch { }
+                yield return new WaitForSeconds(0.5f);
+            }
+
+            while (Instance != null && Time.realtimeSinceStartup < timeout)
+            {
+                List<MonumentInfo> found = GetTerrainMonuments();
+                if (found != null && found.Count > 0)
+                    break;
+                yield return new WaitForSeconds(0.5f);
+            }
+
+            // Safe-zone triggers / colliders used by spawn generation.
+            yield return new WaitForSeconds(1f);
+
+            if (Instance == null) yield break;
+            InitializeMonumentWarps();
+
+            for (int i = 0; i < 3 && Instance != null; i++)
+            {
+                if (_monumentWarps.Count > 0 && _monumentInitEnabledSkipped == 0)
+                    break;
+
+                List<MonumentInfo> found = GetTerrainMonuments();
+                if (found == null || found.Count == 0)
+                    break;
+
+                yield return new WaitForSeconds(2f);
+                if (Instance == null) yield break;
+                InitializeMonumentWarps();
+            }
+
+            _monumentInitRoutine = null;
+        }
+
+        /// <summary>
         /// Discover monuments via TerrainMeta.Path.Monuments and generate enabled warps in memory.
-        /// Does not mutate config or warpdata.
+        /// Missing monuments are added to config (Oxide OnServerInitialized behavior). Generated warps are never written to warpdata.
         /// </summary>
         public void InitializeMonumentWarps()
         {
@@ -92,23 +221,19 @@ namespace TeleportGUI
                 return;
             }
 
+            if (_config?.Warp != null && _config.Warp.MonumentWarps == null)
+                _config.Warp.MonumentWarps = new Dictionary<string, TeleportGUIConfig.WarpOptions.MonumentWarp>();
+
             TextInfo textInfo = new CultureInfo("en-US", false).TextInfo;
             var monumentWarpsConfig = _config?.Warp?.MonumentWarps;
+            bool saveConfig = false;
+            _monumentInitEnabledSkipped = 0;
 
             foreach (MonumentInfo monument in monuments)
             {
                 if (monument == null) continue;
 
-                string shortname;
-                try
-                {
-                    shortname = Path.GetFileNameWithoutExtension(monument.name);
-                }
-                catch
-                {
-                    continue;
-                }
-
+                string shortname = GetMonumentShortname(monument);
                 if (string.IsNullOrEmpty(shortname)) continue;
 
                 Bounds bounds = monument.Bounds;
@@ -171,10 +296,18 @@ namespace TeleportGUI
                 var entry = new MonumentInfoEntry(shortname, isSafeZone, monument.transform, position, radius, bounds);
                 _monuments.Add(entry);
 
-                if (monumentWarpsConfig == null ||
-                    !monumentWarpsConfig.TryGetValue(shortname, out TeleportGUIConfig.WarpOptions.MonumentWarp monumentWarp) ||
-                    monumentWarp == null ||
-                    !monumentWarp.Enabled)
+                TeleportGUIConfig.WarpOptions.MonumentWarp monumentWarp;
+                if (!TryFindMonumentWarpConfig(shortname, out monumentWarp) || monumentWarp == null)
+                {
+                    monumentWarp = CreateDefaultMonumentWarp(shortname, isSafeZone);
+                    if (monumentWarpsConfig != null)
+                    {
+                        monumentWarpsConfig[shortname] = monumentWarp;
+                        saveConfig = true;
+                    }
+                }
+
+                if (monumentWarp == null || !monumentWarp.Enabled)
                     continue;
 
                 string uniqueName = textInfo.ToTitleCase(
@@ -194,7 +327,11 @@ namespace TeleportGUI
                     monument.transform, bounds, position, maxRadius, safeZoneOnly);
 
                 if (generated.SpawnCount <= 0)
+                {
+                    _monumentInitEnabledSkipped++;
+                    UnityEngine.Debug.LogWarning("[TeleportGUI] Failed to generate spawn points for monument warp " + uniqueName);
                     continue;
+                }
 
                 if (!string.IsNullOrEmpty(monumentWarp.Permission))
                 {
@@ -217,9 +354,120 @@ namespace TeleportGUI
                 {
                     RegisterMonumentWarpChatCommand(monumentCmd, uniqueName);
                 }
+
+                if (IsOutpostMonument(shortname) || IsBanditMonument(shortname))
+                {
+                    UnityEngine.Debug.Log("[TeleportGUI] Detected " + shortname + " as '" + uniqueName +
+                                          "' command=/" + (string.IsNullOrEmpty(monumentCmd) ? "(none)" : monumentCmd) +
+                                          " spawns=" + generated.SpawnCount);
+                }
             }
 
+            if (saveConfig)
+                SaveConfig();
+
             UnityEngine.Debug.Log($"[TeleportGUI] Monument warps ready: {_monumentWarps.Count} generated from {_monuments.Count} monuments.");
+        }
+
+        private static string GetMonumentShortname(MonumentInfo monument)
+        {
+            if (monument == null) return string.Empty;
+
+            string name = monument.name;
+            if (string.IsNullOrEmpty(name)) return string.Empty;
+
+            try { name = Path.GetFileNameWithoutExtension(name); }
+            catch { }
+
+            const string clone = " (Clone)";
+            if (!string.IsNullOrEmpty(name) && name.EndsWith(clone, StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - clone.Length);
+
+            return (name ?? string.Empty).Trim();
+        }
+
+        /// <summary>
+        /// Vanilla Outpost prefab is historically "compound"; custom maps / newer gens may name it "outpost".
+        /// Bandit Camp is "bandit_town". Match either so /outpost and /bandit work without a config rename.
+        /// </summary>
+        private bool TryFindMonumentWarpConfig(string shortname, out TeleportGUIConfig.WarpOptions.MonumentWarp warp)
+        {
+            warp = null;
+            var map = _config?.Warp?.MonumentWarps;
+            if (map == null || string.IsNullOrEmpty(shortname)) return false;
+
+            if (map.TryGetValue(shortname, out warp) && warp != null)
+                return true;
+
+            string[] aliases = GetMonumentConfigAliases(shortname);
+            if (aliases != null)
+            {
+                for (int i = 0; i < aliases.Length; i++)
+                {
+                    string alias = aliases[i];
+                    if (string.Equals(alias, shortname, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (map.TryGetValue(alias, out warp) && warp != null)
+                        return true;
+                }
+            }
+
+            foreach (KeyValuePair<string, TeleportGUIConfig.WarpOptions.MonumentWarp> kvp in map)
+            {
+                if (kvp.Value == null) continue;
+                if (string.Equals(kvp.Key, shortname, StringComparison.OrdinalIgnoreCase))
+                {
+                    warp = kvp.Value;
+                    return true;
+                }
+            }
+
+            warp = null;
+            return false;
+        }
+
+        private static string[] GetMonumentConfigAliases(string shortname)
+        {
+            if (IsOutpostMonument(shortname))
+                return new[] { "compound", "outpost" };
+            if (IsBanditMonument(shortname))
+                return new[] { "bandit_town", "bandit" };
+            return null;
+        }
+
+        private static bool IsOutpostMonument(string shortname)
+        {
+            if (string.IsNullOrEmpty(shortname)) return false;
+            return shortname.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0
+                   || shortname.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsBanditMonument(string shortname)
+        {
+            if (string.IsNullOrEmpty(shortname)) return false;
+            return shortname.IndexOf("bandit", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Oxide adds missing monuments with Enabled=false. Vanilla Outpost / Bandit Camp default on
+        /// with /outpost and /bandit so they work without a hand-edited config.
+        /// </summary>
+        private static TeleportGUIConfig.WarpOptions.MonumentWarp CreateDefaultMonumentWarp(string shortname, bool isSafeZone)
+        {
+            var warp = new TeleportGUIConfig.WarpOptions.MonumentWarp();
+            if (IsOutpostMonument(shortname))
+            {
+                warp.Enabled = true;
+                warp.SafeZoneOnly = isSafeZone;
+                warp.Command = "outpost";
+            }
+            else if (IsBanditMonument(shortname))
+            {
+                warp.Enabled = true;
+                warp.SafeZoneOnly = isSafeZone;
+                warp.Command = "bandit";
+            }
+            return warp;
         }
 
         /// <summary>
@@ -272,6 +520,10 @@ namespace TeleportGUI
 
         private void RegisterMonumentWarpChatCommand(string cmdName, string warpName)
         {
+            _warpChatCommandTargets[cmdName] = warpName;
+            _monumentWarpChatCommands.Add(cmdName);
+            _monumentRegisteredCommandNames.Add(cmdName);
+
             try
             {
                 var cmd = new ConsoleSystem.Command
@@ -296,8 +548,6 @@ namespace TeleportGUI
                     if (ConsoleSystem.Index.Server.GlobalDict != null)
                         ConsoleSystem.Index.Server.GlobalDict[cmdName] = cmd;
                     _registeredCommands[cmdName] = cmd;
-                    _monumentRegisteredCommandNames.Add(cmdName);
-                    _monumentWarpChatCommands.Add(cmdName);
                 }
             }
             catch (Exception ex)
@@ -317,11 +567,14 @@ namespace TeleportGUI
                     if (ConsoleSystem.Index.Server.GlobalDict != null)
                         ConsoleSystem.Index.Server.GlobalDict.Remove(cmdName);
                     _registeredCommands.Remove(cmdName);
+                    _warpChatCommandTargets.Remove(cmdName);
                 }
                 catch { }
             }
             _monumentRegisteredCommandNames.Clear();
         }
+
+        private sealed class MonumentInitHost : MonoBehaviour { }
 
         #endregion
 

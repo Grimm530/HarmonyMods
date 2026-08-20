@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Facepunch;
+using Network;
 using UnityEngine;
 
 namespace AdminTime
@@ -25,6 +26,12 @@ namespace AdminTime
         };
 
         private readonly Dictionary<ulong, Dictionary<string, float>> _players = new Dictionary<ulong, Dictionary<string, float>>();
+        private readonly Dictionary<ulong, int> _adminSpoofSerial = new Dictionary<ulong, int>();
+        private int _timeOverrideCount;
+        private EnvSync _envSync;
+        private Action _pushOverrides;
+
+        public bool HasAnyTimeOverride => _timeOverrideCount > 0;
 
         private ConsoleSystem.Command _mytimeCmd;
         private ConsoleSystem.Command _myweatherCmd;
@@ -37,18 +44,26 @@ namespace AdminTime
             Instance = this;
             AdminTimeConfig.LoadConfig();
             RegisterCommands();
+            BindEnvSync(UnityEngine.Object.FindAnyObjectByType<EnvSync>());
             UnityEngine.Debug.Log("[AdminTime] Harmony mod loaded. Use /mytime and /myweather to set personal time/weather (stored until disconnect or server restart).");
         }
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            StopOverridePush();
             UnregisterCommands();
             foreach (var entry in _players)
             {
                 var player = BasePlayer.FindByID(entry.Key);
-                if (player != null) Toggle(player, false);
+                if (player != null)
+                {
+                    Toggle(player, false);
+                    RestoreSpoofedAdmin(player, 0, force: true);
+                }
             }
             _players.Clear();
+            _adminSpoofSerial.Clear();
+            _timeOverrideCount = 0;
             Instance = null;
             UnityEngine.Debug.Log("[AdminTime] Harmony mod unloaded.");
         }
@@ -63,7 +78,61 @@ namespace AdminTime
         public void OnPlayerDisconnected(BasePlayer player)
         {
             if (player == null) return;
+            if (_players.TryGetValue(player.userID, out var dict) && dict.ContainsKey("time"))
+                _timeOverrideCount = Math.Max(0, _timeOverrideCount - 1);
             _players.Remove(player.userID);
+            _adminSpoofSerial.Remove(player.userID);
+        }
+
+        public void BindEnvSync(EnvSync env)
+        {
+            StopOverridePush();
+            _envSync = env;
+            if (_envSync == null || _envSync.IsDestroyed) return;
+            _pushOverrides = PushAllOverrideTimes;
+            _envSync.InvokeRepeating(_pushOverrides, 1f, 1f);
+        }
+
+        private void StopOverridePush()
+        {
+            if (_envSync != null && _pushOverrides != null && !_envSync.IsDestroyed)
+                _envSync.CancelInvoke(_pushOverrides);
+            _pushOverrides = null;
+        }
+
+        private void PushAllOverrideTimes()
+        {
+            if (_envSync == null || _envSync.IsDestroyed || _timeOverrideCount <= 0) return;
+            foreach (var entry in _players)
+            {
+                if (!entry.Value.ContainsKey("time")) continue;
+                var player = BasePlayer.FindByID(entry.Key);
+                if (player == null || !player.IsConnected || player.net?.connection == null) continue;
+                _envSync.SendAsSnapshot(player.net.connection);
+            }
+        }
+
+        private void PushTimeToPlayer(BasePlayer player)
+        {
+            if (_envSync == null || _envSync.IsDestroyed || player?.net?.connection == null) return;
+            _envSync.SendAsSnapshot(player.net.connection);
+        }
+
+        private void SetStoredTime(BasePlayer player, float time)
+        {
+            if (!_players.TryGetValue(player.userID, out var dict))
+                _players[player.userID] = dict = new Dictionary<string, float>();
+            bool had = dict.ContainsKey("time");
+            if (time < 0f)
+            {
+                if (!had) return;
+                dict.Remove("time");
+                _timeOverrideCount = Math.Max(0, _timeOverrideCount - 1);
+                if (dict.Count == 0) _players.Remove(player.userID);
+                return;
+            }
+            if (!had) _timeOverrideCount++;
+            dict["time"] = Mathf.Clamp(time, 0f, 24f);
         }
 
         private bool EventTerritory(Vector3 position)
@@ -219,16 +288,13 @@ namespace AdminTime
             if (args != null && args.Length >= 1 && float.TryParse(args[0], out float argVal))
                 value = argVal >= 0f ? Mathf.Clamp(argVal, 0f, 24f) : -1f;
 
-            if (!_players.TryGetValue(player.userID, out var dict))
-                _players[player.userID] = dict = new Dictionary<string, float>();
-
-            if (value < 0f)
+            if (value >= 0f && EventTerritory(player.transform.position))
             {
-                if (dict.Remove("time") && dict.Count == 0) _players.Remove(player.userID);
+                Reply(player, "Time override is blocked in this area.");
+                return;
             }
-            else
-                dict["time"] = value;
 
+            SetStoredTime(player, value);
             ChangeTime(player, value);
             if (value < 0f)
                 Reply(player, "Time override cleared. You now see server time.");
@@ -393,58 +459,78 @@ namespace AdminTime
         private void ChangeWeather(BasePlayer player, string arg, float value)
         {
             if (value != -1f && EventTerritory(player.transform.position)) return;
-            if (player.IsAdmin)
-            {
-                player.SendConsoleCommand("admin" + arg, value.ToString("0.###"));
-                return;
-            }
-            if (player.IsFlying)
-            {
-                Reply(player, "You cannot use this command while flying.");
-                return;
-            }
-            player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
-            player.SendNetworkUpdateImmediate();
-            player.SendConsoleCommand("admin" + arg, value.ToString("0.###"));
-            player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, false);
-            player.SendNetworkUpdateImmediate();
+            SendAdminClientCommand(player, "admin" + arg, value.ToString("0.###"));
         }
 
         private void ChangeTime(BasePlayer player, float time)
         {
             if (time != -1f && EventTerritory(player.transform.position)) return;
-            if (player.IsAdmin)
-            {
-                player.SendConsoleCommand("admintime", time.ToString("0.##"));
-                return;
-            }
-            if (player.IsFlying)
-            {
-                Reply(player, "You cannot use this command while flying.");
-                return;
-            }
-            player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
-            player.SendNetworkUpdateImmediate();
-            player.SendConsoleCommand("admintime", time.ToString("0.##"));
-            player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, false);
-            player.SendNetworkUpdateImmediate();
+            ApplyTimeToClient(player, time);
         }
 
         private void ChangeTimeForAPI(BasePlayer player, float time)
         {
-            if (player.IsAdmin)
+            ApplyTimeToClient(player, time);
+        }
+
+        private void ApplyTimeToClient(BasePlayer player, float time)
+        {
+            if (player == null || !player.IsConnected || player.net?.connection == null) return;
+            string formatted = time.ToString("0.##");
+            SendVar(player, "global.admintime", formatted);
+            if (!player.IsFlying || IsReallyAdmin(player))
             {
-                player.SendConsoleCommand("admintime", time.ToString("0.##"));
-                return;
+                SendAdminClientCommand(player, "admintime", formatted);
+                ConsoleNetwork.SendClientCommandImmediate(player.net.connection, "global.admintime", formatted);
             }
-            if (player.IsFlying)
+            PushTimeToPlayer(player);
+        }
+
+        private bool IsReallyAdmin(BasePlayer player)
+        {
+            if (player?.net?.connection == null) return false;
+            return player.net.connection.authLevel != 0 || player.IsDeveloper;
+        }
+
+        private void SendAdminClientCommand(BasePlayer player, string command, string value)
+        {
+            if (player == null || !player.IsConnected || player.net?.connection == null) return;
+
+            bool realAdmin = IsReallyAdmin(player);
+            if (!realAdmin)
             {
-                Reply(player, "You cannot use this command while flying.");
-                return;
+                if (player.IsFlying)
+                {
+                    Reply(player, "You cannot use this command while flying.");
+                    return;
+                }
+                player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
+                player.SendNetworkUpdateImmediate();
             }
-            player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, true);
-            player.SendNetworkUpdateImmediate();
-            player.SendConsoleCommand("admintime", time.ToString("0.##"));
+
+            ConsoleNetwork.SendClientCommandImmediate(player.net.connection, command, value);
+
+            if (!realAdmin)
+            {
+                ulong id = player.userID;
+                if (!_adminSpoofSerial.TryGetValue(id, out int serial)) serial = 0;
+                serial++;
+                _adminSpoofSerial[id] = serial;
+                int captured = serial;
+                player.Invoke(() => RestoreSpoofedAdmin(player, captured, force: false), 0.35f);
+            }
+        }
+
+        private void RestoreSpoofedAdmin(BasePlayer player, int serial, bool force)
+        {
+            if (player == null || !player.IsConnected) return;
+            if (!force)
+            {
+                if (!_adminSpoofSerial.TryGetValue(player.userID, out int current) || current != serial)
+                    return;
+            }
+            _adminSpoofSerial.Remove(player.userID);
+            if (IsReallyAdmin(player)) return;
             player.SetPlayerFlag(BasePlayer.PlayerFlags.IsAdmin, false);
             player.SendNetworkUpdateImmediate();
         }
@@ -536,14 +622,7 @@ namespace AdminTime
             {
                 var mod = Instance;
                 if (mod == null) return false;
-                if (!mod._players.TryGetValue(player.userID, out var dict))
-                    mod._players[player.userID] = dict = new Dictionary<string, float>();
-                if (time < 0f)
-                {
-                    if (dict.Remove("time") && dict.Count == 0) mod._players.Remove(player.userID);
-                }
-                else
-                    dict["time"] = Mathf.Clamp(time, 0f, 24f);
+                mod.SetStoredTime(player, time);
                 mod.ChangeTimeForAPI(player, time);
                 return true;
             }

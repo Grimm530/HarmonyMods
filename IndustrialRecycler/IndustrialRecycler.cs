@@ -69,6 +69,7 @@ namespace Oxide.Plugins
         private readonly HashSet<ulong> _pickupInProgress = new HashSet<ulong>();
         private readonly HashSet<ulong> _purchaseInProgress = new HashSet<ulong>();
         private readonly Dictionary<ulong, ulong> _pendingOutputTransfers = new Dictionary<ulong, ulong>();
+        private readonly HashSet<ulong> _handledPlacements = new HashSet<ulong>();
         private Configuration _config;
 
         private class RecyclerSaveEntry
@@ -130,6 +131,7 @@ namespace Oxide.Plugins
             _playersWithUi.Clear();
             _purchaseInProgress.Clear();
             _pendingOutputTransfers.Clear();
+            _handledPlacements.Clear();
             _industrialRecyclers.Clear();
             _standardRecyclers.Clear();
             foreach (var r in _playerVirtualRecycler.Values.Where(r => r != null && !r.IsDestroyed).ToList())
@@ -187,11 +189,19 @@ namespace Oxide.Plugins
 
         void OnEntityBuilt(Planner planner, GameObject entityObject)
         {
-            var player = planner?.GetOwnerPlayer();
-            var baseEntity = entityObject?.GetComponent<BaseEntity>();
-            if (player == null || baseEntity == null)
+            HandlePlacedRecyclerBox(planner?.GetOwnerPlayer(), entityObject?.GetComponent<BaseEntity>());
+        }
+
+        internal void HandlePlacedRecyclerBox(BasePlayer player, BaseEntity baseEntity)
+        {
+            if (player == null || baseEntity == null || baseEntity.IsDestroyed)
+                return;
+            if (_config == null)
                 return;
             if (baseEntity.skinID != _config.IndustrialRecyclerSkinId && baseEntity.skinID != _config.StandardRecyclerSkinId)
+                return;
+            ulong netId = baseEntity.net != null ? baseEntity.net.ID.Value : 0UL;
+            if (netId != 0 && !_handledPlacements.Add(netId))
                 return;
             bool isIndustrial = baseEntity.skinID == _config.IndustrialRecyclerSkinId;
             int maxRecyclers = GetMaxRecyclers(player, isIndustrial);
@@ -230,11 +240,6 @@ namespace Oxide.Plugins
                 if (!HasAccess(player, adapter))
                 {
                     player.ChatMessage(lang.GetMessage("NoAccess", this, player.UserIDString));
-                    return false;
-                }
-                if (!permission.UserHasPermission(player.UserIDString, PermissionPickup))
-                {
-                    player.ChatMessage(lang.GetMessage("NoPickupPermission", this, player.UserIDString));
                     return false;
                 }
                 adapter.GetParentEntity()?.GetParentEntity()?.Kill();
@@ -336,9 +341,8 @@ namespace Oxide.Plugins
         {
             if (player == null || hitInfo == null || hitInfo.HitEntity == null)
                 return null;
-            BaseEntity target = hitInfo.HitEntity;
-            Recycler recycler = target as Recycler ?? target.GetParentEntity() as Recycler ?? target.GetParentEntity()?.GetParentEntity() as Recycler;
-            if (recycler == null)
+            Recycler recycler = ResolveRecyclerFromHit(hitInfo.HitEntity);
+            if (recycler == null || recycler.IsDestroyed)
                 return null;
             if (recycler.OwnerID == 0UL)
                 return null;
@@ -349,11 +353,6 @@ namespace Oxide.Plugins
                 player.ChatMessage(lang.GetMessage("NoAccess", this, player.UserIDString));
                 return null;
             }
-            if (!permission.UserHasPermission(player.UserIDString, PermissionPickup))
-            {
-                player.ChatMessage(lang.GetMessage("NoPickupPermission", this, player.UserIDString));
-                return false;
-            }
             bool isIndustrial = IsRecyclerIndustrial(recycler);
             ulong id = recycler.net.ID.Value;
             _pickupInProgress.Add(id);
@@ -361,7 +360,20 @@ namespace Oxide.Plugins
             GiveRecyclerItem(player, !isIndustrial);
             player.ChatMessage(lang.GetMessage("RecyclerPickedUp", this, player.UserIDString));
             _pickupInProgress.Remove(id);
-            return null;
+            return false;
+        }
+
+        private static Recycler ResolveRecyclerFromHit(BaseEntity target)
+        {
+            if (target == null || target.IsDestroyed)
+                return null;
+            if (target is Recycler recycler)
+                return recycler;
+            recycler = target.GetComponentInParent<Recycler>();
+            if (recycler != null && !recycler.IsDestroyed)
+                return recycler;
+            var parent = target.GetParentEntity();
+            return parent as Recycler ?? parent?.GetParentEntity() as Recycler;
         }
 
         void OnLootEntityEnd(BasePlayer player, Recycler recycler)

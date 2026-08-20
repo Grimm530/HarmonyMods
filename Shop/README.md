@@ -84,5 +84,6 @@ Copies only `Shop.dll` to `HarmonyMods/`.
   purchase ownership check, including after `harmony.reload PlayerDLCAPI`.
 - Command product `bdgive Easy %steamid% 1` is dispatched to BradleyDrops (`BradleyDrops_ApiType`) so shop purchases grant the signal.
 - Command product `cht.openshop %steamid%` closes Shop UI and calls CHT via `CHT_ApiType` (heli menu lives on OverlayNonScaled).
+- Command product `giveindustrialrecycler %steamid%` is dispatched to IndustrialRecycler (`IndustrialRecycler_ApiType`) so shop purchases grant the recycler item.
 - Other optional Oxide plugins (ServerPanel, Notify, NoEscape, Duel) remain
   stubs unless a Harmony equivalent is wired later.

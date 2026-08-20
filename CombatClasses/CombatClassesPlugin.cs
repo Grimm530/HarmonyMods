@@ -360,7 +360,10 @@ namespace Oxide.Plugins
             public string givexp = "givexp";
             public int uiVerticalOffset = 0;
             /// <summary>Absolute data root for CombatClassesData/themes/images. Empty = HarmonyData/CombatClasses.</summary>
-            public string CustomDataDirectory = @"C:\!DataPersistence\oxide\data\CombatClasses";
+            public string CustomDataDirectory = @"C:\!DataPersistence\harmony\CombatClasses";
+            /// <summary>Full reset of combatPlayer on first-Thursday forced wipe in these months (1=Jan, 6=Jun).</summary>
+            [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public List<int> SeasonWipeMonths = new List<int> { 1, 6 };
         }
         public class ClassSettings
         {
@@ -819,6 +822,7 @@ namespace Oxide.Plugins
         private class CombatPlayers
         {
             public Dictionary<ulong, CombatPlayer> combatPlayer = new Dictionary<ulong, CombatPlayer>();
+            public string lastWipeId;
         }
         private class CombatPlayer
         {
@@ -872,11 +876,14 @@ namespace Oxide.Plugins
             try
             {
                 _combatPlayers = _CombatPlayerData.ReadObject<CombatPlayers>();
-                _CombatPlayerCache = _combatPlayers.combatPlayer;
+                if (_combatPlayers == null) _combatPlayers = new CombatPlayers();
+                _CombatPlayerCache = _combatPlayers.combatPlayer ?? new Dictionary<ulong, CombatPlayer>();
+                _combatPlayers.combatPlayer = _CombatPlayerCache;
             }
             catch
             {
                 _combatPlayers = new CombatPlayers();
+                _CombatPlayerCache = _combatPlayers.combatPlayer;
             }
             try
             {
@@ -913,10 +920,7 @@ namespace Oxide.Plugins
             _CalculatorCache = new Dictionary<ulong, Calculator>();
         }
 
-        /// <summary>
-        /// Player JSON root: CustomDataDirectory when set (shared DataPersistence), else HarmonyData/CombatClasses.
-        /// Images/avatars/themes live under oxide/data/CombatClasses (server-local assets) — see ResolveAssetDirectory.
-        /// </summary>
+        /// <summary>Player JSON root: CustomDataDirectory when set, else HarmonyData/CombatClasses.</summary>
         private bool UsesCustomDataDirectory =>
             config?.mainSettings != null && !string.IsNullOrWhiteSpace(config.mainSettings.CustomDataDirectory);
 
@@ -934,19 +938,24 @@ namespace Oxide.Plugins
         private static string ServerRootPath =>
             Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, ".."));
 
-        /// <summary>Original Oxide asset folder: oxide/data/CombatClasses (images, Avatars, CCThemeData).</summary>
+        /// <summary>UI images, Steam avatars, and theme JSON: HarmonyImages/CombatClasses.</summary>
+        private string HarmonyImagesCombatClassesDir =>
+            Path.Combine(ServerRootPath, "HarmonyImages", "CombatClasses");
+
+        /// <summary>Legacy leftover path (this server has no oxide folder).</summary>
         private string OxideCombatClassesDir =>
             Path.Combine(ServerRootPath, "oxide", "data", "CombatClasses");
 
         /// <summary>
-        /// Prefer oxide/data/CombatClasses/&lt;sub&gt; for UI assets (images/Avatars), then CustomDataDirectory, then HarmonyData.
+        /// Images/avatars: HarmonyImages/CombatClasses first, then CustomDataDirectory, then leftover oxide/data.
         /// </summary>
         private string ResolveAssetDirectory(string subfolder)
         {
             string[] candidates =
             {
-                Path.Combine(OxideCombatClassesDir, subfolder),
+                Path.Combine(HarmonyImagesCombatClassesDir, subfolder),
                 Path.Combine(CombatClassesDataRoot, subfolder),
+                Path.Combine(OxideCombatClassesDir, subfolder),
                 Path.Combine(Interface.Oxide.DataDirectory, "CombatClasses", subfolder),
             };
             for (int i = 0; i < candidates.Length; i++)
@@ -976,13 +985,21 @@ namespace Oxide.Plugins
             EnsureCombatClassesDataDirectory();
             var fileName = name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? name : name + ".json";
 
-            // Player aggregate stays on CustomDataDirectory (shared). Theme data is usually next to images under oxide/data.
-            string path = Path.Combine(CombatClassesDataRoot, fileName);
-            if (!File.Exists(path) && !string.Equals(fileName, "CombatClassesData.json", StringComparison.OrdinalIgnoreCase))
+            string[] candidates =
             {
-                var oxidePath = Path.Combine(OxideCombatClassesDir, fileName);
-                if (File.Exists(oxidePath))
-                    path = oxidePath;
+                Path.Combine(CombatClassesDataRoot, fileName),
+                Path.Combine(HarmonyImagesCombatClassesDir, fileName),
+                Path.Combine(OxideCombatClassesDir, fileName),
+                Path.Combine(Interface.Oxide.DataDirectory, "CombatClasses", fileName),
+            };
+            string path = candidates[0];
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    path = candidates[i];
+                    break;
+                }
             }
 
             var file = new DynamicConfigFile(path);
@@ -1017,6 +1034,7 @@ namespace Oxide.Plugins
             HandlePermissions();
 
             LoadData();
+            MaybeSeasonWipe();
 
             CheckAndInitializeMissingGearBoxes();
 
@@ -1047,6 +1065,55 @@ namespace Oxide.Plugins
         {
             SaveData();
         }
+
+        private static bool IsFirstThursdayOfMonth()
+        {
+            var now = DateTime.Now;
+            return now.DayOfWeek == DayOfWeek.Thursday && now.Day <= 7;
+        }
+
+        /// <summary>
+        /// Clears combatPlayer on January and June first-Thursday wipes only.
+        /// Themes/images in this folder are left alone.
+        /// </summary>
+        private void MaybeSeasonWipe()
+        {
+            string wipeId = "";
+            try { wipeId = SaveRestore.WipeId ?? ""; }
+            catch { }
+            if (string.IsNullOrEmpty(wipeId)) return;
+            if (_combatPlayers == null) _combatPlayers = new CombatPlayers();
+            if (_CombatPlayerCache == null)
+            {
+                _CombatPlayerCache = new Dictionary<ulong, CombatPlayer>();
+                _combatPlayers.combatPlayer = _CombatPlayerCache;
+            }
+
+            var prev = _combatPlayers.lastWipeId ?? "";
+            if (string.Equals(prev, wipeId, StringComparison.Ordinal)) return;
+            _combatPlayers.lastWipeId = wipeId;
+
+            if (string.IsNullOrEmpty(prev))
+            {
+                SaveData();
+                return;
+            }
+
+            var months = config?.mainSettings?.SeasonWipeMonths;
+            bool isSeason = months != null && months.Count > 0 && IsFirstThursdayOfMonth() && months.Contains(DateTime.Now.Month);
+            if (!isSeason)
+            {
+                SaveData();
+                return;
+            }
+
+            int n = _CombatPlayerCache.Count;
+            _CombatPlayerCache = new Dictionary<ulong, CombatPlayer>();
+            _combatPlayers.combatPlayer = _CombatPlayerCache;
+            SaveData();
+            Puts($"CombatClasses: January/June season wipe — cleared {n} players (themes/images kept).");
+        }
+
         private void OnPlayerConnected(BasePlayer player)
         {
             if (player == null || !player.userID.Get().IsSteamId() || player.IsNpc) return;
@@ -3363,7 +3430,7 @@ namespace Oxide.Plugins
                 var imagesDir = ResolveAssetDirectory("images");
                 if (!System.IO.Directory.Exists(imagesDir))
                 {
-                    Puts($"[IMG] Local images directory not found. Tried oxide/data and {CombatClassesDataRoot}. Last: {imagesDir}");
+                    Puts($"[IMG] Local images directory not found. Tried HarmonyImages/CombatClasses then {CombatClassesDataRoot}. Last: {imagesDir}");
                     return;
                 }
                 Puts($"[IMG] Loading CombatClasses images from: {imagesDir}");
@@ -3676,11 +3743,11 @@ namespace Oxide.Plugins
         private void DownloadAndStoreSteamAvatar(string steamId, string avatarUrl)
         {
             // Create the avatars directory if it doesn't exist
-            // Prefer oxide/data Avatars (same folder as UI images); create under CombatClassesDataRoot if missing.
+            // Prefer HarmonyImages/CombatClasses/Avatars (same folder as UI images).
             string avatarDir = ResolveAssetDirectory("Avatars");
             if (!System.IO.Directory.Exists(avatarDir))
             {
-                avatarDir = Path.Combine(OxideCombatClassesDir, "Avatars");
+                avatarDir = Path.Combine(HarmonyImagesCombatClassesDir, "Avatars");
                 System.IO.Directory.CreateDirectory(avatarDir);
             }
             

@@ -468,11 +468,20 @@ namespace RustVehiclesGUIHarmony
         private readonly Dictionary<string, Dictionary<string, string>> _byLang =
             new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
 
-        private Dictionary<string, string> _override;
+        private readonly Dictionary<string, Dictionary<string, string>> _fileOverrides =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
 
-        public void SetOverride(Dictionary<string, string> messages)
+        public void SetOverride(Dictionary<string, string> messages) => SetLanguageOverride("en", messages);
+
+        public void SetLanguageOverride(string language, Dictionary<string, string> messages)
         {
-            _override = messages;
+            if (string.IsNullOrEmpty(language) || messages == null) return;
+            _fileOverrides[language] = messages;
+            if (_byLang.TryGetValue(language, out var dict))
+            {
+                foreach (var kv in messages)
+                    dict[kv.Key] = kv.Value;
+            }
         }
 
         public void RegisterMessages(Dictionary<string, string> messages, object plugin, string language = "en")
@@ -484,10 +493,9 @@ namespace RustVehiclesGUIHarmony
             foreach (var kv in messages)
                 dict[kv.Key] = kv.Value;
 
-            // Merge optional HarmonyLanguage/RustVehiclesGUI.json override into the default (en) table.
-            if (_override != null && language.Equals("en", StringComparison.OrdinalIgnoreCase))
+            if (_fileOverrides.TryGetValue(language, out var over))
             {
-                foreach (var kv in _override)
+                foreach (var kv in over)
                     dict[kv.Key] = kv.Value;
             }
         }
@@ -507,7 +515,39 @@ namespace RustVehiclesGUIHarmony
             return key ?? "";
         }
 
-        public string GetLanguage(string userId) => "en";
+        public string GetLanguage(string userId)
+        {
+            if (string.IsNullOrEmpty(userId) || !ulong.TryParse(userId, out var steamId))
+                return "en";
+            try
+            {
+                var player = BasePlayer.FindAwakeOrSleepingByID(steamId);
+                var raw = player?.net?.connection?.info?.GetString("global.language", "en");
+                return NormalizeLang(raw);
+            }
+            catch
+            {
+                return "en";
+            }
+        }
+
+        private static string NormalizeLang(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return "en";
+            switch (raw.Trim().ToLowerInvariant())
+            {
+                case "en":
+                case "eng":
+                case "english":
+                    return "en";
+                case "ru":
+                case "rus":
+                case "russian":
+                    return "ru";
+                default:
+                    return raw;
+            }
+        }
     }
 
     #endregion
@@ -1082,27 +1122,27 @@ namespace RustVehiclesGUIHarmony
             }
             Instance.Config = new DynamicConfigFile(configPath, data ?? new JObject());
 
-            // Optional language override: HarmonyLanguage/RustVehiclesGUI.json (merged into RegisterMessages).
-            var langPath = Path.Combine(langDir, "RustVehiclesGUI.json");
-            if (File.Exists(langPath))
-            {
-                try
-                {
-                    var over = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(langPath));
-                    if (over != null)
-                    {
-                        Instance.Lang.SetOverride(over);
-                        Debug.Log($"[RustVehiclesGUI] OK: Loaded language override -> {langPath}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[RustVehiclesGUI] Language override load failed: " + ex.Message);
-                }
-            }
+            TryLoadLanguageFile(Instance.Lang, Path.Combine(langDir, "RustVehiclesGUI.json"), "en");
+            TryLoadLanguageFile(Instance.Lang, Path.Combine(langDir, "RustVehiclesGUI.ru.json"), "ru");
 
             Debug.Log($"[RustVehiclesGUI] Config: {configPath} (exists={File.Exists(configPath)})");
             Debug.Log($"[RustVehiclesGUI] Data:   {modData}");
+        }
+
+        private static void TryLoadLanguageFile(LangHelper lang, string path, string language)
+        {
+            if (lang == null || string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            try
+            {
+                var over = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path));
+                if (over == null) return;
+                lang.SetLanguageOverride(language, over);
+                Debug.Log($"[RustVehiclesGUI] OK: Loaded {language} language -> {path}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RustVehiclesGUI] Language load failed ({language}): " + ex.Message);
+            }
         }
 
         public static void Shutdown()

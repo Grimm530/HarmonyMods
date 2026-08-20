@@ -73,6 +73,7 @@ namespace RaidableBases
         private bool DebugMode;
         private int despawnLimit = 10;
         private const ulong RB_SKIN_ID = 3710562502;
+        private const ulong GRIMM_PAPER_SKIN = 2961180853UL;
         private static ulong BotIdCounter = 514922525;
 
         private SkinSettingsImportedWorkshop ImportedWorkshopSkins = new();
@@ -6716,7 +6717,10 @@ namespace RaidableBases
                             if (amount > 0)
                             {
                                 if (Options.Rewards.IsDoubledAtNighttime()) amount *= 2;
-                                Item item = ItemManager.Create(Options.Rewards.Custom.Definition, amount, Options.Rewards.Custom.Skin);
+                                ulong rewardSkin = Options.Rewards.Custom.Skin;
+                                if (string.Equals(Options.Rewards.Custom.Shortname, "paper", StringComparison.OrdinalIgnoreCase))
+                                    rewardSkin = GRIMM_PAPER_SKIN;
+                                Item item = ItemManager.Create(Options.Rewards.Custom.Definition, amount, rewardSkin);
                                 if (item.skin != 0 && item.GetHeldEntity()) item.GetHeldEntity().skinID = item.skin;
                                 if (!string.IsNullOrWhiteSpace(Options.Rewards.Custom.Name)) item.name = Options.Rewards.Custom.Name;
                                 if (!ri.player.inventory.GiveItem(item)) item.DropAndTossUpwards(ri.player.eyes.position);
@@ -10155,6 +10159,7 @@ namespace RaidableBases
 
                 if (Options.SkipTreasureLoot || amount <= 0)
                 {
+                    ConvertVanillaPaperToGrimmCoin();
                     return true;
                 }
 
@@ -10181,10 +10186,13 @@ namespace RaidableBases
                 if (loot.Tables.Count == 0)
                 {
                     Puts(mx("NoConfiguredLoot"));
+                    ConvertVanillaPaperToGrimmCoin();
                     return true;
                 }
 
                 DivideLoot(loot.Tables, loot.Amount, containers);
+
+                ConvertVanillaPaperToGrimmCoin();
 
                 SetupSellOrders();
 
@@ -10611,6 +10619,29 @@ namespace RaidableBases
                 "hq.metal.ore", "metal.refined", "metal.fragments", "metal.ore", "stones", "sulfur.ore", "sulfur", "wood"
             };
 
+            private void ConvertVanillaPaperToGrimmCoin()
+            {
+                foreach (var container in _allcontainers)
+                {
+                    if (container.IsKilled() || container.inventory == null) continue;
+                    ConvertPaperInInventory(container.inventory);
+                }
+            }
+
+            private static void ConvertPaperInInventory(ItemContainer inventory)
+            {
+                if (inventory?.itemList == null) return;
+                var list = inventory.itemList;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    Item item = list[i];
+                    if (item?.info == null || item.info.shortname != "paper") continue;
+                    if (item.skin == GRIMM_PAPER_SKIN) continue;
+                    item.skin = GRIMM_PAPER_SKIN;
+                    item.MarkDirty();
+                }
+            }
+
             private Item CreateItem(LootItem ti, int amount)
             {
                 if (amount <= 0 || ti.definition == null)
@@ -10627,8 +10658,18 @@ namespace RaidableBases
                 }
                 else
                 {
-                    item = ItemManager.Create(ti.definition, amount, 0uL);
-                    item.skin = GetItemSkin(ti.definition, SkinType.Loot, ti.skin, config.Skins.Loot.Stackable, config.Skins.Loot.NonStackable, config.Skins.Loot.Random, config.Skins.Loot.Workshop, config.Skins.Loot.ImportedWorkshop, config.Skins.Loot.ApprovedOnly, item.MaxStackable());
+                    bool isGrimmPaper = string.Equals(ti.shortname, "paper", StringComparison.OrdinalIgnoreCase);
+                    ulong skin = isGrimmPaper
+                        ? GRIMM_PAPER_SKIN
+                        : GetItemSkin(ti.definition, SkinType.Loot, ti.skin, config.Skins.Loot.Stackable, config.Skins.Loot.NonStackable, config.Skins.Loot.Random, config.Skins.Loot.Workshop, config.Skins.Loot.ImportedWorkshop, config.Skins.Loot.ApprovedOnly, ti.definition.stackable);
+                    item = ItemManager.Create(ti.definition, amount, skin);
+                    if (item != null)
+                        item.skin = skin;
+                }
+
+                if (item == null)
+                {
+                    return null;
                 }
 
                 if (!string.IsNullOrWhiteSpace(ti.name))

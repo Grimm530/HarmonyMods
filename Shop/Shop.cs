@@ -2542,6 +2542,10 @@ namespace ShopHarmony
                             {
                                 _instance?.DispatchBradleyDropsCommand(trimmed);
                             }
+                            else if (IsIndustrialRecyclerShopCommand(trimmed))
+                            {
+                                _instance?.DispatchIndustrialRecyclerCommand(trimmed);
+                            }
                             else
                             {
                                 _instance?.Server.Command(check);
@@ -15974,6 +15978,49 @@ namespace ShopHarmony
             catch (Exception ex)
             {
                 Debug.LogWarning("[Shop] DispatchBradleyDropsCommand: " + ex.Message);
+            }
+        }
+
+        internal static bool IsIndustrialRecyclerShopCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command)) return false;
+            if (!ServerHelper.TrySplitCommandLine(command.Trim(), out string cmdName, out _))
+                return false;
+            return cmdName.Equals("giveindustrialrecycler", StringComparison.OrdinalIgnoreCase) ||
+                   cmdName.Equals("givestandardrecycler", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Shop Command products use `giveindustrialrecycler %steamid%`. ConsoleSystem.Run logs
+        /// "Command 'giveindustrialrecycler' not found" because Facepunch Find(StringView) does
+        /// not see Harmony Dict-only registrations.
+        /// </summary>
+        internal void DispatchIndustrialRecyclerCommand(string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine)) return;
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("IndustrialRecycler_ApiType") as Type;
+                var inst = t?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                var mi = t?.GetMethod("TryRunServerCommand", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string) }, null);
+                if (inst != null && mi != null)
+                {
+                    var ok = mi.Invoke(inst, new object[] { commandLine });
+                    if (ok is bool b && b)
+                    {
+                        Debug.Log("[Shop] Dispatched IndustrialRecycler command: " + commandLine);
+                        return;
+                    }
+                    Debug.LogWarning("[Shop] IndustrialRecycler rejected command: " + commandLine);
+                    return;
+                }
+
+                Debug.LogWarning("[Shop] IndustrialRecycler not loaded; falling back to console: " + commandLine);
+                Server.Command(commandLine);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop] DispatchIndustrialRecyclerCommand: " + ex.Message);
             }
         }
 

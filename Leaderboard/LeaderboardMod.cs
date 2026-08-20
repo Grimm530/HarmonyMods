@@ -298,6 +298,10 @@ public class LeaderboardMod : IHarmonyModHooks
         _configPath = Path.Combine(Environment.CurrentDirectory, "HarmonyConfig", "Leaderboard.json");
         LoadConfig();
         InitStorage();
+        ApplyWipeFromSignal();
+        OnWorldLoaded();
+
+        _tickObject = new GameObject("LeaderboardTick");
 
         _tickObject = new GameObject("LeaderboardTick");
         UnityEngine.Object.DontDestroyOnLoad(_tickObject);
@@ -712,6 +716,56 @@ public class LeaderboardMod : IHarmonyModHooks
     {
         var folder = Path.Combine(Environment.CurrentDirectory, _config.DataFolder ?? "LeaderboardData");
         _storage = new JsonLeaderboardStorage(folder);
+    }
+
+    private string WipeSignalStatePath =>
+        Path.Combine(Environment.CurrentDirectory, _config?.DataFolder ?? "HarmonyData/LeaderboardData", "last_wipe_signal.txt");
+
+    private void ApplyWipeFromSignal()
+    {
+        if (_config?.WipeDataOnNewSave != true) return;
+        if (!WipeSignal.ShouldWipe(WipeSignalStatePath)) return;
+        _storage?.Wipe();
+        lock (_statsLock)
+        {
+            _playerStats.Clear();
+            _loadedFromDisk.Clear();
+        }
+        WipeSignal.MarkWiped(WipeSignalStatePath);
+        UnityEngine.Debug.Log("[Leaderboard] Wiped player stats (wipe_signal.json).");
+    }
+
+    /// <summary>Wipes player JSON when SaveRestore.WipeId changes (map or forced wipe).</summary>
+    public void OnWorldLoaded()
+    {
+        try
+        {
+            var wipeId = SaveRestore.WipeId ?? "";
+            if (string.IsNullOrEmpty(wipeId)) return;
+
+            var folder = Path.Combine(Environment.CurrentDirectory, _config?.DataFolder ?? "HarmonyData/LeaderboardData");
+            Directory.CreateDirectory(folder);
+            var statePath = Path.Combine(folder, "last_wipe_id.txt");
+            var prev = File.Exists(statePath) ? File.ReadAllText(statePath).Trim() : "";
+            File.WriteAllText(statePath, wipeId);
+
+            if (string.IsNullOrEmpty(prev) || string.Equals(prev, wipeId, StringComparison.Ordinal))
+                return;
+            if (_config?.WipeDataOnNewSave != true)
+                return;
+
+            _storage?.Wipe();
+            lock (_statsLock)
+            {
+                _playerStats.Clear();
+                _loadedFromDisk.Clear();
+            }
+            UnityEngine.Debug.Log($"[Leaderboard] Wiped player stats (new WipeId {wipeId}).");
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] Wipe-on-new-save: {ex.Message}");
+        }
     }
 
     private void RegisterCommands()

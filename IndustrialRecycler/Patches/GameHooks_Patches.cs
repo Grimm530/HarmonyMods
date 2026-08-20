@@ -1,3 +1,6 @@
+using System.Linq;
+using System.Reflection;
+using Facepunch.Rust;
 using HarmonyLib;
 using UnityEngine;
 using P = Oxide.Plugins.IndustrialRecycler;
@@ -79,15 +82,47 @@ namespace IndustrialRecyclerHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(Planner), "DoBuild", new[] { typeof(Construction.Target), typeof(Construction) })]
+    [HarmonyPatch]
     public static class Planner_DoBuild_Patch
     {
+        public static bool Prepare() => TargetMethod() != null;
+
+        public static MethodBase TargetMethod() =>
+            AccessTools.GetDeclaredMethods(typeof(Planner))
+                .FirstOrDefault(m => m.Name == "DoBuild" && m.ReturnType == typeof(BaseEntity));
+
+        [HarmonyPrefix]
+        public static void Prefix(Planner __instance, out ulong __state)
+        {
+            __state = 0;
+            var item = __instance?.GetOwnerItem();
+            if (item != null)
+                __state = item.skin;
+        }
+
         [HarmonyPostfix]
-        public static void Postfix(Planner __instance, BaseEntity __result)
+        public static void Postfix(Planner __instance, BaseEntity __result, ulong __state)
         {
             if (__result == null) return;
-            try { P.Dispatch_OnEntityBuilt(__instance, __result.gameObject); }
+            if (__result.skinID == 0 && __state != 0)
+                __result.skinID = __state;
+            var plugin = P.GetModInstance();
+            if (plugin == null) return;
+            try { plugin.HandlePlacedRecyclerBox(__instance.GetOwnerPlayer(), __result); }
             catch (System.Exception ex) { Debug.LogWarning("[IndustrialRecycler] OnEntityBuilt: " + ex.Message); }
+        }
+    }
+
+    [HarmonyPatch(typeof(Analytics.Azure), nameof(Analytics.Azure.OnEntityBuilt))]
+    public static class Analytics_OnEntityBuilt_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BaseEntity entity, BasePlayer player)
+        {
+            var plugin = P.GetModInstance();
+            if (plugin == null || entity == null || player == null) return;
+            try { plugin.HandlePlacedRecyclerBox(player, entity); }
+            catch (System.Exception ex) { Debug.LogWarning("[IndustrialRecycler] OnEntityBuilt(Analytics): " + ex.Message); }
         }
     }
 
@@ -120,14 +155,15 @@ namespace IndustrialRecyclerHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseMelee), nameof(BaseMelee.DoAttackShared))]
-    public static class BaseMelee_DoAttackShared_Patch
+    // Hammer.DoAttackShared overrides BaseMelee and does not call base — patch Hammer or pickup never runs.
+    [HarmonyPatch(typeof(Hammer), nameof(Hammer.DoAttackShared))]
+    public static class Hammer_DoAttackShared_Patch
     {
         [HarmonyPrefix]
-        public static bool Prefix(BaseMelee __instance, HitInfo info)
+        public static bool Prefix(Hammer __instance, HitInfo info)
         {
             var player = __instance?.GetOwnerPlayer();
-            if (player == null) return true;
+            if (player == null || info == null) return true;
             try
             {
                 if (P.Dispatch_OnHammerHit(player, info) != null) return false;

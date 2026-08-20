@@ -56,6 +56,7 @@ namespace IndustrialRecyclerHarmony
         public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
+        private HarmonyLib.Harmony _findHarmony;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
         private readonly List<ConsoleSystem.Command> _chatAliasCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -91,6 +92,17 @@ namespace IndustrialRecyclerHarmony
             RegisterAttributedChatCommands();
             ChatSayBridge.Register("IndustrialRecycler", OnChatCommand);
             RegisterAttributedConsoleCommands();
+
+            try
+            {
+                _findHarmony = new HarmonyLib.Harmony("com.facepunch.rust_dedicated.IndustrialRecycler.find");
+                if (!Patches.Patch_ConsoleSystem_Server_Find.TryApply(_findHarmony))
+                    Debug.LogWarning("[IndustrialRecycler] Could not patch ConsoleSystem.Find; Shop giveindustrialrecycler may fail.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[IndustrialRecycler] Find patch failed: " + ex.Message);
+            }
 
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
@@ -128,6 +140,9 @@ namespace IndustrialRecyclerHarmony
             }
             OxidePlugin.GetModInstance()?.timer?.DestroyAll();
             OxidePlugin.GetModInstance()?.CallUnload();
+            try { _findHarmony?.UnpatchAll(_findHarmony.Id); }
+            catch { }
+            _findHarmony = null;
             UnregisterConsoleCommands();
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
@@ -164,6 +179,142 @@ namespace IndustrialRecyclerHarmony
             RefreshDynamicCommands();
             _initCoroutine = null;
             Debug.Log("[IndustrialRecycler] Server initialized.");
+        }
+
+        public ConsoleSystem.Command GetCommand(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            string n = name.Trim();
+            int space = n.IndexOfAny(new[] { ' ', '\t' });
+            if (space > 0) n = n.Substring(0, space);
+            if (n.StartsWith("global.", StringComparison.OrdinalIgnoreCase))
+                n = n.Substring(7);
+            for (int i = 0; i < _registeredCommands.Count; i++)
+            {
+                var cmd = _registeredCommands[i];
+                if (cmd == null) continue;
+                if (string.Equals(cmd.Name, n, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(cmd.FullName, n, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(cmd.FullName, "global." + n, StringComparison.OrdinalIgnoreCase))
+                    return cmd;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Dedicated server console / RCON. Facepunch often passes the full line
+        /// (giveindustrialrecycler 7656…) as the command name. Return true if we handled it.
+        /// </summary>
+        public bool TryRunServerConsoleCommand(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return false;
+            input = input.Trim();
+            if (input.StartsWith("global.", StringComparison.OrdinalIgnoreCase))
+                input = input.Substring(7).Trim();
+
+            int space = input.IndexOfAny(new[] { ' ', '\t' });
+            string commandName = (space < 0 ? input : input.Substring(0, space)).ToLowerInvariant();
+            if (commandName != "giveindustrialrecycler" && commandName != "givestandardrecycler")
+                return false;
+
+            bool ok = TryRunServerCommand(input);
+            Debug.Log(ok
+                ? "[IndustrialRecycler] " + commandName + " ok: " + input
+                : "[IndustrialRecycler] " + commandName + " failed (player not found?): " + input);
+            return true;
+        }
+
+        /// <summary>
+        /// Run a give/console command as the server (Shop purchases, RCON).
+        /// Prefers console handlers so giveindustrialrecycler &lt;steamid&gt; works without a calling player.
+        /// Chat aliases for the same name require a player and industrialrecycler.give.
+        /// </summary>
+        public bool TryRunServerCommand(string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine)) return false;
+            commandLine = commandLine.Trim();
+            if (commandLine.StartsWith("/") || commandLine.StartsWith("\\"))
+                commandLine = commandLine.Substring(1).Trim();
+
+            string commandName;
+            string[] args;
+            int space = commandLine.IndexOf(' ');
+            if (space < 0)
+            {
+                commandName = commandLine.ToLowerInvariant();
+                args = Array.Empty<string>();
+            }
+            else
+            {
+                commandName = commandLine.Substring(0, space).ToLowerInvariant();
+                args = commandLine.Substring(space + 1).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            }
+            if (string.IsNullOrEmpty(commandName)) return false;
+
+            var plugin = Plugin;
+            if (plugin == null) return false;
+
+            if (commandName == "giveindustrialrecycler" || commandName == "givestandardrecycler")
+            {
+                if (args == null || args.Length == 0 || !ulong.TryParse(args[0], out ulong userId) || userId == 0)
+                    return false;
+                return TryGiveRecycler(userId, isStandard: commandName == "givestandardrecycler");
+            }
+
+            foreach (var reg in plugin.cmd.RegisteredConsoleCommands)
+            {
+                if (!string.Equals(reg.name, commandName, StringComparison.OrdinalIgnoreCase)) continue;
+                InvokeConsoleMethod(reg.method, MakeServerArg(commandName, args));
+                return true;
+            }
+
+            foreach (var reg in plugin.cmd.RegisteredChatCommands)
+            {
+                if (!string.Equals(reg.name, commandName, StringComparison.OrdinalIgnoreCase)) continue;
+                InvokeChatMethod(plugin, reg.method, null, commandName, args);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static ConsoleSystem.Arg MakeServerArg(string commandName, string[] args)
+        {
+            var sb = new StringBuilder(commandName);
+            if (args != null)
+            {
+                for (int i = 0; i < args.Length; i++)
+                {
+                    sb.Append(' ');
+                    sb.Append(args[i] ?? string.Empty);
+                }
+            }
+            return new ConsoleSystem.Arg(ConsoleSystem.Option.Server.Quiet(), sb.ToString());
+        }
+
+        public bool TryGiveRecycler(ulong steamId, bool isStandard)
+        {
+            var plugin = Plugin;
+            if (plugin == null || steamId == 0) return false;
+            var player = BasePlayer.FindByID(steamId) ?? BasePlayer.FindSleeping(steamId);
+            if (player == null)
+            {
+                Debug.LogWarning("[IndustrialRecycler] Player not found for give: " + steamId);
+                return false;
+            }
+            try
+            {
+                const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                var mi = typeof(OxidePlugin).GetMethod("GiveRecyclerItem", bf, null, new[] { typeof(BasePlayer), typeof(bool) }, null);
+                if (mi == null) return false;
+                var result = mi.Invoke(plugin, new object[] { player, isStandard });
+                return result is true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[IndustrialRecycler] TryGiveRecycler: " + (ex.InnerException ?? ex).Message);
+                return false;
+            }
         }
 
         public bool OnChatCommand(BasePlayer player, string message)
@@ -309,13 +460,8 @@ namespace IndustrialRecyclerHarmony
             if (plugin == null) return;
             try
             {
-                foreach (var reg in plugin.cmd.RegisteredChatCommands)
-                {
-                    if (string.IsNullOrEmpty(reg.name)) continue;
-                    var chatName = reg.name.ToLowerInvariant();
-                    _chatCommandNames.Add(chatName);
-                    RegisterChatAliasConsole(chatName);
-                }
+                // Console first: giveindustrialrecycler is both a chat alias and a console give.
+                // Chat aliases require a player; Shop/RCON must hit ConsoleCommandGiveRecycler.
                 foreach (var reg in plugin.cmd.RegisteredConsoleCommands)
                 {
                     if (string.IsNullOrEmpty(reg.name)) continue;
@@ -329,12 +475,32 @@ namespace IndustrialRecyclerHarmony
                     var captured = reg;
                     RegisterConsole(name, arg => InvokeConsoleMethod(captured.method, arg), serverAdmin: false);
                 }
+                foreach (var reg in plugin.cmd.RegisteredChatCommands)
+                {
+                    if (string.IsNullOrEmpty(reg.name)) continue;
+                    var chatName = reg.name.ToLowerInvariant();
+                    _chatCommandNames.Add(chatName);
+                    RegisterChatAliasConsole(chatName);
+                }
                 SortUiConsoleCommands();
+                RebuildConsoleIndexAll();
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[IndustrialRecycler] RefreshDynamicCommands: " + ex.Message);
             }
+        }
+
+        private static void RebuildConsoleIndexAll()
+        {
+            try
+            {
+                var dict = ConsoleSystem.Index.Server.Dict;
+                var prop = typeof(ConsoleSystem.Index).GetProperty("All", BindingFlags.Public | BindingFlags.Static);
+                if (dict == null || prop == null || !prop.CanWrite) return;
+                prop.SetValue(null, dict.Values.ToArray(), null);
+            }
+            catch { }
         }
 
         private void RegisterChatAliasConsole(string name)

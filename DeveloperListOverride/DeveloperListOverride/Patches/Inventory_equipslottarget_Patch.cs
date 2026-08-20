@@ -11,9 +11,9 @@ namespace DeveloperListOverride.Patches
     [HarmonyPatch(typeof(Inventory), nameof(Inventory.equipslottarget))]
     public static class Inventory_equipslottarget_Patch
     {
-        static bool Prefix(Arg arg)
+        static bool Prefix(ConsoleSystem.Arg arg)
         {
-            BasePlayer basePlayer = arg.Player();
+            var basePlayer = arg.Connection?.player as BasePlayer;
             if (basePlayer == null) return true;
             string first = arg.GetString(0, "").Trim().ToLowerInvariant();
             if (first != "loot") return true;

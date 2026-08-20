@@ -388,6 +388,8 @@ namespace BackpacksHarmony
                 }
             }
 
+            TryWipeFromMapVoterSignal();
+
             foreach (var p in BasePlayer.activePlayerList)
             {
                 if (p != null && !p.IsNpc)
@@ -443,6 +445,16 @@ namespace BackpacksHarmony
         internal void OnNewSave(string filename)
         {
             PerformBackpackWipe("New save created");
+        }
+
+        private void TryWipeFromMapVoterSignal()
+        {
+            var statePath = Path.Combine(Interface.Oxide.DataDirectory, Name, "last_wipe_signal.txt");
+            if (UsesCustomBackpackDataDirectory && !string.IsNullOrEmpty(CustomBackpackDataDirectoryFull))
+                statePath = Path.Combine(CustomBackpackDataDirectoryFull, "last_wipe_signal.txt");
+            if (!WipeSignal.ShouldWipe(statePath)) return;
+            PerformBackpackWipe("MapVoter wipe signal");
+            WipeSignal.MarkWiped(statePath);
         }
 
         /// <summary>3.17.6: shared wipe path for OnNewSave and backpack.wipeall.</summary>

@@ -50,6 +50,12 @@ Harmony mod: per-player admin time and weather. Commands: `/mytime`, `/myweather
 |-------|--------|------|---------|
 | `Patch_BasePlayer_ServerInit` | `BasePlayer.ServerInit` | Postfix | Call `AdminTimeMod.OnPlayerConnected` (no-op: new connections see server time/weather) |
 | `Patch_BasePlayer_OnDisconnected` | `BasePlayer.OnDisconnected` | Postfix | Clear player's cached overrides so they must use /mytime and /myweather again on next connect |
+| `Patch_EnvSync_ServerInit` | `EnvSync.ServerInit` | Postfix | Bind the live EnvSync instance so /mytime can push per-player sky snapshots |
+| `Patch_BasePlayer_QueueUpdate` | `BasePlayer.QueueUpdate` | Prefix | Do not queue the 5s stock EnvSync daytime snapshot to players with a time override |
+| `Patch_BaseEntity_CanUseNetworkCache` | `BaseEntity.CanUseNetworkCache` | Postfix | Disable EnvSync snapshot cache for players with a time override |
+| `Patch_EnvSync_Save` | `EnvSync.Save` | Postfix | Rewrite `environment.dateTime` for that connection so the client sky shows /mytime |
+
+Client `EnvSync.Update` applies the networked sky time every frame. After Facepunch time/demo changes, that can ignore the `admintime` convar, which is why `/mytime` could reply success with no visible change. The EnvSync patches are the visible-time path; `admintime` is still sent as a client command (with delayed IsAdmin restore) and as `global.admintime` via ConsoleReplicatedVars.
 
 ## Lifecycle
 
@@ -72,7 +78,7 @@ Commands are registered in `Dict` and `GlobalDict` with `Replicated = true`, and
 
 - **ConsoleSystem registration:** Commands must be in both `Dict` and `GlobalDict`, and in the **Replicated** list (see above), so chat and F1 work for all players.
 - **SendVar:** Uses `Message.Type.ConsoleReplicatedVars` and `Network.Net.sv`; client-only replicated var for brightness.
-- **Admin spoof:** Non-admins get `IsAdmin` flag set only for the duration of sending `admintime`/`admin*` so the client accepts the command.
+- **Admin spoof:** Non-admins get `IsAdmin` flag set only long enough for the client to accept `admintime`/`admin*`. The flag is cleared after a short delay so the entity update and console command are processed first. Visible time also goes through `EnvSync` snapshots and does not depend on that spoof.
 
 ## Build & Deploy
 

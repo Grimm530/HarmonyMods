@@ -94,10 +94,12 @@ namespace TeleportGUI.Patches
                 if (World.LoadedFromSave)
                 {
                     TeleportGUIMod.Instance?.AssignHomeEntities();
+                    TeleportGUIMod.Instance?.NotifyWorldReady();
                     return;
                 }
 
                 TeleportGUIMod.Instance?.OnNewServerSave();
+                TeleportGUIMod.Instance?.NotifyWorldReady();
             }
             catch (Exception ex)
             {

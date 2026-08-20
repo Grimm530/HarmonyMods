@@ -5,7 +5,9 @@ A **Harmony mod** for map voting on Rust servers **without Oxide**. Converted fr
 ## Purpose
 
 - Players vote for the next map via an in-game UI
-- Admin runs **mvote** to create the map list (seeds only); then **mvoteready** to post to Discord and open the vote so players can use the vote command (e.g. `vote`) to open the UI
+- Admin runs **mvote** or **mvoteready** to randomly pick maps from the local image pool, post them to Discord, and open voting
+- Players use **vote** (or **mvote** while a vote is active) to open the UI
+- Scheduled auto-vote uses the same pool pick + Discord post when the config window opens
 - Uses vanilla CUI (`CommunityEntity`)—no Oxide `CuiHelper`
 - Config: `HarmonyConfig/MapVoter.json` (in server root)
 
@@ -26,21 +28,21 @@ A **Harmony mod** for map voting on Rust servers **without Oxide**. Converted fr
 
 3. **Configure** `HarmonyConfig/MapVoter.json`. For procedural map voting:
    - Set `"Map size": 4000` (or 3500, 4500, etc.)
-   - **Two-phase workflow** (recommended when you add images manually):
-     - **mvote** (or **mvtest** / **mapvotestart**): Only generates random seeds and writes them to `HarmonyData/MapVoter/current_vote_seeds.txt`. Responds with "Run mvoteready when ready to start voting." Does **not** post to Discord or open the vote. A copy is also written to `HarmonyImages/MapVoter/seeds_to_generate.txt` for reference.
-     - Add map images (e.g. `4000_<seed>.png` or `.jpg`) to your **Images path** (default: `HarmonyImages/MapVoter` or config `"Images path"`).
-     - **mvoteready** (or **mvotepost**): Loads maps from that seeds file and images from disk, posts to Discord (with images), opens the vote, and starts the wipe timer. Players can then use the configured vote command (e.g. `vote`) to open the in-game UI.
+   - Put map preview images in **Images path** (this server: `maps/images`). Name them **`{size}_{seed}.png`** or **`.jpg`**, e.g. `4000_523577557.png`.
+   - Set `"Number of maps to show (random seeds)": 8` — each vote randomly picks that many maps **from the image pool**. Add more images over time; the pool can grow.
+   - **mvote** / **mvoteready**: Picks 8 random maps from the pool, loads those images, posts to Discord, and opens the in-game vote.
+   - **Auto Vote**: When enabled, the same pool pick + Discord post runs on the schedule (`Start voting X days before wipe` at `Vote start (HH:mm)`).
    - Optional: `"Images path"` override (default: server root/HarmonyImages/MapVoter)
-   - For manual maps instead, set `"Map size": 0` and use `"Map options (manual list - used when Map size is 0)"`
+   - For a fixed manual list instead, set `"Map size": 0` and use `"Map options (manual list - used when Map size is 0)"`
 
 4. Restart server or `harmony.load MapVoter`
 
 ## Usage
 
-- **mvote** (chat or console): Creates the map list only (generates seeds, writes to `current_vote_seeds.txt`). Responds with **"Run mvoteready when ready to start voting."** Admin must run this first; then add images to the Images path.
-- **mvoteready** (admin): When images are ready, run **mvoteready** (or **mvotepost**) to load maps from the seeds file, post to Discord, and open the vote. Players can then open the voting UI with the configured command (e.g. **vote** or **mapvote** – set in config `"Open MapVoter UI"`; default is `vote` if `mvote` is used for list creation).
-- **Open voting UI** (players): Type the configured command (e.g. `vote` or `mapvote`) in chat to open the map voting panel and cast your vote. (If config is still `mvote`, use a different command like `vote` so **mvote** is reserved for creating the list.)
-- **mvtest** / **mapvotestart** (admin): Same as **mvote** – seeds only; responds "Run mvoteready when ready to start voting."
+- **mvote** (chat or console): Admin starts a vote by randomly picking maps from the image pool, loading those images, and posting to Discord. Opens the UI. If a vote is already open, just opens the UI.
+- **mvoteready** (admin): Same as starting a vote from the pool. If a vote is already open, re-posts the current maps to Discord.
+- **Open voting UI** (players): Type the configured command (e.g. `vote` or `mapvote`) in chat to open the map voting panel and cast your vote.
+- **mvtest** / **mapvotestart** (admin): Same as **mvote** — pick from pool, post to Discord, open the vote.
 - **mvotediscord** (admin, server console): Resend the current vote status to Discord (useful if the bridge was down or the initial send failed).
 - Click **VOTE** on a map to cast your vote; close button destroys the UI
 
@@ -59,12 +61,12 @@ MapVoter logs to Discord via the **ticket-support-system** `mapvoterDiscordBridg
 2. MapVoter Harmony mod POSTs vote events to `{BridgeUrl}/mapvoter`
 3. The bridge posts embeds to the configured Discord channels (Vote Channel, Winning Map Channel, Logs)
 
-**Map images in Discord:** Discord will show a map image in each vote box **only if** the image file exists on the Rust server when you run **mvoteready**. Put image files in the **Images path** (config: `"Images path"`, e.g. `maps/images` = server root `maps/images`). Name them exactly **`{size}_{seed}.png`** or **`.jpg`**, e.g. `4000_523577557.png`. After **mvote** the seeds are in `HarmonyData/MapVoter/current_vote_seeds.txt` – add one image per line (after the first line which is map size). Then run **mvoteready**. MapVoter sends them as base64 to the bridge; images are resized to the **Discord image max dimension** (default 512px) to keep the POST smaller.
+**Map images in Discord:** Discord shows a map image in each vote box when that file exists in the **Images path** (config: `"Images path"`, e.g. `maps/images`). Name them **`{size}_{seed}.png`** or **`.jpg`**. Vote start picks from that pool; MapVoter sends resized JPEG/PNG as base64 to the bridge (max dimension default 512px).
 
 **When Discord messages are sent** (and when they are NOT):
-- **vote_started** – When you run **mvoteready** (or **mvotepost**) (loads images and posts to Discord with map cards); or when you run `mvotediscord` while a vote is active (resends current vote to Discord)
-- **vote_ended** – When the vote actually closes (wipe timer or manual stop); or when you run `mvotediscord` after a vote has already ended (resends the end message to Discord)
-- **Not sent** on **mvote** (seeds-only step), plugin load, plugin unload, or when restoring a vote from file after a server restart (use `mvotediscord` to resend if needed)
+- **vote_started** – When you run **mvote** / **mvoteready** (picks from the image pool and posts map cards); when auto-vote starts on schedule; or when you run `mvotediscord` while a vote is active
+- **vote_ended** – When the vote actually closes (wipe timer or manual stop); or when you run `mvotediscord` after a vote has already ended
+- **Not sent** on plugin load, plugin unload, or when restoring a vote from file after a server restart (use `mvotediscord` to resend if needed)
 
 `mvotediscord` only resends the current vote state to Discord—it does not start or end votes.
 
@@ -95,18 +97,21 @@ Extended features: Discord bridge (implemented), **auto-wipe (implemented)**.
 
 When `"Enable Auto Wipe (true/false)"` is `true`, MapVoter:
 
-1. **Uses WipeTimer** (game's built-in wipe schedule) to know when the next wipe is
-2. **Schedules restart** when the wipe is within the configured window (default: 120 minutes)
+1. **Uses a first-Thursday calendar** (not Facepunch WipeTimer): forced wipe on the first Thursday of each month at **Forced Wipe time** (e.g. 13:45), then map wipes every **14 days** after that Thursday at **Wipe time** (e.g. 17:30), skipping any 14-day slot that would land on or after the next forced wipe (long months get a second map wipe; then forced wipe is ~7 days later)
+2. **Schedules restart** when that event is within the configured window (default 120 minutes)
 3. **Uses the vote winner** as the next map if a vote is active; otherwise uses a random seed
 4. **Updates server.cfg** on shutdown (seed, worldsize, or levelurl for custom maps) before the server quits
-5. **Server data wipe** (optional): On the next load after a wipe, deletes old map/save files from `server/{identity}/` if enabled. Uses substring patterns (e.g. `proceduralmap` matches `proceduralmap.4000.239.281.map`, `player.deaths` matches `player.deaths.10.db`)
+5. **Server data wipe** (optional): On the next load after a wipe, deletes old map/save files from `server/{identity}/` if enabled
 
-**Load-time gate**: On each load, a single check runs. If wipe is **> 32 hours** away, no periodic checks run. On the next server restart (e.g. daily), it re-checks. Once within 32h, periodic checks start.
+Auto-vote (4 days before at 17:00) uses the same next-wipe datetime. Console: `mvotewipes` prints the upcoming calendar.
 
-**Ramping interval** (when within 32h): >2h to wipe = every 1h; 30min–2h = every 15min; <30min = every 2min. Minimal checks over the wipe cycle.
+**Ramping interval**: >2h to wipe = every 1h; 30min–2h = every 15min; <30min = every 2min. Checks keep running even when the next wipe is more than 32h away.
 
 **Config** (`Auto Wipe` section):
 
+- `Forced Wipe time`: first Thursday of the month (Facepunch forced wipe)
+- `Wipe time`: 14-day Thursday map wipes
+- `Map wipe interval (days after first Thursday, repeats until next forced wipe)`: `14`
 - `Server identity`: Server folder name (e.g. `grimm` → `server/grimm/cfg/server.cfg`)
 - `Schedule restart when within (minutes) of wipe`: Act when wipe is this many minutes away (default 120)
 - `Custom Map` / `Custom map URL`: Use a custom map URL instead of procedural
@@ -132,31 +137,32 @@ Config options in `HarmonyConfig/MapVoter.json`:
 
 Original files on disk are not modified; compression happens when loading into FileStorage for the UI.
 
+## Image pool (random pick)
+
+MapVoter does **not** invent new random seeds at vote time. It scans the **Images path** for files named `{size}_{seed}.png` / `.jpg` matching `"Map size"`, then randomly picks `"Number of maps to show"` (default 8). Keep adding images; the pool can grow and each vote still shows 8.
+
 ## Local Images (External Generation)
 
-To avoid RustMaps API limits, you can generate map images locally using **CustomMapGen** and a batch script:
+To grow the pool without RustMaps API limits, generate extra map images with **CustomMapGen** and a batch script:
 
-1. **MapVoter config**: Set `"Use local images only (no RustMaps API...)": true` if you use the API elsewhere.
-2. **Generate seeds**: Run **mvote** (or `mvtest` / `mapvotestart`) – MapVoter writes seeds to `HarmonyData/MapVoter/current_vote_seeds.txt` and a copy to `HarmonyImages/MapVoter/seeds_to_generate.txt`. Responds: "Run mvoteready when ready to start voting."
-3. **CustomMapGen config** (`HarmonyConfig/CustomMapGen.json`): Enable MapImage with:
+1. **MapVoter config**: Set `"Use local images only (no RustMaps API...)": true`.
+2. **CustomMapGen config** (`HarmonyConfig/CustomMapGen.json`): Enable MapImage with:
    - `MapImage.Enabled`: true
-   - `MapImage.OutputFolder`: `HarmonyImages/MapVoter`
+   - `MapImage.OutputFolder`: your MapVoter Images path (e.g. `maps/images`)
    - `MapImage.MapVoterFormat`: true
-4. **Run the generator script** (while main server is stopped, or use a separate server copy):
+3. **Run the generator script** (while main server is stopped, or use a separate server copy):
    ```powershell
-   .\GenerateMapImages.ps1 -ServerRoot "D:\!RustServer"
+   .\GenerateMapImages.ps1 -ServerRoot "C:\svr1"
    ```
-5. The script starts RustDedicated for each seed, waits for CustomMapGen to save `{size}_{seed}.png`, then stops. Put the generated images in your MapVoter **Images path** (e.g. `D:\!RustServer\HarmonyImages\MapVoter`).
-6. **Post and open vote**: Run **mvoteready** (or **mvotepost**) in server console – MapVoter loads images from disk, posts to Discord with map cards, and opens the in-game vote.
+4. Copy generated `{size}_{seed}.png` files into the Images path. Then **mvote** / auto-vote will include them in the random pool.
 
 ## Persisted Vote Seeds
 
 The vote seed list is stored in `HarmonyData/MapVoter/current_vote_seeds.txt`:
 
 - **File format**: First line = map size, following lines = one seed per line
-- **On mvote** (or mvtest / mapvotestart): New random seeds are written to the file (no Discord post, vote not yet active)
-- **On mvoteready** (or mvotepost): Seeds are read from the file, images loaded from the Images path, vote is opened and posted to Discord
-- **On server restart**: If the file exists, the vote is restored from file (images loaded from disk); Discord is **not** auto-posted (use `mvotediscord` to resend)
+- **On mvote** / **mvoteready** / auto-vote: Random maps are picked from the image pool and written to the file; vote is opened and posted to Discord
+- **On server restart**: If the file exists and matching images are still on disk, the vote is restored (Discord is **not** auto-posted; use `mvotediscord` to resend)
 - **On vote end** (wipe timer or manual stop): The file is deleted
 
 **Manually changing a seed**: Unload the mod (`harmony.unload MapVoter`), edit `HarmonyData/MapVoter/current_vote_seeds.txt` to change a seed number, ensure the corresponding image exists (e.g. `4000_12345678.png` or `.jpg`) in the Images path, reload (`harmony.load MapVoter`), then run **mvoteready** again if you need to repost to Discord.
