@@ -73,19 +73,15 @@ The old approach of editing `Assembly-CSharp.dll` with dnSpy still works concept
 
 ## Known behavior: Session vs Play browser
 
-- **Session tab (when you’re connected):** Shows the inflated count (e.g. 30/100). The client gets this from server info we patch (GameTags/keys), so it’s correct.
-- **Play → Server browser (main menu, before joining):** May still show 0/100. That list is often filled from Steam’s A2S_INFO or another source that reports the **real connection count**. We patch GameTags (`cp`) and set `SteamServer.BotCount`, but the Play browser may only display the main “players” field (actual connections), which the Steam/backend stack sets from real connections. There is no in-game hook to override that from a Harmony mod without patching the Steamworks layer.
+- **Loading screen and Session tab:** Read GameTags `cp`. The mod rewrites that, so you see the inflated count (e.g. 30/100).
+- **Play → Community list and the server card:** Facepunch downloads a server-list snapshot and **clamps** the displayed count to Steam’s authorized player count (`clampPlayerCountsToTrustedValues`). That map is `https://api.facepunch.com/api/public/steamServers/playerCounts/rust` (this host:port → real connections only). GameTags, A2S bots, and unauthenticated Steam sessions do not change it.
 
-So the mod is working where the game uses our values (Session, and any browser that reads GameTags/bot count). The main-menu Play list can still show 0 due to how that list is populated.
+There is no dedicated-server Harmony hook that can raise Facepunch’s trusted Steam count without real Steam-authenticated connections.
 
 ---
 
 ## Troubleshooting
 
-**In-game server list or Steam still shows 0 players (mod loads but count is real/zero):**
+**Play Community still shows the real count:**
 
-- The mod uses (1) a transpiler on `cp` in GameTags and (2) `SteamServer.BotCount` as fallback. If the in-game list still shows 0, check the log for `Transpiler could not find injection point` — after a Rust update the game IL may change; only the BotCount fallback runs, and the in-game browser may ignore it.
-- **Steam client vs in-game browser:** The Steam "Game Servers" window uses A2S_INFO; the in-game Rust list may use GameTags. If only one place shows the inflated count, that's expected.
-- **Refresh:** Steam may cache; try switching tabs or waiting 30+ seconds.
-- **Config:** Ensure `HarmonyConfig/FakePopulation.json` has `BonusPlayers` > 0 (e.g. 30). Path is relative to server root.
-- **Steam client vs in-game browser:** The Steam client’s “Game Servers” window uses A2S_INFO; the in-game Rust list may use GameTags. If only one shows the inflated count, that’s expected.
+That is expected. Facepunch clamps Play to Steam’s authorized player count. Loading screen and Session will still show `BonusPlayers`.

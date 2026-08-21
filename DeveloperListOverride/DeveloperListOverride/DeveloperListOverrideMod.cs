@@ -33,15 +33,27 @@ namespace DeveloperListOverride
             player.SetPlayerFlag(BasePlayer.PlayerFlags.IsDeveloper, true);
 
             if (player.net?.connection != null)
-            {
                 player.net.connection.authLevel = 3u;
-                player.SetInfo("client.skins_access", "1");
-            }
 
             player.SendNetworkUpdateImmediate();
+            SendSkinsAccess(player);
 
-            if (player.IsConnected && player.net?.connection != null)
-                ConsoleNetwork.SendClientCommandImmediate(player.net.connection, "client.skins_access", "1");
+            // Repair-bench skin list is drawn on the client from AllSkinsUnlocked.
+            // client.skins_access is ClientAdmin: the local player entity must already
+            // have IsDeveloper, which is not true during PlayerInit / loading.
+            player.Invoke(() => SendSkinsAccess(player), 1f);
+            player.Invoke(() => SendSkinsAccess(player), 5f);
+        }
+
+        public static void SendSkinsAccess(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected || player.net?.connection == null)
+                return;
+            if (!DeveloperListOverrideConfig.IsOverrideDeveloper(player.UserIDString))
+                return;
+
+            player.SetInfo("client.skins_access", "1");
+            ConsoleNetwork.SendClientCommandImmediate(player.net.connection, "client.skins_access", "1");
         }
 
         private static void ApplyToConnectedPlayers()
