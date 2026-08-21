@@ -60,7 +60,7 @@ namespace IndustrialTransferSpeed
             PlanterProductionUi.Destroy(player);
         }
 
-        public void HandlePlanterCuiCommand(ConsoleSystem.Arg arg)
+        public void HandlePlanterCuiCommand(ConsoleSystem.Arg arg, string[] commandArgs = null)
         {
             BasePlayer player = arg?.Player();
             if (player == null)
@@ -68,7 +68,8 @@ namespace IndustrialTransferSpeed
                 return;
             }
 
-            string[] args = NormalizeCuiArgs(arg.Args);
+            // Prefer pre-normalized strings from the cui patch (Args is StringView[] on current Rust).
+            string[] args = NormalizeCuiArgs(commandArgs);
             if (args == null || args.Length == 0)
             {
                 return;

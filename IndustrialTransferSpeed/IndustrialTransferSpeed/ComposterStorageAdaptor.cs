@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
 using UnityEngine;
 
 namespace IndustrialTransferSpeed
@@ -7,6 +9,10 @@ namespace IndustrialTransferSpeed
     {
         private const string AdapterPrefabPath = "assets/prefabs/deployable/playerioents/industrialadaptors/storageadaptor.deployed.prefab";
         private const string AdapterDeployEffectPath = "assets/prefabs/deployable/playerioents/industrialconveyor/effects/industrial-conveyor-deploy.prefab";
+
+        // Current Rust keeps these caches private; clear via reflection after reparent.
+        private static readonly FieldInfo CachedParentField = AccessTools.Field(typeof(IndustrialStorageAdaptor), "_cachedParent");
+        private static readonly FieldInfo CachedContainerField = AccessTools.Field(typeof(IndustrialStorageAdaptor), "cachedContainer");
 
         private static readonly Dictionary<uint, SlotTransform> SlotTransforms = new Dictionary<uint, SlotTransform>
         {
@@ -140,8 +146,8 @@ namespace IndustrialTransferSpeed
             }
             if (entity is IndustrialStorageAdaptor adaptor)
             {
-                adaptor._cachedParent = null;
-                adaptor.cachedContainer = null;
+                CachedParentField?.SetValue(adaptor, null);
+                CachedContainerField?.SetValue(adaptor, null);
             }
             entity.SendNetworkUpdateImmediate();
         }
