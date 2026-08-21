@@ -1,6 +1,6 @@
 # TruePVE (Harmony Mod)
 
-A near-verbatim Harmony port of the **Oxide TruePVE 2.4.21** plugin (by Nivex, based on
+A near-verbatim Harmony port of the **Oxide TruePVE 2.4.3** plugin (by Nivex, based on
 ignignokt84's original). It runs the full Oxide RuleSet engine as a Rust Harmony mod with
 **no Oxide runtime dependency** - the Oxide APIs it needs are provided by an in-repo shim
 (`OxideCompat.cs`).
@@ -8,7 +8,7 @@ ignignokt84's original). It runs the full Oxide RuleSet engine as a Rust Harmony
 ## Identity
 
 - **Name:** TruePVE
-- **Version:** 2.4.21 (Oxide port)
+- **Version:** 2.4.31 (Oxide 2.4.3 port)
 - **Type:** Harmony mod - load with `harmony.load TruePVE`
 - **Config:** `HarmonyConfig/TruePVE.json`
 - **Data:** `HarmonyData/TruePVE/` (lockouts, mappings state, etc. when used)
@@ -31,6 +31,16 @@ This port supports a hybrid (default **on**):
   TruePVE `handleDamage` is active, so **RuleSets still own damage**
 
 Set the option to `false` if you want classic Oxide behavior (`server.pve` off).
+
+## 2.4.3 (from Oxide)
+
+- **Rust update:** collision ragdoll uses `AntiHack.PlayerStates[].LastAdminCheatTime` (`ActivePlayerInd != -1`).
+- **Prevent non-ally from looting planters** (`false`) — TC-auth planter harvest/plant block via
+  `CanTakeCutting` / `OnGrowableGather` / `OnConstructionPlace`. Independent of Grimm
+  `Protect Planterboxes` (default true, owner/ally based).
+- **Prevent elevator from crushing players by using a short upward teleport** (`false`).
+- **Block Scrap Heli Damage** now teleports the victim 2.5m up so blocking crush damage cannot
+  leave them stuck under the heli.
 
 ## What this port supports
 
@@ -64,8 +74,8 @@ values are never reset).
 | `GlobalUsings.cs` | `Object` -> `UnityEngine.Object`, `Timer` -> `Oxide.Core.Libraries.Timer`. |
 
 Harmony's `HarmonyLoader` auto-runs `PatchAll` on the mod assembly, so the `Patches/*` classes and
-the embedded `[HarmonyPatch]` GrowableEntity planter guards are applied automatically - no manual
-`Harmony.PatchAll()` call is needed.
+the embedded `[HarmonyPatch]` GrowableEntity planter guards and `Planner.DoPlacement` planter
+plant check are applied automatically - no manual `Harmony.PatchAll()` call is needed.
 
 Every dispatch honors `IsSubscribed(hookName)`, matching Oxide's subscribe/unsubscribe behavior
 (e.g. `ValidateCurrentDamageHook` toggling `OnEntityTakeDamage`) so unused hooks cost nothing.
@@ -77,7 +87,8 @@ Every dispatch honors `IsSubscribed(hookName)`, matching Oxide's subscribe/unsub
 | `OnEntityTakeDamage` | `BaseCombatEntity.Hurt(HitInfo)` prefix (null = allow, non-null = block) |
 | `OnEntityDeath` | `BaseCombatEntity.Die(HitInfo)` postfix (heli/bradley/npc routing for Loot Defender) |
 | `CanLootEntity` / `CanLootPlayer` / `OnStartBeingLooted` / `OnLootEntity` / `OnLootPlayer` | `PlayerLoot.StartLootingEntity` |
-| `CanLootGrowableEntity` | embedded `GrowableEntity.TakeClones` / `PickFruit` patches |
+| `CanLootGrowableEntity` / `CanTakeCutting` / `OnGrowableGather` | embedded `GrowableEntity.TakeClones` / `PickFruit` patches |
+| `OnConstructionPlace` | `Planner.DoPlacement` postfix (planter planting) |
 | `OnTurretTarget` | `AutoTurret.SetTarget` |
 | `OnTrapTrigger` | `BaseTrap.ObjectEntered` |
 | `OnEntityEnter` | `TriggerBase.OnEntityEnter` (TargetTrigger / TriggerEnterTimer) |
@@ -88,6 +99,7 @@ Every dispatch honors `IsSubscribed(hookName)`, matching Oxide's subscribe/unsub
 | `OnCupboardAuthorize` | `BuildingPrivlidge.AddPlayer` |
 | `OnMlrsFire` | `MLRS.Fire` |
 | `OnTimedExplosiveExplode` | `TimedExplosive.Explode` |
+| `CanAffordApartmentMasterKey` / `OnApartmentMasterKeyPurchase` | `NPCApartmentSecurity.Conversation_CanAffordMasterKey` / `OnPurchaseKey` |
 | `OnServerSave` / `OnNewSave` | `SaveRestore.Save` / `SaveRestore.Load` |
 | chat commands (`/tpve` etc.) | `ConVar.Chat.say` prefix -> `TruePVEMod.OnChatCommand` |
 
@@ -123,7 +135,7 @@ harmony.load TruePVE
 On load you should see:
 
 ```
-[TruePVE] Harmony mod loaded (Oxide port 2.4.21). Config: HarmonyConfig/TruePVE.json. NOTE: leave server.pve = false; the RuleSet engine owns PvE.
+[TruePVE] Harmony mod loaded (Oxide port 2.4.31). Config: HarmonyConfig/TruePVE.json. NOTE: leave server.pve = false; the RuleSet engine owns PvE.
 [TruePVE] Server initialized.
 ```
 

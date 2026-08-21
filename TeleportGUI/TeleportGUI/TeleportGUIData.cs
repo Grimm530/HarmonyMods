@@ -9,7 +9,7 @@ using UnityEngine;
 namespace TeleportGUI
 {
     /// <summary>
-    /// Canonical userdata.json schema (Oxide TeleportGUI 2.0.481 TeleportData).
+    /// Canonical userdata.json schema (Oxide TeleportGUI 2.0.50 TeleportData).
     /// Also deserializes legacy TeleportGUI_Data.json where practical.
     /// Warp points live in warpdata.json via <see cref="WarpPoint"/> / <see cref="TeleportGUIWarpData"/>.
     /// </summary>

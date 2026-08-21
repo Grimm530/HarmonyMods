@@ -522,7 +522,7 @@ namespace RaidableBases
             ["soundlight"] = "lantern",
             ["spear.cny"] = "spear.wooden",
             ["spookyspeaker"] = "mailbox",
-            ["storage_barrel_a"] = "tunalight",
+            ["unused_storage_barrel_a"] = "tunalight",
             ["storage_barrel_b"] = "rug",
             ["storage_barrel_c"] = "trap.landmine",
             ["strobelight"] = "lantern",
@@ -2129,7 +2129,7 @@ namespace RaidableBases
                         if (!isAllowed) return false;
                         if (args.Length != 2 || !float.TryParse(args[1], out var radius) || radius <= 0f) radius = 20f;
                         Message(user, SpawnsController.IsObstructed(player.transform.position, radius, 2.5f, -1f, player.IsHeadUnderwater(), player) ? "Obstruction test failed" : "Obstruction test passed");
-                        var landLevel = SpawnsController.GetLandLevel(player.transform.position, radius, 5f, player.IsHeadUnderwater(), player, "{{user_id}}");
+                        var landLevel = SpawnsController.GetLandLevel(player.transform.position, radius, 5f, player.IsHeadUnderwater(), player, player.UserIDString);
                         DrawText(player, 30f, Color.red, player.transform.position, $"{landLevel.y - landLevel.x:N01}");
                         Message(user, SpawnsController.IsFlatTerrain(landLevel, 2.5f) ? "Terrain is flat" : "Terrain is not flat");
                         return true;

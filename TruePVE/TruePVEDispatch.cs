@@ -348,6 +348,30 @@ namespace Oxide.Plugins
             catch (Exception ex) { Warn(nameof(OnEntityBuilt), ex); }
         }
 
+        public static object Dispatch_OnConstructionPlace(GrowableEntity plant, Construction component, Construction.Target placement, BasePlayer ownerPlayer)
+        {
+            var inst = Instance;
+            if (inst == null || plant == null || ownerPlayer == null || !inst.IsSubscribed(nameof(OnConstructionPlace))) return null;
+            try { return inst.OnConstructionPlace(plant, component, placement, ownerPlayer); }
+            catch (Exception ex) { Warn(nameof(OnConstructionPlace), ex); return null; }
+        }
+
+        public static object Dispatch_CanAffordApartmentMasterKey(BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null || player == null || !inst.IsSubscribed(nameof(CanAffordApartmentMasterKey))) return null;
+            try { return inst.CanAffordApartmentMasterKey(player); }
+            catch (Exception ex) { Warn(nameof(CanAffordApartmentMasterKey), ex); return null; }
+        }
+
+        public static object Dispatch_OnApartmentMasterKeyPurchase(BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null || player == null || !inst.IsSubscribed(nameof(OnApartmentMasterKeyPurchase))) return null;
+            try { return inst.OnApartmentMasterKeyPurchase(player); }
+            catch (Exception ex) { Warn(nameof(OnApartmentMasterKeyPurchase), ex); return null; }
+        }
+
         public static object Dispatch_CanChangeGrade(BasePlayer player, BuildingBlock block, BuildingGrade.Enum grade, ulong skin)
         {
             var inst = Instance;

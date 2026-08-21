@@ -12,7 +12,7 @@ using Random = UnityEngine.Random;
 namespace TeleportGUI
 {
     /// <summary>
-    /// Monument-generated warps + payment helpers (Oxide TeleportGUI 2.0.481).
+    /// Monument-generated warps + payment helpers (Oxide TeleportGUI 2.0.50).
     /// Generated warps live only in memory — never written to warpdata.
     /// </summary>
     public partial class TeleportGUIMod

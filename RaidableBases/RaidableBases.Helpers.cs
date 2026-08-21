@@ -26,6 +26,73 @@ namespace RaidableBases
 
         #region Helpers
 
+        internal static bool IsRocketLauncher(HeldEntity weapon) => weapon != null && weapon is BaseLauncher && weapon.ShortPrefabName == "rocket_launcher.entity";
+
+        private bool IsLauncherProjectile(BaseLauncher launcher, TimedExplosive projectile)
+        {
+            ItemDefinition ammoType = launcher.primaryMagazine?.ammoType;
+            if (ammoType == null || !_itemModProjectile.TryGetValue(ammoType, out ItemModProjectile projectileMod)) return false;
+            return projectileMod != null && projectileMod.GetOverrideProjectile(launcher)?.resourcePath == projectile.PrefabName;
+        }
+
+        private static void FixTurretRocket(AutoTurret turret, BaseLauncher launcher, TimedExplosive rocket)
+        {
+            if (turret == null || launcher == null || launcher.MuzzlePoint == null || !rocket.TryGetComponent(out ServerProjectile projectile))
+            {
+                return;
+            }
+
+            Matrix4x4 muzzle = turret.GetCenterMuzzle();
+            if (turret.IsBeingControlled)
+            {
+                muzzle *= turret.toRCEyesFromPitch;
+            }
+            Vector3 velocity = projectile.CurrentVelocity;
+            float speed = velocity.magnitude;
+            if (speed <= 0f)
+            {
+                speed = projectile.speed * launcher.initialSpeedMultiplier;
+                velocity = launcher.MuzzlePoint.forward * speed;
+            }
+            if (speed <= 0f)
+            {
+                return;
+            }
+
+            Quaternion correction = muzzle.rotation * Quaternion.Inverse(launcher.MuzzlePoint.rotation);
+            Vector3 direction = (correction * velocity).normalized;
+            Vector3 position = muzzle.GetPosition();
+            float launchOffset = 1f;
+            if (Physics.Raycast(position, direction, out var hit, launchOffset, projectile.mask))
+            {
+                launchOffset = Mathf.Max(0f, hit.distance - 0.1f);
+            }
+
+            rocket.transform.position = position + direction * launchOffset;
+            projectile.ignoreEntity = turret;
+            projectile.InitializeVelocity(direction * speed);
+        }
+
+        private static void ResetToPool<T>(ref List<T> obj)
+        {
+            if (obj != null) Pool.FreeUnmanaged(ref obj);
+        }
+
+        private static void ResetToPool<T>(ref HashSet<T> obj)
+        {
+            if (obj != null) Pool.FreeUnmanaged(ref obj);
+        }
+
+        private static void ResetToPool<TKey, TValue>(ref Dictionary<TKey, TValue> obj)
+        {
+            if (obj != null) Pool.FreeUnmanaged(ref obj);
+        }
+
+        private static void ResetToPool<T>(ref T obj) where T : class, Pool.IPooled, new()
+        {
+            if (obj != null) Pool.Free(ref obj);
+        }
+
         private static bool IsDeepSeaOpen()
         {
             DeepSeaManager dsm = PointEntity<DeepSeaManager>.ServerInstance;
@@ -66,11 +133,14 @@ namespace RaidableBases
 
         private IEnumerator CheckNearCo()
         {
-            foreach (var player in BasePlayer.activePlayerList)
+            using var players = BasePlayer.activePlayerList.ToPooledList();
+            using var raids = Raids.ToPooledList();
+            foreach (var player in players)
             {
-                yield return CoroutineEx.waitForSeconds(0.1f);
-                foreach (var raid in Raids)
+                yield return CoroutineEx.waitForSeconds(0.05f);
+                foreach (var raid in raids)
                 {
+                    if (player == null || player.IsDestroyed || !player.IsConnected) break;
                     if (!raid.IsOpened || raid.IsDespawning || raid.ownerId != 0 || raid.IsPayLocked) continue;
                     if (raid.NotifiedNearby.Contains(player.userID)) continue;
                     var distSqr = (raid.Location - player.transform.position).sqrMagnitude;
@@ -79,6 +149,7 @@ namespace RaidableBases
                     {
                         raid.NotifiedNearby.Add(player.userID);
                         Message(player, "Near", raid.Options.Mode);
+                        yield return null;
                     }
                 }
             }
@@ -676,6 +747,10 @@ namespace RaidableBases
                         _itemModConsume[def] = con;
                     }
                 }
+                if (def.TryGetComponent<ItemModProjectile>(out var imp))
+                {
+                    _itemModProjectile[def] = imp;
+                }
             }
         }
 
@@ -698,6 +773,10 @@ namespace RaidableBases
                     {
                         _itemModConsume[def] = con;
                     }
+                }
+                if (def.TryGetComponent<ItemModProjectile>(out var imp))
+                {
+                    _itemModProjectile[def] = imp;
                 }
                 if (++count >= yieldEvery)
                 {
@@ -853,33 +932,38 @@ namespace RaidableBases
             UnsubscribeDamageHook();
         }
 
-        private bool IsBox(BaseEntity entity, bool inherit)
+        private bool IsBox(BaseEntity entity, bool inherit) =>
+            entity is DisplayingBoxStorage || IsBox(entity.ShortPrefabName, inherit);
+
+        private bool IsBox(string prefab, bool inherit)
         {
-            switch (entity.ShortPrefabName)
+            switch (prefab)
             {
                 case "krieg_storage_vertical":
                 case "krieg_storage_horizontal":
                 case "abyss_barrel_horizontal":
-                case "abyss_barrel_verticle":
+                case "abyss_barrel_vertical":
                 case "medieval.box.wooden.large":
                 case "box.wooden.large":
                 case "woodbox_deployed":
                 case "coffinstorage":
-                case "storage_barrel_a":
+                case "unused_storage_barrel_a":
                 case "storage_barrel_b":
                 case "storage_barrel_c":
                 case "wicker_barrel":
                 case "bamboo_barrel":
+                case "industrial_storage_horizontal":
+                case "industrial_storage_vertical":
                     return true;
                 default:
                     if (inherit)
                     {
                         foreach (var sub in config.Settings.Management.Inherit)
                         {
-                            if (entity.ShortPrefabName.Contains(sub)) return true;
+                            if (prefab.Contains(sub)) return true;
                         }
                     }
-                    return entity is DisplayingBoxStorage;
+                    return prefab.StartsWith("component.box.");
             }
         }
 
@@ -897,7 +981,7 @@ namespace RaidableBases
 
         private bool IsPVE()
         {
-            if (TruePVE != null || SimplePVE != null || NextGenPVE != null || Imperium != null)
+            if (TruePVE != null || SimplePVE != null || NextGenPVE != null || Imperium != null || AegisPVE != null)
                 return true;
             try
             {

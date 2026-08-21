@@ -1,4 +1,4 @@
-// TruePVEMod.cs -- Harmony entry point for the TruePVE Oxide port (2.4.21).
+// TruePVEMod.cs -- Harmony entry point for the TruePVE Oxide port (2.4.31).
 // Hosts Oxide.Plugins.TruePVE, drives LoadConfig/Init/OnServerInitialized/Unload,
 // registers chat + console commands (covalence bridge), and re-registers permissions
 // when the Permissions Harmony mod becomes ready. Pattern follows SkillTreeMod.
@@ -100,7 +100,7 @@ namespace TruePVEHarmony
 
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
 
-            Debug.Log("[TruePVE] Harmony mod loaded (Oxide port 2.4.22). Config: HarmonyConfig/TruePVE.json. server.pve browser tag supported (RuleSets own damage).");
+            Debug.Log("[TruePVE] Harmony mod loaded (Oxide port 2.4.31). Config: HarmonyConfig/TruePVE.json. server.pve browser tag supported (RuleSets own damage).");
         }
 
         private void OnPermissionsReady()

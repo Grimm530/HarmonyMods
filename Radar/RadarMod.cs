@@ -31,8 +31,14 @@ public class RadarMod : IHarmonyModHooks
     private const float ScanRadius = 400f;
 
     private static MethodInfo _clientRpcString;
+    private static readonly Vector3 VoiceArrowFrom = new Vector3(0f, 5f);
+    private static readonly Vector3 VoiceArrowTo = new Vector3(0f, 2.5f);
+    private static readonly List<ulong> _voiceCleanupRadarIds = new List<ulong>(8);
+    private static readonly List<ulong> _voiceCleanupSpeakerIds = new List<ulong>(16);
 
     internal readonly Dictionary<ulong, RadarState> PlayerStates = new Dictionary<ulong, RadarState>();
+    private readonly Dictionary<ulong, Dictionary<ulong, float>> _voices = new Dictionary<ulong, Dictionary<ulong, float>>();
+    private float _nextVoiceCleanupTime;
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
@@ -114,7 +120,7 @@ public class RadarMod : IHarmonyModHooks
         if (player == null) return;
         var mod = Instance;
         if (mod == null) return;
-        mod.ToggleRadar(player);
+        mod.HandleRadarCommand(player, ToStringArray(arg.Args));
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
@@ -150,6 +156,7 @@ public class RadarMod : IHarmonyModHooks
         _radarChatCommand = null;
         _replicatedList = null;
         _clientRpcString = null;
+        _voices.Clear();
         Instance = null;
     }
 
@@ -159,7 +166,33 @@ public class RadarMod : IHarmonyModHooks
         var msg = message?.Trim();
         if (string.IsNullOrEmpty(msg)) return false;
         if (msg.StartsWith("/")) msg = msg.Substring(1).Trim();
-        if (!msg.Equals("radar", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!IsRadarChatCommand(msg)) return false;
+
+        return HandleRadarCommand(player, SplitRadarArgs(msg));
+    }
+
+    private static bool IsRadarChatCommand(string msg)
+    {
+        if (msg.Equals("radar", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return msg.Length > 6 && msg.StartsWith("radar ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Tokens after the leading "radar" command name. Empty array means toggle.</summary>
+    private static string[] SplitRadarArgs(string msg)
+    {
+        var parts = msg.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length <= 1)
+            return Array.Empty<string>();
+        var rest = new string[parts.Length - 1];
+        Array.Copy(parts, 1, rest, 0, rest.Length);
+        return rest;
+    }
+
+    /// <returns>True if Radar handled the command (caller should skip original).</returns>
+    internal bool HandleRadarCommand(BasePlayer player, string[] args)
+    {
+        if (player == null) return false;
 
         if (!player.IsAdmin && !player.IsDeveloper)
         {
@@ -167,8 +200,118 @@ public class RadarMod : IHarmonyModHooks
             return true;
         }
 
+        if (args != null && args.Length > 0 && string.Equals(args[0], "findbyitem", StringComparison.OrdinalIgnoreCase))
+        {
+            CommandFindByItem(player, args);
+            return true;
+        }
+
         ToggleRadar(player);
         return true;
+    }
+
+    /// <summary>AdminRadar 5.4.312: map item shortname → entity shortname for Options → Boxes.</summary>
+    private static void CommandFindByItem(BasePlayer player, string[] args)
+    {
+        if (args == null || args.Length < 2)
+        {
+            SendMessage(player, "Item shortname not specified. Usage: radar findbyitem industrial.storage");
+            return;
+        }
+
+        var search = string.Join(" ", args, 1, args.Length - 1);
+        if (!RadarBehaviour.TryFindDeployables(search, out var results, out var count))
+        {
+            SendMessage(player, $"No deployable matches found for '{search}'.");
+            return;
+        }
+
+        SendMessage(player, "\nResults:\n" + results);
+        if (count >= RadarBehaviour.FindByItemMaxResults)
+            SendMessage(player, $"(showing first {RadarBehaviour.FindByItemMaxResults})");
+    }
+
+    /// <summary>
+    /// AdminRadar voice ESP: yellow arrow on nearby speakers. Game method is <c>ServerMgr.OnPlayerVoice</c>
+    /// (<c>ArraySegment&lt;byte&gt;</c> / <c>ReadOnlySpan&lt;byte&gt;</c>); this path does not read voice bytes.
+    /// </summary>
+    internal void OnPlayerVoice(BasePlayer speaker)
+    {
+        var voice = RadarConfig.Config?.VoiceDetection;
+        if (voice == null || !voice.Enabled || voice.Distance <= 0f)
+            return;
+        if (speaker == null || speaker.IsDestroyed)
+            return;
+        if (PlayerStates.Count == 0)
+            return;
+
+        Vector3 a = speaker.transform.position;
+        float currentTime = UnityEngine.Time.time;
+        float sqrMax = voice.SqrDistance;
+        float interval = voice.Interval < 3 ? 3f : voice.Interval;
+        ulong speakerId = speaker.userID;
+
+        if (currentTime >= _nextVoiceCleanupTime)
+            CleanupVoices(currentTime);
+
+        foreach (var kv in PlayerStates)
+        {
+            if (!kv.Value.Enabled)
+                continue;
+
+            var observer = BasePlayer.FindByID(kv.Key);
+            if (observer == null || !observer.IsConnected || observer.transform == null)
+                continue;
+            if ((a - observer.transform.position).sqrMagnitude > sqrMax)
+                continue;
+
+            if (!_voices.TryGetValue(kv.Key, out var speakers))
+            {
+                speakers = new Dictionary<ulong, float>();
+                _voices[kv.Key] = speakers;
+            }
+
+            if (speakers.TryGetValue(speakerId, out float expiry) && currentTime < expiry)
+                continue;
+
+            speakers[speakerId] = currentTime + interval;
+            observer.Command("ddraw.arrow", interval + 0.02f, Color.yellow, a + VoiceArrowFrom, a + VoiceArrowTo, 0.5f);
+        }
+    }
+
+    private void CleanupVoices(float currentTime)
+    {
+        _nextVoiceCleanupTime = currentTime + 30f;
+        if (_voices.Count == 0)
+            return;
+
+        _voiceCleanupRadarIds.Clear();
+        foreach (var radarId in _voices.Keys)
+            _voiceCleanupRadarIds.Add(radarId);
+
+        for (int r = 0; r < _voiceCleanupRadarIds.Count; r++)
+        {
+            var radarId = _voiceCleanupRadarIds[r];
+            if (!_voices.TryGetValue(radarId, out var speakers) || speakers.Count == 0)
+            {
+                _voices.Remove(radarId);
+                continue;
+            }
+
+            _voiceCleanupSpeakerIds.Clear();
+            foreach (var speakerId in speakers.Keys)
+                _voiceCleanupSpeakerIds.Add(speakerId);
+
+            for (int s = 0; s < _voiceCleanupSpeakerIds.Count; s++)
+            {
+                var speakerId = _voiceCleanupSpeakerIds[s];
+                if (speakers.TryGetValue(speakerId, out float expiry) && currentTime >= expiry)
+                    speakers.Remove(speakerId);
+            }
+
+            if (speakers.Count == 0)
+                _voices.Remove(radarId);
+        }
     }
 
     /// <returns>True if Radar handled the command (caller should skip original).</returns>
@@ -406,6 +549,7 @@ public class RadarMod : IHarmonyModHooks
         if (comp != null)
             UnityEngine.Object.Destroy(comp);
         player.Command("ddraw.clear");
+        _voices.Remove(player.userID);
     }
 
     internal void OpenUI(BasePlayer player)

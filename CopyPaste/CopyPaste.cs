@@ -613,7 +613,16 @@ namespace CopyPasteHarmony
                         _itemDefToPrefab[itemDef] = prefabPath;
                     }
 
-                    if (IsDlcItem(itemDef))
+                    bool isDlc = false;
+                    try
+                    {
+                        isDlc = IsDlcItem(itemDef);
+                    }
+                    catch
+                    {
+                        // Skip DLC classification for this item rather than aborting paste-ready.
+                    }
+                    if (isDlc)
                     {
                         _dlcItemIds.Add(itemDef.itemid);
                         if (!string.IsNullOrEmpty(prefabPath))
@@ -783,15 +792,19 @@ namespace CopyPasteHarmony
 
         public static bool IsDlcItem(ItemDefinition definition)
         {
-            var bp = definition.Blueprint;
-            var parent = definition.Parent ?? definition.isRedirectOf;
-            var parentBp = parent?.Blueprint;
+            // Do not call ItemBlueprint.NeedsSteamDLC: that getter uses GetComponent<ItemDefinition>()
+            // on the blueprint and NREs on destroyed/unwired components (CopyPaste 4.2.8 boot crash).
+            // Unity overloaded == / != is required here; `is not null` misses fake-null objects.
+            if (definition == null)
+                return false;
+
+            var parent = definition.Parent;
             return
-                (definition.steamItem is not null && definition.steamItem.id != 0) ||
-                (definition.steamDlc is not null && definition.steamDlc.dlcAppID != 0) ||
-                (bp is not null && bp.NeedsSteamDLC) ||
-                (parentBp is not null && parentBp.NeedsSteamDLC) ||
-                definition.isRedirectOf is not null;
+                (definition.steamItem != null && definition.steamItem.id != 0) ||
+                (definition.steamDlc != null && definition.steamDlc.dlcAppID != 0) ||
+                (definition.Blueprint != null && definition.steamDlc != null) ||
+                (parent != null && parent.Blueprint != null && parent.steamDlc != null) ||
+                definition.isRedirectOf != null;
         }
 
         public ulong FilterSkinId(PasteData pasteData, ulong skinId)
@@ -2942,40 +2955,46 @@ namespace CopyPasteHarmony
                 {
                     string idKey = side == 0 ? "wallpaperID" : "wallpaperID2";
 
-                    if (data.TryGetValue(idKey, out rawValue))
+                    if (!data.TryGetValue(idKey, out rawValue))
+                        continue;
+
+                    ulong wallpaperId = Convert.ToUInt64(rawValue);
+                    int currentSide = side;
+                    float rotation = 0f;
+                    // Default wallpaper uses skin 0. Game presence is wallpaperHealth > 0
+                    // (BuildingBlock.HasWallpaper). Do not default health to MAXHEALTH:
+                    // that would treat a missing health field as "has wallpaper" when ID is 0.
+                    float health = wallpaperId != 0UL ? BuildingBlock.WALLPAPER_MAXHEALTH : 0f;
+
+                    string rotationKey = currentSide == 0 ? "wallpaperRotation" : "wallpaperRotation2";
+                    if (data.TryGetValue(rotationKey, out rawValue))
+                        rotation = Convert.ToSingle(rawValue);
+
+                    string healthKey = currentSide == 0 ? "wallpaperHealth" : "wallpaperHealth2";
+                    if (data.TryGetValue(healthKey, out rawValue))
+                        health = Convert.ToSingle(rawValue);
+
+                    if (health <= 0f)
+                        continue;
+
+                    if (health > BuildingBlock.WALLPAPER_MAXHEALTH)
+                        health = BuildingBlock.WALLPAPER_MAXHEALTH;
+
+                    // Defer wallpaper until all building blocks are pasted.
+                    // Interior wallpaper (side 1) must be "inside" (fully enclosed)
+                    // or it will despawn on the next stability tick
+                    pasteData.FinalProcessingActions.Add(() =>
                     {
-                        ulong wallpaperId = Convert.ToUInt64(rawValue);
-                        if (wallpaperId == 0UL)
-                            continue;
+                        if (buildingBlock == null || !buildingBlock.IsValid() || buildingBlock.IsDestroyed)
+                            return;
 
-                        int currentSide = side;
-                        float rotation = 0f;
-                        float health = BuildingBlock.WALLPAPER_MAXHEALTH;
+                        buildingBlock.SetWallpaper(wallpaperId, currentSide, rotation);
 
-                        string rotationKey = currentSide == 0 ? "wallpaperRotation" : "wallpaperRotation2";
-                        if (data.TryGetValue(rotationKey, out rawValue))
-                            rotation = Convert.ToSingle(rawValue);
-
-                        string healthKey = currentSide == 0 ? "wallpaperHealth" : "wallpaperHealth2";
-                        if (data.TryGetValue(healthKey, out rawValue))
-                            health = Convert.ToSingle(rawValue);
-
-                        // Defer wallpaper until all building blocks are pasted.
-                        // Interior wallpaper (side 1) must be "inside" (fully enclosed)
-                        // or it will despawn on the next stability tick
-                        pasteData.FinalProcessingActions.Add(() =>
-                        {
-                            if (buildingBlock == null || !buildingBlock.IsValid() || buildingBlock.IsDestroyed)
-                                return;
-
-                            buildingBlock.SetWallpaper(wallpaperId, currentSide, rotation);
-
-                            if (currentSide == 0)
-                                buildingBlock.wallpaperHealth = health;
-                            else
-                                buildingBlock.wallpaperHealth2 = health;
-                        });
-                    }
+                        if (currentSide == 0)
+                            buildingBlock.wallpaperHealth = health;
+                        else
+                            buildingBlock.wallpaperHealth2 = health;
+                    });
                 }
             }
             else if (baseCombat != null)

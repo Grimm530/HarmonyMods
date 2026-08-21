@@ -542,6 +542,25 @@ namespace Radar
 
             [JsonProperty("Track Admin Status")]
             public TrackAdminStatusConfig TrackAdminStatus { get; set; } = new TrackAdminStatusConfig();
+
+            [JsonProperty("Voice Detection")]
+            public VoiceDetectionConfig VoiceDetection { get; set; } = new VoiceDetectionConfig();
+        }
+
+        [Serializable]
+        public class VoiceDetectionConfig
+        {
+            [JsonProperty("Enabled")]
+            public bool Enabled { get; set; } = true;
+
+            [JsonProperty("Timeout After X Seconds")]
+            public int Interval { get; set; } = 3;
+
+            [JsonProperty("Detection Radius")]
+            public float Distance { get; set; } = 30f;
+
+            [JsonIgnore]
+            public float SqrDistance => Distance * Distance;
         }
 
         public static ConfigData Config { get; private set; }
@@ -570,6 +589,7 @@ namespace Radar
                     if (cfg != null)
                     {
                         Config = cfg;
+                        NormalizeVoiceDetection();
                         _configPath = p;
                         UnityEngine.Debug.Log("[Radar] Config loaded from " + p);
                         return;
@@ -578,6 +598,7 @@ namespace Radar
 
                 // Create default config in HarmonyConfig on first load.
                 Config = new ConfigData();
+                NormalizeVoiceDetection();
                 _configPath = Path.Combine(serverRoot, "HarmonyConfig", "Radar.json");
                 var dir = Path.GetDirectoryName(_configPath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -590,7 +611,17 @@ namespace Radar
             {
                 UnityEngine.Debug.LogError("[Radar] Config load error: " + ex.Message);
                 Config ??= new ConfigData();
+                NormalizeVoiceDetection();
             }
+        }
+
+        private static void NormalizeVoiceDetection()
+        {
+            if (Config == null)
+                return;
+            Config.VoiceDetection ??= new VoiceDetectionConfig();
+            if (Config.VoiceDetection.Interval < 3)
+                Config.VoiceDetection.Interval = 3;
         }
 
         public static void SaveConfig()

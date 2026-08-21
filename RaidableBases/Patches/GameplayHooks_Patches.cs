@@ -113,6 +113,22 @@ namespace RaidableBases
         }
     }
 
+    [HarmonyPatch(typeof(RaidWindow), nameof(RaidWindow.BlocksDamage))]
+    internal static class RaidWindow_BlocksDamage_Patch
+    {
+        [HarmonyPrefix]
+        private static bool Prefix(BaseCombatEntity victim, HitInfo info, ref bool __result)
+        {
+            var result = Interface.CallHook("CanRaidWindowBlockDamage", victim, info);
+            if (result is bool block)
+            {
+                __result = block;
+                return false;
+            }
+            return true;
+        }
+    }
+
     // ── SAM sites ──────────────────────────────────────────────────────────
 
     [HarmonyPatch(typeof(SamSite), nameof(SamSite.TargetScan))]

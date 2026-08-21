@@ -6,7 +6,7 @@ Raidable Bases as a **standalone Harmony mod** with **no Oxide dependency**. Sou
 
 | Field | Value |
 |-------|--------|
-| **Original** | RaidableBases (nivex, 3.1.5) |
+| **Original** | RaidableBases (nivex, 3.1.7) |
 | **Layout** | Standalone Harmony mod; source split by `#region`; bridge in `RaidableBasesHarmony.cs` |
 | **Oxide** | None — runs on Oxide-free servers |
 | **Run as** | Harmony mod only (entry: `RaidableBases.RaidableBasesHarmonyEntry`, `IHarmonyModHooks`) |

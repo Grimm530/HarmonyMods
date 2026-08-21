@@ -134,6 +134,7 @@ namespace RaidableBases
 
             if (Raids.Count == 1)
             {
+                Subscribe(nameof(OnPlayerRespawn));
                 CheckPlayersNearEvents();
             }
 

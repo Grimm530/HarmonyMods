@@ -72,7 +72,9 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static void Prefix(BaseNetworkable __instance)
         {
-            if (__instance is StorageContainer container)
+            if (__instance is Fridge fridge)
+                Interface.CallHook("OnEntityKill", fridge);
+            else if (__instance is StorageContainer container)
                 Interface.CallHook("OnEntityKill", container);
         }
     }
@@ -104,6 +106,28 @@ namespace RaidableBases
                 Interface.CallHook("OnMapMarkerAdded", __instance, note[note.Count - 1]);
             }
             catch { }
+        }
+    }
+
+    [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Respawn))]
+    internal static class BasePlayer_Respawn_Patch
+    {
+        [HarmonyPrefix]
+        private static bool Prefix(BasePlayer __instance)
+        {
+            if (__instance == null)
+                return true;
+
+            BasePlayer.SpawnPoint spawnPoint = ServerMgr.FindSpawnPoint(__instance);
+            if (ConVar.Server.respawnAtDeathPosition && __instance.ServerCurrentDeathNote != null)
+                spawnPoint.pos = __instance.ServerCurrentDeathNote.worldPosition;
+
+            var result = Interface.CallHook("OnPlayerRespawn", __instance, spawnPoint);
+            if (result is BasePlayer.SpawnPoint replacement)
+                spawnPoint = replacement;
+
+            __instance.RespawnAt(spawnPoint.pos, spawnPoint.rot);
+            return false;
         }
     }
 }

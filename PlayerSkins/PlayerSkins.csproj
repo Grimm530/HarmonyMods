@@ -11,10 +11,16 @@
     <RootNamespace>PlayerSkinsHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: PlayerSkins 3.0.141 Chaos UI port (Oxide-free).</Description>
+    <Description>Harmony mod: PlayerSkins 3.0.142 Chaos UI port (Oxide-free).</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
   </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>false</Private>
+    </Reference>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
   </ItemGroup>
@@ -87,6 +93,27 @@
     </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="mscorlib">
+      <HintPath>$(RustManaged)\mscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="System">
+      <HintPath>$(RustManaged)\System.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Core">
+      <HintPath>$(RustManaged)\System.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>$(RustManaged)\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime">
+      <HintPath>$(RustManaged)\System.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(RustManaged)\netstandard.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>$(RustManaged)\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>

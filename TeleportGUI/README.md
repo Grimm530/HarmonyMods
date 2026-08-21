@@ -1,6 +1,6 @@
 # TeleportGUI (Harmony)
 
-Exact-replica Harmony port of k1lly0u TeleportGUI **2.0.481**. No Oxide dependency. Uses `0Permissions`, `HarmonyLanguage` patterns, and `cui.endtest TELEPORTGUI` for UI actions.
+Exact-replica Harmony port of k1lly0u TeleportGUI **2.0.50**. No Oxide dependency. Uses `0Permissions`, `HarmonyLanguage` patterns, and `cui.endtest TELEPORTGUI` for UI actions.
 
 ## Paths
 
@@ -38,7 +38,7 @@ Primary: `0Permissions` permission strings matching Oxide (`teleportgui.tp.use`,
 
 Copies `TeleportGUI.dll` to workspace `HarmonyMods/`. Load: `harmony.load TeleportGUI`.
 
-## Remaining gaps vs Oxide 2.0.481
+## Remaining gaps vs Oxide 2.0.50
 
 - Monument discovery / generated warps (`showmonumentbounds`, `showgeneratedwarps`)
 - Sleeping-bag / bed home hooks

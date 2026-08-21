@@ -50,10 +50,10 @@ namespace RaidableBases
 {
     public partial class RaidableBases : RaidableBasesBase
     {
-        public const string Version = "3.1.5";
+        public const string Version = "3.1.7";
         #pragma warning disable CS0649, CS0169
         private object AbandonedBases, DangerousTreasures, ZoneManager, BankSystem, IQEconomic, Economics, ServerRewards, GUIAnnouncements, AdvancedAlerts, Archery, Space, PocketDimensions, FauxAdmin, PreventLooting;
-        private object IQDronePatrol, Friends, Clans, Kits, TruePVE, SimplePVE, NightLantern, Wizardry, NextGenPVE, Imperium, Backpacks, BaseRepair, Notify, SkillTree, ShoppyStock, BuyableBases, XPerience, XLevels;
+        private object IQDronePatrol, Friends, Clans, Kits, TruePVE, AegisPVE, SimplePVE, NightLantern, Wizardry, NextGenPVE, Imperium, Backpacks, BaseRepair, Notify, SkillTree, ShoppyStock, BuyableBases, XPerience, XLevels;
 #pragma warning restore CS0649, CS0169
         private const int targetMask = 8454145;
         private const int visibleMask = 10551553;
@@ -99,6 +99,7 @@ namespace RaidableBases
         private Dictionary<ItemDefinition, string> ItemDefinitions = new();
         private readonly Dictionary<string, string> TypeNameLookup = new();
         private Dictionary<ItemDefinition, ItemModConsume> _itemModConsume = new();
+        private Dictionary<ItemDefinition, ItemModProjectile> _itemModProjectile = new();
         private readonly Dictionary<SphereColor, string[]> ColorPrefabMap = new() { [SphereColor.Blue] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere.prefab" }, [SphereColor.Cyan] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere.prefab", "assets/bundled/prefabs/modding/events/twitch/br_sphere_green.prefab" }, [SphereColor.Green] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere_green.prefab" }, [SphereColor.Magenta] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere_purple.prefab", "assets/bundled/prefabs/modding/events/twitch/br_sphere_red.prefab" }, [SphereColor.Purple] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere_purple.prefab" }, [SphereColor.Red] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere_red.prefab" }, [SphereColor.Yellow] = new[] { "assets/bundled/prefabs/modding/events/twitch/br_sphere_red.prefab", "assets/bundled/prefabs/modding/events/twitch/br_sphere_green.prefab" } };
         private readonly List<string> ExcludedMounts = new() { "beachchair", "boogieboard", "cardtable", "chair", "chippyarcademachine", "computerstation", "drumkit", "microphonestand", "piano", "secretlabchair", "slotmachine", "sofa", "xylophone" };
         private readonly List<string> Blocks = new() { "wall.frame.cell", "wall.doorway", "wall", "wall.frame", "wall.half", "wall.low", "wall.window", "foundation.triangle", "foundation", "wall.external.high.wood", "wall.external.high.stone", "wall.external.high.ice", "floor.triangle.frame", "floor.triangle", "floor.frame" };
@@ -113,11 +114,15 @@ namespace RaidableBases
             public BMGELEVATOR BMG;
             public Elevator Elevator;
             public RaidableBase raid;
+            public Elevator Entity => BMG?._elevator ?? Elevator;
+
             public bool IsBMG() => BMG != null && raid != null;
             public bool IsVanilla() => raid != null && !Elevator.IsKilled();
             public bool CanUseElevator(BasePlayer player)
             {
-                if (raid.Options.Elevators.RequiresPower && !Elevator.IsPowered()) return false;
+                var elevator = Entity;
+                if (elevator.IsKilled()) return false;
+                if (raid.Options.Elevators.RequiresPower && !elevator.IsPowered()) return false;
                 return raid.HasCardPermission(player) && raid.HasBuildingPermission(player);
             }
         }
@@ -538,7 +543,7 @@ namespace RaidableBases
 
             public void SetupGrid()
             {
-                if (Spawns.Count >= 5)
+                if (Spawns.Count >= 5)// || Instance.Buildings.Profiles.Values.All(x => x.Options.CustomSpawns.All))
                 {
                     fileCoroutine = ServerMgr.Instance.StartCoroutine(LoadFiles());
                     return;
@@ -1824,11 +1829,12 @@ namespace RaidableBases
                 float distance = Mathf.Abs(elevatorLift.transform.position.y - worldSpaceFloorPosition.y);
                 float timeToTravel = _elevator.TimeToTravelDistance(distance);
                 LeanTween.moveY(elevatorLift.gameObject, worldSpaceFloorPosition.y, timeToTravel);
-                _elevator.SetFlag(BaseEntity.Flags.Busy, true);
+                _elevator.SetFlagLocal(BaseEntity.Flags.Busy, true);
                 elevatorLift.ToggleHurtTrigger(true);
                 _elevator.Invoke(_elevator.ClearBusy, timeToTravel);
                 _elevator.CancelInvoke(ElevatorToGround);
                 _elevator.Invoke(ElevatorToGround, timeToTravel + returnDelay);
+                _elevator.SendNetworkUpdate();
             }
 
             private void Retry()
@@ -1912,24 +1918,25 @@ namespace RaidableBases
             public static PooledList<PooledList<BaseEntity>> SplitElevators(RaidableBase raid, List<BaseEntity> source)
             {
                 var groups = DisposableList<PooledList<BaseEntity>>();
-                using var distances = DisposableList<int>();
+                using var positions = DisposableList<Vector2Int>();
 
                 foreach (var entity in source)
                 {
                     raid.Entities.Remove(entity);
                     if (entity.IsKilled()) continue;
-                    int distance = (int)(entity.transform.position.x * 2f);
-                    int index = distances.IndexOf(distance);
+                    var position = entity.transform.position;
+                    var key = new Vector2Int(Mathf.RoundToInt(position.x * 2f), Mathf.RoundToInt(position.z * 2f));
+                    int index = positions.IndexOf(key);
                     if (index >= 0)
                     {
                         groups[index].Add(entity);
                     }
                     else
                     {
-                        distances.Add(distance);
-                        var list = DisposableList<BaseEntity>();
-                        list.Add(entity);
-                        groups.Add(list);
+                        positions.Add(key);
+                        var group = DisposableList<BaseEntity>();
+                        group.Add(entity);
+                        groups.Add(group);
                     }
                 }
 
@@ -2014,9 +2021,11 @@ namespace RaidableBases
                     if (GetElevatorLift(elevator, out var lift)) lift.baseProtection = instance.GetElevatorProtection();
                     RemoveImmortality(elevator.baseProtection, 0.9f, 0f, 0f, 0f, 0f, 0.95f, 0f, 0f, 0f, 0.99f, 0.99f, 0.99f, 0f, 1f, 1f, 0.99f, 0.5f, 0f, 0f, 0f, 0f, 1f, 1f, 1f, 0f);
                 }, 0.0625f);
-                elevator.SetFlag(BaseEntity.Flags.Reserved1, true, false, true);
-                elevator.SetFlag(Elevator.Flag_HasPower, true);
-                elevator.SendNetworkUpdateImmediate();
+                using (var update = elevator.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate))
+                {
+                    update.Set(BaseEntity.Flags.Reserved1, true);
+                    update.Set(Elevator.Flag_HasPower, true);
+                }
                 raid.Elevators[elevator.net.ID] = new() { BMG = bmgELEVATOR, raid = raid };
                 if (raid.Elevators.Count == 1)
                 {
@@ -4597,6 +4606,7 @@ namespace RaidableBases
             public List<VendingMachine> vms = Pool.Get<List<VendingMachine>>();
             public List<DamageMultiplier> PlayerDamageMultiplier = new();
             public List<ulong> HintCooldowns = Pool.Get<List<ulong>>();
+            private List<BuildingPrivlidge> privs = Pool.Get<List<BuildingPrivlidge>>();
             public BuildingPrivlidge priv;
             public List<ulong> TeleportExceptions = new();
             private List<string> murdererKits = new(), scientistKits = new();
@@ -4790,48 +4800,49 @@ namespace RaidableBases
                 }
             }
 
-            public void ResetToPool()
+            public void FreeToPool()
             {
                 Interface.CallHook("OnRaidableBaseEnded", hookObjects);
-                ids.ResetToPool();
-                vms.ResetToPool();
-                npcs.ResetToPool();
-                _rugs.ResetToPool();
-                _bags.ResetToPool();
-                _beds.ResetToPool();
-                doors.ResetToPool();
-                locks.ResetToPool();
-                ovens.ResetToPool();
-                blocks.ResetToPool();
-                lights.ResetToPool();
-                lockers.ResetToPool();
-                raiders.ResetToPool();
-                spheres.ResetToPool();
-                turrets.ResetToPool();
-                fridges.ResetToPool();
-                _inside.ResetToPool();
-                buttons.ResetToPool();
-                alliance.ResetToPool();
-                samsites.ResetToPool();
-                triggers.ResetToPool();
-                Elevators.ResetToPool();
-                intruders.ResetToPool();
-                cooldowns.ResetToPool();
-                conditions.ResetToPool();
-                weaponRacks.ResetToPool();
-                HintCooldowns.ResetToPool();
-                _prefabToSkin.ResetToPool();
-                _itemIdToSkin.ResetToPool();
-                doorControllers.ResetToPool();
-                _shortnameToSkin.ResetToPool();
-                _decorDeployables.ResetToPool();
+                ResetToPool(ref ids);
+                ResetToPool(ref vms);
+                ResetToPool(ref npcs);
+                ResetToPool(ref _rugs);
+                ResetToPool(ref _bags);
+                ResetToPool(ref _beds);
+                ResetToPool(ref doors);
+                ResetToPool(ref locks);
+                ResetToPool(ref ovens);
+                ResetToPool(ref blocks);
+                ResetToPool(ref lights);
+                ResetToPool(ref lockers);
+                ResetToPool(ref raiders);
+                ResetToPool(ref spheres);
+                ResetToPool(ref turrets);
+                ResetToPool(ref fridges);
+                ResetToPool(ref _inside);
+                ResetToPool(ref buttons);
+                ResetToPool(ref alliance);
+                ResetToPool(ref samsites);
+                ResetToPool(ref triggers);
+                ResetToPool(ref Elevators);
+                ResetToPool(ref intruders);
+                ResetToPool(ref cooldowns);
+                ResetToPool(ref conditions);
+                ResetToPool(ref weaponRacks);
+                ResetToPool(ref HintCooldowns);
+                ResetToPool(ref _prefabToSkin);
+                ResetToPool(ref _itemIdToSkin);
+                ResetToPool(ref doorControllers);
+                ResetToPool(ref privs);
+                ResetToPool(ref _shortnameToSkin);
+                ResetToPool(ref _decorDeployables);
                 if (backpacks != null)
                 {
-                    foreach (var backpack in backpacks)
+                    for (var i = 0; i < backpacks.Count; i++)
                     {
-                        backpack.ResetToPool();
+                        var backpack = backpacks[i];
+                        ResetToPool(ref backpack);
                     }
-                    backpacks.ResetToPool();
                 }
             }
 
@@ -5143,7 +5154,7 @@ namespace RaidableBases
                     {
                         foreach (var child in entity.children)
                         {
-                            if (child.skinID == RB_SKIN_ID) entity.skinID = 0;
+                            if (child.skinID == RB_SKIN_ID) child.skinID = 0;
                             BuiltList.Add(child);
                             DespawnExceptions.Add(child);
                         }
@@ -5346,11 +5357,14 @@ namespace RaidableBases
                 ri.DestroyInput();
                 UpdateTime(target, false);
                 DestroyUi(target, UiType.Status);
+                intruders.Remove(target.userID);
 
-                if (!intruders.Remove(target.userID) || ri.PreEnter)
+                if (ri.PreEnter)
                 {
                     return;
                 }
+
+                ri.PreEnter = true;
 
                 OnPlayerExited(target);
 
@@ -5642,7 +5656,7 @@ namespace RaidableBases
                     if (backpack.IsEmpty)
                     {
                         backpacks.Remove(backpack);
-                        backpack.ResetToPool();
+                        ResetToPool(ref backpack);
                     }
                 }
             }
@@ -5710,6 +5724,7 @@ namespace RaidableBases
                 if (enteredEntities.Count > 0) enteredEntities.RemoveWhere(IsNullOrVoid);
                 if (backpacks.Count > 0) CheckBackpacks(!AllowPVP && Options.EjectBackpacksPVE);
                 if (Options.RespawnRateMax > 0.1f) CheckNpcRespawns();
+                if (raidWindowPrivs && privs.Count > 0) RefreshRaidWindowPrivileges();
 
                 // Physics OnTriggerEnter can miss players (layer/collider). Distance scan is the reliable enter path.
                 ScanPlayersInsideDome();
@@ -5863,7 +5878,7 @@ namespace RaidableBases
                     TryInvokeMethod(DestroyElevators);
                     TryInvokeMethod(CheckSubscribe);
                     TryInvokeMethod(RespawnEntities);
-                    TryInvokeMethod(ResetToPool);
+                    TryInvokeMethod(FreeToPool);
                     Destroy(go);
                     LogEvent();
                     CancellDrone(rb);
@@ -6279,6 +6294,11 @@ namespace RaidableBases
                     return;
                 }
 
+                if (IsRocketLauncher(attachedWeapon))
+                {
+                    UsableByTurret = true;
+                }
+
                 int p = Math.Max(config.Weapons.Ammo.AutoTurret, attachedWeapon.primaryMagazine.capacity);
                 Item ammo = ItemManager.Create(attachedWeapon.primaryMagazine.ammoType, p, 0uL);
                 if (!ammo.MoveToContainer(turret.inventory, -1, true, true, null, true)) ammo.Remove();
@@ -6289,11 +6309,12 @@ namespace RaidableBases
 
             private static void DisableInterference(AutoTurret turret)
             {
-                if (turret != null && turret.HasFlag(BaseEntity.Flags.OnFire))
+                if (!turret.IsKilled() && turret.HasFlag(BaseEntity.Flags.OnFire))
                 {
-                    turret.SetFlag(BaseEntity.Flags.OnFire, false);
+                    turret.SetFlagLocal(BaseEntity.Flags.OnFire, false);
                     turret.nearbyTurrets.Clear();
                     turret.interferringTurrets.Clear();
+                    turret.SendNetworkUpdate();
                 }
             }
 
@@ -7440,6 +7461,12 @@ namespace RaidableBases
                     return null;
                 }
 
+                if (!Options.NPC.Inside.Sleepers.Lootable && entity.Is(out HumanoidNPC npc) && npc.IsSleeping())
+                {
+                    Message(player, "This sleeper cannot be looted.");
+                    return true;
+                }
+
                 if (!AddLooter(player))
                 {
                     return true;
@@ -7678,23 +7705,9 @@ namespace RaidableBases
                         bounds.Encapsulate(compound[i]);
                     }
 
-                    vector = bounds.center;
-                    vector.y = 0f;
+                    vector.x = bounds.center.x;
+                    vector.z = bounds.center.z;
                 }
-
-                if (Options.Water.IsWaterSpawn)
-                {
-                    if (Options.Setup.ForcedHeight != -1) vector.y = Options.Setup.ForcedHeight;
-                    else if (Options.Water.Surface) vector.y = Mathf.Max(0f, TerrainMeta.WaterMap.GetHeight(vector));
-                    else if (spawns == null || !spawns.IsCustomSpawn) vector.y = TerrainMeta.HeightMap.GetHeight(vector);
-                }
-                else if (Options.Setup.ForcedHeight == -1)
-                {
-                    vector.y = rb.isCustomSpawn ? Location.y : SpawnsController.GetSpawnHeight(vector);
-                }
-                else vector.y = Options.Setup.ForcedHeight;
-
-                vector.y += BaseHeight + Options.Setup.PasteHeightAdjustment;
 
                 Location = vector;
                 LocationXZ3D = vector.XZ3D();
@@ -7730,17 +7743,20 @@ namespace RaidableBases
                 bool spawned = false;
                 try
                 {
-                    priv.SetFlag(BaseEntity.Flags.Reserved5, true);
+                    priv.SetFlagLocal(SimplePrivilege.Flag_MaxAuths, true);
                     shelter.enableSaving = false;
                     shelter.Spawn();
                     shelter.decay = null;
                     shelter.upkeepTimer = float.MinValue;
 
-                    KeyLock keyLock = shelter.GetChildDoor().GetSlot(BaseEntity.Slot.Lock) as KeyLock;
-                    keyLock.keyCode = UnityEngine.Random.Range(1, 100000);
-                    keyLock.OwnerID = 0;
-                    keyLock.firstKeyCreated = true;
-                    keyLock.SetFlag(BaseEntity.Flags.Locked, true);
+                    if (shelter.GetChildDoor().Is(out LegacyShelterDoor door) && door.GetSlot(BaseEntity.Slot.Lock) is KeyLock keyLock)
+                    {
+                        keyLock.keyCode = UnityEngine.Random.Range(1, 100000);
+                        keyLock.OwnerID = 0;
+                        keyLock.firstKeyCreated = true;
+                        keyLock.SetFlagLocal(BaseEntity.Flags.Locked, true);
+                        keyLock.SendNetworkUpdate();
+                    }
 
                     var containers = new List<(Vector3 position, Quaternion rotation, string prefab)>();
                     containers.Add((new(0.96f, -0.11f, 0.52f), new(-0.001644136f, 0.7649058f, -0.0191349f, -0.6438558f), "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab"));
@@ -7945,6 +7961,7 @@ namespace RaidableBases
                             }
                         }
 
+                        if (Options.ArenaWalls.UseUFOWalls) position.y += 1f;
                         var e = GameManager.server.CreateEntity(prefab, position, Quaternion.identity) as SimpleBuildingBlock;
 
                         if (e == null)
@@ -8372,11 +8389,13 @@ namespace RaidableBases
 
                 if (config.Weapons.Burn.Exists(e.ShortPrefabName.Contains))
                 {
-                    SetupBurn(e);
+                    SetupBurnVisuals(e);
                 }
 
                 if (e is IOEntity io)
                 {
+                    SetupLight(io);
+
                     if (io is ContainerIOEntity cio)
                     {
                         SetupIO(cio);
@@ -8400,10 +8419,6 @@ namespace RaidableBases
                     else if (io is TeslaCoil tc)
                     {
                         SetupTeslaCoil(tc);
-                    }
-                    else if (io.PrefabName.Contains("light"))
-                    {
-                        SetupLight(io);
                     }
                     else if (io is CustomDoorManipulator cdm)
                     {
@@ -8437,9 +8452,9 @@ namespace RaidableBases
                     {
                         SetupVendingMachine(vm);
                     }
-                    else if (io is IIndustrialStorage)
+                    else if (io is IIndustrialStorage st)
                     {
-                        TryEmptyIndustrialStorage(io);
+                        TryEmptyIndustrialStorage(io, st);
                     }
                 }
                 else if (e is StorageContainer c)
@@ -8490,6 +8505,10 @@ namespace RaidableBases
                 else if (e is SpookySpeaker speaker)
                 {
                     SetupSpookySpeaker(speaker);
+                }
+                else if (e is ComputerStation cs)
+                {
+                    SetupComputerStation(cs);
                 }
 
                 if (e is DecayEntity de)
@@ -8568,18 +8587,20 @@ namespace RaidableBases
                 Elevators[elevator.net.ID] = new() { Elevator = elevator, raid = this };
                 elevator._maxHealth = Options.Elevators.ElevatorHealth;
                 elevator.InitializeHealth(Options.Elevators.ElevatorHealth, Options.Elevators.ElevatorHealth);
-                
+
                 if (!Options.Elevators.RequiresPower && !elevator.IsPowered())
                 {
                     if (elevator.previousPowerAmount?.Length >= 3) elevator.previousPowerAmount[2] = elevator.DesiredPower();
-                    elevator.SetFlag(BaseEntity.Flags.Reserved8, true, false, true);
+                    elevator.SetFlagLocal(BaseEntity.Flags.Reserved8, true);
                 }
-                
+
                 if (Options.Elevators.RequiresBuildingPermission || Options.Elevators.RequiredAccessLevel > 0)
                 {
                     Instance.Subscribe(nameof(OnElevatorButtonPress));
                     Instance.Subscribe(nameof(OnButtonPress));
                 }
+
+                elevator.SendNetworkUpdate();
             }
 
             private void SetupPickup(BaseCombatEntity e)
@@ -8623,12 +8644,11 @@ namespace RaidableBases
                 container.dropFloats = false;
             }
 
-            public void TryEmptyIndustrialStorage(IOEntity io)
+            public void TryEmptyIndustrialStorage(IOEntity io, IIndustrialStorage storage)
             {
-                if (ShouldEmptyAll(io))
+                if (ShouldEmptyAll(io) && storage != null)
                 {
-                    IIndustrialStorage storage = io as IIndustrialStorage;
-                    try { ClearInventory(storage.Container); ItemManager.DoRemoves(); } catch { }
+                    try { ClearInventory(storage.Container); } catch { }
                 }
             }
 
@@ -8639,8 +8659,11 @@ namespace RaidableBases
                     ClearInventory(container.inventory);
                     ItemManager.DoRemoves();
                 }
-                container.dropsLoot = false;
-                container.dropFloats = false;
+                if (!(container is Fridge))
+                {
+                    container.dropsLoot = false;
+                    container.dropFloats = false;
+                }
             }
 
             private bool ShouldEmptyAll(BaseEntity container)
@@ -8702,7 +8725,8 @@ namespace RaidableBases
 
             private void SetupIO(IOEntity io)
             {
-                io.SetFlag(BaseEntity.Flags.Reserved8, true, false, true);
+                using var update = io.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
+                update.Set(IOEntity.Flag_HasPower, true);
             }
 
             private void SetupLock(BaseEntity e, bool justCreated = false)
@@ -8728,7 +8752,8 @@ namespace RaidableBases
                     codeLock.hasGuestCode = false;
                     codeLock.guestPlayers.Clear();
                     codeLock.whitelistPlayers.Clear();
-                    codeLock.SetFlag(BaseEntity.Flags.Locked, true);
+                    codeLock.SetFlagLocal(BaseEntity.Flags.Locked, true);
+                    codeLock.SendNetworkUpdate();
                 }
                 else if (e is KeyLock keyLock)
                 {
@@ -8739,7 +8764,8 @@ namespace RaidableBases
 
                     keyLock.OwnerID = 0;
                     keyLock.firstKeyCreated = true;
-                    keyLock.SetFlag(BaseEntity.Flags.Locked, true);
+                    keyLock.SetFlagLocal(BaseEntity.Flags.Locked, true);
+                    keyLock.SendNetworkUpdate();
                 }
             }
 
@@ -8748,18 +8774,32 @@ namespace RaidableBases
                 vms.Add(vm);
                 TryEmptyContainer(vm);
                 vm.dropsLoot = false;
-                vm.SetFlag(BaseEntity.Flags.Reserved4, config.Settings.Management.AllowBroadcasting, false, true);
+                vm.SetFlagLocal(BaseEntity.Flags.Reserved4, config.Settings.Management.AllowBroadcasting);
                 vm.FullUpdate();
+                SetupIO((IOEntity)vm);
             }
 
             private void SetupLight(IOEntity light)
             {
-                if (light == null || light is XORSwitch || !config.Settings.Management.Lights && !config.Settings.Management.AlwaysLights || config.Settings.Management.IgnoredLights.Exists(light.ShortPrefabName.Contains))
+                if (light == null || light is XORSwitch or BaseDetector)
                 {
                     return;
                 }
 
-                lights.Add(light);
+                bool lightsEnabled = config.Settings.Management.Lights || config.Settings.Management.AlwaysLights;
+                bool isIgnored = config.Settings.Management.IgnoredLights.Exists(light.ShortPrefabName.Contains);
+                bool isSupportedLight = light is SimpleLight or CeilingLight or SearchLight or SirenLight or FlasherLight or Chandelier or StringLights or ElectricalHeater or AudioVisualisationEntity or NeonSign or StrobeLight
+                    || light is ContainerIOEntity && light.ShortPrefabName.Contains("wallcabinet") || light.PrefabName.Contains("light");
+
+                if (!lightsEnabled || isIgnored || !isSupportedLight)
+                {
+                    return;
+                }
+
+                if (!lights.Contains(light))
+                {
+                    lights.Add(light);
+                }
             }
 
             private void SetupHBHFSensor(HBHFSensor sensor)
@@ -8769,9 +8809,10 @@ namespace RaidableBases
                     return;
                 }
                 triggers[sensor.myTrigger] = sensor;
-                SetupIO(sensor);
-                sensor.SetFlag(HBHFSensor.Flag_IncludeAuthed, true, false, true);
-                sensor.SetFlag(HBHFSensor.Flag_IncludeOthers, true, false, true);
+                using var update = sensor.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
+                update.Set(IOEntity.Flag_HasPower, true);
+                update.Set(HBHFSensor.Flag_IncludeAuthed, true);
+                update.Set(HBHFSensor.Flag_IncludeOthers, true);
             }
 
             private void SetupBattery(ElectricBattery eb)
@@ -8819,6 +8860,10 @@ namespace RaidableBases
 
             private void ChangeTier(BuildingBlock block)
             {
+                if (block.grade == BuildingGrade.Enum.Twigs)
+                {
+                    return;
+                }
                 if (Options.Blocks.Exclusions.Contains(BaseName))
                 {
                     if (!Options.Blocks.HasSkin(block, block.grade, block.skinID))
@@ -8877,15 +8922,14 @@ namespace RaidableBases
 
             private void SetupTeslaCoil(TeslaCoil tc)
             {
-                if (!Options.TeslaCoil.RequiresPower)
-                {
-                    tc.UpdateFromInput(25, 0);
-                    tc.SetFlag(IOEntity.Flag_HasPower, true, false, true);
-                }
-
                 tc.InitializeHealth(Options.TeslaCoil.Health, Options.TeslaCoil.Health);
                 tc.maxDischargeSelfDamageSeconds = Mathf.Clamp(Options.TeslaCoil.MaxDischargeSelfDamageSeconds, 0f, 9999f);
                 tc.maxDamageOutput = Mathf.Clamp(Options.TeslaCoil.MaxDamageOutput, 0f, 9999f);
+
+                if (!Options.TeslaCoil.RequiresPower)
+                {
+                    tc.UpdateFromInput(Mathf.Max(tc.ConsumptionAmount(), 35), 0);
+                }
             }
 
             private void SetupIgniter(Igniter igniter)
@@ -9105,7 +9149,6 @@ namespace RaidableBases
                 }
 
                 bool f = Options.AutoTurret.Shortnames.Count > 0;
-                Options.AutoTurret.Shortnames.Remove("rocket.launcher");
                 Options.AutoTurret.Shortnames.Remove("fun.trumpet");
                 Options.AutoTurret.Shortnames.Remove("snowballgun");
                 Options.AutoTurret.Shortnames.Remove("flamethrower");
@@ -9118,6 +9161,8 @@ namespace RaidableBases
                     yield return CoroutineEx.waitForSeconds(0.025f);
 
                     if (f) EquipTurretWeapon(turret, Options.AutoTurret.Shortnames);
+
+                    SetupTurretWeapon(turret);
 
                     yield return CoroutineEx.waitForSeconds(0.025f);
 
@@ -9145,7 +9190,7 @@ namespace RaidableBases
 
             private void EquipTurretWeapon(AutoTurret turret, Dictionary<string, List<ulong>> shortnames)
             {
-                if (IsContainerKilled(turret) || !turret.AttachedWeapon.IsNull()) 
+                if (IsContainerKilled(turret) || turret.inventory.GetSlot(0) != null || !turret.AttachedWeapon.IsNull())
                     return;
 
                 using var weapons = DisposableList<(ItemDefinition, List<ulong>)>();
@@ -9191,32 +9236,59 @@ namespace RaidableBases
                 if (skins.Count > 0 && config.BlockPaidContent) skins.RemoveAll(x => Instance.RequiresOwnership(def, x));
 
                 Item item = ItemManager.Create(def, 1, skins.Count == 0 ? 0 : skins.GetRandom());
-                BaseProjectile baseProjectile = item.GetHeldEntity() as BaseProjectile;
-                if (baseProjectile != null)
-                {
-                    if (baseProjectile.MuzzlePoint == null)
-                    {
-                        baseProjectile.MuzzlePoint = baseProjectile.transform;
-                    }
-                    bool modified = false;
-                    if (!baseProjectile.usableByTurret)
-                    {
-                        baseProjectile.usableByTurret = true;
-                        UsableByTurret = true;
-                        modified = true;
-                    }
-                    if (modified && def.shortname != "pistol.python")
-                    {
-                        turret.inventory.canAcceptItem -= turret.CanAcceptItem;
-                        turret.inventory.canAcceptItem += CanAcceptItem;
-                    }
-                }
+                SetupTurretWeapon(turret, item);
 
                 if (!item.MoveToContainer(turret.inventory, 0, false))
                 {
                     item.Remove();
                 }
                 else item.SwitchOnOff(true);
+            }
+
+            private void SetupTurretWeapon(AutoTurret turret)
+            {
+                if (turret.IsKilled())
+                {
+                    return;
+                }
+                Item item = turret.inventory.GetSlot(0);
+                if (item == null)
+                {
+                    return;
+                }
+                SetupTurretWeapon(turret, item);
+            }
+
+            private void SetupTurretWeapon(AutoTurret turret, Item item)
+            {
+                BaseProjectile weapon = item.GetHeldEntity() as BaseProjectile;
+                if (weapon == null)
+                {
+                    return;
+                }
+                bool isRocketLauncher = IsRocketLauncher(weapon);
+                if (!weapon.usableByTurret && !isRocketLauncher)
+                {
+                    return;
+                }
+                if (weapon.MuzzlePoint == null)
+                {
+                    weapon.MuzzlePoint = weapon.transform;
+                }
+                if (!weapon.usableByTurret)
+                {
+                    weapon.usableByTurret = true;
+
+                    if (item.info.shortname != "pistol.python")
+                    {
+                        turret.inventory.canAcceptItem -= turret.CanAcceptItem;
+                        turret.inventory.canAcceptItem += CanAcceptItem;
+                    }
+                }
+                if (isRocketLauncher)
+                {
+                    UsableByTurret = true;
+                }
             }
 
             public bool IsValidWeapon(ItemDefinition itemDef)
@@ -9251,7 +9323,7 @@ namespace RaidableBases
                 {
                     return false;
                 }
-                if (!component2.IsUsableByTurret)
+                if (!component2.IsUsableByTurret && !IsRocketLauncher(component2))
                 {
                     return false;
                 }
@@ -9327,18 +9399,23 @@ namespace RaidableBases
                     fm.fuelPerSec = 0f;
                 }
 
-                if (config.Weapons.FogMotion)
+                if (config.Weapons.FogMotion || !config.Weapons.FogRequiresPower)
                 {
-                    fm.SetFlag(BaseEntity.Flags.Reserved9, true, false, true);
-                }
+                    using var update = fm.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate);
 
-                if (!config.Weapons.FogRequiresPower)
-                {
-                    fm.CancelInvoke(fm.CheckTrigger);
-                    fm.SetFlag(BaseEntity.Flags.Reserved5, b: true);
-                    fm.SetFlag(BaseEntity.Flags.Reserved6, b: true);
-                    fm.SetFlag(BaseEntity.Flags.Reserved10, b: true);
-                    fm.SetFlag(BaseEntity.Flags.On, true, false, true);
+                    if (config.Weapons.FogMotion)
+                    {
+                        update.Set(BaseEntity.Flags.Reserved9, true);
+                    }
+
+                    if (!config.Weapons.FogRequiresPower)
+                    {
+                        fm.CancelInvoke(fm.CheckTrigger);
+                        update.Set(BaseEntity.Flags.Reserved5, true);
+                        update.Set(BaseEntity.Flags.Reserved6, true);
+                        update.Set(BaseEntity.Flags.Reserved10, true);
+                        update.Set(BaseEntity.Flags.On, true);
+                    }
                 }
             }
 
@@ -9346,8 +9423,9 @@ namespace RaidableBases
             {
                 if (!config.Weapons.SprinklerRequiresPower)
                 {
-                    sprinkler.SetFuelType(WaterTypes.WaterItemDef, null);
-                    sprinkler.TurnOn();
+                    sprinkler.SetFlagLocal(BaseEntity.Flags.On, false);
+                    try { sprinkler.SetFuelType(WaterTypes.WaterItemDef, null); } catch { }
+                    sprinkler.UpdateFromInput(sprinkler.ConsumptionAmount(), 0);
                 }
             }
 
@@ -9360,11 +9438,12 @@ namespace RaidableBases
                 }
             }
 
-            private void SetupBurn(BaseEntity entity)
+            private void SetupBurnVisuals(BaseEntity entity)
             {
-                if (entity is BaseOven oven)
+                if (entity is BaseOven oven && !oven.IsOn())
                 {
-                    oven.SetFlag(BaseEntity.Flags.On, b: true);
+                    using var update = oven.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
+                    update.Set(BaseEntity.Flags.On, true);
                 }
 
                 if (entity is IOEntity io)
@@ -9407,7 +9486,7 @@ namespace RaidableBases
                 }
                 else
                 {
-                    ss.SetFlag(BaseEntity.Flags.Reserved1, false);
+                    ss.SetFlagLocal(BaseEntity.Flags.Reserved1, false);
                     ss.CancelInvoke(ss.SelfHeal);
                     ss.staticRespawn = false;
                 }
@@ -9429,6 +9508,7 @@ namespace RaidableBases
 
                 ss.startHealth = UnityEngine.Random.Range(Options.SamSite.Min, Options.SamSite.Max);
                 ss.InitializeHealth(ss.startHealth, ss.startHealth);
+                ss.SendNetworkUpdate();
             }
 
             private bool ChangeTier(Door door)
@@ -9525,8 +9605,28 @@ namespace RaidableBases
 
                 if (Options.CloseOpenDoors)
                 {
-                    door.SetOpen(false, true);
+                    CloseDoor(door);
                 }
+            }
+
+            private void CloseDoor(Door door)
+            {
+                if (door.IsKilled() || !door.IsOpen())
+                {
+                    return;
+                }
+
+                if (door.IsBusy())
+                {
+                    bool reverseOpen = door.HasFlag(Door.ReverseOpen);
+                    door.ReverseDoorAnimation(true, reverseOpen);
+                    door.SetOpen(false, true);
+                    door.StopCheckingForBlockages();
+                    door.ClientRPC(RpcTarget.NetworkGroup("OnDoorInterrupted"), true, reverseOpen);
+                    return;
+                }
+
+                door.SetOpen(false, true);
             }
 
             private void SetupDoors()
@@ -9545,7 +9645,10 @@ namespace RaidableBases
 
                 foreach (var cdm in doorControllers)
                 {
-                    SetupIO(cdm);
+                    if (!Options.DoorControllersRequiresPower)
+                    {
+                        SetupIO(cdm);
+                    }
 
                     Door door = cdm.targetDoor;
 
@@ -9673,6 +9776,30 @@ namespace RaidableBases
                 {
                     privHadLoot = priv != null && priv.inventory != null && !priv.inventory.IsEmpty();
                 }
+
+                privs.Add(priv);
+
+                if (ConVar.Softcore.raidwindow_enabled && BaseGameMode.GetActiveGameMode(serverside: true) is GameModeSoftcore)
+                {
+                    raidWindowPrivs = true;
+                    priv.UpdateRaidableFlag();
+                }
+            }
+
+            private bool raidWindowPrivs;
+            private void RefreshRaidWindowPrivileges()
+            {
+                if (ConVar.Softcore.raidwindow_fresh_tc_seconds <= 0f)
+                {
+                    return;
+                }
+                float now = Time.time;
+                for (int i = privs.Count - 1; i >= 0; i--)
+                {
+                    BuildingPrivlidge priv = privs[i];
+                    if (priv.IsKilled()) privs.RemoveAt(i);
+                    else priv.timePlaced = now;
+                }
             }
 
             private void SetupLocker(Locker locker)
@@ -9727,6 +9854,18 @@ namespace RaidableBases
                 if (!config.Weapons.SpookySpeakersRequiresPower)
                 {
                     ss.UpdateHasPower(25, 0);
+                }
+            }
+
+            private void SetupComputerStation(ComputerStation cs)
+            {
+                if (cs.spawnedIo.IsValid(true))
+                {
+                    IOEntity io = cs.spawnedIo.Get(true);
+                    if (io != null)
+                    {
+                        SetupIO(io);
+                    }
                 }
             }
 
@@ -9995,6 +10134,7 @@ namespace RaidableBases
                 Subscribe(nameof(CanPickupEntity));
                 Subscribe(nameof(OnPlayerDropActiveItem));
                 Subscribe(nameof(OnPlayerDeath));
+                Subscribe(nameof(CanRaidWindowBlockDamage));
                 Subscribe(nameof(OnEntityDeath));
                 Subscribe(nameof(OnEntityKill));
                 Subscribe(nameof(CanBGrade));
@@ -10712,7 +10852,7 @@ namespace RaidableBases
                 foreach (var vm in vms)
                 {
                     vm.InstallDefaultSellOrders();
-                    vm.SetFlag(BaseEntity.Flags.Reserved4, config.Settings.Management.AllowBroadcasting, false, true);
+                    vm.SetFlagLocal(BaseEntity.Flags.Reserved4, config.Settings.Management.AllowBroadcasting);
                     foreach (Item item in vm.inventory.itemList)
                     {
                         if (vm.sellOrders.sellOrders.Count < 8)
@@ -10884,7 +11024,8 @@ namespace RaidableBases
                     {
                         if (!oven.IsOn() && oven.FindBurnable() != null)
                         {
-                            oven.SetFlag(BaseEntity.Flags.On, true, false, true);
+                            using var update = oven.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate);
+                            update.Set(BaseEntity.Flags.On, true);
                         }
 
                         if (oven.IsOn() && !item.HasFlag(global::Item.Flag.OnFire))
@@ -11072,11 +11213,48 @@ namespace RaidableBases
                 {
                     foreach (var io in lights)
                     {
-                        if (io.IsKilled()) continue;
-                        if (!state && HasConnectedInput(io)) continue;
-                        io.UpdateHasPower(state ? 25 : 0, 1);
-                        io.SetFlag(BaseEntity.Flags.On, state);
-                        io.SendNetworkUpdateImmediate();
+                        if (io.IsKilled() || io.HasConnections()) continue;
+
+                        int inputAmount = state ? Math.Max(35, io.ConsumptionAmount()) : 0;
+                        bool updatedInput = false;
+                        var inputs = io.inputs;
+
+                        if (io is StrobeLight strobeLight && state)
+                        {
+                            strobeLight.lifeTimeSeconds = float.MaxValue;
+                        }
+
+                        if (inputs != null)
+                        {
+                            for (int inputSlot = 0; inputSlot < inputs.Length; inputSlot++)
+                            {
+                                var input = inputs[inputSlot];
+                                if (input == null || !input.mainPowerSlot) continue;
+                                io.UpdateFromInput(inputAmount, inputSlot);
+                                updatedInput = true;
+                            }
+
+                            if (!updatedInput)
+                            {
+                                for (int inputSlot = 0; inputSlot < inputs.Length; inputSlot++)
+                                {
+                                    if (inputs[inputSlot] == null) continue;
+                                    io.UpdateFromInput(inputAmount, inputSlot);
+                                    updatedInput = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!updatedInput)
+                        {
+                            io.currentEnergy = inputAmount;
+                            io.UpdateHasPower(inputAmount, 0);
+                            io.IOStateChanged(inputAmount, 0);
+                        }
+
+                        using var update = io.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate);
+                        update.Set(BaseEntity.Flags.On, state);
                     }
                 }
 
@@ -11088,7 +11266,8 @@ namespace RaidableBases
                         if (state && (oven.ShortPrefabName.Contains("furnace") && oven.inventory.IsEmpty())) continue;
                         if (!state && (oven.ShortPrefabName.Contains("furnace") && BaseOven.cookQueue.Contains(oven))) continue;
                         if (config.Settings.Management.IgnoredLights.Count > 0 && config.Settings.Management.IgnoredLights.Exists(oven.ShortPrefabName.Contains)) continue;
-                        oven.SetFlag(BaseEntity.Flags.On, state);
+                        using var update = oven.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate);
+                        update.Set(BaseEntity.Flags.On, state);
                     }
                 }
 
@@ -11539,9 +11718,31 @@ namespace RaidableBases
 
             public Vector3 GetEjectLocation(Vector3 a, float distance, Vector3 target, float radius, bool towardsZero, bool setHeight)
             {
-                Vector3 originalDirection = (a.XZ3D() - target.XZ3D()).normalized;
-                Vector3 finalDirection = towardsZero ? Vector3.Lerp(originalDirection, (Vector3.zero.XZ3D() - target.XZ3D()).normalized, 1f) : originalDirection;
-                Vector3 position = (finalDirection * (radius + distance)) + target; // credits ZoneManager
+                Vector3 direction = towardsZero ? Vector3.zero.XZ3D() - target.XZ3D() : a.XZ3D() - target.XZ3D();
+
+                if (direction.sqrMagnitude <= 0.001f)
+                {
+                    direction = a.XZ3D() - target.XZ3D();
+
+                    if (direction.sqrMagnitude <= 0.001f)
+                    {
+                        direction = Vector3.forward;
+                    }
+                }
+
+                direction.Normalize();
+
+                Vector3 position = target + direction * (radius + distance);
+
+                if (towardsZero)
+                {
+                    float step = Mathf.Max(distance, M_RADIUS);
+
+                    for (int i = 0; i < 4 && WaterLevel.GetOverallWaterDepth(position, waves: false, volumes: false) > 0.5f; i++)
+                    {
+                        position += direction * step;
+                    }
+                }
 
                 if (setHeight)
                 {
@@ -11561,7 +11762,7 @@ namespace RaidableBases
                 return position;
             }
 
-            public bool RemovePlayer(BasePlayer player, Vector3 a, float radius, RaidableType type, bool special = false)
+            public bool RemovePlayer(BasePlayer player, Vector3 a, float radius, RaidableType type, bool special = false, bool towardsZero = false, float distance = 10f)
             {
                 if (player.IsNull() || !player.IsHuman() || type == RaidableType.None && !player.IsSleeping())
                 {
@@ -11594,7 +11795,7 @@ namespace RaidableBases
                     return Eject(parent, Location, ProtectionRadius + 15f, false);
                 }
 
-                var position = GetEjectLocation(player.transform.position, 10f, a, radius, false, true);
+                var position = GetEjectLocation(player.transform.position, distance, a, radius, towardsZero, true);
                 if (player.IsFlying)
                 {
                     position.y = player.transform.position.y;
@@ -12362,6 +12563,12 @@ namespace RaidableBases
 
                 SceneManager.MoveGameObjectToScene(go, Rust.Server.EntityScene);
 
+                if (isStationary && go.TryGetComponent(out Rust.Ai.Gen2.RustNavMeshAgent navAgent))
+                {
+                    navAgent.updatePosition = false;
+                    go.transform.position = position;
+                }
+
                 go.SetActive(true);
 
                 return npc != null;
@@ -13068,7 +13275,7 @@ namespace RaidableBases
                 vm.enableSaving = false;
                 vm.limitNetworking = true;
                 vm.Spawn();
-                vm.SetFlag(BaseEntity.Flags.Reserved4, false, false, true);
+                vm.SetFlagLocal(BaseEntity.Flags.Reserved4, false);
                 vm.FullUpdate();
                 foreach (var cost in costs)
                 {

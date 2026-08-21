@@ -1,15 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
+  </PropertyGroup>
+  <PropertyGroup>
     <AssemblyName>NoGibs</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
-  </PropertyGroup>
-  <PropertyGroup>
     <LangVersion>12.0</LangVersion>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <Description>Harmony mod: suppress entity gibs / debris on destroy.</Description>
   </PropertyGroup>
-  <PropertyGroup />
-  <ItemGroup />
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>false</Private>
+    </Reference>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
       <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
@@ -24,4 +30,8 @@
       <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <Target Name="EnsureRustManaged" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(RustManaged)' == '' Or !Exists('$(RustManaged)\Assembly-CSharp.dll')"
+           Text="Could not find Rust Managed folder (Assembly-CSharp.dll). Build with: dotnet build -p:RustManaged=&quot;D:\your\RustDedicated_Data\Managed&quot;" />
+  </Target>
 </Project>

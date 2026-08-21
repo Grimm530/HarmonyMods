@@ -6,7 +6,7 @@ using Newtonsoft.Json.Converters;
 namespace TeleportGUI
 {
     /// <summary>
-    /// Config schema aligned with Oxide TeleportGUI 2.0.481 (HarmonyConfig/TeleportGUI.json).
+    /// Config schema aligned with Oxide TeleportGUI 2.0.50 (HarmonyConfig/TeleportGUI.json).
     /// No Oxide types. Optional Harmony-only fields are ignored when absent from JSON.
     /// </summary>
     public class TeleportGUIConfig
@@ -45,7 +45,7 @@ namespace TeleportGUI
         [JsonProperty("Record death location for /death command", DefaultValueHandling = DefaultValueHandling.Ignore)]
         public bool RecordDeathLocation { get; set; } = true;
 
-        // --- Oxide 2.0.481 schema ---
+        // --- Oxide 2.0.50 schema ---
 
         [JsonProperty("Chat options")]
         public ChatOptions Chat { get; set; } = new ChatOptions();
@@ -72,7 +72,7 @@ namespace TeleportGUI
         public UIOptions UI { get; set; } = new UIOptions();
 
         [JsonProperty("Version")]
-        public VersionInfo Version { get; set; } = new VersionInfo { Major = 2, Minor = 0, Patch = 481 };
+        public VersionInfo Version { get; set; } = new VersionInfo { Major = 2, Minor = 0, Patch = 50 };
 
         public class VersionInfo
         {

@@ -385,11 +385,12 @@ namespace RaidableBases
                             continue;
                         }
 
-                        var taken = slot.amount > amountLeft ? slot.SplitItem(amountLeft) : slot;
-
-                        taken.Drop(Vector3.zero, Vector3.zero);
-
-                        amountLeft -= taken.amount;
+                        int amount = Math.Min(slot.amount, amountLeft);
+                        amountLeft -= amount;
+                        slot.amount -= amount;
+                        slot.ReduceItemOwnership(amount);
+                        if (slot.amount <= 0) slot.Remove();
+                        else slot.MarkDirty();
 
                         if (amountLeft <= 0)
                         {
@@ -882,9 +883,9 @@ namespace RaidableBases
                 {
                     raid.TryEmptyContainer(container);
                 }
-                else if (raid.Options.EmptyAll && e is IOEntity io)
+                else if (raid.Options.EmptyAll && e is IOEntity io && io is IIndustrialStorage st)
                 {
-                    raid.TryEmptyIndustrialStorage(io);
+                    raid.TryEmptyIndustrialStorage(io, st);
                 }
                 foreach (var slot in _checkSlots)
                 {

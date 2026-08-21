@@ -44,7 +44,7 @@ namespace RaidableBases
         public void Teleport(float x, float y, float z) { }
     }
 
-    /// <summary>Version number for CopyPaste API compatibility (4.2.7+ per RaidableBases 3.1.5).</summary>
+    /// <summary>Version number for CopyPaste API compatibility (4.2.7+ per RaidableBases 3.1.7).</summary>
     public struct VersionNumber : IComparable<VersionNumber>
     {
         public int Major;

@@ -157,7 +157,7 @@ namespace TeleportGUI
             BaseContainer root = ImageContainer.Create(panel, Layer.Hud, GetRequestUiAnchor(), GetRequestUiOffset())
                 .WithStyle(m_StylePreset.Background)
                 .WithFadeIn(0.25f)
-                .WithFadeOut(0.25f)
+                //.WithFadeOut(0.25f) // Oxide 2.0.50: disabled notification FadeOut
                 .WithChildren(parent =>
                 {
                     ImageContainer.Create(parent, UIAnchor.FullStretch, new Offset(5f, 5f, -5f, -5f))

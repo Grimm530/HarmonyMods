@@ -76,6 +76,7 @@ namespace RaidableBases
             Unsubscribe(nameof(OnEntityDeath));
             Unsubscribe(nameof(CanPickupEntity));
             Unsubscribe(nameof(OnPlayerLand));
+            Unsubscribe(nameof(OnPlayerRespawn));
             Unsubscribe(nameof(OnPlayerDeath));
             Unsubscribe(nameof(OnBackpackDrop));
             Unsubscribe(nameof(OnPlayerDropActiveItem));
@@ -733,7 +734,7 @@ namespace RaidableBases
             {
                 TypeNameLookup[player.UserIDString] = name = player.GetType().Name;
             }
-            if (!name.Contains("CustomScientist", CompareOptions.OrdinalIgnoreCase) && !name.Contains("14922524", CompareOptions.OrdinalIgnoreCase))
+            if (!name.Contains("CustomScientist", CompareOptions.OrdinalIgnoreCase))
             {
                 return false;
             }
@@ -848,6 +849,27 @@ namespace RaidableBases
         private object OnPlayerLand(BasePlayer player, float amount)
         {
             return player == null || !Get(player.transform.position, out var raid) || !raid.IsDespawning ? (object)null : true;
+        }
+
+        private object OnPlayerRespawn(BasePlayer player, BasePlayer.SpawnPoint spawnPoint)
+        {
+            if (player == null || !player.IsHuman() || !Get(spawnPoint.pos, out var raid, M_RADIUS))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                BasePlayer.SpawnPoint replacement = ServerMgr.FindSpawnPoint(player);
+
+                if (!EventTerritory(replacement.pos, M_RADIUS))
+                {
+                    return replacement;
+                }
+            }
+
+            spawnPoint.pos = raid.GetEjectLocation(spawnPoint.pos, 100f, raid.Location, raid.ProtectionRadius * 2f, towardsZero: true, setHeight: true);
+            return spawnPoint;
         }
 
         private void OnPlayerDeath(BasePlayer player, HitInfo info)
@@ -1086,6 +1108,7 @@ namespace RaidableBases
         }
 
         //private void OnEntityKill(IOEntity io) => OnEntityDeath(io, null);
+        private void OnEntityKill(Fridge io) => OnEntityDeath(io, null);
 
         private void OnEntityDeath(IOEntity io, HitInfo info)
         {
@@ -1234,6 +1257,7 @@ namespace RaidableBases
                 }
                 if (config.BlockPaidContent && DeployableItems.TryGetValue(entity.PrefabName, out var def))
                 {
+                    if (entity.skinID == RB_SKIN_ID) entity.skinID = 0;
                     if (RequiresOwnership(def, 0) && !HasUnlocked(player, def)) return false;
                     if (RequiresOwnership(def, entity.skinID) && !HasUnlocked(player, entity.skinID))
                     {
@@ -1288,9 +1312,9 @@ namespace RaidableBases
         private object OnInterferenceUpdate(AutoTurret turret)
         {
             if (turret == null || turret.IsDestroyed) return null;
-            if (IsRaidDefenseSkin(turret.skinID)) return true;
             if (!Get(turret.transform.position, out var raid)) return null;
-            return raid.BuiltList.Contains(turret) ? (object)true : null;
+            if (IsRaidDefenseSkin(turret.skinID) || !turret.enableSaving) return true;
+            return turret.OwnerID.IsSteamId() ? (object)true : null;
         }
 
         private void OnEntitySpawned(TimedExplosive te)
@@ -1305,17 +1329,56 @@ namespace RaidableBases
                 OnEntitySpawnedMLRS(rocket);
                 return;
             }
-            if (te.creatorEntity == null && Get(te.transform.position, out var raid) && raid.UsableByTurret)
+            if (te.creatorEntity != null || !Get(te.transform.position, out var raid) || !raid.UsableByTurret)
             {
-                var pos = te.transform.position;
-                foreach (var turret in raid.turrets)
+                return;
+            }
+
+            Vector3 position = te.transform.position;
+            AutoTurret nearestTurret = null;
+            AutoTurret muzzleTurret = null;
+            BaseLauncher baseLauncher = null;
+            float nearestSqrDistance = 9f;
+            float nearestMuzzleSqrDistance = 9f;
+
+            foreach (var turret in raid.turrets)
+            {
+                if (turret.IsKilled())
                 {
-                    if (!turret.IsKilled() && InRange(turret.transform.position, pos, 3f))
-                    {
-                        te.creatorEntity = turret;
-                        break;
-                    }
+                    continue;
                 }
+
+                float sqrDistance = (turret.transform.position - position).sqrMagnitude;
+                if (sqrDistance < nearestSqrDistance)
+                {
+                    nearestSqrDistance = sqrDistance;
+                    nearestTurret = turret;
+                }
+
+                if (!turret.GetAttachedWeapon().Is(out BaseLauncher launcher) || launcher.MuzzlePoint == null || !IsLauncherProjectile(launcher, te))
+                {
+                    continue;
+                }
+
+                float muzzleSqrDistance = (launcher.MuzzlePoint.position - position).sqrMagnitude;
+                if (muzzleSqrDistance < nearestMuzzleSqrDistance)
+                {
+                    nearestMuzzleSqrDistance = muzzleSqrDistance;
+                    muzzleTurret = turret;
+                    baseLauncher = launcher;
+                }
+            }
+
+            AutoTurret source = muzzleTurret ?? nearestTurret;
+            if (source == null)
+            {
+                return;
+            }
+
+            te.creatorEntity = source;
+            if (IsRocketLauncher(baseLauncher))
+            {
+                FixTurretRocket(muzzleTurret, baseLauncher, te);
             }
         }
 
@@ -1462,7 +1525,7 @@ namespace RaidableBases
                     if (canEjectBackpack && raid.EjectBackpack(backpack, raid.EjectBackpacksPVE))
                     {
                         raid.backpacks.Remove(backpack);
-                        backpack.ResetToPool();
+                        ResetToPool(ref backpack);
                     }
 
                     if (raid.PlayersLootable)
@@ -1632,7 +1695,7 @@ namespace RaidableBases
 
         private void OnLootEntityEnd(BasePlayer player, ContainerIOEntity container)
         {
-            if (config.BlockPaidContent && config.DestroyLootedContainer && container.inventory.IsEmpty() && PaidDeployableItems.TryGetValue(container.PrefabName, out var def) && Has(container) && RequiresOwnership(def, container.skinID))
+            if (config.BlockPaidContent && config.DestroyLootedContainer && !container.IsKilled() && container.inventory.IsEmpty() && PaidDeployableItems.TryGetValue(container.PrefabName, out var def) && Has(container) && RequiresOwnership(def, container.skinID))
             {
                 container.Invoke(container.SafelyKill, 0.1f);
             }
@@ -1961,6 +2024,11 @@ namespace RaidableBases
             {
                 priv.cachedProtectedMinutes = 1500;
             }
+        }
+
+        private object CanRaidWindowBlockDamage(BaseCombatEntity victim, HitInfo info)
+        {
+            return Has(victim) ? false : null;
         }
 
         private object CanEntityTakeDamage(BaseCombatEntity entity, HitInfo info)

@@ -9,7 +9,7 @@ using UnityEngine;
 namespace PlayerSkinsHarmony
 {
     /// <summary>
-    /// Harmony entry for PlayerSkins 3.0.141 (Chaos UI port).
+    /// Harmony entry for PlayerSkins 3.0.142 (Chaos UI port).
     /// Load order: 0Permissions -> Economics (optional) -> PlayerSkins
     /// </summary>
     public class PlayerSkinsMod : IHarmonyModHooks
@@ -18,7 +18,7 @@ namespace PlayerSkinsHarmony
 
         public const int VersionMajor = 3;
         public const int VersionMinor = 0;
-        public const int VersionPatch = 141;
+        public const int VersionPatch = 142;
 
         private PlayerSkinsPlugin _plugin;
         private Action _permissionsReadyCallback;

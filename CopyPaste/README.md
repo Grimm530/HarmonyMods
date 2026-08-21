@@ -1,6 +1,6 @@
 # CopyPaste (Harmony Mod)
 
-**No Oxide dependency.** Harmony port of Oxide **CopyPaste 4.2.81** — same copy/paste logic, adapted only for Harmony hosting (config/data paths, chat commands, timers, RaidableBases API).
+**No Oxide dependency.** Harmony port of Oxide **CopyPaste 4.2.81** — same copy/paste logic, adapted only for Harmony hosting (config/data paths, chat commands, timers, RaidableBases API). Local fixes: DLC detection no longer uses `ItemBlueprint.NeedsSteamDLC` (boot NRE), and paste applies default-skin wallpaper when `wallpaperHealth > 0`.
 
 ## Mod identity
 

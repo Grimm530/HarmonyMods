@@ -23,7 +23,7 @@ using PlayerSkinsHarmony;
 
 namespace PlayerSkinsHarmony
 {
-    /// <summary>PlayerSkins 3.0.141 Harmony port</summary>
+    /// <summary>PlayerSkins 3.0.142 Harmony port</summary>
     public class PlayerSkinsPlugin : PlayerSkinsPluginBase
     {
         #region Fields
@@ -38,6 +38,9 @@ namespace PlayerSkinsHarmony
         private readonly HashSet<ItemDefinition> m_SkinnableItems = new HashSet<ItemDefinition>();
         private static readonly Hash<string, int> m_ShortnameToItemId = new Hash<string, int>();
         private readonly Hash<int, ItemSkinDirectory.Skin> _itemIdToSkin = new Hash<int, ItemSkinDirectory.Skin>();
+        private int m_WorkshopScrapeGeneration;
+        private bool m_WorkshopScrapeRunning;
+        private bool m_WorkshopScrapeStarted;
         
         private readonly string[] m_IgnoreItems = new string[] { "ammo.snowballgun", "blueprintbase", "rhib", "spraycandecal", "vehicle.chassis", "vehicle.module", "water", "water.salt" };
 
@@ -166,6 +169,8 @@ namespace PlayerSkinsHarmony
                     UnityEngine.Object.DestroyImmediate(kvp.Value);
             }
             m_ActiveReskinLoot.Clear();
+            m_WorkshopScrapeGeneration++;
+            m_WorkshopScrapeRunning = false;
             s_Instance = null;
         }
 
@@ -485,6 +490,36 @@ namespace PlayerSkinsHarmony
             return false;
         }
 
+        /// <summary>
+        /// TOS filter: hide Facepunch/approved skins the player does not own.
+        /// Community workshop skins stay visible so they can be sold in-game.
+        /// </summary>
+        private bool IsHiddenUnownedApprovedSkin(BasePlayer player, SkinData skin, ulong skinId)
+        {
+            if (player == null || skin == null)
+                return false;
+            if (!Configuration.Workshop.ApprovedIfOwned || !PlayerDlcApi.IsLoaded)
+                return false;
+            if (!skin.isApproved)
+                return false;
+            return !PlayerDlcApi.IsOwnedOrFreeSkin(player, skinId);
+        }
+
+        private void RemoveUnownedApprovedSkins(BasePlayer player, List<ulong> skinIds, Hash<ulong, SkinData> lookup)
+        {
+            if (!Configuration.Workshop.ApprovedIfOwned || !PlayerDlcApi.IsLoaded || player == null || skinIds == null || lookup == null)
+                return;
+
+            for (int i = skinIds.Count - 1; i >= 0; i--)
+            {
+                ulong id = skinIds[i];
+                if (!lookup.TryGetValue(id, out SkinData skin) || !skin.isApproved)
+                    continue;
+                if (!PlayerDlcApi.IsOwnedOrFreeSkin(player, id))
+                    skinIds.RemoveAt(i);
+            }
+        }
+
         #endregion
         
         #region Workshop Name Conversions
@@ -586,6 +621,8 @@ namespace PlayerSkinsHarmony
         #region Approved Skins
         private const string PUBLISHED_FILE_DETAILS = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
         private const string COLLECTION_DETAILS = "https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/";
+        private const string WORKSHOP_QUERY_FILES = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/";
+        private const int RUST_APP_ID = 252490;
         private const string ITEMS_BODY = "?key={0}&itemcount={1}";
         private const string ITEM_ENTRY = "&publishedfileids[{0}]={1}";
         private const string COLLECTION_BODY = "?key={0}&collectioncount=1&publishedfileids[0]={1}";
@@ -699,6 +736,11 @@ namespace PlayerSkinsHarmony
                     // Skip approved skins that were already validated by CollectApprovedSkins
                     if (kvp.Value.isApproved && kvp.Value.IsValid)
                         continue;
+
+                    // Community skins already scraped/imported keep their persisted title + valid flag.
+                    // Re-querying every ID on load does not scale once workshop scrape fills the list.
+                    if (!kvp.Value.isApproved && kvp.Value.IsValid && !string.IsNullOrEmpty(kvp.Value.Title))
+                        continue;
                     
                     // Include unvalidated skins (workshop skins mislabeled as approved, or explicitly workshop)
                     // These get validated via Steam Workshop API
@@ -735,6 +777,12 @@ namespace PlayerSkinsHarmony
             Interface.Oxide.CallHook("OnPlayerSkinsSkinsLoaded", skinList);
 
             Debug.Log("[PlayerSkins] - Skins processed and ready to use!");
+
+            if (Configuration.Workshop.Enabled && Configuration.Workshop.ScrapeMaxPerItem > 0 && !m_WorkshopScrapeStarted)
+            {
+                m_WorkshopScrapeStarted = true;
+                BeginWorkshopScrape();
+            }
         }
         
         private void SendWorkshopQuery(int page = 0, string perm = "")
@@ -912,6 +960,406 @@ namespace PlayerSkinsHarmony
             m_SkinData.Save();
             Puts($"Removed {removedCount} skins");
         }
+
+        private void BeginWorkshopScrape()
+        {
+            if (!Configuration.Workshop.Enabled)
+            {
+                Puts("Workshop scrape skipped: workshop skins are disabled.");
+                return;
+            }
+
+            if (Configuration.Workshop.ScrapeMaxPerItem <= 0)
+            {
+                Puts("Workshop scrape skipped: maximum community skins per item is 0.");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(Configuration.Workshop.SteamAPIKey))
+            {
+                PrintError("Workshop scrape skipped: no Steam API key.");
+                return;
+            }
+
+            if (m_WorkshopScrapeRunning)
+            {
+                Puts("Workshop scrape already running.");
+                return;
+            }
+
+            if (ServerMgr.Instance == null)
+            {
+                PrintError("Workshop scrape skipped: server is not ready.");
+                return;
+            }
+
+            m_WorkshopScrapeRunning = true;
+            ServerMgr.Instance.StartCoroutine(ScrapeWorkshopSkins());
+        }
+
+        private IEnumerator ScrapeWorkshopSkins()
+        {
+            int scrapeGeneration = ++m_WorkshopScrapeGeneration;
+            int added = 0;
+            try
+            {
+            int maxPerItem = Configuration.Workshop.ScrapeMaxPerItem;
+            if (maxPerItem > 100)
+                maxPerItem = 100;
+
+            List<WorkshopScrapeTarget> targets = BuildWorkshopScrapeTargets(maxPerItem);
+            Puts($"Scraping Steam Workshop for community skins ({targets.Count} item tag(s), max {maxPerItem} per item). Shop stays usable while this runs.");
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                if (s_Instance != this || scrapeGeneration != m_WorkshopScrapeGeneration)
+                    yield break;
+
+                WorkshopScrapeTarget target = targets[i];
+                int remaining = maxPerItem - CountCommunitySkins(target.Shortname);
+                if (remaining <= 0)
+                    continue;
+
+                int code = 0;
+                string response = null;
+                bool done = false;
+                string url = BuildWorkshopQueryUrl(target.Tag, remaining);
+                try
+                {
+                    webrequest.Enqueue(url, null, (c, r) =>
+                    {
+                        code = c;
+                        response = r;
+                        done = true;
+                    }, this, RequestMethod.GET);
+                }
+                catch (Exception ex)
+                {
+                    PrintError($"Failed to queue workshop scrape for '{target.Tag}': {ex.Message}");
+                    continue;
+                }
+
+                float waited = 0f;
+                while (!done && waited < 35f)
+                {
+                    yield return CoroutineEx.waitForSeconds(0.1f);
+                    waited += 0.1f;
+                    if (s_Instance != this || scrapeGeneration != m_WorkshopScrapeGeneration)
+                        yield break;
+                }
+
+                if (!done)
+                {
+                    PrintWarning($"Workshop scrape timed out for tag '{target.Tag}'.");
+                    continue;
+                }
+
+                if (code == 429)
+                {
+                    Puts("Steam Workshop rate-limited the scrape. Waiting 5 seconds...");
+                    yield return CoroutineEx.waitForSeconds(5f);
+                    if (s_Instance != this || scrapeGeneration != m_WorkshopScrapeGeneration)
+                        yield break;
+
+                    done = false;
+                    code = 0;
+                    response = null;
+                    try
+                    {
+                        webrequest.Enqueue(url, null, (c, r) =>
+                        {
+                            code = c;
+                            response = r;
+                            done = true;
+                        }, this, RequestMethod.GET);
+                    }
+                    catch (Exception ex)
+                    {
+                        PrintError($"Failed to retry workshop scrape for '{target.Tag}': {ex.Message}");
+                        continue;
+                    }
+
+                    waited = 0f;
+                    while (!done && waited < 35f)
+                    {
+                        yield return CoroutineEx.waitForSeconds(0.1f);
+                        waited += 0.1f;
+                        if (s_Instance != this || scrapeGeneration != m_WorkshopScrapeGeneration)
+                            yield break;
+                    }
+                }
+
+                if (code == 200 && !string.IsNullOrEmpty(response))
+                    added += ImportScrapedWorkshopResponse(response, target, remaining);
+                else if (code != 200)
+                    PrintWarning($"Workshop scrape failed for tag '{target.Tag}' (HTTP {code}).");
+
+                if ((i + 1) % 10 == 0)
+                {
+                    Puts($"Workshop scrape progress: {i + 1}/{targets.Count} tags, {added} new community skins.");
+                    if (m_HasChanges)
+                    {
+                        m_SkinData.Save();
+                        m_HasChanges = false;
+                    }
+                }
+
+                float delay = Configuration.Workshop.ScrapeDelaySeconds;
+                if (delay < 0.15f)
+                    delay = 0.15f;
+                yield return CoroutineEx.waitForSeconds(delay);
+            }
+
+            if (s_Instance == this && scrapeGeneration == m_WorkshopScrapeGeneration)
+            {
+                if (m_HasChanges)
+                {
+                    m_SkinData.Save();
+                    m_HasChanges = false;
+                }
+
+                Puts($"Workshop scrape complete. Added {added} community skins.");
+            }
+            }
+            finally
+            {
+                m_WorkshopScrapeRunning = false;
+            }
+        }
+
+        private List<WorkshopScrapeTarget> BuildWorkshopScrapeTargets(int maxPerItem)
+        {
+            List<WorkshopScrapeTarget> targets = new List<WorkshopScrapeTarget>();
+            HashSet<string> seenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> atCap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (Skinnable.All != null)
+            {
+                foreach (Skinnable skin in Skinnable.All)
+                {
+                    if (skin == null || string.IsNullOrEmpty(skin.Name))
+                        continue;
+                    TryAddScrapeTarget(targets, seenTags, atCap, skin.Name, skin.ItemName, maxPerItem);
+                }
+            }
+
+            foreach (ItemDefinition itemDefinition in m_SkinnableItems)
+            {
+                if (itemDefinition == null)
+                    continue;
+                if (!itemDefinition.HasSkins && (itemDefinition.skins == null || itemDefinition.skins.Length == 0))
+                    continue;
+                if (string.IsNullOrEmpty(itemDefinition.displayName?.english))
+                    continue;
+                TryAddScrapeTarget(targets, seenTags, atCap, itemDefinition.displayName.english, itemDefinition.shortname, maxPerItem);
+            }
+
+            return targets;
+        }
+
+        private void TryAddScrapeTarget(List<WorkshopScrapeTarget> targets, HashSet<string> seenTags, HashSet<string> atCap, string tag, string rawShortname, int maxPerItem)
+        {
+            if (string.IsNullOrEmpty(tag) || seenTags.Contains(tag))
+                return;
+
+            string shortname = ResolveItemShortname(rawShortname);
+            if (string.IsNullOrEmpty(shortname) || IsBlockedShortname(shortname))
+                return;
+
+            if (atCap.Contains(shortname))
+                return;
+
+            if (CountCommunitySkins(shortname) >= maxPerItem)
+            {
+                atCap.Add(shortname);
+                return;
+            }
+
+            seenTags.Add(tag);
+            targets.Add(new WorkshopScrapeTarget { Tag = tag, Shortname = shortname });
+        }
+
+        private string ResolveItemShortname(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return null;
+
+            string key = raw.ToLower();
+            if (m_WorkshopNameToShortname.TryGetValue(key, out string mapped) && !string.IsNullOrEmpty(mapped))
+                key = mapped;
+
+            ItemDefinition def = ItemManager.FindItemDefinition(key);
+            if (def != null)
+                return def.shortname;
+
+            def = ItemManager.FindItemDefinition(raw);
+            if (def != null)
+                return def.shortname;
+
+            return key;
+        }
+
+        private bool IsBlockedShortname(string shortname)
+        {
+            if (string.IsNullOrEmpty(shortname))
+                return true;
+
+            for (int i = 0; i < m_IgnoreItems.Length; i++)
+            {
+                if (string.Equals(m_IgnoreItems[i], shortname, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            string[] blocked = Configuration.Shop?.BlockedItems;
+            if (blocked == null)
+                return false;
+
+            for (int i = 0; i < blocked.Length; i++)
+            {
+                if (string.Equals(blocked[i], shortname, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private int CountCommunitySkins(string shortname)
+        {
+            if (string.IsNullOrEmpty(shortname) || !m_SkinData.Data.TryGetValue(shortname, out Hash<ulong, SkinData> skins))
+                return 0;
+
+            int count = 0;
+            foreach (KeyValuePair<ulong, SkinData> kvp in skins)
+            {
+                if (kvp.Value == null || kvp.Value.isApproved || kvp.Value.isDisabled)
+                    continue;
+                if (m_ExcludedSkins.Data != null && m_ExcludedSkins.Data.Contains(kvp.Key))
+                    continue;
+                count++;
+            }
+            return count;
+        }
+
+        private string BuildWorkshopQueryUrl(string tag, int count)
+        {
+            if (count < 1)
+                count = 1;
+            if (count > 100)
+                count = 100;
+
+            return WORKSHOP_QUERY_FILES
+                   + "?key=" + Uri.EscapeDataString(Configuration.Workshop.SteamAPIKey)
+                   + "&appid=" + RUST_APP_ID
+                   + "&query_type=0"
+                   + "&page=1"
+                   + "&numperpage=" + count
+                   + "&filetype=0"
+                   + "&return_tags=1"
+                   + "&return_previews=1"
+                   + "&requiredtags[0]=" + Uri.EscapeDataString(tag);
+        }
+
+        private int ImportScrapedWorkshopResponse(string response, WorkshopScrapeTarget target, int remaining)
+        {
+            int added = 0;
+            QueryResponse queryResponse;
+            try
+            {
+                queryResponse = JsonConvert.DeserializeObject<QueryResponse>(response);
+            }
+            catch (Exception ex)
+            {
+                PrintWarning($"Workshop scrape JSON failed for tag '{target.Tag}': {ex.Message}");
+                return 0;
+            }
+
+            if (queryResponse?.response?.publishedfiledetails == null || queryResponse.response.publishedfiledetails.Length == 0)
+                return 0;
+
+            PublishedFileDetails[] details = queryResponse.response.publishedfiledetails;
+            for (int i = 0; i < details.Length; i++)
+            {
+                if (remaining - added <= 0)
+                    break;
+
+                if (TryImportPublishedSkin(details[i], target.Shortname, string.Empty))
+                    added++;
+            }
+
+            return added;
+        }
+
+        private bool TryImportPublishedSkin(PublishedFileDetails publishedFileDetails, string fallbackShortname, string perm)
+        {
+            if (publishedFileDetails == null || publishedFileDetails.banned)
+                return false;
+            if (publishedFileDetails.result != 0 && publishedFileDetails.result != 1)
+                return false;
+            if (publishedFileDetails.file_type == 2)
+                return false;
+            if (string.IsNullOrEmpty(publishedFileDetails.publishedfileid) || string.IsNullOrEmpty(publishedFileDetails.title))
+                return false;
+            if (ContainsKeyword(publishedFileDetails.title))
+                return false;
+            if (!ulong.TryParse(publishedFileDetails.publishedfileid, out ulong workshopid) || workshopid == 0UL)
+                return false;
+            if (m_ExcludedSkins.Data != null && m_ExcludedSkins.Data.Contains(workshopid))
+                return false;
+            if (PlayerDlcApi.IsLoaded && PlayerDlcApi.IsPaidSkin(workshopid))
+                return false;
+
+            string shortname = ResolveShortnameFromTags(publishedFileDetails, fallbackShortname);
+            if (string.IsNullOrEmpty(shortname) || IsBlockedShortname(shortname))
+                return false;
+
+            if (!m_SkinData.Data.TryGetValue(shortname, out Hash<ulong, SkinData> skins))
+                m_SkinData.Data.Add(shortname, skins = new Hash<ulong, SkinData>());
+
+            if (skins.TryGetValue(workshopid, out SkinData skin))
+            {
+                if (string.IsNullOrEmpty(skin.Title))
+                    skin.Title = publishedFileDetails.title;
+                skin.IsValid = true;
+                return false;
+            }
+
+            skins[workshopid] = new SkinData()
+            {
+                cost = GetCategoryPriceForShortname(shortname),
+                isDisabled = false,
+                permission = perm ?? string.Empty,
+                isApproved = false,
+                Title = publishedFileDetails.title,
+                IsValid = true
+            };
+            m_HasChanges = true;
+            return true;
+        }
+
+        private string ResolveShortnameFromTags(PublishedFileDetails publishedFileDetails, string fallbackShortname)
+        {
+            if (publishedFileDetails.tags != null)
+            {
+                for (int i = 0; i < publishedFileDetails.tags.Length; i++)
+                {
+                    PublishedFileDetails.Tag tag = publishedFileDetails.tags[i];
+                    if (tag == null || string.IsNullOrEmpty(tag.tag))
+                        continue;
+
+                    string adjTag = tag.tag.ToLower().Replace("skin", "").Replace(" ", "").Replace("-", "").Replace(".item", "");
+                    if (m_WorkshopNameToShortname.TryGetValue(adjTag, out string mapped) && !string.IsNullOrEmpty(mapped))
+                        return mapped;
+                }
+            }
+
+            return fallbackShortname;
+        }
+
+        private struct WorkshopScrapeTarget
+        {
+            public string Tag;
+            public string Shortname;
+        }
         #endregion
 
         #region API Helpers
@@ -1002,7 +1450,7 @@ namespace PlayerSkinsHarmony
                                 if ((uiUser.ShowAvailable || hideVipSkins) && !string.IsNullOrEmpty(idData.Value.permission) && !uiUser.Player.HasPermission(idData.Value.permission))
                                     continue;
 
-                                if (Configuration.Workshop.ApprovedIfOwned && PlayerDlcApi.IsLoaded && !PlayerDlcApi.IsOwnedOrFreeSkin(uiUser.Player, idData.Key))
+                                if (IsHiddenUnownedApprovedSkin(uiUser.Player, idData.Value, idData.Key))
                                     continue;
                                 
                                 list.Add(new KeyValuePair<string, ulong>(kvp.Key, idData.Key));
@@ -1024,7 +1472,7 @@ namespace PlayerSkinsHarmony
                         List<ulong> skinIDs = Pool.Get<List<ulong>>();
                         skinIDs.AddRange(purchasedSkinIds);
                         if (Configuration.Workshop.ApprovedIfOwned && PlayerDlcApi.IsLoaded)
-                            PlayerDlcApi.FilterOwnedOrFreeSkins(uiUser.Player, skinIDs);
+                            RemoveUnownedApprovedSkins(uiUser.Player, skinIDs, skinList);
                         foreach (ulong id in skinIDs)
                             ownedIds.Add(id);
                         Pool.FreeUnmanaged(ref skinIDs);
@@ -1066,7 +1514,7 @@ namespace PlayerSkinsHarmony
                             if ((hideVipSkins || uiUser.ShowAvailable) && !string.IsNullOrEmpty(skin.Value.permission) && !uiUser.Player.HasPermission(skin.Value.permission))
                                 continue;
 
-                            if (Configuration.Workshop.ApprovedIfOwned && PlayerDlcApi.IsLoaded && !PlayerDlcApi.IsOwnedOrFreeSkin(uiUser.Player, skin.Key))
+                            if (IsHiddenUnownedApprovedSkin(uiUser.Player, skin.Value, skin.Key))
                                 continue;
                             
                             list.Add(new KeyValuePair<string, ulong>(uiUser.ItemShortname, skin.Key));
@@ -1269,8 +1717,35 @@ namespace PlayerSkinsHarmony
                 return;
             }
 
+            if (arg.Args != null && arg.Args.Length >= 1 &&
+                string.Equals(arg.GetString(0), "scrape", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Configuration.Workshop.Enabled)
+                {
+                    SendReply(arg, "You have workshop disabled in your config. Workshop scrape is unavailable when workshop is disabled");
+                    return;
+                }
+
+                if (Configuration.Workshop.ScrapeMaxPerItem <= 0)
+                {
+                    SendReply(arg, "Workshop scrape is disabled. Set 'Maximum community skins to scrape per item' above 0.");
+                    return;
+                }
+
+                if (m_WorkshopScrapeRunning)
+                {
+                    SendReply(arg, "A workshop scrape is already running.");
+                    return;
+                }
+
+                SendReply(arg, "Starting Steam Workshop scrape for community skins. Watch the server log for progress.");
+                BeginWorkshopScrape();
+                return;
+            }
+
             if (arg.Args == null || arg.Args.Length < 3)
             {
+                SendReply(arg, "playerskins.skins scrape - Query Steam Workshop and fill community skins up to the per-item cap");
                 SendReply(arg, "playerskins.skins import skin <skin ID> - Import the specified workshop skin using its workshop ID. Type multiple ID's here to process them all at once");
                 SendReply(arg, "playerskins.skins import collection <collection ID> <opt:permission> - Import the specified workshop skin collection. Optional add a permission to add to any new skins collected");
                 SendReply(arg, "playerskins.skins remove skin <skin ID> - Remove the specified skin from the skin shop. Type multiple ID's here to process them all at once");
@@ -2620,7 +3095,7 @@ namespace PlayerSkinsHarmony
                 }
             }
             if (Configuration.Workshop.ApprovedIfOwned && PlayerDlcApi.IsLoaded)
-                PlayerDlcApi.FilterOwnedOrFreeSkins(player, outList);
+                RemoveUnownedApprovedSkins(player, outList, skinLookup);
         }
 
         #endregion
@@ -2746,7 +3221,7 @@ namespace PlayerSkinsHarmony
             }
 
             if (Configuration.Workshop.ApprovedIfOwned && PlayerDlcApi.IsLoaded)
-                PlayerDlcApi.FilterOwnedOrFreeSkins(uiUser.Player, skinList);
+                RemoveUnownedApprovedSkins(uiUser.Player, skinList, skinLookup);
 
             uiUser.GridPage = ClampLayoutPage(m_ReskinItemGrid, uiUser.GridPage, skinList.Count);
             
@@ -3071,7 +3546,8 @@ namespace PlayerSkinsHarmony
                     {
                         ulong skinId = _availableSkins[i];
                         string skinLabel = GetSkinSearchLabel(skinId);
-                        if (!string.IsNullOrEmpty(skinLabel) && skinLabel.Contains(s, System.StringComparison.OrdinalIgnoreCase))
+                        if (!string.IsNullOrEmpty(skinLabel) &&
+                            skinLabel.IndexOf(s, System.StringComparison.OrdinalIgnoreCase) >= 0)
                             _filteredSkins.Add(skinId);
                     }
                 }
@@ -3369,6 +3845,14 @@ namespace PlayerSkinsHarmony
                 Configuration.Workshop.UseApproved = true;
                 Configuration.Workshop.ApprovedIfOwned = true;
             }
+
+            if (oldVersion < new VersionNumber(3, 0, 142))
+            {
+                if (Configuration.Workshop.ScrapeMaxPerItem <= 0)
+                    Configuration.Workshop.ScrapeMaxPerItem = 50;
+                if (Configuration.Workshop.ScrapeDelaySeconds <= 0f)
+                    Configuration.Workshop.ScrapeDelaySeconds = 0.35f;
+            }
         }
 
         protected override ConfigurationFile OnLoadConfig(ref ConfigurationFile configurationFile) =>
@@ -3420,6 +3904,8 @@ namespace PlayerSkinsHarmony
                     UseApproved = true,
                     ApprovedIfOwned = true,
                     Enabled = true,
+                    ScrapeMaxPerItem = 50,
+                    ScrapeDelaySeconds = 0.35f,
                     Filter = new string[0],
                     SteamAPIKey = string.Empty
                 },
@@ -3551,6 +4037,12 @@ namespace PlayerSkinsHarmony
                 [JsonProperty(PropertyName = "Enable workshop skins in the skin shop")]
                 public bool Enabled { get; set; }
 
+                [JsonProperty(PropertyName = "Maximum community skins to scrape per item (0 = disable scrape, max 100)")]
+                public int ScrapeMaxPerItem { get; set; }
+
+                [JsonProperty(PropertyName = "Workshop scrape delay between requests (seconds)")]
+                public float ScrapeDelaySeconds { get; set; }
+
                 [JsonProperty(PropertyName = "Word filter for workshop skins. If the skin title partially contains any of these words it will not be available as a potential skin")]
                 public string[] Filter { get; set; }
 
@@ -3681,14 +4173,7 @@ namespace PlayerSkinsHarmony
             public int cost = 1;
             public bool isDisabled = false;
             public bool isApproved = false;
-
-            [JsonIgnore]
             public string Title { get; set; } = string.Empty;
-
-            //[JsonIgnore]
-            //public string URL { get; set; } = string.Empty;
-
-            [JsonIgnore]
             public bool IsValid { get; set; } = false;
         }
 

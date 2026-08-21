@@ -43,6 +43,7 @@ Harmony mod for admin entity ESP (players, sleepers, corpses, bags, TCs, stashes
 | Command | Permission | Purpose |
 |---------|------------|---------|
 | `/radar` (chat or F1) | Admin/Developer | Toggle radar and show/hide UI panel |
+| `/radar findbyitem <shortname>` | Admin/Developer | Map an item shortname to its deployable entity shortname (AdminRadar 5.4.312). Example: `radar findbyitem industrial.storage` |
 
 **Replicated commands:** Two console commands are registered so they work when used with other mods (e.g. AdminTime) and for players who join after server start:
 - **`radar`** — Name the client looks up for `/radar` in chat/F1; without it the client shows "unknown command" and never sends to the server.
@@ -54,9 +55,10 @@ Both are added to `ConsoleSystem.Index.Server.Replicated` via reflection. CUI bu
 
 | Patch | Target | Type | Purpose |
 |-------|--------|------|---------|
-| `Chat_Say_Patch` | `ConVar.Chat.say` | Prefix | Intercept `/radar` when message is sent as chat (e.g. F1 `chat.say /radar`); return `!handled` to suppress default chat when handled |
-| `RunWithResult_Patch` | `ConsoleSystem.RunWithResult` | Prefix | When the client sends the command `radar` or `global.radar` (e.g. /radar in chat box), handle it so /radar works even if the command wasn’t in the client’s replicated list |
+| `Chat_Say_Patch` | `ConVar.Chat.say` | Prefix | Intercept `/radar` (and `/radar findbyitem …`) when sent as chat; return `!handled` to suppress default chat when handled |
+| `RunWithResult_Patch` | `ConsoleSystem.RunWithResult` | Prefix | When the client sends `radar` / `global.radar` (toggle or `findbyitem`), handle it even if the command wasn’t in the client’s replicated list |
 | `Cui_Endtest_Patch` | `cui.endtest` | Prefix | Handle Radar `RADAR` (CLOSE, TOGGLE_RADAR, TOGGLE_{EntityType}, RANGE_UP, RANGE_DOWN); return `!handled` so TCUpgrade etc. can handle their commands |
+| `ServerMgr_OnPlayerVoice_Patch` | `ServerMgr.OnPlayerVoice` | Postfix | Voice ESP observer (AdminRadar 5.4.312 `ArraySegment<byte>` hook). Does **not** skip original or read `packet.read` — Radio / ZoneManager / Cooking already prefix this method |
 
 ## Entity Types & Sources
 
@@ -137,6 +139,18 @@ Both mods patch `ConVar.Chat.say` and register replicated console commands. They
 - Values may be **item shortnames** (e.g. `krieg_storage`, `box.wooden.large`) or **entity prefab fragments**; deployable item definitions are resolved at runtime like AdminRadar.
 - An **empty `Boxes` array disables box ESP** entirely (optional tracking).
 - `krieg_storage` variants are boxes, not loot containers.
+- **`radar findbyitem <item or entity shortname>`** prints `item -> entity` mappings (max 20). Use the entity shortname in `Options -> Boxes`.
+
+### Show Npc Player Target (AdminRadar 5.4.312)
+
+- **`Options -> Show Npc Player Target`**: draws `T: <player name>` on the NPC's current **Steam player** victim.
+- Uses `GetPlayersFromBrain`: `BaseAIBrain.Senses.Players` is `List<BaseEntity>` and includes other NPCs; 5.4.3 drew those NPC-on-NPC “targets”. Harmony filters `userID` to Steam accounts, matching 5.4.312.
+
+### Voice Detection (AdminRadar 5.4.312)
+
+- **`HarmonyConfig/Radar.json -> Voice Detection`**: Enabled, timeout (min 3s), detection radius.
+- When radar is on, nearby voice chat draws a yellow `ddraw.arrow` (5m → 2.5m above the speaker) for the radar observer.
+- Harmony postfix on `ServerMgr.OnPlayerVoice` (game now passes `ArraySegment<byte>` into `BasePlayer.OnReceivedVoice(ReadOnlySpan<byte>)`). Oxide plugins that still use `OnPlayerVoice(BasePlayer, byte[])` are the 5.4.3 bug; 5.4.312 changed that hook to `ArraySegment<byte>`.
 
 ### Track Admin Status
 
@@ -145,7 +159,7 @@ Both mods patch `ConVar.Chat.say` and register replicated console commands. They
 
 ## What NOT to Touch Without Care
 
-- **Patch targets:** `ConVar.Chat.say` and `cui.endtest` signatures may change by Rust version.
+- **Patch targets:** `ConVar.Chat.say`, `cui.endtest`, and `ServerMgr.OnPlayerVoice` signatures may change by Rust version. Voice patch must stay postfix (no skip, no `packet.read`).
 - **UI panel name:** `Radar_ESP_Panel` used for destroy; changing breaks cleanup.
 - **Cui_Endtest_Patch:** Must return `true` (run original) when Radar does not handle the command—otherwise TCUpgrade/other mods using SENDCMD will break. Uses RADAR prefix to avoid conflict.
 - **Vis.Entities:** Uses physics sphere; scan radius capped at 200m (`MaxVisScanRadius`) to avoid "Vis query is exceeding collider buffer length" (vanilla buffer 32768). Players/Sleepers use lists + full ViewDistance; Dead/Bags/TC/Stash/Backpack use Vis, so max ~200m for those.

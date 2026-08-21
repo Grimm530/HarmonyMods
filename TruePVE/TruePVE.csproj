@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: TruePVE 2.4.21 (Oxide port). RuleSets own damage; optional server.pve browser tag with vanilla reflect suppressed. Config: HarmonyConfig/TruePVE.json.</Description>
+    <Description>Harmony mod: TruePVE 2.4.31 (Oxide 2.4.3 port). RuleSets own damage; optional server.pve browser tag with vanilla reflect suppressed. Config: HarmonyConfig/TruePVE.json.</Description>
     <Nullable>disable</Nullable>
     <!-- OXIDE_PUBLICIZED: enable #if blocks that need publicized game fields (e.g. RidableHorse ragdoll). -->
     <DefineConstants>$(DefineConstants);OXIDE_PUBLICIZED</DefineConstants>

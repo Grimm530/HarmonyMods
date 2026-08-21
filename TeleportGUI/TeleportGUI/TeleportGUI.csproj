@@ -11,7 +11,7 @@
     <RootNamespace>TeleportGUI</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: TeleportGUI 2.0.481 Chaos UI port (Oxide-free).</Description>
+    <Description>Harmony mod: TeleportGUI 2.0.50 Chaos UI port (Oxide-free).</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

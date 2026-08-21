@@ -142,4 +142,42 @@ namespace TruePVEHarmony.Patches
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnCargoPlaneSignaled: " + ex.Message); }
         }
     }
+
+    /// <summary>
+    /// CanAffordApartmentMasterKey — Oxide ReturnBehavior 1 on Conversation_CanAffordMasterKey.
+    /// Non-null (false) skips the original and reports the player cannot afford a key.
+    /// </summary>
+    [HarmonyPatch(typeof(NPCApartmentSecurity), nameof(NPCApartmentSecurity.Conversation_CanAffordMasterKey))]
+    public static class Patch_NPCApartmentSecurity_CanAffordMasterKey
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(BasePlayer player, ref bool __result)
+        {
+            if (player == null) return true;
+            try
+            {
+                object result = TPVE.Dispatch_CanAffordApartmentMasterKey(player);
+                if (result == null) return true;
+                __result = false;
+                return false;
+            }
+            catch (System.Exception ex) { Debug.LogWarning("[TruePVE] CanAffordApartmentMasterKey: " + ex.Message); return true; }
+        }
+    }
+
+    /// <summary>
+    /// OnApartmentMasterKeyPurchase — Oxide ReturnBehavior 1 on OnPurchaseKey (static).
+    /// Non-null skips the purchase (basement / PaidKey path after the 2.4.3 Rust update).
+    /// </summary>
+    [HarmonyPatch(typeof(NPCApartmentSecurity), nameof(NPCApartmentSecurity.OnPurchaseKey))]
+    public static class Patch_NPCApartmentSecurity_OnPurchaseKey
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(BasePlayer player)
+        {
+            if (player == null) return true;
+            try { return TPVE.Dispatch_OnApartmentMasterKeyPurchase(player) == null; }
+            catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnApartmentMasterKeyPurchase: " + ex.Message); return true; }
+        }
+    }
 }

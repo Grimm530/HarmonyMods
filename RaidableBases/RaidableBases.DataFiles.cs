@@ -360,6 +360,9 @@ namespace RaidableBases
                             if (spawns.Count > 0)
                             {
                                 GridController.SpawnCache[spawnsFile] = spawns;
+                                if (type == RaidableType.Purchased) profile.Options.CustomSpawns.BuyableSpawnsFileSet = true;
+                                if (type == RaidableType.Maintained) profile.Options.CustomSpawns.MaintainedSpawnsFileSet = true;
+                                if (type == RaidableType.Scheduled) profile.Options.CustomSpawns.ScheduledSpawnsFileSet = true;
                             }
                         }
 

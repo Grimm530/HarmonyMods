@@ -308,6 +308,40 @@ public class RadarBehaviour : MonoBehaviour
         }
     }
 
+    internal const int FindByItemMaxResults = 20;
+
+    /// <summary>AdminRadar 5.4.312 <c>CommandDeployable</c>: item or entity shortname → deployable entity shortname.</summary>
+    internal static bool TryFindDeployables(string search, out string results, out int count)
+    {
+        results = null;
+        count = 0;
+        if (string.IsNullOrWhiteSpace(search))
+            return false;
+
+        EnsureDeployableItems();
+        if (_deployableItems == null || _deployableItems.Count == 0)
+            return false;
+
+        var sb = new StringBuilder();
+        foreach (var pair in _deployableItems)
+        {
+            if (pair.Value.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0
+                && pair.Key.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            count++;
+            sb.Append(pair.Value).Append(" -> ").AppendLine(pair.Key);
+            if (count >= FindByItemMaxResults)
+                break;
+        }
+
+        if (count == 0)
+            return false;
+
+        results = sb.ToString();
+        return true;
+    }
+
     private static void EnsureDeployableItems()
     {
         if (_deployableItemsInitialized)
@@ -441,7 +475,7 @@ public class RadarBehaviour : MonoBehaviour
 
     private void TryDrawNpcTargetVictim(BaseEntity entity, Vector3 entityPos, Color color, float sqrDist, float sqNpc, float drawDuration)
     {
-        if (!RadarConfig.Config?.Options?.ShowNpcPlayerTarget == true)
+        if (RadarConfig.Config?.Options?.ShowNpcPlayerTarget != true)
             return;
         if (sqrDist > sqNpc)
             return;

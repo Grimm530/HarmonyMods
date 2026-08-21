@@ -344,10 +344,35 @@ namespace TeleportGUI
             }
         }
 
+        /// <summary>
+        /// 2.0.481 UnregisterManualWarpChatCommand: drop a manual warp alias from chat routing and ConsoleSystem.
+        /// </summary>
+        private void UnregisterManualWarpChatCommand(string cmdName)
+        {
+            if (string.IsNullOrEmpty(cmdName)) return;
+            _warpChatCommandTargets.Remove(cmdName);
+            try
+            {
+                if (ConsoleSystem.Index.Server.Dict != null)
+                    ConsoleSystem.Index.Server.Dict.Remove("global." + cmdName);
+                if (ConsoleSystem.Index.Server.GlobalDict != null)
+                    ConsoleSystem.Index.Server.GlobalDict.Remove(cmdName);
+                _registeredCommands.Remove(cmdName);
+            }
+            catch { }
+        }
+
         private void RegisterWarpChatCommands()
         {
-            foreach (string old in _manualWarpChatCommands)
-                _warpChatCommandTargets.Remove(old);
+            // Rebuild like Oxide 2.0.481: unregister previous manual aliases first so /warpremove
+            // and UI delete actually drop the chat command instead of leaving a stale route.
+            if (_manualWarpChatCommands.Count > 0)
+            {
+                string[] previous = new string[_manualWarpChatCommands.Count];
+                _manualWarpChatCommands.CopyTo(previous);
+                for (int i = 0; i < previous.Length; i++)
+                    UnregisterManualWarpChatCommand(previous[i]);
+            }
             _manualWarpChatCommands.Clear();
             if (_warpData == null) return;
             foreach (var kvp in _warpData)
@@ -810,9 +835,20 @@ namespace TeleportGUI
             {
                 if (!player.IsAdmin) return;
                 var name = cmd.Substring(11).Replace("_", " ").Trim();
-                if (!string.IsNullOrEmpty(name) && _data.WarpPoints != null && _data.WarpPoints.Remove(name))
+                bool removed = false;
+                if (!string.IsNullOrEmpty(name))
                 {
+                    if (_warpData != null)
+                        removed = _warpData.Remove(name) || removed;
+                    if (_data.WarpPoints != null && !ReferenceEquals(_data.WarpPoints, _warpData))
+                        removed = _data.WarpPoints.Remove(name) || removed;
+                }
+                if (removed)
+                {
+                    if (_warpData != null)
+                        _data.WarpPoints = _warpData;
                     SaveData();
+                    RegisterWarpChatCommands();
                     SendMessage(player, "Warp '" + name + "' removed.");
                 }
                 OpenTeleportUI(player, "warp");
@@ -2225,6 +2261,7 @@ namespace TeleportGUI
             _warpData.Remove(args[0]);
             _data.WarpPoints = _warpData;
             SaveData();
+            RegisterWarpChatCommands();
             SendMessage(player, "Warp '" + args[0] + "' removed.");
         }
 
