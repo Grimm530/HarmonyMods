@@ -1,5 +1,5 @@
 # Build script for CraftingSpeed Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\CraftingSpeed.dll
+# Output: <workspace>\HarmonyMods\CraftingSpeed.dll
 
 Write-Host "Building CraftingSpeed..." -ForegroundColor Cyan
 

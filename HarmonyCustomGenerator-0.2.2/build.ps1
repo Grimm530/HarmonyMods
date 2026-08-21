@@ -22,7 +22,8 @@ if ($LASTEXITCODE -eq 0) {
     }
 
     # Deploy to workspace HarmonyMods
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath | Out-Null
         Write-Host "Created $harmonyModsPath" -ForegroundColor Yellow

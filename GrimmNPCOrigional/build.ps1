@@ -5,9 +5,11 @@ $projectPath = Join-Path $PSScriptRoot "GrimmNPC.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`nBuild successful! Copying DLL to D:\!RustServer\HarmonyMods..." -ForegroundColor Green
+    Write-Host "`nBuild successful! Copying DLL to workspace HarmonyMods..." -ForegroundColor Green
     
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath | Out-Null

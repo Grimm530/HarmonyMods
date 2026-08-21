@@ -1,5 +1,5 @@
 # Build script for ShorterNights Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\ShorterNights.dll
+# Output: <workspace>\HarmonyMods\ShorterNights.dll
 
 Write-Host "Building ShorterNights..." -ForegroundColor Cyan
 
@@ -7,7 +7,8 @@ $projectPath = Join-Path $PSScriptRoot "ShorterNights\ShorterNights.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

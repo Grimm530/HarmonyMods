@@ -7,7 +7,7 @@ using HarmonyLib;
 
 namespace SmeltingSpeed.Patches
 {
-    [HarmonyPatch(typeof(BaseOven), nameof(BaseOven.IncreaseCookTime))]
+    [HarmonyPatch(typeof(BaseOven), "IncreaseCookTime")]
     public class BaseOven_IncreaseCookTime_Patch
     {
         static void Prefix(ref float amount)

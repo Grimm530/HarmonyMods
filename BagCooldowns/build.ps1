@@ -1,5 +1,5 @@
 # Build script for BagCooldowns Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\BagCooldowns.dll
+# Output: <workspace>\HarmonyMods\BagCooldowns.dll
 
 Write-Host "Building BagCooldowns..." -ForegroundColor Cyan
 

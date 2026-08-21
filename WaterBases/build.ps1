@@ -7,10 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "WaterBases.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $root = $env:RUST_SERVER_ROOT
-    if (-not $root) {
-        $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\"))
-    }
+    $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
 
     $harmonyModsPath = Join-Path $root "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {

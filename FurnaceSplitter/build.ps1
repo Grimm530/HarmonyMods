@@ -1,5 +1,5 @@
 # Build script for FurnaceSplitter Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\FurnaceSplitter.dll
+# Output: <workspace>\HarmonyMods\FurnaceSplitter.dll
 
 Write-Host "Building FurnaceSplitter..." -ForegroundColor Cyan
 

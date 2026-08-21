@@ -1,5 +1,5 @@
 # Build script for SafeDeepSeaWipe Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\SafeDeepSeaWipe.dll
+# Output: <workspace>\HarmonyMods\SafeDeepSeaWipe.dll
 
 Write-Host "Building SafeDeepSeaWipe..." -ForegroundColor Cyan
 
@@ -7,7 +7,8 @@ $projectPath = Join-Path $PSScriptRoot "SafeDeepSeaWipe.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

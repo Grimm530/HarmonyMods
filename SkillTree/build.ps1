@@ -10,11 +10,7 @@ dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
     # Resolve server root (3 levels up from .cursor/HarmonyMods/SkillTree/).
-    $root = $env:RUST_SERVER_ROOT
-    if (-not $root) {
-        $candidate = Join-Path $PSScriptRoot "..\..\..\"
-        $root = [System.IO.Path]::GetFullPath($candidate)
-    }
+    $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
 
     $harmonyModsPath = Join-Path $root "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {

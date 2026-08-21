@@ -1,17 +1,14 @@
-# Orchestrator: build requested Harmony mods and deploy DLLs to C:\!2XRUST\HarmonyMods
+# Orchestrator: build requested Harmony mods and deploy DLLs to this workspace HarmonyMods
 # Runs each mod's build.ps1 in an isolated child process (so 'exit' can't kill us),
 # falls back to 'dotnet build' when no build.ps1 exists, then copies the fresh DLL
 # from bin\Release into the runtime HarmonyMods folder.
 $ErrorActionPreference = 'Continue'
 
-$root   = 'C:\!2XRUST'
+$root   = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $src    = Join-Path $root '.cursor\HarmonyMods'
 $deploy = Join-Path $root 'HarmonyMods'
 
-# Make scripts that honor these deploy to the correct workspace folder
-$env:OXIDE_SERVER_ROOT   = $root
-$env:HARMONY_MODS_DEPLOY = $deploy
-$env:RUST_MANAGED        = Join-Path $root 'RustDedicated_Data\Managed'
+$env:RUST_MANAGED = Join-Path $root 'RustDedicated_Data\Managed'
 
 # Requested DLL name  ->  source folder under .cursor\HarmonyMods
 $map = [ordered]@{

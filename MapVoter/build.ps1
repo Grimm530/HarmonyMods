@@ -1,5 +1,5 @@
 # Build script for MapVoter Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\MapVoter.dll
+# Output: <workspace>\HarmonyMods\MapVoter.dll
 
 Write-Host "Building MapVoter..." -ForegroundColor Cyan
 

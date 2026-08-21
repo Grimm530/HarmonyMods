@@ -1,5 +1,5 @@
 # Build script for AlwaysBonus Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\AlwaysBonus.dll
+# Output: <workspace>\HarmonyMods\AlwaysBonus.dll
 
 Write-Host "Building AlwaysBonus..." -ForegroundColor Cyan
 

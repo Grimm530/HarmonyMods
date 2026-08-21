@@ -1,5 +1,5 @@
 # Build script for CommandHistory Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\CommandHistory.dll
+# Output: <workspace>\HarmonyMods\CommandHistory.dll
 
 Write-Host "Building CommandHistory..." -ForegroundColor Cyan
 

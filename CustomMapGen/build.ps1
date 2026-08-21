@@ -20,11 +20,9 @@ try {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`nBuild successful! Copying DLL to HarmonyMods..." -ForegroundColor Green
 
-        # Deploy target: env wins; else workspace HarmonyMods (repo root = three levels up from this script).
-        # On a machine with no D: drive, do not default to D:\—set HARMONY_MODS_DEPLOY for e.g. D:\!RustServer\HarmonyMods.
+        # Deploy to this workspace HarmonyMods (three levels up from this script).
         $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-        $defaultHarmonyMods = Join-Path $repoRoot "HarmonyMods"
-        $harmonyModsPath = if ($env:HARMONY_MODS_DEPLOY) { $env:HARMONY_MODS_DEPLOY } else { $defaultHarmonyMods }
+        $harmonyModsPath = Join-Path $repoRoot "HarmonyMods"
         if (-not (Test-Path $harmonyModsPath)) {
             New-Item -ItemType Directory -Path $harmonyModsPath | Out-Null
         }

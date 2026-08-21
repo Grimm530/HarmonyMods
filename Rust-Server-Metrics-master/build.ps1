@@ -33,7 +33,8 @@ Write-Host ""
 $SolutionPath = Join-Path $PSScriptRoot "RustServerMetrics.sln"
 $ProjectPath = Join-Path $PSScriptRoot "src\RustServerMetrics\RustServerMetrics.csproj"
 $OutputPath = Join-Path $PSScriptRoot "src\RustServerMetrics\bin\$Configuration\net48\RustServerMetrics.dll"
-$TargetPath = "D:\!2XRUST\HarmonyMods\RustServerMetrics.dll"
+$workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+$TargetPath = Join-Path $workspaceRoot "HarmonyMods\RustServerMetrics.dll"
 $Platform = "Any CPU"
 
 # Check if solution exists
@@ -83,7 +84,7 @@ if ($updateDeps -eq "y" -or $updateDeps -eq "Y") {
     Write-Host "Updating $Configuration dependencies..." -ForegroundColor Cyan
     
     # Check if Rust server path exists
-    $rustServerPath = "D:\!RustServer\RustDedicated_Data\Managed"
+    $rustServerPath = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path "RustDedicated_Data\Managed"
     if (-not (Test-Path $rustServerPath)) {
         Write-Host "WARNING: Rust server path not found: $rustServerPath" -ForegroundColor Yellow
         Write-Host "Skipping dependency update. Build may fail if dependencies are outdated." -ForegroundColor Yellow

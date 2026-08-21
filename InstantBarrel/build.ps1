@@ -1,5 +1,5 @@
 # Build script for InstantBarrel Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\InstantBarrel.dll
+# Output: <workspace>\HarmonyMods\InstantBarrel.dll
 
 Write-Host "Building InstantBarrel..." -ForegroundColor Cyan
 

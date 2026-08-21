@@ -1,5 +1,5 @@
 # Build script for UnlockTier1 Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\UnlockTier1.dll
+# Output: <workspace>\HarmonyMods\UnlockTier1.dll
 
 Write-Host "Building UnlockTier1..." -ForegroundColor Cyan
 

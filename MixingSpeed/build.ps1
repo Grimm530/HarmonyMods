@@ -1,5 +1,5 @@
 # Build script for MixingSpeed Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\MixingSpeed.dll
+# Output: <workspace>\HarmonyMods\MixingSpeed.dll
 
 Write-Host "Building MixingSpeed..." -ForegroundColor Cyan
 

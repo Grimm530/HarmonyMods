@@ -1,5 +1,5 @@
 # Build script for ChatTranslator Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\ChatTranslator.dll
+# Output: <workspace>\HarmonyMods\ChatTranslator.dll
 # Requires: TranslationAPI Harmony mod (must be loaded first)
 
 Write-Host "Building ChatTranslator Harmony mod..." -ForegroundColor Cyan
@@ -8,7 +8,8 @@ $projectPath = Join-Path $PSScriptRoot "ChatTranslator.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

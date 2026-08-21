@@ -1,4 +1,4 @@
-# Run all build.ps1 in HarmonyMods subfolders. Output: D:\!RustServer\HarmonyMods
+# Run all build.ps1 in HarmonyMods subfolders. Output: <workspace>\HarmonyMods
 $ErrorActionPreference = "Continue"
 $base = $PSScriptRoot
 $dirs = @(

@@ -1,5 +1,5 @@
 # Build script for BetterAirDrop Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\BetterAirDrop.dll
+# Output: <workspace>\HarmonyMods\BetterAirDrop.dll
 
 Write-Host "Building BetterAirDrop..." -ForegroundColor Cyan
 
