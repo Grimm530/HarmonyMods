@@ -944,7 +944,7 @@ namespace StackManagerHarmony
             m_StorageLimits.Save();
 
             if (raised > 0)
-                Debug.Log($"[StackManager] Default stack policy updated {raised} item limits (vanilla stack-1 items → {Configuration.Defaults?.MinStackForUnstackableItems ?? 10}, honey → {Configuration.Defaults?.MinHoneyStack ?? 100}).");
+                Debug.Log($"[StackManager] Default stack policy updated {raised} item limits (vanilla stack-1 items → {Configuration.Defaults?.MinStackForUnstackableItems ?? 10}, honey → {Configuration.Defaults?.MinHoneyStack ?? 1000}, eggs → {Configuration.Defaults?.MinEggStack ?? 1000}).");
         }
 
         private void ApplyDefaultStackPolicy(ItemDefinition def, StackLimit stackLimit)
@@ -965,9 +965,16 @@ namespace StackManagerHarmony
 
             if (def.shortname == "honey")
             {
-                int minHoney = Configuration.Defaults != null ? Configuration.Defaults.MinHoneyStack : 100;
+                int minHoney = Configuration.Defaults != null ? Configuration.Defaults.MinHoneyStack : 1000;
                 if (minHoney > 0 && stackLimit.MaxStackSize < minHoney)
                     stackLimit.MaxStackSize = minHoney;
+            }
+
+            if (def.shortname == "egg")
+            {
+                int minEgg = Configuration.Defaults != null ? Configuration.Defaults.MinEggStack : 1000;
+                if (minEgg > 0 && stackLimit.MaxStackSize < minEgg)
+                    stackLimit.MaxStackSize = minEgg;
             }
         }
 
@@ -3002,7 +3009,10 @@ namespace StackManagerHarmony
                 public int MinStackForUnstackableItems { get; set; } = 10;
 
                 [JsonProperty("Minimum stack size for honey")]
-                public int MinHoneyStack { get; set; } = 100;
+                public int MinHoneyStack { get; set; } = 1000;
+
+                [JsonProperty("Minimum stack size for eggs")]
+                public int MinEggStack { get; set; } = 1000;
             }
 
             public class ExcludeOptions
@@ -3111,7 +3121,8 @@ namespace StackManagerHarmony
                 Defaults = new ConfigData.DefaultStackOptions
                 {
                     MinStackForUnstackableItems = 10,
-                    MinHoneyStack = 100
+                    MinHoneyStack = 1000,
+                    MinEggStack = 1000
                 },
                 Version = new VersionNumber(2, 0, 24)
             };

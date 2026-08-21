@@ -1,15 +1,10 @@
 using System.Collections.Generic;
-using System.Reflection;
-using HarmonyLib;
 using UnityEngine;
 
 namespace IndustrialTransferSpeed
 {
     public class PlanterIndustrialHarvester : MonoBehaviour
     {
-        // GrowableEntity.harvests is private on current Rust assemblies.
-        private static readonly FieldInfo HarvestsField = AccessTools.Field(typeof(GrowableEntity), "harvests");
-
         private PlanterBox _planter;
         private string _harvestMode;
         private PlantProperties.State _harvestStage;
@@ -185,8 +180,7 @@ namespace IndustrialTransferSpeed
 
         private bool CanHarvest(GrowableEntity growable)
         {
-            // currentStage is private; CanPick exposes the same resources > 0 check.
-            if (growable == null || growable.IsDestroyed || growable.Properties == null || !growable.CanPick(null))
+            if (growable == null || growable.IsDestroyed || growable.Properties == null || growable.currentStage.resources <= 0f)
             {
                 return false;
             }
@@ -458,20 +452,10 @@ namespace IndustrialTransferSpeed
 
         private void CompleteFruitHarvest(GrowableEntity growable)
         {
-            int harvests = 0;
-            if (HarvestsField != null)
-            {
-                harvests = (int)HarvestsField.GetValue(growable) + 1;
-                HarvestsField.SetValue(growable, harvests);
-            }
-            else
-            {
-                harvests = growable.Properties.maxHarvests;
-            }
-
+            growable.harvests++;
             growable.ResetSeason();
 
-            if (harvests >= growable.Properties.maxHarvests)
+            if (growable.harvests >= growable.Properties.maxHarvests)
             {
                 if (growable.Properties.disappearAfterHarvest)
                 {
