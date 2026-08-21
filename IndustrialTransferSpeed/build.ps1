@@ -1,5 +1,5 @@
 # Build script for IndustrialTransferSpeed Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\IndustrialTransferSpeed.dll
+# Output: <workspace>\HarmonyMods\IndustrialTransferSpeed.dll
 
 Write-Host "Building IndustrialTransferSpeed..." -ForegroundColor Cyan
 
@@ -7,7 +7,8 @@ $projectPath = Join-Path $PSScriptRoot "IndustrialTransferSpeed\IndustrialTransf
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
