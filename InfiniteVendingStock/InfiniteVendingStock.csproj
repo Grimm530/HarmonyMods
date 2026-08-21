@@ -4,14 +4,14 @@
     <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
   </PropertyGroup>
   <PropertyGroup>
-    <AssemblyName>LootQoL</AssemblyName>
+    <AssemblyName>InfiniteVendingStock</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
-    <RootNamespace>LootQoLHarmony</RootNamespace>
+    <RootNamespace>InfiniteVendingStock</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: LootQoL (FastLoot + LootBouncer + SortButton). Config: HarmonyConfig/LootQoL.json</Description>
+    <Description>Harmony mod: Infinite Vending Stock 1.0.2. NPC vendors restock to 10,000,000.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemDefinitionGroup>
@@ -53,23 +53,8 @@
     <Reference Include="Rust.Global">
       <HintPath>$(RustManaged)\Rust.Global.dll</HintPath>
     </Reference>
-    <Reference Include="Rust.Localization">
-      <HintPath>$(RustManaged)\Rust.Localization.dll</HintPath>
-    </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>$(RustManaged)\UnityEngine.PhysicsModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.UIModule">
-      <HintPath>$(RustManaged)\UnityEngine.UIModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>$(RustManaged)\UnityEngine.TextRenderingModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.UI">
-      <HintPath>$(RustManaged)\UnityEngine.UI.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>

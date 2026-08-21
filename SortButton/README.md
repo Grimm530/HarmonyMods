@@ -1,4 +1,8 @@
-# SortButton (Harmony)
+# SortButton (Harmony) — superseded
+
+**Do not load this DLL on SVR1.** Sort Button 2.8.0 now lives in **LootQoL** (`.cursor/HarmonyMods/LootQoL`). Loading both duplicates loot patches and CUI.
+
+This folder is kept as a standalone reference only.
 
 Oxide **SortButton 2.7.0** port. Adds a sort button on supported storage loot panels.
 

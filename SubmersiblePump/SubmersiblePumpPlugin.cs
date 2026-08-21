@@ -151,14 +151,27 @@ namespace SubmersiblePump
                 return;
             }
 
-            WaterPump pump = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/waterpump/water.pump.deployed.prefab", generator.transform.position, generator.transform.rotation) as WaterPump;
+            Vector3 pumpPos = generator.transform.position;
+            Quaternion pumpRot = generator.transform.rotation;
+            BaseEntity parent = generator.GetParentEntity();
+            WaterPump pump = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/waterpump/water.pump.deployed.prefab", pumpPos, pumpRot) as WaterPump;
+            if (pump == null)
+            {
+                RefundGenerator(player, generator);
+                return;
+            }
+
+            StripGroundWatch(pump);
+            if (parent != null && !parent.IsDestroyed)
+                pump.SetParent(parent, worldPositionStays: true);
+
             bool isSprinting = player.serverInput.IsDown(BUTTON.SPRINT);
             if (ConfigData.doNotFreshUpdate || (ConfigData.doNotFreshSprintButton && isSprinting))
                 pump.skinID = generator.skinID + 1;
             else
             {
                 pump.skinID = generator.skinID;
-                TerrainMeta.TopologyMap.AddTopology(pump.transform.position, 65536);
+                TerrainMeta.TopologyMap.AddTopology(pumpPos, 65536);
             }
 
             if (ConfigData.doNotFreshSprintButton && !isSprinting)
@@ -174,6 +187,7 @@ namespace SubmersiblePump
                     gen.Kill();
             });
             pump.Spawn();
+            StripGroundWatch(pump);
             ulong uid = GetUserId(player);
             int count;
             if (!PlacedPumps.TryGetValue(uid, out count))
@@ -277,6 +291,17 @@ namespace SubmersiblePump
             player.inventory.GiveItem(item);
             player.SendConsoleCommand($"note.inv -1284169891 1 \"{ConfigData.pumpName}\"");
             arg.ReplyWith(Lang("ItemCrafted"));
+        }
+
+        private static void StripGroundWatch(BaseEntity entity)
+        {
+            if (entity == null) return;
+            var missing = entity.GetComponent<DestroyOnGroundMissing>();
+            if (missing != null)
+                UnityEngine.Object.DestroyImmediate(missing);
+            var watch = entity.GetComponent<GroundWatch>();
+            if (watch != null)
+                UnityEngine.Object.DestroyImmediate(watch);
         }
 
         private void RefundGenerator(BasePlayer player, FuelGenerator generator)

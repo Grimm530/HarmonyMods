@@ -6,7 +6,7 @@ using UnityEngine;
 namespace LootQoLHarmony
 {
     /// <summary>
-    /// Harmony entry for LootQoL (FastLoot + LootBouncer).
+    /// Harmony entry for LootQoL (FastLoot + LootBouncer + SortButton).
     /// Load order: 0Permissions -> LootQoL (ready-callback safe).
     /// </summary>
     public class LootQoLMod : IHarmonyModHooks
@@ -15,7 +15,7 @@ namespace LootQoLHarmony
         public static LootQoLPlugin Plugin { get; private set; }
 
         public const int VersionMajor = 1;
-        public const int VersionMinor = 1;
+        public const int VersionMinor = 2;
         public const int VersionPatch = 0;
 
         private Action _permissionsReadyCallback;
@@ -47,9 +47,10 @@ namespace LootQoLHarmony
             EnsureRunner();
             _runner.GetComponent<LootQoLRunner>().Begin(this);
 
-            Debug.Log($"[LootQoL] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch} (FastLoot + LootBouncer)");
+            Debug.Log($"[LootQoL] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch} (FastLoot + LootBouncer + SortButton)");
             Debug.Log("[LootQoL] -> Config: HarmonyConfig/LootQoL.json");
             Debug.Log("[LootQoL] -> Lang: HarmonyLanguage/LootQoL.json");
+            Debug.Log("[LootQoL] -> Data: HarmonyData/LootQoL/");
             Debug.Log("[LootQoL] -> Load order: 0Permissions -> LootQoL");
         }
 
@@ -119,10 +120,23 @@ namespace LootQoLHarmony
             var a = args?.Args;
             if (a == null || a.Length < 2) return;
             string action = a.GetValue(1)?.ToString() ?? string.Empty;
-            BasePlayer player = args.Connection?.player as BasePlayer ?? args.Player();
+            BasePlayer player = args.Connection?.player as BasePlayer;
             if (player == null) return;
             if (string.Equals(action, "take", StringComparison.OrdinalIgnoreCase))
                 Plugin?.FastLootTakeAll(player);
+            else if (string.Equals(action, "sort", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(action, "order", StringComparison.OrdinalIgnoreCase))
+                Plugin?.SortButton?.HandleCui(player, action);
+        }
+
+        public bool TryHandleChat(BasePlayer player, string message)
+        {
+            return Plugin?.SortButton != null && Plugin.SortButton.TryHandleChat(player, message);
+        }
+
+        internal void NextTick(Action action)
+        {
+            Runner?.Delay(action, 0f);
         }
     }
 
@@ -168,6 +182,20 @@ namespace LootQoLHarmony
         }
 
         public bool HasTimer(ulong id) => _timers.ContainsKey(id);
+
+        public void Delay(Action action, float delay)
+        {
+            if (action == null) return;
+            StartCoroutine(DelayCo(action, delay));
+        }
+
+        private IEnumerator DelayCo(Action action, float delay)
+        {
+            if (delay <= 0f) yield return null;
+            else yield return new WaitForSeconds(delay);
+            try { action(); }
+            catch (Exception ex) { Debug.LogWarning("[LootQoL] delayed: " + ex.Message); }
+        }
 
         public void CancelAll()
         {

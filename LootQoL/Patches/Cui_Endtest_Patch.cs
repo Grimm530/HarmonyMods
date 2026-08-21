@@ -5,8 +5,8 @@ using UnityEngine;
 namespace LootQoLHarmony.Patches
 {
     /// <summary>
-    /// Clients only forward ConsoleGen commands. FastLoot buttons use
-    /// "cui.endtest LOOTQOL take".
+    /// Clients only forward ConsoleGen commands. FastLoot / SortButton use
+    /// "cui.endtest LOOTQOL take|sort|order".
     /// </summary>
     [HarmonyPatch(typeof(global::cui), nameof(global::cui.endtest))]
     public static class Cui_Endtest_Patch

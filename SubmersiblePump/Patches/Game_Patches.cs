@@ -6,11 +6,23 @@ namespace SubmersiblePump.Patches
     [HarmonyPatch(typeof(Planner), nameof(Planner.DoBuild), typeof(Construction.Target), typeof(Construction))]
     internal static class Planner_DoBuild_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(Planner __instance, BaseEntity __result)
+        [HarmonyPrefix]
+        private static void Prefix(Planner __instance, out ulong __state)
         {
+            __state = 0UL;
+            Item item = __instance?.GetOwnerItem();
+            if (item != null)
+                __state = item.skin;
+        }
+
+        [HarmonyPostfix]
+        private static void Postfix(Planner __instance, BaseEntity __result, ulong __state)
+        {
+            if (__result == null) return;
+            if (__result.skinID == 0 && __state != 0)
+                __result.skinID = __state;
             var plugin = SubmersiblePumpMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || __result == null) return;
+            if (plugin == null || __instance == null) return;
             try { plugin.OnEntityBuilt(__instance, __result.gameObject); }
             catch (System.Exception ex) { Debug.LogWarning("[SubmersiblePump] OnEntityBuilt: " + ex.Message); }
         }

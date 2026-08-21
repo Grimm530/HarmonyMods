@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using HarmonyChat;
 using UnityEngine;
 
 namespace SubmersiblePump
@@ -11,11 +13,12 @@ namespace SubmersiblePump
         public static SubmersiblePumpMod Instance { get; private set; }
         public const int VersionMajor = 1;
         public const int VersionMinor = 1;
-        public const int VersionPatch = 0;
+        public const int VersionPatch = 1;
 
         private SubmersiblePumpPlugin _plugin;
         private Action _permissionsReadyCallback;
         private readonly List<ConsoleSystem.Command> _commands = new List<ConsoleSystem.Command>();
+        private readonly List<ConsoleSystem.Command> _chatAliasCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private GameObject _runner;
         private bool _serverReady;
@@ -41,6 +44,7 @@ namespace SubmersiblePump
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
             EnsureRunner();
             _runner.GetComponent<SubmersiblePumpRunner>().Begin(this);
+            ChatSayBridge.Register("SubmersiblePump", OnChatCommand);
             RefreshChatCommands();
             RegisterConsoleCommands();
             Debug.Log($"[SubmersiblePump] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
@@ -72,6 +76,7 @@ namespace SubmersiblePump
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            try { ChatSayBridge.Unregister("SubmersiblePump"); } catch { }
             try
             {
                 if (_permissionsReadyCallback != null)
@@ -94,8 +99,26 @@ namespace SubmersiblePump
         {
             _chatCommands.Clear();
             string cmd = _plugin?.ConfigData?.command;
-            if (!string.IsNullOrWhiteSpace(cmd))
-                _chatCommands.Add(cmd.Trim());
+            if (string.IsNullOrWhiteSpace(cmd)) return;
+            cmd = cmd.Trim();
+            _chatCommands.Add(cmd);
+            RegisterChatAliasConsole(cmd);
+        }
+
+        public bool OnChatCommand(BasePlayer player, string message)
+        {
+            if (player == null || string.IsNullOrWhiteSpace(message)) return false;
+            message = message.Trim();
+            if (message.StartsWith("/") || message.StartsWith("\\"))
+                message = message.Substring(1).Trim();
+            if (message.Length == 0) return false;
+
+            string[] parts = message.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return false;
+            string[] args = parts.Length > 1 ? new string[parts.Length - 1] : Array.Empty<string>();
+            for (int i = 1; i < parts.Length; i++)
+                args[i - 1] = parts[i];
+            return TryHandleChat(player, parts[0], args);
         }
 
         public bool TryHandleChat(BasePlayer player, string command, string[] args)
@@ -124,6 +147,74 @@ namespace SubmersiblePump
         {
             UnregisterConsoleCommands();
             RegisterConsole("givepump", arg => _plugin?.GivePumpCommand(arg));
+            RefreshChatCommands();
+        }
+
+        private void RegisterChatAliasConsole(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            name = name.Trim();
+            if (name.IndexOf('.') >= 0) return;
+
+            for (int i = 0; i < _chatAliasCommands.Count; i++)
+            {
+                var existing = _chatAliasCommands[i];
+                if (string.Equals(existing.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(existing.FullName, "global." + name, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            string localName = name;
+            if (ConsoleSystem.Index.Server.Dict != null &&
+                ConsoleSystem.Index.Server.Dict.ContainsKey("global." + localName))
+                return;
+
+            var cmd = new ConsoleSystem.Command
+            {
+                Name = localName,
+                Parent = string.Empty,
+                FullName = "global." + localName,
+                Variable = false,
+                ServerAdmin = false,
+                ServerUser = true,
+                AllowRunFromServer = true,
+                Replicated = false,
+                Call = a =>
+                {
+                    try
+                    {
+                        var player = a?.Player();
+                        if (player == null) return;
+                        var sb = new StringBuilder(localName);
+                        var raw = a.Args;
+                        if (raw != null)
+                        {
+                            for (int i = 0; i < raw.Length; i++)
+                            {
+                                sb.Append(' ');
+                                sb.Append(raw[i].ToString() ?? string.Empty);
+                            }
+                        }
+                        OnChatCommand(player, sb.ToString());
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[SubmersiblePump] chat alias " + localName + ": " + ex.Message);
+                    }
+                }
+            };
+
+            try
+            {
+                ConsoleSystem.Index.Server.Dict["global." + localName] = cmd;
+                if (ConsoleSystem.Index.Server.GlobalDict != null)
+                    ConsoleSystem.Index.Server.GlobalDict[localName] = cmd;
+                _chatAliasCommands.Add(cmd);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[SubmersiblePump] RegisterChatAliasConsole(" + localName + "): " + ex.Message);
+            }
         }
 
         private void RegisterConsole(string name, Action<ConsoleSystem.Arg> handler)
@@ -151,14 +242,22 @@ namespace SubmersiblePump
         {
             try
             {
-                foreach (var cmd in _commands)
+                for (int i = 0; i < _commands.Count; i++)
                 {
+                    var cmd = _commands[i];
+                    ConsoleSystem.Index.Server.Dict?.Remove(cmd.FullName);
+                    ConsoleSystem.Index.Server.GlobalDict?.Remove(cmd.Name);
+                }
+                for (int i = 0; i < _chatAliasCommands.Count; i++)
+                {
+                    var cmd = _chatAliasCommands[i];
                     ConsoleSystem.Index.Server.Dict?.Remove(cmd.FullName);
                     ConsoleSystem.Index.Server.GlobalDict?.Remove(cmd.Name);
                 }
             }
             catch { }
             _commands.Clear();
+            _chatAliasCommands.Clear();
         }
     }
 

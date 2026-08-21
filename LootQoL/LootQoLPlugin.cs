@@ -12,7 +12,7 @@ using UnityEngine;
 namespace LootQoLHarmony
 {
     /// <summary>
-    /// Combined FastLoot 1.1.0 + LootBouncer 1.0.11 logic.
+    /// Combined FastLoot 1.1.0 + LootBouncer 1.0.11 + SortButton 2.8.0 logic.
     /// </summary>
     public sealed class LootQoLPlugin
     {
@@ -24,12 +24,14 @@ namespace LootQoLHarmony
         private readonly string _configPath;
         private readonly LangStore _lang = new LangStore();
         private Configuration _config;
+        private SortButtonFeature _sortButton;
 
         private readonly Dictionary<ulong, int> _lootEntities = new Dictionary<ulong, int>();
         private readonly Dictionary<ulong, HashSet<ulong>> _entityPlayers = new Dictionary<ulong, HashSet<ulong>>();
         private bool _wantBarrelHooks;
 
         public Configuration Config => _config;
+        public SortButtonFeature SortButton => _sortButton;
 
         public LootQoLPlugin(string serverRoot)
         {
@@ -97,6 +99,9 @@ namespace LootQoLHarmony
 
             [JsonProperty("LootBouncer")]
             public LootBouncerSettings LootBouncer = new LootBouncerSettings();
+
+            [JsonProperty("SortButton")]
+            public SortButtonFeature.Settings SortButton = new SortButtonFeature.Settings();
         }
 
         public void LoadConfig()
@@ -107,9 +112,16 @@ namespace LootQoLHarmony
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
 
+                bool hadSortSection = false;
                 if (File.Exists(_configPath))
                 {
                     string json = File.ReadAllText(_configPath);
+                    try
+                    {
+                        var jo = JObject.Parse(json);
+                        hadSortSection = jo["SortButton"] != null;
+                    }
+                    catch { }
                     _config = JsonConvert.DeserializeObject<Configuration>(json);
                     if (_config?.FastLoot == null || _config.LootBouncer == null)
                         TryMigrateFlatConfig(json);
@@ -125,11 +137,30 @@ namespace LootQoLHarmony
                 if (_config.LootBouncer == null) _config.LootBouncer = new LootBouncerSettings();
                 if (_config.LootBouncer.LootContainers == null)
                     _config.LootBouncer.LootContainers = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                if (_config.SortButton == null)
+                    _config.SortButton = new SortButtonFeature.Settings();
+
+                _sortButton = new SortButtonFeature(this, _serverRoot);
+                if (!hadSortSection)
+                {
+                    var migrated = _sortButton.TryLoadStandaloneConfig();
+                    if (migrated != null)
+                        _config.SortButton = migrated;
+                }
+                _sortButton.Load();
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[LootQoL] FAIL: load config — using defaults. " + ex.Message);
                 _config = new Configuration();
+                if (_config.SortButton != null)
+                    _config.SortButton.UsingDefaults = true;
+            }
+
+            if (_sortButton == null)
+            {
+                _sortButton = new SortButtonFeature(this, _serverRoot);
+                _sortButton.Load();
             }
 
             SaveConfig();
@@ -174,7 +205,17 @@ namespace LootQoLHarmony
             _lang.RegisterMessages(new Dictionary<string, string>
             {
                 ["FASTLOOT_TAKE"] = "Take all",
-                ["SlapMessage"] = "You didn't empty the container. You got slapped by the container!!!"
+                ["SlapMessage"] = "You didn't empty the container. You got slapped by the container!!!",
+                ["Error.NoPermission"] = "You do not have permission to use this command",
+                ["Format.ButtonText"] = "Sort",
+                ["Format.Category"] = "<color=#D2691E>Category</color>",
+                ["Format.Disabled"] = "<color=#B22222>Disabled</color>",
+                ["Format.Enabled"] = "<color=#228B22>Enabled</color>",
+                ["Format.Name"] = "<color=#00BFFF>Name</color>",
+                ["Format.Prefix"] = "<color=#00FF00>[Sort Button]</color>: ",
+                ["Info.ButtonStatus"] = "Sort Button is now {0}",
+                ["Info.SortType"] = "Sort Type is now {0}",
+                ["Info.Help"] = "List Commands:\n<color=#FFFF00>/{0}</color> - Enable/Disable Sort Button.\n<color=#FFFF00>/{0} <sort | type></color> - change sort type."
             }, "en");
             _lang.LoadHarmonyLanguageOverrides(_serverRoot, "LootQoL");
         }
@@ -182,14 +223,19 @@ namespace LootQoLHarmony
         public void RegisterPermissions()
         {
             PermissionsBridge.RegisterPermission(PermFastLoot);
+            PermissionsBridge.RegisterPermission(SortButtonFeature.PermUse);
             if (!PermissionsBridge.IsAvailable) return;
             if (!PermissionsBridge.GroupExists(AdminGroup))
                 PermissionsBridge.CreateGroup(AdminGroup, "Administrators", 0);
             PermissionsBridge.GrantGroupPermission(AdminGroup, PermFastLoot);
+            PermissionsBridge.GrantGroupPermission(AdminGroup, SortButtonFeature.PermUse);
         }
+
+        public string GetMessage(string key) => _lang.GetMessage(key);
 
         public void OnServerInitialized()
         {
+            _sortButton?.OnServerInitialized();
             UpdateLootContainerConfig();
             _wantBarrelHooks = false;
             if (_config?.LootBouncer?.LootContainers != null)
@@ -208,6 +254,7 @@ namespace LootQoLHarmony
         public void Unload()
         {
             LootQoLMod.Instance?.Runner?.CancelAll();
+            try { _sortButton?.Unload(); } catch { }
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
                 if (player == null || !player.IsConnected) continue;
@@ -224,6 +271,7 @@ namespace LootQoLHarmony
             if (player == null || entity == null) return;
 
             OnLootBouncerStart(player, entity as LootContainer);
+            _sortButton?.OnLootEntity(player, entity);
 
             if (!PermissionsBridge.UserHasPermission(player.UserIDString, PermFastLoot))
                 return;
@@ -242,6 +290,7 @@ namespace LootQoLHarmony
         {
             if (player != null)
                 CuiHelper.DestroyUi(player, FastLootLayer);
+            _sortButton?.OnLootEntityEnd(player);
             OnLootBouncerEnd(player, entity as LootContainer);
         }
 

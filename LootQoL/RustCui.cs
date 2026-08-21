@@ -92,14 +92,15 @@ namespace Oxide.Game.Rust.Cui
         }
 
         /// <summary>
-        /// WipeSchedule uses UI_FastLoot on CUI buttons. Under Harmony those never leave the client.
+        /// FastLoot historically used UI_FastLoot on CUI buttons. Under Harmony those never leave the client.
         /// Bridge through cui.endtest with LOOTQOL marker.
         /// </summary>
         private static string RewriteHarmonyButtonCommands(string json)
         {
-            if (string.IsNullOrEmpty(json) || json.IndexOf("UI_FastLoot", StringComparison.Ordinal) < 0)
+            if (string.IsNullOrEmpty(json))
                 return json;
-            json = json.Replace("\"command\":\"UI_FastLoot", "\"command\":\"cui.endtest LOOTQOL take");
+            if (json.IndexOf("UI_FastLoot", StringComparison.Ordinal) >= 0)
+                json = json.Replace("\"command\":\"UI_FastLoot", "\"command\":\"cui.endtest LOOTQOL take");
             return json;
         }
 
