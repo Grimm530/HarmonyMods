@@ -423,7 +423,10 @@ namespace LootQoLHarmony
         private void HandleOnLootEntityDelayed(BasePlayer basePlayer, BaseEntity entity, string offsetXString, bool sortByCategory)
         {
             if (!StillLootingEntity(basePlayer, entity))
+            {
+                DestroyUi(basePlayer);
                 return;
+            }
             var loot = basePlayer.inventory.loot;
             ItemContainer container = loot.containers[0];
             if (entity is RidableHorse horse && container != horse.storageInventory)

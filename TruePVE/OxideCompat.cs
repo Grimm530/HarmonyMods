@@ -192,6 +192,7 @@ namespace Oxide.Core
         /// 3) Convoy (allow damage to convoy entities / event turrets target players)
         /// 4) ArmoredTrain (allow damage to train turrets/sams; turrets hurt/target players)
         /// 5) AnimalSpawn (custom GrimmBoss animals vs NPCs/animals)
+        /// 6) DefendableHomes (event GrimmNPCs can damage the defended base / players; turrets can target them)
         /// </summary>
         public static object CallHook(string hook, params object[] args)
         {
@@ -214,6 +215,9 @@ namespace Oxide.Core
 
                 object animal = TryAppDomainBool("AnimalSpawn_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage AnimalSpawn");
                 if (animal is bool) return animal;
+
+                object homes = TryAppDomainBool("DefendableHomes_CanEntityTakeDamage", args[0], args[1], "CanEntityTakeDamage DefendableHomes");
+                if (homes is bool) return homes;
             }
             else if (hook == "CanEntityBeTargeted")
             {
@@ -232,6 +236,9 @@ namespace Oxide.Core
 
                 object animal = TryAppDomainBool("AnimalSpawn_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted AnimalSpawn");
                 if (animal is bool) return animal;
+
+                object homes = TryAppDomainBool("DefendableHomes_CanEntityBeTargeted", args[0], args[1], "CanEntityBeTargeted DefendableHomes");
+                if (homes is bool) return homes;
             }
 
             return null;

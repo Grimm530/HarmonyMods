@@ -2542,6 +2542,10 @@ namespace ShopHarmony
                             {
                                 _instance?.DispatchBradleyDropsCommand(trimmed);
                             }
+                            else if (IsGiveFlareShopCommand(trimmed))
+                            {
+                                _instance?.DispatchDefendableHomesCommand(trimmed);
+                            }
                             else if (IsIndustrialRecyclerShopCommand(trimmed))
                             {
                                 _instance?.DispatchIndustrialRecyclerCommand(trimmed);
@@ -15978,6 +15982,47 @@ namespace ShopHarmony
             catch (Exception ex)
             {
                 Debug.LogWarning("[Shop] DispatchBradleyDropsCommand: " + ex.Message);
+            }
+        }
+
+        internal static bool IsGiveFlareShopCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command)) return false;
+            if (!ServerHelper.TrySplitCommandLine(command.Trim(), out string cmdName, out _))
+                return false;
+            return cmdName.Equals("giveflare", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Shop Command products use <c>giveflare 2888602635 %steamid%</c>. ConsoleSystem.Run can miss
+        /// Harmony Dict-only registrations; dispatch via DefendableHomes_ApiType instead.
+        /// </summary>
+        internal void DispatchDefendableHomesCommand(string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(commandLine)) return;
+            try
+            {
+                var t = AppDomain.CurrentDomain.GetData("DefendableHomes_ApiType") as Type;
+                var inst = t?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                var mi = t?.GetMethod("TryRunServerCommand", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string) }, null);
+                if (inst != null && mi != null)
+                {
+                    var ok = mi.Invoke(inst, new object[] { commandLine });
+                    if (ok is bool b && b)
+                    {
+                        Debug.Log("[Shop] Dispatched DefendableHomes command: " + commandLine);
+                        return;
+                    }
+                    Debug.LogWarning("[Shop] DefendableHomes rejected command: " + commandLine);
+                    return;
+                }
+
+                Debug.LogWarning("[Shop] DefendableHomes not loaded; falling back to console: " + commandLine);
+                Server.Command(commandLine);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Shop] DispatchDefendableHomesCommand: " + ex.Message);
             }
         }
 

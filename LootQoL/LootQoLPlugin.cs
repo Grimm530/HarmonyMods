@@ -288,10 +288,15 @@ namespace LootQoLHarmony
 
         public void OnLootEntityEnd(BasePlayer player, BaseEntity entity)
         {
-            if (player != null)
-                CuiHelper.DestroyUi(player, FastLootLayer);
-            _sortButton?.OnLootEntityEnd(player);
+            DestroyLootOverlayUi(player);
             OnLootBouncerEnd(player, entity as LootContainer);
+        }
+
+        internal void DestroyLootOverlayUi(BasePlayer player)
+        {
+            if (player == null) return;
+            CuiHelper.DestroyUi(player, FastLootLayer);
+            _sortButton?.OnLootEntityEnd(player);
         }
 
         private static bool IsValidLootTarget(BaseEntity entity)

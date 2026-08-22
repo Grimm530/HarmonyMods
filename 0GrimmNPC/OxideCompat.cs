@@ -91,6 +91,26 @@ namespace GrimmNPC
 
         public static object CallHook(string hook, params object[] args)
         {
+            object[] a = args ?? Array.Empty<object>();
+
+            // Harmony mods (DefendableHomes, ArmoredTrain, …) register here so GrimmNPC hooks
+            // reach them even when Oxide.Core.Interface is a no-op or belongs to another assembly.
+            try
+            {
+                if (AppDomain.CurrentDomain.GetData("Harmony_CallHookList") is IList list)
+                {
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (list[i] is Func<string, object[], object> fn)
+                        {
+                            object r = fn(hook, a);
+                            if (r != null) return r;
+                        }
+                    }
+                }
+            }
+            catch { }
+
             try
             {
                 if (_callHook == null)
@@ -104,7 +124,7 @@ namespace GrimmNPC
                     }
                 }
                 if (_callHook == null) return null;
-                return _callHook.Invoke(null, new object[] { hook, args ?? Array.Empty<object>() });
+                return _callHook.Invoke(null, new object[] { hook, a });
             }
             catch
             {

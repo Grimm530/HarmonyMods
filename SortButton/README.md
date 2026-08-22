@@ -1,6 +1,8 @@
 # SortButton (Harmony) — superseded
 
-**Do not load this DLL on SVR1.** Sort Button 2.8.0 now lives in **LootQoL** (`.cursor/HarmonyMods/LootQoL`). Loading both duplicates loot patches and CUI.
+**Do not load this DLL on SVR1.** Sort Button 2.8.0 now lives in **LootQoL** (`.cursor/HarmonyMods/LootQoL`). Loading both duplicates loot patches and CUI: each `AddUI` creates a new `UISortButton` GameObject, `UiDict` keeps only the last one, and `DestroyUI` leaves the first copy on Overlay (very visible on the tool cupboard).
+
+`build.ps1` will **not** copy `SortButton.dll` into `HarmonyMods/`. If that file exists, delete it and `harmony.unload SortButton` or restart.
 
 This folder is kept as a standalone reference only.
 

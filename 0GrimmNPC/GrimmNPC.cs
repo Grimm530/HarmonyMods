@@ -1351,7 +1351,16 @@ namespace GrimmNPC
             }
         }
 
-        private void AddTargetRaid(CustomScientistNpc npc, HashSet<BuildingBlock> foundations) { if (IsCustomScientist(npc)) npc.Foundations = foundations; }
+        public void AddTargetRaid(ScientistNPC npc, HashSet<BuildingBlock> foundations)
+        {
+            if (npc is CustomScientistNpc custom && IsCustomScientist(custom) && foundations != null)
+                custom.Foundations = foundations;
+        }
+
+        private void AddTargetRaid(CustomScientistNpc npc, HashSet<BuildingBlock> foundations)
+        {
+            AddTargetRaid((ScientistNPC)npc, foundations);
+        }
 
         private void AddTargetGuard(CustomScientistNpc npc, BaseEntity target)
         {
@@ -1373,7 +1382,11 @@ namespace GrimmNPC
             }
         }
 
-        private void SetCurrentWeapon(CustomScientistNpc npc, Item weapon) { if (IsCustomScientist(npc)) npc.EquipCurrentWeapon(weapon); }
+        public void SetCurrentWeapon(ScientistNPC npc, Item weapon)
+        {
+            if (npc is CustomScientistNpc custom && IsCustomScientist(custom))
+                custom.EquipCurrentWeapon(weapon);
+        }
 
         /// <summary>
         /// Sets the owner of a teammate NPC. This makes the NPC friendly to the owner and their team.
@@ -2878,12 +2891,16 @@ namespace GrimmNPC
 
             private void UpdateHomePositionParent()
             {
-                if (ParentEntity != null) HomePosition = ParentEntity.transform.TransformPoint(LocalPos);
-                else
+                if (ParentEntity != null && !ParentEntity.IsDestroyed)
                 {
-                    LocalPos = Vector3.zero;
-                    CancelInvoke(UpdateHomePositionParent);
+                    HomePosition = ParentEntity.transform.TransformPoint(LocalPos);
+                    return;
                 }
+
+                LocalPos = Vector3.zero;
+                ParentEntity = null;
+                CancelInvoke(UpdateHomePositionParent);
+                OxideCompat.CallHook("OnCustomNpcParentEnd", this);
             }
             #endregion Parent
 

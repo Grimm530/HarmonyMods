@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Reflection;
 using UnityEngine;
 
 namespace LootQoLHarmony
@@ -16,7 +17,7 @@ namespace LootQoLHarmony
 
         public const int VersionMajor = 1;
         public const int VersionMinor = 2;
-        public const int VersionPatch = 0;
+        public const int VersionPatch = 1;
 
         private Action _permissionsReadyCallback;
         private GameObject _runner;
@@ -46,6 +47,8 @@ namespace LootQoLHarmony
 
             EnsureRunner();
             _runner.GetComponent<LootQoLRunner>().Begin(this);
+
+            WarnIfStandaloneSortButtonLoaded();
 
             Debug.Log($"[LootQoL] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch} (FastLoot + LootBouncer + SortButton)");
             Debug.Log("[LootQoL] -> Config: HarmonyConfig/LootQoL.json");
@@ -113,6 +116,23 @@ namespace LootQoLHarmony
             _runner = new GameObject("LootQoL_Runner");
             UnityEngine.Object.DontDestroyOnLoad(_runner);
             _runner.AddComponent<LootQoLRunner>();
+        }
+
+        private static void WarnIfStandaloneSortButtonLoaded()
+        {
+            try
+            {
+                Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length; i++)
+                {
+                    string name = assemblies[i].GetName().Name;
+                    if (string.IsNullOrEmpty(name) || !name.StartsWith("SortButton", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    Debug.LogError("[LootQoL] SortButton.dll is loaded alongside LootQoL. Unload it (harmony.unload SortButton) and delete HarmonyMods/SortButton.dll. Duplicate UISortButton CUI stays on screen after closing a tool cupboard.");
+                    break;
+                }
+            }
+            catch { }
         }
 
         public void HandleCuiCallback(ConsoleSystem.Arg args)

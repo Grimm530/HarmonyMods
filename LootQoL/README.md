@@ -2,7 +2,7 @@
 
 Combined Oxide **Fast Loot 1.1.0** + **Loot Bouncer 1.0.11** + **Sort Button 2.8.0** port (no Oxide runtime).
 
-Do **not** also load `SortButton.dll`. Sort lives in this mod.
+Do **not** also load `SortButton.dll`. Sort lives in this mod. If `HarmonyMods/SortButton.dll` is present, both mods create `UISortButton` on Overlay; `DestroyUI` only removes the second copy, so the sort button (especially on the tool cupboard) stays on screen after closing loot. Delete that DLL and `harmony.unload SortButton` or restart.
 
 ## Load order
 

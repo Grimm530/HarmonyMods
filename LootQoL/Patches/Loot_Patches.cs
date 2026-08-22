@@ -23,31 +23,38 @@ namespace LootQoLHarmony.Patches
     /// <summary>
     /// Oxide OnLootEntityEnd fires from PlayerStoppedLooting, which PlayerLoot.Clear
     /// invokes for every loot close (ESC, walk-away Check, EndLooting, swapping targets).
-    /// Patching BasePlayer.EndLooting misses the walk-away / Check path, leaving Take all on screen.
+    /// Destroy overlay CUI in the prefix even when Clear is a no-op, so a stuck Sort button
+    /// (Overlay parent) is still removed. LootBouncer only runs when a loot session was active.
     /// </summary>
     [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.Clear))]
     internal static class PlayerLoot_Clear_Patch
     {
         [HarmonyPrefix]
-        private static void Prefix(PlayerLoot __instance, out object __state)
+        private static void Prefix(PlayerLoot __instance)
         {
-            if (__instance == null || !__instance.IsLooting())
-            {
-                __state = false;
-                return;
-            }
-            __state = __instance.entitySource;
-        }
-
-        [HarmonyPostfix]
-        private static void Postfix(PlayerLoot __instance, object __state)
-        {
-            if (__state is bool) return;
             var plugin = LootQoLMod.Plugin;
             var player = __instance?.baseEntity;
             if (plugin == null || player == null) return;
-            try { plugin.OnLootEntityEnd(player, __state as BaseEntity); }
+            try
+            {
+                if (__instance.IsLooting())
+                    plugin.OnLootEntityEnd(player, __instance.entitySource);
+                else
+                    plugin.DestroyLootOverlayUi(player);
+            }
             catch (Exception ex) { Debug.LogWarning("[LootQoL] OnLootEntityEnd: " + ex.Message); }
+        }
+    }
+
+    [HarmonyPatch(typeof(StorageContainer), nameof(StorageContainer.PlayerStoppedLooting))]
+    internal static class StorageContainer_PlayerStoppedLooting_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(BasePlayer player)
+        {
+            if (player == null) return;
+            try { LootQoLMod.Plugin?.DestroyLootOverlayUi(player); }
+            catch (Exception ex) { Debug.LogWarning("[LootQoL] PlayerStoppedLooting: " + ex.Message); }
         }
     }
 }
