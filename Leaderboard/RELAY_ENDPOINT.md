@@ -12,6 +12,7 @@ The Harmony mod POSTs batches to your `Relay.Url` in the **same shape as the Oxi
 
 ```json
 {
+  "ServerId": "2x",
   "Updates": [
     {
       "UserId": 76561198000000000,
@@ -45,6 +46,8 @@ The Harmony mod POSTs batches to your `Relay.Url` in the **same shape as the Oxi
 - **Players** – Rows for the **PlayerStats** table. Same columns as the plugin: `UserId`, `LastIP`, `LastName`, `ConnectTime`, `DisconnectTime`, `TotalPlayTime`, `Points`, `HiddenFromLeaderboard`.
 
 Either `Updates` or `Players` (or both) may be present; either array may be empty.
+
+- **ServerId** – Which Rust instance sent this batch (e.g. `"2x"`, `"svr1"`). Required when more than one server posts to the same bot/MySQL. Each server still sends **local totals** (not deltas). The Discord bot stores the last value per `(player, server, stat)` and writes **SUM across servers** into `PlayerStats` / `StatsStorage`, so Discord `/stats` playtime is combined. SyncAll is safe to repeat (idempotent). Set `Relay.ServerId` in `HarmonyConfig/Leaderboard.json`; do not rely on `server.identity` if two boxes both use `grimm`.
 
 ## MySQL mapping (plugin‑compatible)
 
@@ -106,6 +109,7 @@ The **UltimateLeaderboard Discord Bot** can act as the relay endpoint and write 
    - `Relay.Url`: `http://127.0.0.1:8765/relay` when LeaderBot runs on the **same machine** as the Rust server (recommended).  
      Use `http://<BOT_HOST>:8765/relay` only if the bot is on another host the server can reach. Do **not** use a public IP that does not forward port 8765.
    - `Relay.SyncAllOnLoad`: `true` (default) — on `harmony.load Leaderboard`, pushes all player JSON into MySQL so Discord `/stats` is not empty after a wipe or fresh DB.
+   - `Relay.ServerId`: unique per Rust instance (e.g. `"2x"` and `"svr1"`) so playtime and stats combine instead of last-write-wins. Restart the Discord bot after updating it so `RelayServerState` is created.
 4. **Firewall**: if the bot is remote, ensure port 8765 (or your chosen relay port) is open for inbound traffic from the game server to the bot host.
 
 Then Discord `/stats` and in-game leaderboard will both read/write the same MySQL database.

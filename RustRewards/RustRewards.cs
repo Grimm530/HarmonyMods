@@ -678,8 +678,13 @@ namespace RustRewardsHarmony
 			if (conf.Settings.Allies.UseFriendsPlugin && !Friends)
 				Puts("Friends plugin wasn't loaded. Option has been disabled.");
 
-			if (conf.Settings.Allies.UseClansPlugin && !Clans)
-				Puts("Clans plugin wasn't loaded. Option has been disabled.");
+			if (conf.Settings.Allies.UseClansPlugin)
+			{
+				if (Clans)
+					Puts("Using Clans Harmony mod for ally checks.");
+				else
+					Puts("Using vanilla game clans for ally checks.");
+			}
 
 			if (conf.Settings.Plugins.UseZoneManagerPlugin && !ZoneManager)
 			{
@@ -1738,7 +1743,7 @@ namespace RustRewardsHarmony
 		{
 			if (!player.IsSteamId() || !victim.IsSteamId())
 				return false;
-			if (Clans && conf.Settings.Allies.UseClansPlugin && IsClanmate(player, victim)) 
+			if (conf.Settings.Allies.UseClansPlugin && IsClanmate(player, victim)) 
 				return true;
 			if (Friends && conf.Settings.Allies.UseFriendsPlugin && IsFriend(player, victim))
 				return true;
@@ -1750,11 +1755,38 @@ namespace RustRewardsHarmony
 
 		bool IsClanmate(ulong playerId, ulong friendId)
 		{
-			object playerTag = Clans?.Call("GetClanOf", (ulong)playerId);
-			object friendTag = Clans?.Call("GetClanOf", (ulong)friendId);
+			if (playerId == 0UL || friendId == 0UL)
+				return false;
+			if (playerId == friendId)
+				return true;
+
+			if (IsVanillaClanmate(playerId, friendId))
+				return true;
+
+			if (Clans == null)
+				return false;
+
+			object playerTag = Clans.Call("GetClanOf", playerId);
+			object friendTag = Clans.Call("GetClanOf", friendId);
 			if (playerTag is string && friendTag is string)
 				if (playerTag == friendTag) return true;
 			return false;
+		}
+
+		static bool IsVanillaClanmate(ulong playerId, ulong friendId)
+		{
+			try
+			{
+				if (!ConVar.Clan.enabled)
+					return false;
+			}
+			catch { return false; }
+
+			BasePlayer a = BasePlayer.FindByID(playerId) ?? BasePlayer.FindSleeping(playerId);
+			BasePlayer b = BasePlayer.FindByID(friendId) ?? BasePlayer.FindSleeping(friendId);
+			if (a == null || b == null)
+				return false;
+			return a.clanId != 0L && a.clanId == b.clanId;
 		}
 
 		bool IsFriend(ulong playerID, ulong friendID) => (bool)Friends?.Call("IsFriend", (ulong)playerID, (ulong)friendID);

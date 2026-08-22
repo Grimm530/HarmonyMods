@@ -20,7 +20,7 @@ public class LeaderboardMod : IHarmonyModHooks
 
     public const int VersionMajor = 1;
     public const int VersionMinor = 0;
-    public const int VersionPatch = 0;
+    public const int VersionPatch = 1;
     public const string AppDomainApiKey = "Leaderboard_ApiType";
     public const string AppDomainPluginKey = "Leaderboard_Plugin";
     public const string AppDomainUltimatePluginKey = "UltimateLeaderboard_Plugin";
@@ -35,6 +35,7 @@ public class LeaderboardMod : IHarmonyModHooks
     private string _configPath;
     private HarmonyLib.Harmony _harmony;
     private float _relayBatchTimer;
+    private string _relayServerId = "unknown";
     private readonly List<StatUpdatePayload> _relayBatch = new();
     private readonly Dictionary<ulong, int> _openLeaderboardCategory = new();
     private readonly Dictionary<ulong, int> _openLeaderboardProfileTab = new();
@@ -315,6 +316,8 @@ public class LeaderboardMod : IHarmonyModHooks
         RegisterConnectedPlayers();
         // Event mods may load after this assembly — defer integration patches a few seconds.
         ScheduleEventModPatches();
+        if (_config?.Relay?.Enabled == true && !string.IsNullOrEmpty(_config.Relay.Url))
+            UnityEngine.Debug.Log($"[Leaderboard] Relay ServerId={_relayServerId} → {_config.Relay.Url}");
         if (_config?.Relay?.Enabled == true && _config.Relay.SyncAllOnLoad && !string.IsNullOrEmpty(_config.Relay.Url))
             SyncAllToRelay();
         UnityEngine.Debug.Log($"[Leaderboard] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}. Commands: /leaderboard, /lb, /stats");
@@ -334,7 +337,7 @@ public class LeaderboardMod : IHarmonyModHooks
         try
         {
             if (_harmony != null)
-                Patches.EventModPatches.TryApply(_harmony);
+                Patches.EventModPatches.TryApply(_harmony, _config?.EventIntegration);
         }
         catch (Exception ex)
         {
@@ -443,8 +446,8 @@ public class LeaderboardMod : IHarmonyModHooks
         }
 
         if (players.Count == 0 && updates.Count == 0) return;
-        var posts = RelaySender.SendBatch(url, updates, players);
-        UnityEngine.Debug.Log($"[Leaderboard] Relay SyncAll queued: {players.Count} players, {updates.Count} stat rows in {posts} POSTs → {url}");
+        var posts = RelaySender.SendBatch(url, updates, players, _relayServerId);
+        UnityEngine.Debug.Log($"[Leaderboard] Relay SyncAll queued: {players.Count} players, {updates.Count} stat rows in {posts} POSTs (ServerId={_relayServerId}) → {url}");
     }
 
     private static PlayerStatsPayload ToPlayerPayload(PlayerStats s)
@@ -456,8 +459,9 @@ public class LeaderboardMod : IHarmonyModHooks
             LastName = s.LastName ?? "",
             ConnectTime = s.ConnectTime.ToString("o"),
             DisconnectTime = s.DisconnectTime.ToString("o"),
+            // Include the live session so Discord combined time does not stall until disconnect.
             // Use fixed-point (no thousand separators) — "N" produces "9,047.91" which breaks MySQL/bot parsers.
-            TotalPlayTime = s.TotalPlayTime.ToString("0.########", System.Globalization.CultureInfo.InvariantCulture),
+            TotalPlayTime = s.GetTotalPlayTimeIncludingCurrent().ToString("0.########", System.Globalization.CultureInfo.InvariantCulture),
             Points = s.Points,
             HiddenFromLeaderboard = s.HiddenFromLeaderboard ? 1 : 0
         };
@@ -703,13 +707,43 @@ public class LeaderboardMod : IHarmonyModHooks
                 _config = JsonConvert.DeserializeObject<LeaderboardConfig>(json);
             }
             _config ??= new LeaderboardConfig();
+            _config.EventIntegration ??= new EventIntegrationConfig();
+            _config.Relay ??= new RelayConfig();
+            ResolveRelayServerId();
             try { File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, Formatting.Indented)); } catch { }
         }
         catch (Exception ex)
         {
             UnityEngine.Debug.LogWarning($"[Leaderboard] Config: {ex.Message}");
             _config = new LeaderboardConfig();
+            ResolveRelayServerId();
         }
+    }
+
+    /// <summary>
+    /// Both Grimm 2X and SVR1 launch with +server.identity grimm, so identity alone cannot
+    /// distinguish them. Prefer Relay.ServerId from HarmonyConfig/Leaderboard.json.
+    /// </summary>
+    private void ResolveRelayServerId()
+    {
+        var configured = _config?.Relay?.ServerId;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            _relayServerId = configured.Trim();
+            return;
+        }
+        try
+        {
+            var id = ConVar.Server.identity;
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                _relayServerId = id.Trim();
+                UnityEngine.Debug.LogWarning("[Leaderboard] Relay.ServerId is empty; using server.identity. Set a unique ServerId in HarmonyConfig/Leaderboard.json if more than one server posts to this relay.");
+                return;
+            }
+        }
+        catch { /* identity not ready */ }
+        _relayServerId = "unknown";
     }
 
     private void InitStorage()
@@ -1137,7 +1171,7 @@ public class LeaderboardMod : IHarmonyModHooks
             }
         }
 
-        RelaySender.SendBatch(_config.Relay.Url, copy, players);
+        RelaySender.SendBatch(_config.Relay.Url, copy, players, _relayServerId);
     }
 
     public void Update(float deltaTime)

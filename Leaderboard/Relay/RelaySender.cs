@@ -23,23 +23,25 @@ public static class RelaySender
     private const int MaxUpdatesPerPost = 25;
 
     /// <summary>Enqueue one or more POSTs. Returns how many HTTP calls were queued.</summary>
-    public static int SendBatch(string url, List<StatUpdatePayload> updates, List<PlayerStatsPayload> players = null)
+    public static int SendBatch(string url, List<StatUpdatePayload> updates, List<PlayerStatsPayload> players = null, string serverId = null)
     {
         if (string.IsNullOrEmpty(url)) return 0;
         updates = updates ?? new List<StatUpdatePayload>();
         players = players ?? new List<PlayerStatsPayload>();
         if (updates.Count == 0 && players.Count == 0) return 0;
+        if (string.IsNullOrWhiteSpace(serverId))
+            serverId = "unknown";
 
         if (updates.Count <= MaxUpdatesPerPost)
         {
-            Enqueue(url, new BatchPayload { Updates = updates, Players = players });
+            Enqueue(url, new BatchPayload { Updates = updates, Players = players, ServerId = serverId });
             return 1;
         }
 
         var posts = 0;
         if (players.Count > 0)
         {
-            Enqueue(url, new BatchPayload { Updates = new List<StatUpdatePayload>(), Players = players });
+            Enqueue(url, new BatchPayload { Updates = new List<StatUpdatePayload>(), Players = players, ServerId = serverId });
             posts++;
         }
 
@@ -61,7 +63,7 @@ public static class RelaySender
                 if (byId.TryGetValue(u.UserId, out var pp))
                     chunkPlayers.Add(pp);
             }
-            Enqueue(url, new BatchPayload { Updates = chunk, Players = chunkPlayers });
+            Enqueue(url, new BatchPayload { Updates = chunk, Players = chunkPlayers, ServerId = serverId });
             posts++;
         }
         return posts;
@@ -197,4 +199,6 @@ public class BatchPayload
 {
     [JsonProperty("Updates")] public List<StatUpdatePayload> Updates;
     [JsonProperty("Players")] public List<PlayerStatsPayload> Players;
+    /// <summary>Which Rust instance sent this batch. Bot stores last local totals per ServerId and SUMs them.</summary>
+    [JsonProperty("ServerId")] public string ServerId;
 }

@@ -33,22 +33,59 @@ public static class EventModPatches
     private static bool _applied;
 
     /// <summary>Call after other Harmony mods have loaded (deferred from OnLoaded).</summary>
-    public static void TryApply(HarmonyLib.Harmony harmony)
+    public static void TryApply(HarmonyLib.Harmony harmony, EventIntegrationConfig cfg = null)
     {
         if (_applied || harmony == null) return;
-        int n = 0;
-        n += TryPatch(harmony, FindType("RaidableBases.RaidableBases+RaidableBase", "Oxide.Plugins.RaidableBases+RaidableBase"),
-            "AwardRaiders", new HarmonyMethod(typeof(EventModPatches), nameof(Postfix_RaidableBases_AwardRaiders))) ? 1 : 0;
-        n += TryPatch(harmony, FindType("Convoy.EventLauncher"),
-            "StopEvent", prefix: new HarmonyMethod(typeof(EventModPatches), nameof(Prefix_Convoy_StopEvent))) ? 1 : 0;
-        n += TryPatch(harmony, FindType("Oxide.Plugins.ArmoredTrain+EconomyManager"),
-            "DefineEventWinner", prefix: new HarmonyMethod(typeof(EventModPatches), nameof(Prefix_ArmoredTrain_DefineEventWinner))) ? 1 : 0;
-        n += TryPatch(harmony, FindType("Oxide.Plugins.CustomHelicopterTiers2"),
-            "OnEntityDeath",
-            postfix: new HarmonyMethod(typeof(EventModPatches), nameof(Postfix_CHT_OnEntityDeath)),
-            paramTypes: new[] { typeof(PatrolHelicopter), typeof(HitInfo) }) ? 1 : 0;
+        cfg ??= new EventIntegrationConfig();
+
+        int enabled = 0;
+        int applied = 0;
+        var skipped = new List<string>();
+        var missing = new List<string>();
+        var ok = new List<string>();
+
+        void TryOne(string name, bool enable, Func<bool> patch)
+        {
+            if (!enable)
+            {
+                skipped.Add(name);
+                return;
+            }
+            enabled++;
+            if (patch())
+            {
+                applied++;
+                ok.Add(name);
+            }
+            else
+                missing.Add(name);
+        }
+
+        TryOne("RaidableBases", cfg.RaidableBases, () =>
+            TryPatch(harmony, FindType("RaidableBases.RaidableBases+RaidableBase", "Oxide.Plugins.RaidableBases+RaidableBase"),
+                "AwardRaiders", new HarmonyMethod(typeof(EventModPatches), nameof(Postfix_RaidableBases_AwardRaiders))));
+        TryOne("Convoy", cfg.Convoy, () =>
+            TryPatch(harmony, FindType("Convoy.EventLauncher"),
+                "StopEvent", prefix: new HarmonyMethod(typeof(EventModPatches), nameof(Prefix_Convoy_StopEvent))));
+        TryOne("ArmoredTrain", cfg.ArmoredTrain, () =>
+            TryPatch(harmony, FindType("Oxide.Plugins.ArmoredTrain+EconomyManager"),
+                "DefineEventWinner", prefix: new HarmonyMethod(typeof(EventModPatches), nameof(Prefix_ArmoredTrain_DefineEventWinner))));
+        TryOne("CustomHelicopterTiers", cfg.CustomHelicopterTiers, () =>
+            TryPatch(harmony, FindType("Oxide.Plugins.CustomHelicopterTiers2", "CHT.CHTMod"),
+                "OnEntityDeath",
+                postfix: new HarmonyMethod(typeof(EventModPatches), nameof(Postfix_CHT_OnEntityDeath)),
+                paramTypes: new[] { typeof(PatrolHelicopter), typeof(HitInfo) }));
+
         _applied = true;
-        UnityEngine.Debug.Log($"[Leaderboard] Event/raid integration patches applied: {n}/4");
+
+        var parts = new List<string>();
+        if (ok.Count > 0)
+            parts.Add("applied " + string.Join(", ", ok));
+        if (skipped.Count > 0)
+            parts.Add("skipped (disabled) " + string.Join(", ", skipped));
+        if (missing.Count > 0)
+            parts.Add("enabled but not loaded " + string.Join(", ", missing));
+        UnityEngine.Debug.Log($"[Leaderboard] Event/raid integration: {applied}/{enabled} patched. " + string.Join("; ", parts));
     }
 
     private static Type FindType(params string[] names)
