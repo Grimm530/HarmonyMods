@@ -31,6 +31,20 @@ namespace DynamicCupShareHarmony.Patches
         }
     }
 
+    [HarmonyPatch(typeof(RelationshipManager.PlayerTeam), nameof(RelationshipManager.PlayerTeam.AddPlayer), typeof(ulong), typeof(bool))]
+    internal static class PlayerTeam_AddPlayerId_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(RelationshipManager.PlayerTeam __instance, ulong playerId, bool skipDirtyUpdate, bool __result)
+        {
+            if (!__result) return;
+            var plugin = DynamicCupShareMod.Instance?.Plugin;
+            if (plugin == null) return;
+            try { plugin.OnTeamMemberAdded(__instance, playerId); }
+            catch (System.Exception ex) { Debug.LogWarning("[DynamicCupShare] OnTeamMemberAdded: " + ex.Message); }
+        }
+    }
+
     [HarmonyPatch(typeof(RelationshipManager), nameof(RelationshipManager.DisbandTeam))]
     internal static class RelationshipManager_DisbandTeam_Patch
     {

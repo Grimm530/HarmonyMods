@@ -144,4 +144,14 @@ namespace DynamicCupShareHarmony.Patches
             return true;
         }
     }
+
+    [HarmonyPatch(typeof(CodeLock), nameof(CodeLock.GetPlayerLockPermission))]
+    internal static class CodeLock_GetPlayerLockPermission_Patch
+    {
+        [HarmonyPrefix]
+        private static bool Prefix(CodeLock __instance, BasePlayer player, ref bool __result)
+        {
+            return CodeLock_OnTryToOpen_Patch.HandleUse(__instance, player, ref __result);
+        }
+    }
 }

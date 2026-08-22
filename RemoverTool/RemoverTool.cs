@@ -3577,7 +3577,7 @@ namespace RemoverToolHarmony
             [JsonProperty(PropertyName = "Permission Settings (Just for normal type)")]
             public readonly Dictionary<string, PermissionSettings> permission = new Dictionary<string, PermissionSettings>
             {
-                [PERMISSION_NORMAL] = new PermissionSettings { priority = 0, distance = 3, cooldown = 60, maxTime = 300, maxRemovable = 50, removeInterval = 0.8f, pay = true, refund = true, resetTime = false }
+                [PERMISSION_NORMAL] = new PermissionSettings { priority = 0, distance = 3, cooldown = 5, maxTime = 300, maxRemovable = 50, removeInterval = 0.8f, pay = false, refund = true, resetTime = false }
             };
 
             [JsonProperty(PropertyName = "Remove Type Settings")]

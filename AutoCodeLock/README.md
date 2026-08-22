@@ -75,3 +75,4 @@ Copies `AutoCodeLock.dll` to `HarmonyMods/`.
 - Source: `.cursor/Oxide.Plugins.Cant-Use/AutoCodeLock.cs`
 - ProtoBuf storage dropped — JSON only under `HarmonyData`
 - Fixed Oxide bugs while porting: skin command now sets the selected skin; guest-code apply updates guest codes (not pin)
+- Team/clan lock **access** is owned by DynamicCupShare. After auto-PIN or guest-code apply this mod calls `DynamicCupShareMod.NotifyCodeLockChanged` and does not wipe existing guest users.

@@ -191,6 +191,12 @@ namespace DynamicCupShareHarmony
             Instance?._plugin?.OnClanAllianceDissolved(tag, alliedTag);
         }
 
+        /// <summary>Public API for AutoCodeLock: rebuild team/clan whitelist after a PIN/guest change.</summary>
+        public static void NotifyCodeLockChanged(CodeLock codeLock)
+        {
+            Instance?._plugin?.RebuildCodeLockShares(codeLock);
+        }
+
         /// <summary>Route cui.endtest DYNAMICCUPSHARE … to CommandCallbackHandler.</summary>
         public void HandleCuiCallback(ConsoleSystem.Arg args, Array a)
         {

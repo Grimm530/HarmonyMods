@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using Newtonsoft.Json;
 using Oxide.Ext.Chaos;
@@ -437,6 +438,7 @@ namespace AutoCodeLockHarmony
             entity.SetSlot(BaseEntity.Slot.Lock, codelock);
             codelock.SendNetworkUpdate();
             entity.SendNetworkUpdate();
+            NotifyDynamicCupShare(codelock);
         }
 
         private static Item FindLockItem(BasePlayer player)
@@ -558,6 +560,26 @@ namespace AutoCodeLockHarmony
                 SendMessage(owner, "Notification.CodelockSecured.Guest", code, guestCode);
             else
                 SendMessage(owner, "Notification.CodelockSecured", code);
+
+            NotifyDynamicCupShare(codelock);
+        }
+
+        /// <summary>
+        /// DynamicCupShare owns team/clan lock sharing. Ask it to whitelist teammates after we set a PIN.
+        /// </summary>
+        internal static void NotifyDynamicCupShare(CodeLock codeLock)
+        {
+            if (!codeLock)
+                return;
+            try
+            {
+                Type api = AppDomain.CurrentDomain.GetData("DynamicCupShare_ApiType") as Type;
+                api?.GetMethod("NotifyCodeLockChanged", BindingFlags.Public | BindingFlags.Static)
+                    ?.Invoke(null, new object[] { codeLock });
+            }
+            catch
+            {
+            }
         }
 
         private string GetOrSetPin(StoredData.PlayerData playerData)
@@ -1300,8 +1322,8 @@ namespace AutoCodeLockHarmony
                     {
                         codelock.guestCode = code;
                         codelock.hasGuestCode = true;
-                        codelock.guestPlayers.Clear();
-                        codelock.guestPlayers.Add(codelock.OwnerID);
+                        if (!codelock.guestPlayers.Contains(codelock.OwnerID))
+                            codelock.guestPlayers.Add(codelock.OwnerID);
                     }
                     else
                     {
@@ -1310,6 +1332,7 @@ namespace AutoCodeLockHarmony
                     }
 
                     codelock.SendNetworkUpdate();
+                    NotifyDynamicCupShare(codelock);
                     yield return null;
                 }
             }

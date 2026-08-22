@@ -230,7 +230,9 @@ namespace DynamicCupShareHarmony
         {
             if (player == null) return;
             PlayerPrivilege.AddPlayer(player);
-            storedData.SetupPlayer(player.GetUserId()).lastOnline = UnixTimeStampUtc();
+            ulong userId = player.GetUserId();
+            storedData.SetupPlayer(userId).lastOnline = UnixTimeStampUtc();
+            PlayerEntities.Get(userId)?.RebuildAll();
             OnBuildingWorkbenchPlayerConnected(player);
         }
 
@@ -370,7 +372,7 @@ namespace DynamicCupShareHarmony
                 if (!codeLock)
                     return;
 
-                PlayerEntities.GetOrCreate(codeLock.OwnerID)?.AddEntity(codeLock, true);
+                PlayerEntities.GetOrCreate(GetShareOwnerId(codeLock))?.AddEntity(codeLock, true);
 
                 StorageContainer storageContainer = codeLock.GetParentEntity() as StorageContainer;
                 if (!storageContainer)
@@ -411,7 +413,7 @@ namespace DynamicCupShareHarmony
         public void OnEntityKill(CodeLock codeLock)
         {
             if (codeLock)
-                PlayerEntities.Get(codeLock.OwnerID)?.RemoveEntity(codeLock, true);
+                PlayerEntities.Get(GetShareOwnerId(codeLock))?.RemoveEntity(codeLock, true);
         }
 
         #endregion
@@ -419,6 +421,11 @@ namespace DynamicCupShareHarmony
         #region Lock / Auth / Targeting hooks
 
         public void CanChangeCode(BasePlayer player, CodeLock codeLock)
+        {
+            RebuildCodeLockShares(codeLock);
+        }
+
+        public void RebuildCodeLockShares(CodeLock codeLock)
         {
             Interface.NextTick(() =>
             {
@@ -439,17 +446,15 @@ namespace DynamicCupShareHarmony
             if (InAdminMode(player))
                 return true;
 
-            if (baseLock is CodeLock)
-                return null;
-
-            if (baseLock.OwnerID == player.GetUserId())
+            ulong userId = player.GetUserId();
+            if (GetShareOwnerId(baseLock) == userId)
                 return true;
 
-            if (baseLock is KeyLock && !Configuration.Sharing.DisableKeylocks)
-            {
-                bool result = CanUseLockedObject(player, baseLock);
-                return result ? (object)true : null;
-            }
+            if (baseLock is KeyLock && Configuration.Sharing.DisableKeylocks)
+                return null;
+
+            if (CanUseLockedObject(player, baseLock))
+                return true;
 
             return null;
         }
@@ -872,6 +877,11 @@ namespace DynamicCupShareHarmony
         {
             OnTeamLeave(playerTeam, player);
             OnBlueprintTeamJoined(playerTeam, player);
+        }
+
+        public void OnTeamMemberAdded(RelationshipManager.PlayerTeam playerTeam, ulong playerId)
+        {
+            OnTeamLeave(playerTeam, null);
         }
 
         public void OnTeamMemberRemoved(RelationshipManager.PlayerTeam playerTeam, ulong playerId)

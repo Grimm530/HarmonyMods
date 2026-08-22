@@ -801,7 +801,10 @@ namespace DynamicCupShareHarmony
             {
                 yield return null;
 
-                if (codeLock && codeLock.OwnerID != 0UL && (!Configuration.Security.PreventShareNoOwner || codeLock.whitelistPlayers.Contains(codeLock.OwnerID)))
+                ulong ownerId = GetShareOwnerId(codeLock);
+                if (codeLock && ownerId != 0UL && (!Configuration.Security.PreventShareNoOwner
+                    || codeLock.whitelistPlayers.Contains(ownerId)
+                    || codeLock.whitelistPlayers.Contains(codeLock.OwnerID)))
                 {
                     bool hasChanges = false;
                     if (CodeLockShares.TryGetValue(codeLock, out List<ulong> currentShares))
@@ -812,6 +815,11 @@ namespace DynamicCupShareHarmony
                             if (codeLock.guestPlayers.Contains(memberId))
                             {
                                 codeLock.guestPlayers.Remove(memberId);
+                                hasChanges = true;
+                            }
+                            if (memberId != ownerId && codeLock.whitelistPlayers.Contains(memberId))
+                            {
+                                codeLock.whitelistPlayers.Remove(memberId);
                                 hasChanges = true;
                             }
                         }
@@ -826,32 +834,25 @@ namespace DynamicCupShareHarmony
 
                     if (CanShare(shareType))
                     {
-                        StoredData.PlayerData playerData = storedData.FindPlayerData(codeLock.OwnerID);
-                        if (playerData != null)
-                        {
-                            if (Configuration.Sharing.Clan.Enabled && playerData.IsSharing(TeamType.Clan, shareType))
-                                GetClanMembers(codeLock.OwnerID, ref _memberShareBuffer);
+                        if (CanShare(TeamType.Clan, ownerId) && OwnerIsSharing(ownerId, TeamType.Clan, shareType))
+                            GetClanMembers(ownerId, ref _memberShareBuffer);
 
-                            if (Configuration.Sharing.Friend.Enabled && playerData.IsSharing(TeamType.Friend, shareType))
-                                GetFriends(codeLock.OwnerID, ref _memberShareBuffer);
+                        if (CanShare(TeamType.Friend, ownerId) && OwnerIsSharing(ownerId, TeamType.Friend, shareType))
+                            GetFriends(ownerId, ref _memberShareBuffer);
 
-                            if (Configuration.Sharing.Team.Enabled && playerData.IsSharing(TeamType.Team, shareType))
-                                GetTeamMembers(codeLock.OwnerID, ref _memberShareBuffer);
-                        }
+                        if (CanShare(TeamType.Team, ownerId) && OwnerIsSharing(ownerId, TeamType.Team, shareType))
+                            GetTeamMembers(ownerId, ref _memberShareBuffer);
 
                         yield return null;
 
                         foreach (ulong memberId in _memberShareBuffer)
                         {
-                            if (_tempShareBuffer.Contains(memberId) || memberId == codeLock.OwnerID || codeLock.whitelistPlayers.Contains(memberId))
+                            if (_tempShareBuffer.Contains(memberId) || memberId == ownerId || codeLock.whitelistPlayers.Contains(memberId))
                                 continue;
 
-                            if (!codeLock.guestPlayers.Contains(memberId))
-                            {
-                                codeLock.guestPlayers.Add(memberId);
-                                hasChanges = true;
-                            }
-
+                            // Whitelist so the client gets hasAuth and can open doors without the PIN.
+                            codeLock.whitelistPlayers.Add(memberId);
+                            hasChanges = true;
                             _tempShareBuffer.Add(memberId);
                         }
 

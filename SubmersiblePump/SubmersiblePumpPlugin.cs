@@ -10,7 +10,10 @@ namespace SubmersiblePump
     public class SubmersiblePumpPlugin
     {
         private static readonly Dictionary<ulong, int> PlacedPumps = new Dictionary<ulong, int>();
-        private const ulong SubmersiblePumpSkin = 2593673595;
+        private static readonly HashSet<ulong> HandledPlacements = new HashSet<ulong>();
+        internal const ulong SubmersiblePumpSkin = 2593673595;
+        private const string PumpPrefab = "assets/prefabs/deployable/playerioents/waterpump/water.pump.deployed.prefab";
+        private static readonly int ConstructionMask = LayerMask.GetMask("Construction");
 
         private readonly string _configPath;
         private readonly string _langPath;
@@ -34,6 +37,7 @@ namespace SubmersiblePump
             LoadConfig();
             LoadData();
             PlacedPumps.Clear();
+            HandledPlacements.Clear();
             RegisterPermissions();
         }
 
@@ -72,6 +76,7 @@ namespace SubmersiblePump
         {
             SaveData();
             PlacedPumps.Clear();
+            HandledPlacements.Clear();
         }
 
         public void OnEntityKill(WaterPump entity)
@@ -103,25 +108,55 @@ namespace SubmersiblePump
             return false;
         }
 
-        public void OnEntityBuilt(Planner plan, GameObject go)
+        public void TryConvertPlacedGenerator(BaseEntity entity, BasePlayer player, ulong itemSkin, string itemName)
         {
-            if (!plan || !go) return;
-            BasePlayer player = plan.GetOwnerPlayer();
-            if (!player) return;
-            FuelGenerator generator = go.ToBaseEntity() as FuelGenerator;
-            if (!generator || generator.skinID != SubmersiblePumpSkin) return;
+            if (entity == null || entity.IsDestroyed) return;
+            if (entity is WaterPump) return;
+            ulong netId = entity.net != null ? entity.net.ID.Value : 0UL;
+            if (netId != 0 && !HandledPlacements.Add(netId)) return;
 
-            if (ConfigData.requirePerm && !PermissionsBridge.UserHasPermission(player.UserIDString, "submersiblepump.use"))
+            if (!IsSubmersiblePumpDeployable(entity, itemSkin, itemName))
             {
-                RefundGenerator(player, generator);
+                if (netId != 0)
+                    HandledPlacements.Remove(netId);
+                return;
+            }
+
+            if (IsOurPumpSkin(itemSkin) && entity.skinID != itemSkin)
+                entity.skinID = itemSkin;
+            else if (entity.skinID == 0 && IsPumpItemName(itemName))
+                entity.skinID = SubmersiblePumpSkin;
+
+            BasePlayer capturedPlayer = player;
+            BaseEntity capturedEntity = entity;
+            SubmersiblePumpMod.Instance?.NextTick(() =>
+            {
+                try { ConvertPlacedGenerator(capturedEntity, capturedPlayer); }
+                catch (Exception ex) { Debug.LogWarning("[SubmersiblePump] ConvertPlacedGenerator: " + ex.Message); }
+            });
+        }
+
+        private void ConvertPlacedGenerator(BaseEntity entity, BasePlayer player)
+        {
+            if (entity == null || entity.IsDestroyed) return;
+            if (entity is WaterPump) return;
+            if (!(entity is FuelGenerator)) return;
+
+            if (player == null || player.IsDestroyed)
+                player = BasePlayer.FindByID(entity.OwnerID);
+
+            if (player && ConfigData.requirePerm && !PermissionsBridge.UserHasPermission(player.UserIDString, "submersiblepump.use"))
+            {
+                RefundGenerator(player, entity);
                 player.ChatMessage(Lang("NoPermission", player.UserIDString));
                 return;
             }
 
+            ulong uid = player ? GetUserId(player) : entity.OwnerID;
             if (ConfigData.pumpLimit > 0)
             {
                 int permLimit = ConfigData.pumpLimit;
-                if (ConfigData.permissionLimit != null)
+                if (player && ConfigData.permissionLimit != null)
                 {
                     foreach (var perm in ConfigData.permissionLimit)
                     {
@@ -130,70 +165,113 @@ namespace SubmersiblePump
                     }
                 }
                 int placed;
-                if (PlacedPumps.TryGetValue(GetUserId(player), out placed) && placed >= permLimit)
+                if (PlacedPumps.TryGetValue(uid, out placed) && placed >= permLimit)
                 {
-                    RefundGenerator(player, generator);
-                    player.ChatMessage(Lang("PumpLimit", player.UserIDString));
+                    RefundGenerator(player, entity);
+                    if (player)
+                        player.ChatMessage(Lang("PumpLimit", player.UserIDString));
                     return;
                 }
             }
 
-            Vector3 heightCheck = new Vector3(generator.transform.position.x, TerrainMeta.HeightMap.GetHeight(generator.transform.position), generator.transform.position.z);
-            bool isOnWaterLevel = generator.transform.position.y > 0 && generator.transform.position.y < 1.4f;
-            bool isOnGround = Vector3.Distance(heightCheck, generator.transform.position) < 1.4f;
+            Vector3 pumpPos = entity.transform.position;
+            Quaternion pumpRot = entity.transform.rotation;
+            Vector3 heightCheck = new Vector3(pumpPos.x, TerrainMeta.HeightMap.GetHeight(pumpPos), pumpPos.z);
+            bool isOnWaterLevel = pumpPos.y > 0 && pumpPos.y < 1.4f;
+            bool isOnGround = Vector3.Distance(heightCheck, pumpPos) < 1.4f;
             bool cannotPlace = ConfigData.checkGround && !isOnGround;
             if (cannotPlace && ConfigData.allowWater && isOnWaterLevel)
                 cannotPlace = false;
             if (cannotPlace)
             {
-                RefundGenerator(player, generator);
-                player.ChatMessage(Lang("TooHigh", player.UserIDString));
+                RefundGenerator(player, entity);
+                if (player)
+                    player.ChatMessage(Lang("TooHigh", player.UserIDString));
                 return;
             }
 
-            Vector3 pumpPos = generator.transform.position;
-            Quaternion pumpRot = generator.transform.rotation;
-            BaseEntity parent = generator.GetParentEntity();
-            WaterPump pump = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/waterpump/water.pump.deployed.prefab", pumpPos, pumpRot) as WaterPump;
+            BaseEntity parent = FindSupport(entity);
+            WaterPump pump = GameManager.server.CreateEntity(PumpPrefab, pumpPos, pumpRot) as WaterPump;
             if (pump == null)
             {
-                RefundGenerator(player, generator);
+                RefundGenerator(player, entity);
                 return;
             }
 
-            StripGroundWatch(pump);
-            if (parent != null && !parent.IsDestroyed)
-                pump.SetParent(parent, worldPositionStays: true);
-
-            bool isSprinting = player.serverInput.IsDown(BUTTON.SPRINT);
+            bool isSprinting = player && player.serverInput != null && player.serverInput.IsDown(BUTTON.SPRINT);
+            ulong sourceSkin = IsOurPumpSkin(entity.skinID) ? entity.skinID : SubmersiblePumpSkin;
+            if (sourceSkin == SubmersiblePumpSkin + 1)
+                sourceSkin = SubmersiblePumpSkin;
             if (ConfigData.doNotFreshUpdate || (ConfigData.doNotFreshSprintButton && isSprinting))
-                pump.skinID = generator.skinID + 1;
+                pump.skinID = sourceSkin + 1;
             else
             {
-                pump.skinID = generator.skinID;
+                pump.skinID = sourceSkin;
                 TerrainMeta.TopologyMap.AddTopology(pumpPos, 65536);
             }
 
-            if (ConfigData.doNotFreshSprintButton && !isSprinting)
-                player.ChatMessage(Lang("SprintSalt", player.UserIDString));
-            else if (ConfigData.doNotFreshSprintButton && isSprinting)
-                player.ChatMessage(Lang("PumpPlaced", player.UserIDString));
-
-            pump.OwnerID = GetUserId(player);
-            var gen = generator;
-            SubmersiblePumpMod.Instance?.NextTick(() =>
+            if (player)
             {
-                if (gen != null && !gen.IsDestroyed)
-                    gen.Kill();
-            });
+                if (ConfigData.doNotFreshSprintButton && !isSprinting)
+                    player.ChatMessage(Lang("SprintSalt", player.UserIDString));
+                else if (ConfigData.doNotFreshSprintButton && isSprinting)
+                    player.ChatMessage(Lang("PumpPlaced", player.UserIDString));
+            }
+
+            pump.OwnerID = uid;
             pump.Spawn();
+            if (parent != null && !parent.IsDestroyed && parent != pump)
+                pump.SetParent(parent, worldPositionStays: true, sendImmediate: true);
             StripGroundWatch(pump);
-            ulong uid = GetUserId(player);
+            pump.SendNetworkUpdateImmediate();
+
+            if (!entity.IsDestroyed)
+                entity.Kill(BaseNetworkable.DestroyMode.None);
+
             int count;
             if (!PlacedPumps.TryGetValue(uid, out count))
                 PlacedPumps[uid] = 0;
             PlacedPumps[uid]++;
-            Data.pumps.Add(pump.net.ID.Value);
+            if (pump.net != null)
+                Data.pumps.Add(pump.net.ID.Value);
+        }
+
+        private bool IsSubmersiblePumpDeployable(BaseEntity entity, ulong itemSkin, string itemName)
+        {
+            if (entity is WaterPump) return false;
+            if (IsOurPumpSkin(entity.skinID) || IsOurPumpSkin(itemSkin) || IsPumpItemName(itemName))
+                return entity is FuelGenerator;
+            return false;
+        }
+
+        private static bool IsOurPumpSkin(ulong skin)
+        {
+            return skin == SubmersiblePumpSkin || skin == SubmersiblePumpSkin + 1;
+        }
+
+        private bool IsPumpItemName(string itemName)
+        {
+            if (string.IsNullOrEmpty(itemName)) return false;
+            if (string.Equals(itemName, "Submersible Pump", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return ConfigData != null && !string.IsNullOrEmpty(ConfigData.pumpName) &&
+                   string.Equals(itemName, ConfigData.pumpName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static BaseEntity FindSupport(BaseEntity entity)
+        {
+            BaseEntity parent = entity.GetParentEntity();
+            if (parent != null && !parent.IsDestroyed)
+                return parent;
+            Vector3 origin = entity.transform.position + Vector3.up * 0.15f;
+            RaycastHit hit;
+            if (Physics.Raycast(origin, Vector3.down, out hit, 4f, ConstructionMask, QueryTriggerInteraction.Ignore))
+            {
+                BaseEntity support = hit.GetEntity();
+                if (support != null && !support.IsDestroyed && support != entity)
+                    return support;
+            }
+            return null;
         }
 
         public void OnHammerHit(BasePlayer player, HitInfo info)
@@ -296,25 +374,30 @@ namespace SubmersiblePump
         private static void StripGroundWatch(BaseEntity entity)
         {
             if (entity == null) return;
-            var missing = entity.GetComponent<DestroyOnGroundMissing>();
-            if (missing != null)
-                UnityEngine.Object.DestroyImmediate(missing);
-            var watch = entity.GetComponent<GroundWatch>();
-            if (watch != null)
-                UnityEngine.Object.DestroyImmediate(watch);
+            DestroyOnGroundMissing[] missing = entity.GetComponentsInChildren<DestroyOnGroundMissing>(true);
+            for (int i = 0; i < missing.Length; i++)
+            {
+                if (missing[i] != null)
+                    UnityEngine.Object.DestroyImmediate(missing[i]);
+            }
+            GroundWatch[] watches = entity.GetComponentsInChildren<GroundWatch>(true);
+            for (int i = 0; i < watches.Length; i++)
+            {
+                if (watches[i] != null)
+                    UnityEngine.Object.DestroyImmediate(watches[i]);
+            }
         }
 
-        private void RefundGenerator(BasePlayer player, FuelGenerator generator)
+        private void RefundGenerator(BasePlayer player, BaseEntity generator)
         {
             Item item = ItemManager.CreateByName("electric.fuelgenerator.small", 1, SubmersiblePumpSkin);
             item.name = ConfigData.pumpName;
-            player.inventory.GiveItem(item);
-            var gen = generator;
-            SubmersiblePumpMod.Instance?.NextTick(() =>
-            {
-                if (gen != null && !gen.IsDestroyed)
-                    gen.Kill();
-            });
+            if (player && !player.IsDestroyed)
+                player.inventory.GiveItem(item);
+            else
+                item.Drop(generator.transform.position, Vector3.zero);
+            if (generator != null && !generator.IsDestroyed)
+                generator.Kill(BaseNetworkable.DestroyMode.None);
         }
 
         private bool TakeResources(BasePlayer player)

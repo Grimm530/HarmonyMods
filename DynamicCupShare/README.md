@@ -80,3 +80,4 @@ Copies `DynamicCupShare.dll` to `HarmonyMods/`.
 - SAM friend/team share flags aligned with turret share logic
 - Blueprint sharing is a `/share` type. Auto-share runs when both players have Blueprints enabled for that relationship and the sharer has `blueprintshare.use`
 - Building Workbench extends workbench range to the whole authorized building (and boats). Toggle it on the Commands tab. Clan/friend/team cupboard share already auths those players, so they get the same range once they have `buildingworkbench.use`.
+- Team/clan/friend lock sharing writes members onto the **code lock whitelist** so they can open doors and containers without the PIN. Key locks use the same live team/clan check. Config defaults apply even if the owner never opened `/share`. AutoCodeLock notifies this mod after auto-PIN so shares rebuild.

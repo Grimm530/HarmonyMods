@@ -13,7 +13,7 @@ namespace SubmersiblePump
         public static SubmersiblePumpMod Instance { get; private set; }
         public const int VersionMajor = 1;
         public const int VersionMinor = 1;
-        public const int VersionPatch = 1;
+        public const int VersionPatch = 2;
 
         private SubmersiblePumpPlugin _plugin;
         private Action _permissionsReadyCallback;

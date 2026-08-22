@@ -247,11 +247,65 @@ namespace DynamicCupShareHarmony
                 else if (baseNetworkable is CodeLock codeLock)
                 {
                     if (temporaryShareData.temporaryCodeLockShare.TryGetValue(baseNetworkable.net.ID.Value, out tempShareData))
+                    {
                         codeLock.guestPlayers.RemoveAll(playerId => tempShareData.Contains(playerId));
+                        codeLock.whitelistPlayers.RemoveAll(playerId => tempShareData.Contains(playerId) && playerId != codeLock.OwnerID);
+                    }
 
-                    PlayerEntities.GetOrCreate(codeLock.OwnerID)?.AddEntity(codeLock, true);
+                    PlayerEntities.GetOrCreate(GetShareOwnerId(codeLock))?.AddEntity(codeLock, true);
                 }
             }
+        }
+
+        internal static ulong GetShareOwnerId(BaseEntity entity)
+        {
+            if (!entity)
+                return 0UL;
+            if (entity.OwnerID != 0UL)
+                return entity.OwnerID;
+            BaseEntity parent = entity.GetParentEntity();
+            return parent ? parent.OwnerID : 0UL;
+        }
+
+        internal static bool OwnerIsSharing(ulong ownerId, TeamType teamType, ShareType shareType)
+        {
+            StoredData.PlayerData data = storedData?.FindPlayerData(ownerId);
+            if (data != null)
+                return data.IsSharing(teamType, shareType);
+
+            if (Configuration?.Sharing == null)
+                return false;
+
+            ShareType defaults = ShareType.None;
+            switch (teamType)
+            {
+                case TeamType.Clan:
+                    defaults = Configuration.Sharing.Clan.ShareType;
+                    break;
+                case TeamType.Friend:
+                    defaults = Configuration.Sharing.Friend.ShareType;
+                    break;
+                case TeamType.Team:
+                    defaults = Configuration.Sharing.Team.ShareType;
+                    break;
+            }
+
+            return (defaults & shareType) == shareType;
+        }
+
+        internal static bool IsSharingWith(ulong ownerId, ulong playerId, ShareType shareType)
+        {
+            if (ownerId == 0UL || playerId == 0UL || ownerId == playerId)
+                return false;
+
+            if (CanShare(TeamType.Clan, ownerId) && OwnerIsSharing(ownerId, TeamType.Clan, shareType) && AreClanMates(ownerId, playerId))
+                return true;
+            if (CanShare(TeamType.Friend, ownerId) && OwnerIsSharing(ownerId, TeamType.Friend, shareType) && AreFriends(ownerId, playerId))
+                return true;
+            if (CanShare(TeamType.Team, ownerId) && OwnerIsSharing(ownerId, TeamType.Team, shareType) && AreTeamMates(ownerId, playerId))
+                return true;
+
+            return false;
         }
 
         private bool CanUseLockedObject(BasePlayer player, BaseEntity entity)
@@ -263,19 +317,7 @@ namespace DynamicCupShareHarmony
             if (!CanShare(shareType))
                 return false;
 
-            StoredData.PlayerData data = storedData.FindPlayerData(entity.OwnerID);
-            if (data == null)
-                return false;
-
-            ulong userId = player.GetUserId();
-            if (CanShare(TeamType.Clan, entity.OwnerID) && data.IsSharing(TeamType.Clan, shareType) && AreClanMates(entity.OwnerID, userId))
-                return true;
-            if (CanShare(TeamType.Friend, entity.OwnerID) && data.IsSharing(TeamType.Friend, shareType) && AreFriends(entity.OwnerID, userId))
-                return true;
-            if (CanShare(TeamType.Team, entity.OwnerID) && data.IsSharing(TeamType.Team, shareType) && AreTeamMates(entity.OwnerID, userId))
-                return true;
-
-            return false;
+            return IsSharingWith(GetShareOwnerId(entity), player.GetUserId(), shareType);
         }
 
         private bool CanUseTurret(BasePlayer player, BaseEntity entity)

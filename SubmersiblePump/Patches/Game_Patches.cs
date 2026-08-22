@@ -1,30 +1,73 @@
+using Facepunch.Rust;
 using HarmonyLib;
 using UnityEngine;
 
 namespace SubmersiblePump.Patches
 {
+    internal struct PlannerItemState
+    {
+        public ulong Skin;
+        public string Name;
+    }
+
     [HarmonyPatch(typeof(Planner), nameof(Planner.DoBuild), typeof(Construction.Target), typeof(Construction))]
     internal static class Planner_DoBuild_Patch
     {
         [HarmonyPrefix]
-        private static void Prefix(Planner __instance, out ulong __state)
+        private static void Prefix(Planner __instance, out PlannerItemState __state)
         {
-            __state = 0UL;
+            __state = default;
             Item item = __instance?.GetOwnerItem();
-            if (item != null)
-                __state = item.skin;
+            if (item == null) return;
+            __state.Skin = item.skin;
+            __state.Name = item.name;
         }
 
         [HarmonyPostfix]
-        private static void Postfix(Planner __instance, BaseEntity __result, ulong __state)
+        private static void Postfix(Planner __instance, BaseEntity __result, PlannerItemState __state)
         {
             if (__result == null) return;
-            if (__result.skinID == 0 && __state != 0)
-                __result.skinID = __state;
+            if (__state.Skin == SubmersiblePumpPlugin.SubmersiblePumpSkin ||
+                __state.Skin == SubmersiblePumpPlugin.SubmersiblePumpSkin + 1)
+                __result.skinID = __state.Skin;
+            else if (__result.skinID == 0 && __state.Skin != 0)
+                __result.skinID = __state.Skin;
+
             var plugin = SubmersiblePumpMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
-            try { plugin.OnEntityBuilt(__instance, __result.gameObject); }
+            if (plugin == null) return;
+            try
+            {
+                plugin.TryConvertPlacedGenerator(
+                    __result,
+                    __instance != null ? __instance.GetOwnerPlayer() : null,
+                    __state.Skin,
+                    __state.Name);
+            }
             catch (System.Exception ex) { Debug.LogWarning("[SubmersiblePump] OnEntityBuilt: " + ex.Message); }
+        }
+    }
+
+    [HarmonyPatch(typeof(Analytics.Azure), nameof(Analytics.Azure.OnEntityBuilt))]
+    internal static class Analytics_OnEntityBuilt_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(BaseEntity entity, BasePlayer player)
+        {
+            var plugin = SubmersiblePumpMod.Instance?.Plugin;
+            if (plugin == null || entity == null) return;
+            try
+            {
+                ulong skin = 0UL;
+                string name = null;
+                Item item = player != null ? player.GetActiveItem() : null;
+                if (item != null)
+                {
+                    skin = item.skin;
+                    name = item.name;
+                }
+                plugin.TryConvertPlacedGenerator(entity, player, skin, name);
+            }
+            catch (System.Exception ex) { Debug.LogWarning("[SubmersiblePump] OnEntityBuilt(Analytics): " + ex.Message); }
         }
     }
 
