@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using HarmonyChat;
 using UnityEngine;
 
 namespace RemoverToolHarmony
@@ -39,12 +40,14 @@ namespace RemoverToolHarmony
             try { _plugin.HarmonyInit(); }
             catch (Exception ex) { Debug.LogError("[RemoverTool Harmony] FAIL: HarmonyInit -> " + ex); }
             RegisterConsoleCommands();
+            ChatSayBridge.Register("RemoverTool", OnChatCommand);
             ScheduleServerInitialized();
             Debug.Log($"[RemoverTool Harmony] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
         }
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            try { ChatSayBridge.Unregister("RemoverTool"); } catch { }
             UnregisterCommands();
             try { _plugin?.HarmonyUnload(); }
             catch (Exception ex) { Debug.LogWarning("[RemoverTool Harmony] HarmonyUnload: " + ex.Message); }
@@ -232,6 +235,25 @@ namespace RemoverToolHarmony
         #endregion
 
         #region Chat routing
+
+        /// <summary>
+        /// ChatSayBridge entry: full message including leading slash.
+        /// </summary>
+        public bool OnChatCommand(BasePlayer player, string message)
+        {
+            if (player == null || string.IsNullOrWhiteSpace(message)) return false;
+            message = message.Trim();
+            if (message.StartsWith("/") || message.StartsWith("\\"))
+                message = message.Substring(1).Trim();
+            if (message.Length == 0) return false;
+
+            string[] parts = message.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return false;
+            string[] args = parts.Length > 1 ? new string[parts.Length - 1] : Array.Empty<string>();
+            for (int i = 1; i < parts.Length; i++)
+                args[i - 1] = parts[i];
+            return TryHandleChat(player, parts[0], args);
+        }
 
         /// <summary>
         /// Routes a chat command to CmdRemove. Returns true if handled (suppress chat broadcast).

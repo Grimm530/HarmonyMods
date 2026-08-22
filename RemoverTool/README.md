@@ -20,6 +20,10 @@ Behavioural replica of the original 4.3.431 logic running as a Rust Harmony mod.
 - Data:   `HarmonyData/RemoverTool/` (logs in `HarmonyData/RemoverTool/logs/`)
 - Lang:   `HarmonyLanguage/RemoverTool.json` (optional; merged over the built-in English messages)
 
+## Chat routing
+
+`/remove` is registered on the shared `ChatSayBridge` (same AppDomain dispatcher as BetterChat, Shop, SkillTree). Vanilla `Chat.sayAs` silently drops slash commands, and HarmonyX skips remaining `Chat.say` prefixes when one returns false — so a later `harmony.reload` of another chat-prefix mod (for example DynamicCupShare) used to leave `/remove` with no handler and no chat output. Reload of RemoverTool looked like a fix because it put this mod's prefix first again.
+
 ## Commands
 
 - Chat: configurable via `Chat Settings > Command` (default `/remove`)

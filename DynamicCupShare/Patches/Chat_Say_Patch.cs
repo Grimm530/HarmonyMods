@@ -1,4 +1,5 @@
 using System;
+using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
 
@@ -6,7 +7,8 @@ namespace DynamicCupShareHarmony.Patches
 {
     /// <summary>
     /// Claim /share before other Chat.say prefixes (TruePVE PreventLooting also used /share).
-    /// HarmonyX stops remaining prefixes when one returns false, so this must run first.
+    /// HarmonyX stops remaining prefixes when one returns false, so this must run first
+    /// and Dispatch through ChatSayBridge so /remove and other registered commands still work.
     /// </summary>
     internal static class ChatCommandRouter
     {
@@ -22,6 +24,16 @@ namespace DynamicCupShareHarmony.Patches
 
             BasePlayer player = arg.Player() ?? arg.Connection?.player as BasePlayer;
             if (player == null || !player.IsConnected) return false;
+
+            try
+            {
+                if (ChatSayBridge.Dispatch(player, text))
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[DynamicCupShare] ChatSayBridge: " + ex.Message);
+            }
 
             string[] parts = text.Substring(1).Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) return false;
