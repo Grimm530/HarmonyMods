@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using HarmonyChat;
 using Oxide.Ext.Chaos.UIFramework;
 using UnityEngine;
 
@@ -46,6 +47,7 @@ namespace AutoCodeLockHarmony
 
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
+            ChatSayBridge.Register("AutoCodeLock", OnChatCommand);
 
             EnsureRunner();
             _runner.GetComponent<AutoCodeLockRunner>().Begin(this);
@@ -88,6 +90,8 @@ namespace AutoCodeLockHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            try { ChatSayBridge.Unregister("AutoCodeLock"); } catch { }
+
             try
             {
                 if (_permissionsReadyCallback != null)
@@ -123,6 +127,23 @@ namespace AutoCodeLockHarmony
             _runner = new GameObject("AutoCodeLock_Runner");
             UnityEngine.Object.DontDestroyOnLoad(_runner);
             _runner.AddComponent<AutoCodeLockRunner>();
+        }
+
+        /// <summary>ChatSayBridge entry: full message including leading slash.</summary>
+        public bool OnChatCommand(BasePlayer player, string message)
+        {
+            if (player == null || string.IsNullOrWhiteSpace(message)) return false;
+            message = message.Trim();
+            if (message.StartsWith("/") || message.StartsWith("\\"))
+                message = message.Substring(1).Trim();
+            if (message.Length == 0) return false;
+
+            string[] parts = message.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return false;
+            string[] args = parts.Length > 1 ? new string[parts.Length - 1] : Array.Empty<string>();
+            for (int i = 1; i < parts.Length; i++)
+                args[i - 1] = parts[i];
+            return TryHandleChat(player, parts[0], args);
         }
 
         public bool TryHandleChat(BasePlayer player, string command, string[] args)

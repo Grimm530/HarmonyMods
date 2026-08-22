@@ -63,7 +63,7 @@ namespace AutoCodeLockHarmony.Patches
             {
                 BaseNetworkable ent = BaseNetworkable.serverEntities.Find(entityID);
                 if (ent is BaseEntity baseEntity)
-                    plugin.OnItemDeployed(__instance, baseEntity);
+                    plugin.OnItemDeployed(__instance, baseEntity, deployable);
             }
             catch (System.Exception ex)
             {

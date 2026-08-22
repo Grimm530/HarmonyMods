@@ -46,8 +46,16 @@ public class RadarState
     /// <summary>Pixel offset max for panel (height half of original).</summary>
     public string UiAnchorMax = "100 115";
 
-    // All off by default; toggle on the ones you want.
-    private readonly HashSet<RadarEntityType> _enabled = new HashSet<RadarEntityType>();
+    // AdminRadar Core tracking: Players (Active) is always on when radar starts.
+    // Also match README defaults: Sleepers, Dead, Bags, TC.
+    private readonly HashSet<RadarEntityType> _enabled = new HashSet<RadarEntityType>
+    {
+        RadarEntityType.Players,
+        RadarEntityType.Sleepers,
+        RadarEntityType.Dead,
+        RadarEntityType.Bags,
+        RadarEntityType.TC
+    };
 
     public RadarState()
     {

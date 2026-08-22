@@ -167,12 +167,16 @@ namespace AutoCodeLockHarmony
             PlayerEntities.Get(doorCloser.OwnerID)?.RemoveEntity(doorCloser);
         }
 
-        public void OnItemDeployed(Deployer deployer, BaseEntity entity)
+        public void OnItemDeployed(Deployer deployer, BaseEntity entity, Deployable deployable)
         {
             if (!deployer || !entity || entity.OwnerID == 0UL)
                 return;
 
-            if (deployer.GetDeployable().slot != BaseEntity.Slot.Lock || entity.GetSlot(BaseEntity.Slot.Lock) is not CodeLock)
+            // DoDeploy_Slot consumes the held item before the postfix runs, so GetDeployable() is null.
+            if (deployable == null || deployable.slot != BaseEntity.Slot.Lock)
+                return;
+
+            if (entity.GetSlot(BaseEntity.Slot.Lock) is not CodeLock)
                 return;
 
             BasePlayer owner = deployer.GetOwnerPlayer();

@@ -2,7 +2,7 @@ using System;
 using System.Collections;
 using System.IO;
 using System.Text;
-using HarmonyLib;
+using HarmonyChat;
 using Oxide.Ext.Chaos.UIFramework;
 using UnityEngine;
 
@@ -27,7 +27,6 @@ namespace DynamicCupShareHarmony
         private Action _permissionsReadyCallback;
         private GameObject _runner;
         private bool _serverReady;
-        private Harmony _oxideObserver;
 
         public DynamicCupSharePlugin Plugin => _plugin;
 
@@ -56,7 +55,7 @@ namespace DynamicCupShareHarmony
             try { AppDomain.CurrentDomain.SetData(AppDomainPluginKey, _plugin); }
             catch { }
 
-            PatchOxidePluginHooks();
+            ChatSayBridge.Register("DynamicCupShare", OnChatCommand);
 
             EnsureRunner();
             _runner.GetComponent<DynamicCupShareRunner>().Begin(this);
@@ -100,16 +99,14 @@ namespace DynamicCupShareHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            try { ChatSayBridge.Unregister("DynamicCupShare"); } catch { }
+
             try
             {
                 if (_permissionsReadyCallback != null)
                     PermissionsBridge.UnregisterReadyCallback(_permissionsReadyCallback);
             }
             catch { }
-
-            try { _oxideObserver?.UnpatchAll(_oxideObserver.Id); }
-            catch { }
-            _oxideObserver = null;
 
             try { _plugin?.HarmonyUnload(); }
             catch (Exception ex) { Debug.LogWarning("[DynamicCupShare] Unload: " + ex.Message); }
@@ -138,6 +135,23 @@ namespace DynamicCupShareHarmony
             _runner = new GameObject("DynamicCupShare_Runner");
             UnityEngine.Object.DontDestroyOnLoad(_runner);
             _runner.AddComponent<DynamicCupShareRunner>();
+        }
+
+        /// <summary>ChatSayBridge entry: full message including leading slash.</summary>
+        public bool OnChatCommand(BasePlayer player, string message)
+        {
+            if (player == null || string.IsNullOrWhiteSpace(message)) return false;
+            message = message.Trim();
+            if (message.StartsWith("/") || message.StartsWith("\\"))
+                message = message.Substring(1).Trim();
+            if (message.Length == 0) return false;
+
+            string[] parts = message.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return false;
+            string[] args = parts.Length > 1 ? new string[parts.Length - 1] : Array.Empty<string>();
+            for (int i = 1; i < parts.Length; i++)
+                args[i - 1] = parts[i];
+            return TryHandleChat(player, parts[0], args);
         }
 
         public bool TryHandleChat(BasePlayer player, string command, string[] args)
@@ -248,135 +262,6 @@ namespace DynamicCupShareHarmony
             {
                 Debug.LogWarning("[DynamicCupShare] cui.endtest DYNAMICCUPSHARE: " + ex);
             }
-        }
-
-        private void PatchOxidePluginHooks()
-        {
-            try
-            {
-                var t = AccessTools.TypeByName("Oxide.Core.Interface");
-                var m = t != null ? AccessTools.Method(t, "CallHook", new[] { typeof(string), typeof(object[]) }) : null;
-                if (m == null)
-                    return;
-
-                _oxideObserver = new Harmony("com.grimm.dynamiccupshare.oxideobserver");
-                _oxideObserver.Patch(m, postfix: new HarmonyMethod(typeof(DynamicCupShareMod), nameof(OxideCallHookPostfix)));
-                Debug.Log("[DynamicCupShare] Observing Oxide plugin hooks (Clans/Friends).");
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DynamicCupShare] Oxide hook observer not attached: " + ex.Message);
-            }
-        }
-
-        public static void OxideCallHookPostfix(string hook, object[] args)
-        {
-            var plugin = Instance?._plugin;
-            if (plugin == null || string.IsNullOrEmpty(hook) || args == null) return;
-
-            try
-            {
-                switch (hook)
-                {
-                    case "OnFriendAdded":
-                        if (args.Length >= 1)
-                            plugin.OnFriendAdded(args[0]?.ToString(), args.Length > 1 ? args[1]?.ToString() : null);
-                        break;
-                    case "OnFriendRemoved":
-                        if (args.Length >= 1)
-                            plugin.OnFriendRemoved(args[0]?.ToString(), args.Length > 1 ? args[1]?.ToString() : null);
-                        break;
-                    case "OnClanMemberJoined":
-                        HandleClanMemberHook(plugin, args, joined: true);
-                        break;
-                    case "OnClanMemberGone":
-                        HandleClanMemberHook(plugin, args, joined: false);
-                        break;
-                    case "OnClanDisbanded":
-                        HandleClanDisbanded(plugin, args);
-                        break;
-                    case "OnClanAllianceCreated":
-                    case "OnClanAllianceDissolved":
-                        if (args.Length >= 2)
-                            plugin.OnClanAllianceDissolved(args[0]?.ToString(), args[1]?.ToString());
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[DynamicCupShare] Oxide hook observer: " + ex.Message);
-            }
-        }
-
-        private static void HandleClanMemberHook(DynamicCupSharePlugin plugin, object[] args, bool joined)
-        {
-            if (plugin == null || args == null || args.Length == 0) return;
-
-            string tag = null;
-            ulong playerId = 0UL;
-            System.Collections.Generic.List<ulong> members = null;
-
-            // Clans Reborn / DCS: (string tag, ulong playerId, List<ulong> members)
-            if (args.Length >= 2 && args[0] is string tagStr && TryToUlong(args[1], out playerId))
-            {
-                tag = tagStr;
-                if (args.Length >= 3)
-                    members = args[2] as System.Collections.Generic.List<ulong>;
-            }
-            // BlueprintShare / some Clans: (ulong playerId, string clanName)
-            else if (TryToUlong(args[0], out playerId))
-            {
-                tag = args.Length > 1 ? args[1]?.ToString() : null;
-                if (args.Length > 2)
-                    members = args[2] as System.Collections.Generic.List<ulong>;
-            }
-
-            if (playerId == 0UL) return;
-
-            if (joined)
-                plugin.OnClanMemberJoined(tag, playerId, members);
-            else
-                plugin.OnClanMemberGone(tag, playerId, members);
-        }
-
-        private static void HandleClanDisbanded(DynamicCupSharePlugin plugin, object[] args)
-        {
-            if (plugin == null || args == null || args.Length == 0) return;
-
-            if (args.Length >= 2 && args[1] is System.Collections.Generic.List<ulong> disbanded)
-            {
-                plugin.OnClanDisbanded(args[0]?.ToString(), disbanded);
-                return;
-            }
-
-            if (args[0] is System.Collections.Generic.List<ulong> memberUlongs)
-            {
-                plugin.OnClanDisbanded(null, memberUlongs);
-                return;
-            }
-
-            if (args[0] is System.Collections.Generic.List<string> memberStrings)
-            {
-                var ids = new System.Collections.Generic.List<ulong>(memberStrings.Count);
-                for (int i = 0; i < memberStrings.Count; i++)
-                {
-                    if (ulong.TryParse(memberStrings[i], out ulong id))
-                        ids.Add(id);
-                }
-                plugin.OnClanDisbanded(null, ids);
-            }
-        }
-
-        private static bool TryToUlong(object value, out ulong id)
-        {
-            id = 0UL;
-            if (value == null) return false;
-            if (value is ulong u)
-            {
-                id = u;
-                return id != 0UL;
-            }
-            return ulong.TryParse(value.ToString(), out id) && id != 0UL;
         }
     }
 

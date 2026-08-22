@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using ConVar;
 using Facepunch;
+using HarmonyChat;
 using Network;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -91,6 +92,7 @@ public class RadarMod : IHarmonyModHooks
         {
             UnityEngine.Debug.LogWarning($"[Radar] Command registration failed: {ex.Message}");
         }
+        ChatSayBridge.Register("Radar", OnChatSay);
         UnityEngine.Debug.Log("[Radar] Loaded. Use /radar to toggle. Admin only.");
     }
 
@@ -125,6 +127,7 @@ public class RadarMod : IHarmonyModHooks
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
     {
+        try { ChatSayBridge.Unregister("Radar"); } catch { }
         foreach (var kv in PlayerStates)
         {
             var p = BasePlayer.FindByID(kv.Key);
@@ -591,7 +594,7 @@ public class RadarMod : IHarmonyModHooks
     private static readonly GridButton[] GridButtonOrder =
     {
         new GridButton("All", "TOGGLE_ALL", null, false, true),
-        new GridButton("Player name", "TOGGLE_Sleepers", RadarEntityType.Sleepers),
+        new GridButton("Sleepers", "TOGGLE_Sleepers", RadarEntityType.Sleepers),
         new GridButton("TC", "TOGGLE_TC", RadarEntityType.TC),
         new GridButton("Bag", "TOGGLE_Bags", RadarEntityType.Bags),
         new GridButton("Box", "TOGGLE_Box", RadarEntityType.Box),

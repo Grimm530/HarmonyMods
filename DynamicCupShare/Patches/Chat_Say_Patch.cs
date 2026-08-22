@@ -6,9 +6,9 @@ using UnityEngine;
 namespace DynamicCupShareHarmony.Patches
 {
     /// <summary>
-    /// Claim /share before other Chat.say prefixes (TruePVE PreventLooting also used /share).
-    /// HarmonyX stops remaining prefixes when one returns false, so this must run first
-    /// and Dispatch through ChatSayBridge so /remove and other registered commands still work.
+    /// Claim /share before other Chat.say prefixes. HarmonyX stops remaining prefixes
+    /// when one returns false, so this runs first and Dispatches ChatSayBridge so
+    /// /radar, /codelock, /remove, and other registered commands still work.
     /// </summary>
     internal static class ChatCommandRouter
     {
@@ -35,18 +35,9 @@ namespace DynamicCupShareHarmony.Patches
                 Debug.LogWarning("[DynamicCupShare] ChatSayBridge: " + ex.Message);
             }
 
-            string[] parts = text.Substring(1).Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0) return false;
-
             var mod = DynamicCupShareMod.Instance;
             if (mod == null) return false;
-
-            string command = parts[0];
-            string[] args = parts.Length > 1 ? new string[parts.Length - 1] : Array.Empty<string>();
-            for (int i = 1; i < parts.Length; i++)
-                args[i - 1] = parts[i];
-
-            return mod.TryHandleChat(player, command, args);
+            return mod.OnChatCommand(player, text);
         }
     }
 

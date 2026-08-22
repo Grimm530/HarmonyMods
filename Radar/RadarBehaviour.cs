@@ -115,12 +115,14 @@ public class RadarBehaviour : MonoBehaviour
         {
             foreach (var p in BasePlayer.activePlayerList)
             {
-                if (p == null || p.IsDead() || p == _player || p.IsNpc) continue;
+                if (p == null || p.IsDestroyed || p == _player || p.IsNpc) continue;
+                if (!IsSteamAccountId(p.userID)) continue;
                 var v = p.transform.position - pos;
                 if (v.sqrMagnitude > sqPlayers) continue;
-                var color = RadarConfig.GetColorFromHex(RadarConfig.Config?.ColorHexCodes?.OnlinePlayer, Color.green);
+                float dist = Mathf.Sqrt(v.sqrMagnitude);
+                var color = GetOnlinePlayerColor(p, p.transform.position);
                 var label = GetCheats(p) + (p.displayName ?? "");
-                DrawPlayerMarker(p, label, color, drawDuration);
+                DrawPlayerMarker(p, label, color, dist, drawDuration);
             }
         }
 
@@ -137,16 +139,17 @@ public class RadarBehaviour : MonoBehaviour
         {
             foreach (var p in BasePlayer.sleepingPlayerList)
             {
-                if (p == null || p.IsDead()) continue;
+                if (p == null || p.IsDestroyed) continue;
                 var v = p.transform.position - pos;
                 if (v.sqrMagnitude > sqSleepers) continue;
+                float dist = Mathf.Sqrt(v.sqrMagnitude);
                 var baseHex = p.IsAlive()
                     ? RadarConfig.Config?.ColorHexCodes?.SleepingPlayer
                     : RadarConfig.Config?.ColorHexCodes?.SleepingDeadPlayer;
                 var fallback = p.IsAlive() ? Color.cyan : new Color(0.5f, 0.3f, 0.3f);
                 var col = RadarConfig.GetColorFromHex(baseHex, fallback);
                 var label = GetCheats(p) + (p.displayName ?? "");
-                DrawPlayerMarker(p, label, col, drawDuration);
+                DrawPlayerMarker(p, label, col, dist, drawDuration);
             }
         }
 
@@ -655,7 +658,27 @@ public class RadarBehaviour : MonoBehaviour
         return false;
     }
 
-    /// <summary>Team-style marker: small dot above head + name in green (like the game's teammate UI).</summary>
+    /// <summary>AdminRadar 5.4.312 <c>GetColor</c>: dead / flying / underground / online.</summary>
+    private static Color GetOnlinePlayerColor(BasePlayer target, Vector3 position)
+    {
+        var hex = RadarConfig.Config?.ColorHexCodes;
+        if (target.health <= 0f || target.IsDead())
+            return RadarConfig.GetColorFromHex(hex?.OnlineDeadPlayer, Color.red);
+        if (!target.IsOnGround() || target.IsFlying)
+            return RadarConfig.GetColorFromHex(hex?.OnlinePlayerFlying, Color.white);
+        try
+        {
+            if (TerrainMeta.HeightMap != null && position.y + 1f < TerrainMeta.HeightMap.GetHeight(position))
+                return RadarConfig.GetColorFromHex(hex?.OnlinePlayerUnderground, Color.white);
+        }
+        catch
+        {
+            // HeightMap can be missing during load
+        }
+        return RadarConfig.GetColorFromHex(hex?.OnlinePlayer, Color.white);
+    }
+
+    /// <summary>AdminRadar 5.4.312 player label: sized name + colored health + distance (white names are otherwise invisible).</summary>
     private static string DdrawSizedPlayerName(string text)
     {
         var sz = RadarConfig.Config?.Settings?.PlayerNameTextSize ?? 24;
@@ -672,22 +695,35 @@ public class RadarBehaviour : MonoBehaviour
         return "<size=" + sz + ">" + text + "</size>";
     }
 
-    private void DrawPlayerMarker(BasePlayer target, string displayName, Color color, float duration)
+    /// <summary>
+    /// AdminRadar 5.4.312 <c>TryCacheOnlinePlayer</c> / <c>DrawAppendedText</c>:
+    /// player-height <c>ddraw.box</c> plus name + red health + orange distance.
+    /// Tiny white <c>ddraw.sphere</c> + white name is invisible against sky/snow.
+    /// </summary>
+    private void DrawPlayerMarker(BasePlayer target, string displayName, Color color, float distance, float duration)
     {
         if (_player == null || !_player.IsConnected || target == null) return;
-        float dotHeight = 2.2f;
-        float nameHeight = 2.5f;
-        if (target.IsSpectating())
-        {
-            dotHeight += 1f;
-            nameHeight += 1f;
-        }
-        const float dotRadius = 0.15f;
+
         var feetPosition = target.transform.position;
-        var dotPos = feetPosition + Vector3.up * dotHeight;
-        var namePos = feetPosition + Vector3.up * nameHeight;
-        _player.Command("ddraw.sphere", duration, color, dotPos, dotRadius, 0, 0);
-        _player.Command("ddraw.text", duration, color, namePos, DdrawSizedPlayerName(displayName ?? ""), 0, 0);
+        bool ducked = target.modelState != null && target.modelState.ducked;
+        float height = BasePlayer.GetHeight(ducked);
+        var boxPos = feetPosition + Vector3.up;
+        var textOffset = Vector3.up * 2f;
+        if (target.IsSpectating())
+            textOffset += Vector3.up;
+
+        var hex = RadarConfig.Config?.ColorHexCodes;
+        string healthHex = hex?.Health ?? "#ff0000";
+        string distHex = hex?.Distance ?? "#ffa500";
+        int nameSize = RadarConfig.Config?.Settings?.PlayerNameTextSize ?? 24;
+        int infoSize = RadarConfig.Config?.Settings?.PlayerInformationTextSize ?? 24;
+        int hp = Mathf.CeilToInt(target.health);
+        int distM = Mathf.CeilToInt(distance);
+
+        string label = "<size=" + nameSize + ">" + (displayName ?? "") + "</size> <size=" + infoSize + "><color=" + healthHex + ">" + hp + "</color> <color=" + distHex + ">" + distM + "</color></size>";
+
+        _player.Command("ddraw.box", duration, color, boxPos, height);
+        _player.Command("ddraw.text", duration, color, feetPosition + textOffset, label);
     }
 
     private void DrawEntity(Vector3 position, Color color, string text, float boxSize, float duration)
