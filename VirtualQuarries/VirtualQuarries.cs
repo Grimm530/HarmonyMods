@@ -37,7 +37,9 @@ namespace Oxide.Plugins
         private readonly List<ulong> adminModes = new();
         private readonly Dictionary<ulong, UiCache> cache = new();
         private readonly Dictionary<ulong, ExcavatorArm> outputPilesLinks = new();
+        private readonly Dictionary<ulong, int> outputPileSlots = new();
         private readonly Dictionary<ulong, ExcavatorArm> computerLinks = new();
+        private readonly List<ExcavatorArm> excavatorArms = new();
         private readonly Dictionary<ulong, float> commandCooldowns = new();
         private readonly Dictionary<ulong, float> excavatorSignalPopupCooldowns = new();
         private readonly Dictionary<ulong, (int, bool)> awaitingConnections = new();
@@ -310,13 +312,12 @@ namespace Oxide.Plugins
             }
             if (config.excavatorQuarry)
             {
-                foreach (var arm in BaseNetworkable.serverEntities.OfType<ExcavatorArm>())
+                LinkExcavatorWorldEntities();
+                foreach (var arm in excavatorArms)
                 {
-                    foreach (var pile in arm.outputPiles)
-                        outputPilesLinks[pile.net.ID.Value] = arm;
                     foreach (var pos in giantExcPositions)
                     {
-                        if (Vector3.Distance(arm.transform.position, pos) > 250) continue;
+                        if (Vector3.Distance(arm.transform.position, pos) > 400) continue;
                         arm.StopMining();
                         arm.SetFlag(BaseEntity.Flags.Reserved8, true);
                         if (!config.disableExcavatorRunningEffect)
@@ -383,6 +384,18 @@ namespace Oxide.Plugins
                     }
                     else
                         PrintWarning($"Quarry with ID {quarry.Key} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
+                }
+                if (quarry.Value.quarryType == QuarryType.Excavator)
+                {
+                    BoxStorage output2 = GetQuarryBox(quarry.Key, BoxType.Output2);
+                    if (output2)
+                    {
+                        GameObject.Destroy(output2.GetComponent<GroundWatch>());
+                        GameObject.Destroy(output2.GetComponent<DestroyOnGroundMissing>());
+                        if (quarry.Value.level < config.excavatorUpgrades.Count)
+                            output2.inventory.capacity = config.excavatorUpgrades[quarry.Value.level].capacity;
+                        output2.inventory.canAcceptItem = (_, _) => false;
+                    }
                 }
             }
         }
@@ -606,40 +619,178 @@ namespace Oxide.Plugins
 
         private object OnExcavatorSuppliesRequest(ExcavatorSignalComputer comp, BasePlayer player)
         {
-            if (!computerLinks.TryGetValue(comp.net.ID.Value, out ExcavatorArm arm)) return null;
+            if (!TryGetExcavatorArmForEntity(comp, out ExcavatorArm arm)) return null;
             if (config.excavatorSupplyCallTime == 0)
             {
                 PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoAirDrops", player.UserIDString));
                 return false;
             }
-            int quarryId = -1;
-            foreach (var quarry in data.quarries)
-            {
-                if (quarry.Value.quarryType == QuarryType.Excavator && quarry.Value.owner == player.userID)
-                {
-                    quarryId = quarry.Key;
-                    break;
-                }
-            }
+            int quarryId = GetPlayerExcavatorQuarryId(player.userID);
             if (quarryId == -1)
             {
-                TimeSpan ts = TimeSpan.FromSeconds(comp.GetChargeNeededForSupplies() + config.excavatorTick);
+                TimeSpan ts = TimeSpan.FromSeconds(config.excavatorSupplyCallTime + config.excavatorTick);
                 PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
                 return false;
             }
             QuarryData qd = data.quarries[quarryId];
             VirtualQuarry vq = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId)).GetComponent<VirtualQuarry>();
-            if (vq.quarryRunTime < comp.GetChargeNeededForSupplies())
+            if (!vq || vq.quarryRunTime < config.excavatorSupplyCallTime)
             {
-                float remaining = Mathf.Max(0f, comp.GetChargeNeededForSupplies() - vq.quarryRunTime);
+                float remaining = Mathf.Max(0f, config.excavatorSupplyCallTime - (vq ? vq.quarryRunTime : 0f));
                 TimeSpan ts = TimeSpan.FromSeconds(remaining + config.excavatorTick);
                 PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
                 return false;
             }
             if (Interface.CallHook("OnCustomVirtualQuarrySupplyDropCalled", arm, comp, player) != null) return false;
+            if (!SpawnExcavatorSupplyDrop(comp))
+            {
+                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("ErrorOccured", player.UserIDString));
+                return false;
+            }
             PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("SupplyDropCalled", player.UserIDString));
             vq.quarryRunTime = 0;
-            return null;
+            return false;
+        }
+
+        private static bool SpawnExcavatorSupplyDrop(ExcavatorSignalComputer computer)
+        {
+            if (!computer || computer.supplyPlanePrefab == null || !computer.supplyPlanePrefab.isValid)
+                return false;
+            BaseEntity plane = GameManager.server.CreateEntity(computer.supplyPlanePrefab.resourcePath);
+            if (!plane)
+                return false;
+            Vector3 dropPos = computer.transform.position;
+            if (computer.dropPoints != null && computer.dropPoints.Length > 0)
+            {
+                Transform point = computer.dropPoints[UnityEngine.Random.Range(0, computer.dropPoints.Length)];
+                if (point)
+                    dropPos = point.position;
+            }
+            dropPos += new Vector3(UnityEngine.Random.Range(-3f, 3f), 0f, UnityEngine.Random.Range(-3f, 3f));
+            plane.SendMessage("InitDropPosition", dropPos, SendMessageOptions.DontRequireReceiver);
+            plane.Spawn();
+            computer.SetFlag(BaseEntity.Flags.Reserved9, true);
+            computer.Invoke(computer.StopTransmitting, 5f);
+            computer.SendNetworkUpdate();
+            return true;
+        }
+
+        private void LinkExcavatorWorldEntities()
+        {
+            excavatorArms.Clear();
+            outputPilesLinks.Clear();
+            foreach (var arm in BaseNetworkable.serverEntities.OfType<ExcavatorArm>())
+            {
+                if (!arm) continue;
+                if (giantExcPositions.Count > 0 && !IsNearGiantExcavator(arm.transform.position, 400f))
+                    continue;
+                excavatorArms.Add(arm);
+                if (arm.outputPiles == null) continue;
+                foreach (var pile in arm.outputPiles)
+                {
+                    if (pile && pile.net != null)
+                        outputPilesLinks[pile.net.ID.Value] = arm;
+                }
+            }
+            foreach (var pile in BaseNetworkable.serverEntities.OfType<ExcavatorOutputPile>())
+            {
+                if (!pile || pile.net == null) continue;
+                ExcavatorArm arm = FindNearestExcavatorArm(pile.transform.position, 500f);
+                if (arm)
+                    outputPilesLinks[pile.net.ID.Value] = arm;
+            }
+            foreach (var computer in BaseNetworkable.serverEntities.OfType<ExcavatorSignalComputer>())
+            {
+                if (!computer || computer.net == null) continue;
+                ExcavatorArm arm = FindNearestExcavatorArm(computer.transform.position, 400f);
+                if (arm)
+                    computerLinks[computer.net.ID.Value] = arm;
+            }
+            AssignExcavatorOutputSlots();
+        }
+
+        private void AssignExcavatorOutputSlots()
+        {
+            outputPileSlots.Clear();
+            Dictionary<ulong, List<ExcavatorOutputPile>> pilesByArm = new();
+            foreach (var pair in outputPilesLinks)
+            {
+                if (!pair.Value || pair.Value.IsDestroyed) continue;
+                ExcavatorOutputPile pile = BaseNetworkable.serverEntities.Find(new NetworkableId(pair.Key)) as ExcavatorOutputPile;
+                if (!pile) continue;
+                ulong armId = pair.Value.net.ID.Value;
+                if (!pilesByArm.TryGetValue(armId, out List<ExcavatorOutputPile> piles))
+                {
+                    piles = new List<ExcavatorOutputPile>();
+                    pilesByArm[armId] = piles;
+                }
+                piles.Add(pile);
+            }
+            foreach (var piles in pilesByArm.Values)
+            {
+                piles.Sort((a, b) => a.net.ID.Value.CompareTo(b.net.ID.Value));
+                for (int i = 0; i < piles.Count; i++)
+                    outputPileSlots[piles[i].net.ID.Value] = i;
+            }
+        }
+
+        private int GetExcavatorOutputSlot(StorageContainer worldPile)
+        {
+            if (!worldPile || worldPile.net == null) return 0;
+            if (outputPileSlots.TryGetValue(worldPile.net.ID.Value, out int slot))
+                return slot;
+            AssignExcavatorOutputSlots();
+            return outputPileSlots.TryGetValue(worldPile.net.ID.Value, out slot) ? slot : 0;
+        }
+
+        private bool IsNearGiantExcavator(Vector3 pos, float maxDist)
+        {
+            foreach (var monumentPos in giantExcPositions)
+            {
+                if (Vector3.Distance(pos, monumentPos) <= maxDist)
+                    return true;
+            }
+            return giantExcPositions.Count == 0;
+        }
+
+        private ExcavatorArm FindNearestExcavatorArm(Vector3 pos, float maxDist)
+        {
+            if (excavatorArms.Count == 0)
+            {
+                foreach (var arm in BaseNetworkable.serverEntities.OfType<ExcavatorArm>())
+                {
+                    if (arm)
+                        excavatorArms.Add(arm);
+                }
+            }
+            ExcavatorArm best = null;
+            float bestDist = maxDist;
+            foreach (var arm in excavatorArms)
+            {
+                if (!arm || arm.IsDestroyed) continue;
+                float dist = Vector3.Distance(pos, arm.transform.position);
+                if (dist >= bestDist) continue;
+                bestDist = dist;
+                best = arm;
+            }
+            return best;
+        }
+
+        private bool TryGetExcavatorArmForEntity(BaseEntity entity, out ExcavatorArm arm)
+        {
+            arm = null;
+            if (!entity || entity.net == null) return false;
+            if (entity is ExcavatorSignalComputer && computerLinks.TryGetValue(entity.net.ID.Value, out arm) && arm && !arm.IsDestroyed)
+                return true;
+            if (entity is ExcavatorOutputPile && outputPilesLinks.TryGetValue(entity.net.ID.Value, out arm) && arm && !arm.IsDestroyed)
+                return true;
+            arm = FindNearestExcavatorArm(entity.transform.position, 500f);
+            if (!arm) return false;
+            if (entity is ExcavatorSignalComputer)
+                computerLinks[entity.net.ID.Value] = arm;
+            else if (entity is ExcavatorOutputPile)
+                outputPilesLinks[entity.net.ID.Value] = arm;
+            return true;
         }
 
         private int GetPlayerExcavatorQuarryId(ulong playerId)
@@ -755,7 +906,7 @@ namespace Oxide.Plugins
                 VirtualQuarry vq = net ? net.GetComponent<VirtualQuarry>() : null;
                 if (!vq) continue;
 
-                float needed = comp.GetChargeNeededForSupplies();
+                float needed = config.excavatorSupplyCallTime;
                 float remaining = Mathf.Max(0f, needed - vq.quarryRunTime);
                 if (remaining <= 0f)
                     ShowExcavatorSignalGameTip(player, Lang("ExcavatorSignalTipReady", player.UserIDString));
@@ -816,17 +967,8 @@ namespace Oxide.Plugins
                 bool isOutput = storage is ExcavatorOutputPile;
                 if (isInput || isOutput)
                 {
-                    ExcavatorArm outputArm = null;
-                    if (isOutput && !outputPilesLinks.TryGetValue(storage.net.ID.Value, out outputArm)) return null;
-                    if (isInput)
-                    {
-                        List<ExcavatorArm> arms = Pool.Get<List<ExcavatorArm>>();
-                        arms.Clear();
-                        Vis.Entities(storage.transform.position, 20, arms);
-                        if (arms.Count == 0) return null;
-                        outputArm = arms[0];
-                        Pool.FreeUnmanaged(ref arms);
-                    }
+                    if (!TryGetExcavatorArmForEntity(storage, out ExcavatorArm outputArm))
+                        return null;
                     if (config.excavatorPerm && !permission.UserHasPermission(player.UserIDString, "virtualquarries.static.excavator"))
                     {
                         PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermissionExcavator", player.UserIDString));
@@ -850,7 +992,7 @@ namespace Oxide.Plugins
                         }
                         quarryId = CreateNewExcavatorQuarry(player, outputArm);
                     }
-                    OpenStaticQuarry(player, quarryId, isInput);
+                    OpenStaticQuarry(player, quarryId, isInput, storage);
                     return false;
                 }
             }
@@ -1182,6 +1324,7 @@ namespace Oxide.Plugins
             };
             VirtualQuarry vq = SpawnQuarryStorage(quarryId, false);
             SpawnQuarryStorage(quarryId, true);
+            SpawnQuarryStorage(quarryId, BoxType.Output2);
             vq.SetupQuarry(quarryId);
             return quarryId;
         }
@@ -1348,6 +1491,23 @@ namespace Oxide.Plugins
                     fuelStorage.SendNetworkUpdate();
                 }
             }
+            if (qd.quarryType == QuarryType.Excavator)
+            {
+                storage.inventory.capacity = thisUpgrade.capacity;
+                storage.SendNetworkUpdate();
+                BoxStorage output2 = GetQuarryBox(uc.quarryId, BoxType.Output2);
+                if (output2)
+                {
+                    output2.inventory.capacity = thisUpgrade.capacity;
+                    output2.SendNetworkUpdate();
+                }
+                BoxStorage excavatorFuel = GetQuarryBox(uc.quarryId, BoxType.Fuel);
+                if (excavatorFuel)
+                {
+                    excavatorFuel.inventory.capacity = thisUpgrade.fuelCapacity;
+                    excavatorFuel.SendNetworkUpdate();
+                }
+            }
             bool anyNewResource = false;
             if (isVirtual && thisUpgrade.additionalResources.Count > 0)
             {
@@ -1429,6 +1589,20 @@ namespace Oxide.Plugins
                     if (!item.MoveToContainer(player.inventory.containerBelt))
                         break;
                 itemCount++;
+            }
+            if (qd.quarryType == QuarryType.Excavator)
+            {
+                BoxStorage output2 = GetQuarryBox(uc.quarryId, BoxType.Output2);
+                if (output2)
+                {
+                    foreach (var item in output2.inventory.itemList.ToArray())
+                    {
+                        if (!item.MoveToContainer(player.inventory.containerMain))
+                            if (!item.MoveToContainer(player.inventory.containerBelt))
+                                break;
+                        itemCount++;
+                    }
+                }
             }
             PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("MovedItemsToYourInventory", player.UserIDString, itemCount));
         }
@@ -1538,6 +1712,12 @@ namespace Oxide.Plugins
             quarry.Kill();
             if (!qp.enableInputLink)
                 quarryFuel.Kill();
+            if (qd.quarryType == QuarryType.Excavator)
+            {
+                BoxStorage output2 = GetQuarryBox(uc.quarryId, BoxType.Output2);
+                if (output2)
+                    output2.Kill();
+            }
             if (config.consoleLogs)
                 Puts($"Player {player.displayName} ({player.userID}) removed quarry with ID {uc.quarryId} with level {qd.level}.");
             data.quarries.Remove(uc.quarryId);
@@ -1648,6 +1828,12 @@ namespace Oxide.Plugins
                 BoxStorage fuel = BaseNetworkable.serverEntities.Find(new NetworkableId(quarry.Value.fuelNetId)) as BoxStorage;
                 if (!fuel) continue;
                 SaveItems(fuel, quarry.Key, "fuel");
+                if (quarry.Value.quarryType == QuarryType.Excavator && quarry.Value.outputNetId2 != 0)
+                {
+                    BoxStorage output2 = BaseNetworkable.serverEntities.Find(new NetworkableId(quarry.Value.outputNetId2)) as BoxStorage;
+                    if (output2)
+                        SaveItems(output2, quarry.Key, "resource2");
+                }
                 containerCount++;
             }
             Interface.Oxide.DataFileSystem.WriteObject($"{Name}/storageCache", storageCache);
@@ -1666,6 +1852,21 @@ namespace Oxide.Plugins
                 {
                     string name = string.IsNullOrEmpty(item.name) ? null : item.name;
                     storageCache[quarryId].resource.Add(new RequiredItem()
+                    {
+                        shortname = item.info.shortname,
+                        skin = item.skin,
+                        amount = item.amount,
+                        displayName = name
+                    });
+                }
+            }
+            else if (dataType == "resource2")
+            {
+                storageCache[quarryId].resource2 = new List<RequiredItem>();
+                foreach (var item in storage.inventory.itemList.ToList())
+                {
+                    string name = string.IsNullOrEmpty(item.name) ? null : item.name;
+                    storageCache[quarryId].resource2.Add(new RequiredItem()
                     {
                         shortname = item.info.shortname,
                         skin = item.skin,
@@ -1694,24 +1895,28 @@ namespace Oxide.Plugins
         private enum BoxType
         {
             Core,
-            Fuel
+            Fuel,
+            Output2
+        }
+
+        private static ulong GetBoxNetId(QuarryData qd, BoxType type)
+        {
+            if (type == BoxType.Fuel) return qd.fuelNetId;
+            if (type == BoxType.Output2) return qd.outputNetId2;
+            return qd.netId;
         }
 
         private BoxStorage GetQuarryBox(int quarryId, BoxType type)
         {
             if (!data.quarries.TryGetValue(quarryId, out var qd)) return null;
             bool isLink = qd.quarryType == QuarryType.Virtual && type == BoxType.Fuel && config.quarryProfiles[qd.profile].enableInputLink;
-            ulong netId = qd.netId;
-            if (type == BoxType.Fuel)
-                netId = qd.fuelNetId;
+            if (type == BoxType.Output2 && qd.quarryType != QuarryType.Excavator) return null;
+            ulong netId = GetBoxNetId(qd, type);
             BoxStorage storage = BaseNetworkable.serverEntities.Find(new NetworkableId(netId)) as BoxStorage;
             if (storage) return storage;
             if (isLink) return null;
-            SpawnQuarryStorage(quarryId, type == BoxType.Fuel, setup: true);
-            netId = data.quarries[quarryId].netId;
-            if (type == BoxType.Fuel)
-                netId = data.quarries[quarryId].fuelNetId;
-            storage = BaseNetworkable.serverEntities.Find(new NetworkableId(netId)) as BoxStorage;
+            SpawnQuarryStorage(quarryId, type, setup: type != BoxType.Output2);
+            storage = BaseNetworkable.serverEntities.Find(new NetworkableId(GetBoxNetId(data.quarries[quarryId], type))) as BoxStorage;
             if (storage) return storage;
             return null;
         }
@@ -2173,7 +2378,7 @@ namespace Oxide.Plugins
             });
         }
 
-        private void OpenStaticQuarry(BasePlayer player, int quarryId, bool input)
+        private void OpenStaticQuarry(BasePlayer player, int quarryId, bool input, StorageContainer worldStorage = null)
         {
             cache.TryAdd(player.userID, new());
             UiCache uc = cache[player.userID];
@@ -2181,9 +2386,14 @@ namespace Oxide.Plugins
             uc.isUsingPlugin = false;
             QuarryData qd = data.quarries[quarryId];
             if (qd.owner != player.userID) return;
-            BoxStorage storage = GetQuarryBox(quarryId, input ? BoxType.Fuel : BoxType.Core);
+            BoxType boxType = BoxType.Core;
+            if (input)
+                boxType = BoxType.Fuel;
+            else if (qd.quarryType == QuarryType.Excavator && GetExcavatorOutputSlot(worldStorage) > 0)
+                boxType = BoxType.Output2;
+            BoxStorage storage = GetQuarryBox(quarryId, boxType);
             if (!storage) return;
-            VirtualQuarry vq = !input ? storage.GetComponent<VirtualQuarry>() : BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId)).GetComponent<VirtualQuarry>();
+            VirtualQuarry vq = GetOrCreateVirtualQuarry(quarryId);
             player.EndLooting();
             bool isVirtual = qd.quarryType == QuarryType.Virtual;
             QuarryProfile qp = isVirtual ? config.quarryProfiles[qd.profile] : null;
@@ -2196,9 +2406,13 @@ namespace Oxide.Plugins
                 upgrades = config.excavatorUpgrades;
             if (qd.level < upgrades.Count)
                 storage.inventory.capacity = input ? upgrades[qd.level].fuelCapacity : upgrades[qd.level].capacity;
-            storage.inventory.canAcceptItem = (item, _) => input && IsStaticFuelItem(item, qd.quarryType, vq);
+            storage.inventory.canAcceptItem = (item, _) => input && IsStaticFuelItem(item, qd.quarryType);
             if (input)
+            {
                 OpenQuarryFuelPanel(player, quarryId);
+                if (vq && storage.inventory.itemList.Count > 0)
+                    vq.OnFuelAdded();
+            }
             else
                 OpenQuarryStoragePanel(player, quarryId);
             player.inventory.loot.AddContainer(storage.inventory);
@@ -2213,6 +2427,11 @@ namespace Oxide.Plugins
 
         private VirtualQuarry SpawnQuarryStorage(int quarryId, bool input, bool restore = false, bool setup = false)
         {
+            return SpawnQuarryStorage(quarryId, input ? BoxType.Fuel : BoxType.Core, restore, setup);
+        }
+
+        private VirtualQuarry SpawnQuarryStorage(int quarryId, BoxType type, bool restore = false, bool setup = false)
+        {
             float startX = -World.Size / 1.5f;
             float startZ = World.Size / 1.5f;
             Vector3 newLocation = new Vector3(startX + Core.Random.Range(-50, 50), -400, startZ + Core.Random.Range(-50, 50));
@@ -2226,8 +2445,10 @@ namespace Oxide.Plugins
             GameObject.Destroy(storage.GetComponent<DestroyOnGroundMissing>());
             storage.Spawn();
             QuarryData qd = data.quarries[quarryId];
-            if (input)
+            if (type == BoxType.Fuel)
                 qd.fuelNetId = storage.net.ID.Value;
+            else if (type == BoxType.Output2)
+                qd.outputNetId2 = storage.net.ID.Value;
             else
                 qd.netId = storage.net.ID.Value;
             bool isVirtual = qd.quarryType == QuarryType.Virtual;
@@ -2242,21 +2463,21 @@ namespace Oxide.Plugins
             if (qd.level < upgrades.Count)
             {
                 UpgradeConfig uc = upgrades[qd.level];
-                storage.inventory.capacity = input ? uc.fuelCapacity : uc.capacity;
+                storage.inventory.capacity = type == BoxType.Fuel ? uc.fuelCapacity : uc.capacity;
             }
             else
                 PrintWarning($"Quarry with ID {quarryId} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
             VirtualQuarry qr = null;
-            if (!input)
+            if (type == BoxType.Core)
                 qr = storage.gameObject.AddComponent<VirtualQuarry>();
             if (setup)
             {
-                if (!input)
+                if (type == BoxType.Core)
                 {
                     VirtualQuarry vQuarry = storage.GetComponent<VirtualQuarry>();
                     vQuarry.SetupQuarry(quarryId);
                 }
-                else
+                else if (type == BoxType.Fuel)
                 {
                     VirtualQuarry vq = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId)).GetComponent<VirtualQuarry>();
                     vq.SetupQuarry(quarryId);
@@ -2264,14 +2485,20 @@ namespace Oxide.Plugins
             }
             if (config.storeContainers && restore && storageCache.TryGetValue(quarryId, out var sc))
             {
-                foreach (var item in input ? sc.fuel : sc.resource)
+                List<RequiredItem> restoreList = type == BoxType.Fuel ? sc.fuel : type == BoxType.Output2 ? sc.resource2 : sc.resource;
+                if (restoreList != null)
                 {
-                    Item restoreItem = ItemManager.CreateByName(item.shortname, item.amount, item.skin);
-                    if (!string.IsNullOrEmpty(item.displayName))
-                        restoreItem.name = item.displayName;
-                    restoreItem.MoveToContainer(storage.inventory);
+                    foreach (var item in restoreList)
+                    {
+                        Item restoreItem = ItemManager.CreateByName(item.shortname, item.amount, item.skin);
+                        if (!string.IsNullOrEmpty(item.displayName))
+                            restoreItem.name = item.displayName;
+                        restoreItem.MoveToContainer(storage.inventory);
+                    }
                 }
             }
+            if (type != BoxType.Fuel)
+                storage.inventory.canAcceptItem = (_, _) => false;
             return qr;
         }
 
@@ -2283,15 +2510,25 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private bool IsStaticFuelItem(Item item, QuarryType qt, VirtualQuarry qr)
+        private VirtualQuarry GetOrCreateVirtualQuarry(int quarryId)
+        {
+            BoxStorage core = GetQuarryBox(quarryId, BoxType.Core);
+            if (!core) return null;
+            VirtualQuarry vq = core.GetComponent<VirtualQuarry>();
+            if (!vq)
+            {
+                vq = core.gameObject.AddComponent<VirtualQuarry>();
+                vq.SetupQuarry(quarryId);
+            }
+            return vq;
+        }
+
+        private bool IsStaticFuelItem(Item item, QuarryType qt)
         {
             List<FuelItem> fuelItems = qt == QuarryType.Static ? config.staticFuelItems : config.excavatorFuelItems;
             foreach (var fuelItem in fuelItems)
                 if (item.info.shortname == fuelItem.shortname && item.skin == fuelItem.skin)
-                {
-                    qr.OnFuelAdded();
                     return true;
-                }
             return false;
         }
 
@@ -4817,6 +5054,7 @@ namespace Oxide.Plugins
             private VqType quarryType = VqType.Default;
             private BoxStorage storage = null;
             private BoxStorage fuelStorage = null;
+            private BoxStorage outputStorage2 = null;
             private readonly List<OutputInfo> output = new();
             private readonly Dictionary<string, float> nonIntOutput = new();
             private int dataId = 0;
@@ -4880,6 +5118,7 @@ namespace Oxide.Plugins
                 {
                     mineType = qd.excResource;
                     quarryType = VqType.Excavator;
+                    outputStorage2 = _plugin.GetQuarryBox(dataId, BoxType.Output2);
                 }
                 else if (qd.quarryType == QuarryType.Static)
                     quarryType = VqType.Static;
@@ -4893,19 +5132,52 @@ namespace Oxide.Plugins
                 }
                 ConfigureOutput();
                 nonIntOutput.TryAdd("fuel", 0);
+                HookFuelListener();
                 if (qd.quarryType == QuarryType.Virtual && !qd.isRunning) return;
                 float tickRate = config.quarryTick;
                 if (quarryType == VqType.Static)
                     tickRate = config.staticQuarryTick;
                 else if (quarryType == VqType.Excavator)
                     tickRate = config.excavatorTick;
+                CancelInvoke(MineResources);
                 InvokeRepeating(MineResources, tickRate, tickRate);
+                MineResources();
+            }
+
+            private BoxStorage hookedFuelStorage;
+
+            private void HookFuelListener()
+            {
+                if (!fuelStorage) return;
+                if (hookedFuelStorage == fuelStorage) return;
+                if (hookedFuelStorage && hookedFuelStorage.inventory != null)
+                {
+                    hookedFuelStorage.inventory.onItemAddedRemoved -= OnFuelStorageItemChanged;
+                    hookedFuelStorage.inventory.onItemAddedToStack -= OnFuelStorageItemStacked;
+                }
+                fuelStorage.inventory.onItemAddedRemoved += OnFuelStorageItemChanged;
+                fuelStorage.inventory.onItemAddedToStack += OnFuelStorageItemStacked;
+                hookedFuelStorage = fuelStorage;
+            }
+
+            private void OnFuelStorageItemChanged(Item item, bool added)
+            {
+                if (added)
+                    OnFuelAdded();
+            }
+
+            private void OnFuelStorageItemStacked(Item item, int amount)
+            {
+                OnFuelAdded();
             }
 
             public void OnFuelAdded()
             {
-                Invoke(() => SwitchEngine(false), 0.1f);
+                CancelInvoke(StartEngineFromFuel);
+                Invoke(StartEngineFromFuel, 0.1f);
             }
+
+            private void StartEngineFromFuel() => SwitchEngine(false);
 
             public void SwitchEngine(bool canDisable = true)
             {
@@ -4929,7 +5201,9 @@ namespace Oxide.Plugins
                         tickRate = config.staticQuarryTick;
                     else if (quarryType == VqType.Excavator)
                         tickRate = config.excavatorTick;
+                    CancelInvoke(MineResources);
                     InvokeRepeating(MineResources, tickRate, tickRate);
+                    MineResources();
                 }
             }
 
@@ -5010,14 +5284,43 @@ namespace Oxide.Plugins
                         amount++;
                     }
                     if (amount == 0) continue;
-                    Item item = ItemManager.Create(resource.def, amount, resource.skin);
+                    if (isRedirect)
+                    {
+                        Item item = ItemManager.Create(resource.def, amount, resource.skin);
+                        if (!string.IsNullOrEmpty(resource.name))
+                            item.name = resource.name;
+                        if (!item.MoveToContainer(redirectStorage.inventory))
+                        {
+                            qd.isRunning = false;
+                            CancelInvoke(MineResources);
+                            return;
+                        }
+                        continue;
+                    }
+                    if (quarryType == VqType.Excavator && outputStorage2)
+                    {
+                        int amount2 = amount / 2;
+                        int amount1 = amount - amount2;
+                        if (amount1 > 0 && !TryDepositMinedItem(storage, resource, amount1))
+                        {
+                            qd.isRunning = false;
+                            CancelInvoke(MineResources);
+                            return;
+                        }
+                        if (amount2 > 0 && !TryDepositMinedItem(outputStorage2, resource, amount2))
+                        {
+                            qd.isRunning = false;
+                            CancelInvoke(MineResources);
+                            return;
+                        }
+                        continue;
+                    }
+                    Item single = ItemManager.Create(resource.def, amount, resource.skin);
                     if (!string.IsNullOrEmpty(resource.name))
-                        item.name = resource.name;
-                    if (!isRedirect)
-                        storage.inventory.canAcceptItem = (_, _) => true;
-                    bool movedItem = isRedirect ? item.MoveToContainer(redirectStorage.inventory) : item.MoveToContainer(storage.inventory);
-                    if (!isRedirect)
-                        storage.inventory.canAcceptItem = (_, _) => false;
+                        single.name = resource.name;
+                    storage.inventory.canAcceptItem = (_, _) => true;
+                    bool movedItem = single.MoveToContainer(storage.inventory);
+                    storage.inventory.canAcceptItem = (_, _) => false;
                     if (!movedItem)
                     {
                         qd.isRunning = false;
@@ -5025,6 +5328,20 @@ namespace Oxide.Plugins
                         return;
                     }
                 }
+            }
+
+            private static bool TryDepositMinedItem(BoxStorage box, OutputInfo resource, int amount)
+            {
+                if (!box || box.IsDestroyed || box.inventory == null) return false;
+                Item item = ItemManager.Create(resource.def, amount, resource.skin);
+                if (!string.IsNullOrEmpty(resource.name))
+                    item.name = resource.name;
+                box.inventory.canAcceptItem = (_, _) => true;
+                bool moved = item.MoveToContainer(box.inventory);
+                box.inventory.canAcceptItem = (_, _) => false;
+                if (!moved)
+                    item.Remove();
+                return moved;
             }
 
             private bool CalculateFuel(bool takeFuel = true)
@@ -5122,7 +5439,15 @@ namespace Oxide.Plugins
                 return true;
             }
 
-            private void OnDestroy() => CancelInvoke();
+            private void OnDestroy()
+            {
+                CancelInvoke();
+                if (hookedFuelStorage && hookedFuelStorage.inventory != null)
+                {
+                    hookedFuelStorage.inventory.onItemAddedRemoved -= OnFuelStorageItemChanged;
+                    hookedFuelStorage.inventory.onItemAddedToStack -= OnFuelStorageItemStacked;
+                }
+            }
         }
 
         private void LoadMessages()
@@ -5960,6 +6285,9 @@ namespace Oxide.Plugins
             [JsonProperty("Quarry Fuel Network ID")]
             public ulong fuelNetId = 0;
 
+            [JsonProperty("Excavator Output 2 Network ID")]
+            public ulong outputNetId2 = 0;
+
             [JsonProperty("Quarry Output Redirect ID")]
             public ulong redirectNetId = 0;
 
@@ -6007,6 +6335,9 @@ namespace Oxide.Plugins
         {
             [JsonProperty("Resource Storage")]
             public List<RequiredItem> resource = new();
+
+            [JsonProperty("Resource Storage 2")]
+            public List<RequiredItem> resource2 = new();
 
             [JsonProperty("Fuel Storage")]
             public List<RequiredItem> fuel = new();

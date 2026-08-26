@@ -284,6 +284,11 @@ namespace RustLeagueHarmony
         private Vector3 _arenaProxyNative = Vector3.one;
         private BaseEntity _arenaRoot;
         private Vector3 _arenaWorldCenter;
+        private Vector3 _redGoalWallLocal;
+        private Vector3 _blueGoalWallLocal;
+        private Vector3 _redGoalFloorLocal;
+        private Vector3 _blueGoalFloorLocal;
+        private bool _goalPartsFound;
 
         private const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
         private const string WallPrefab = "assets/prefabs/building core/wall/wall.prefab";
@@ -334,14 +339,15 @@ namespace RustLeagueHarmony
             configData.eventSettings.ArenaBoundsSize = new Vector3(sx, sy, sz);
         }
 
-        // Catalog RedGoal/BlueGoal are AABB edges, not the visual pockets. Score in the
-        // greenhouse boxes (goal floor + back wall), without the playfield surface lift.
+        // Score at playfield height across the goal mouth, not up in the greenhouse
+        // box behind the back wall. Depth covers the lip plus several meters of pitch.
         private void PlaceGoalVolumesFromCatalog(ArenaDefinition def, Vector3 worldOrigin, Quaternion rot)
         {
             Vector3 redLocal = def != null ? def.RedGoal : Vector3.zero;
             Vector3 blueLocal = def != null ? def.BlueGoal : Vector3.zero;
             Vector3 center = def != null ? def.Center : Vector3.zero;
             Vector3? redFloor = null, blueFloor = null, redWall = null, blueWall = null;
+            _goalPartsFound = false;
 
             if (def?.Parts != null)
             {
@@ -363,23 +369,34 @@ namespace RustLeagueHarmony
                 }
             }
 
-            if (redFloor.HasValue && redWall.HasValue)
-                redLocal = (redFloor.Value + redWall.Value) * 0.5f;
+            if (redFloor.HasValue) _redGoalFloorLocal = redFloor.Value;
+            if (blueFloor.HasValue) _blueGoalFloorLocal = blueFloor.Value;
+            if (redWall.HasValue) _redGoalWallLocal = redWall.Value;
+            if (blueWall.HasValue) _blueGoalWallLocal = blueWall.Value;
+            _goalPartsFound = redWall.HasValue && blueWall.HasValue;
+
+            if (redFloor.HasValue)
+                redLocal = redFloor.Value;
             else if (redWall.HasValue)
                 redLocal = redWall.Value;
 
-            if (blueFloor.HasValue && blueWall.HasValue)
-                blueLocal = (blueFloor.Value + blueWall.Value) * 0.5f;
+            if (blueFloor.HasValue)
+                blueLocal = blueFloor.Value;
             else if (blueWall.HasValue)
                 blueLocal = blueWall.Value;
 
-            redLocal = PullGoalTowardField(redLocal, center, 3f);
-            blueLocal = PullGoalTowardField(blueLocal, center, 3f);
+            // Pull onto the pitch so the box covers the mouth, not only the pocket.
+            redLocal = PullGoalTowardField(redLocal, center, 6f);
+            blueLocal = PullGoalTowardField(blueLocal, center, 6f);
+
+            float playY = center.y + PlayfieldSpawnLift(def);
+            redLocal.y = playY;
+            blueLocal.y = playY;
 
             configData.eventSettings.RedZone = worldOrigin + rot * redLocal;
             configData.eventSettings.BlueZone = worldOrigin + rot * blueLocal;
-            configData.eventSettings.RedZoneSize = new Vector3(22f, 24f, 16f);
-            configData.eventSettings.BlueZoneSize = new Vector3(22f, 24f, 16f);
+            configData.eventSettings.RedZoneSize = new Vector3(20f, 20f, 24f);
+            configData.eventSettings.BlueZoneSize = new Vector3(20f, 20f, 24f);
         }
 
         private static Vector3 PullGoalTowardField(Vector3 goal, Vector3 center, float meters)
@@ -526,6 +543,8 @@ namespace RustLeagueHarmony
             ReapplyArenaPoses();
             SpawnGoalLipCovers(worldOrigin, yawRot);
             SpawnGoalTeamLights(worldOrigin, yawRot);
+            yield return CoroutineEx.waitForSeconds(1f);
+            ReapplyArenaPoses();
 
             SpawnArenaBeacon();
             _arenaSpawn = null;
@@ -548,16 +567,39 @@ namespace RustLeagueHarmony
         {
             string bar = red ? RedGoalLamp : BlueGoalLamp;
             string post = red ? RedGoalSiren : BlueGoalSiren;
-            float z = red ? 192.2f : 9.6f;
-            float cx = 24.79f;
-            Vector3 towardField = red ? new Vector3(0f, 0f, -1f) : new Vector3(0f, 0f, 1f);
+
+            Vector3 wall = red ? _redGoalWallLocal : _blueGoalWallLocal;
+            Vector3 floor = red ? _redGoalFloorLocal : _blueGoalFloorLocal;
+            Vector3 center = ArenaCatalog.Definition != null ? ArenaCatalog.Definition.Center : Vector3.zero;
+            Vector3 towardField;
+            if (_goalPartsFound)
+            {
+                towardField = center - wall;
+                towardField.y = 0f;
+                if (towardField.sqrMagnitude < 0.01f)
+                    towardField = red ? new Vector3(0f, 0f, -1f) : new Vector3(0f, 0f, 1f);
+                towardField.Normalize();
+            }
+            else
+            {
+                wall = red ? new Vector3(24.79f, -0.75f, 199.25f) : new Vector3(24.79f, -0.75f, 2.05f);
+                floor = red ? new Vector3(24.79f, -16.55f, 205.73f) : new Vector3(24.79f, -16.55f, -4.43f);
+                towardField = red ? new Vector3(0f, 0f, -1f) : new Vector3(0f, 0f, 1f);
+            }
+
+            // Sit on the field-facing face of the back wall (0.85m from wall center ≈ 0.35m off the face).
+            Vector3 mount = wall + towardField * 0.85f;
+            float cx = wall.x;
+            float barY = floor.y + 1.6f;
+            float postLow = floor.y - 0.9f;
+            float postHigh = floor.y + 4.6f;
             Quaternion face = yawRot * Quaternion.LookRotation(towardField, Vector3.up);
             float[] xs = { -7f, -3.5f, 0f, 3.5f, 7f };
             for (int i = 0; i < xs.Length; i++)
-                SpawnIoLight(bar, worldOrigin + yawRot * new Vector3(cx + xs[i], -19.5f, z), face);
-            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx - 8.4f, -22f, z), face);
-            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx + 8.4f, -22f, z), face);
-            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx, -16.5f, z), face);
+                SpawnIoLight(bar, worldOrigin + yawRot * new Vector3(cx + xs[i], barY, mount.z), face);
+            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx - 8.4f, postLow, mount.z), face);
+            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx + 8.4f, postLow, mount.z), face);
+            SpawnIoLight(post, worldOrigin + yawRot * new Vector3(cx, postHigh, mount.z), face);
         }
 
         private void SpawnIoLight(string prefab, Vector3 pos, Quaternion rot)
@@ -576,10 +618,20 @@ namespace RustLeagueHarmony
             if (entity == null) return;
             entity.enableSaving = false;
             entity.globalBroadcast = true;
+            StripWorldOnlyComponents(entity.gameObject);
+            if (entity is DecayEntity decay)
+                decay.decay = null;
+            if (entity is BaseCombatEntity combat)
+                combat.pickup.enabled = false;
             if (parented)
                 entity.SetParent(_arenaRoot);
             entity.Spawn();
             if (entity == null || entity.IsDestroyed) return;
+            StripWorldOnlyComponents(entity.gameObject);
+            if (entity is DecayEntity decay2)
+                decay2.decay = null;
+            if (entity is BaseCombatEntity combat2)
+                combat2.pickup.enabled = false;
             if (parented)
             {
                 entity.transform.localPosition = localPos;
@@ -591,6 +643,13 @@ namespace RustLeagueHarmony
             entity.SetFlag(BaseEntity.Flags.On, true);
             entity.SendNetworkUpdateImmediate();
             arenaEntities.Add(entity);
+            _arenaPoses.Add(new ArenaPose
+            {
+                Entity = entity,
+                LocalPos = parented ? localPos : pos,
+                LocalRot = parented ? localRot : rot,
+                Scale = Vector3.one
+            });
         }
 
         private void SpawnFallbackPitch(Vector3 worldOrigin, Quaternion yawRot, ArenaDefinition def)

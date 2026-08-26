@@ -123,23 +123,31 @@ namespace VirtualQuarriesHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.StartLootingEntity), new[] { typeof(BaseEntity), typeof(bool) })]
-    public static class PlayerLoot_StartLootingEntity_Patch
+    // Intercept before vanilla PlayerOpenLoot so excavator/static fuel is not
+    // bound to the world container (onlyOneUser / Open flag). Each player has
+    // their own virtual boxes; looting is redirected in CanLootEntity.
+    [HarmonyPatch(typeof(StorageContainer), nameof(StorageContainer.PlayerOpenLoot), new[] { typeof(BasePlayer), typeof(string), typeof(bool) })]
+    public static class StorageContainer_PlayerOpenLoot_Patch
     {
         [HarmonyPrefix]
-        public static bool Prefix(PlayerLoot __instance, BaseEntity targetEntity, ref bool __result)
+        public static bool Prefix(StorageContainer __instance, BasePlayer player, ref bool __result)
         {
-            if (__instance == null || targetEntity == null) return true;
-            BasePlayer player = __instance.baseEntity;
-            if (player == null) return true;
-            if (targetEntity is StorageContainer storage)
+            if (__instance == null || player == null) return true;
+            if (__instance is not DieselEngine && __instance is not ExcavatorOutputPile && __instance is not ResourceExtractorFuelStorage)
+                return true;
+            object blocked = VQ.Dispatch_CanLootEntity(player, __instance);
+            if (blocked != null)
             {
-                object blocked = VQ.Dispatch_CanLootEntity(player, storage);
-                if (blocked != null) { __result = false; return false; }
+                __result = false;
+                return false;
             }
             return true;
         }
+    }
 
+    [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.StartLootingEntity), new[] { typeof(BaseEntity), typeof(bool) })]
+    public static class PlayerLoot_StartLootingEntity_Patch
+    {
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {

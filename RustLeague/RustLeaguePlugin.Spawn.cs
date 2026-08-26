@@ -155,32 +155,50 @@ namespace RustLeagueHarmony
                 if (rb != null) { rb.velocity = Vector3.zero; rb.useGravity = false; }
                 ball.SendNetworkUpdateImmediate();
             }
-            timer.Once(0.25f, () =>
-            {
-                foreach (var key in RedEventCars)
-                    SnapCar(key.Key, key.Value.position);
-                foreach (var key in BlueEventCars)
-                    SnapCar(key.Key, key.Value.position);
-            });
+            SnapAllCarsHome();
+            timer.Once(0.25f, SnapAllCarsHome);
         }
 
-        private void SnapCar(ulong netId, Vector3 position)
+        private void SnapAllCarsHome()
+        {
+            foreach (var key in RedEventCars)
+                SnapCar(key.Key, key.Value.position);
+            foreach (var key in BlueEventCars)
+                SnapCar(key.Key, key.Value.position);
+        }
+
+        internal void SnapCar(ulong netId, Vector3 position)
         {
             var entity = FindEntity(netId) as ModularCar;
-            if (entity == null || ball == null) return;
+            if (entity == null || entity.IsDestroyed) return;
             var rb = entity.rigidBody;
+            bool kinematic = false;
             if (rb != null)
             {
+                kinematic = rb.isKinematic;
                 if (rb.IsSleeping()) rb.WakeUp();
                 rb.velocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
+                rb.isKinematic = true;
             }
-            entity.transform.position = position;
-            entity.transform.LookAt(ball.transform);
+
+            Vector3 lookTarget = position + Vector3.forward;
+            if (ball != null)
+            {
+                lookTarget = ball.transform.position;
+                lookTarget.y = position.y;
+            }
+            Vector3 dir = lookTarget - position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = Vector3.forward;
+            Quaternion rot = Quaternion.LookRotation(dir.normalized, Vector3.up);
+            entity.transform.SetPositionAndRotation(position, rot);
             if (rb != null)
             {
-                rb.position = entity.transform.position;
-                rb.rotation = entity.transform.rotation;
+                rb.position = position;
+                rb.rotation = rot;
+                rb.isKinematic = kinematic;
             }
             entity.transform.hasChanged = true;
             entity.InvalidateNetworkCache();
@@ -299,6 +317,8 @@ namespace RustLeagueHarmony
 
             var setup = new carLoc { position = entity.transform.position, rotation = entity.transform.rotation };
             rustLeagueCar car = entity.GetOrAdd<rustLeagueCar>();
+            car.homePosition = entity.transform.position;
+            car.homeRotation = entity.transform.rotation;
             if (IsOdd(carCount))
             {
                 RedEventCars[entity.net.ID.Value] = setup;
@@ -502,7 +522,7 @@ namespace RustLeagueHarmony
             _shopMarker = null;
         }
 
-        internal bool PointInGoal(Vector3 world, bool red)
+        internal bool PointInGoal(Vector3 world, bool red, float pad = 0f)
         {
             Vector3 origin = red ? configData.eventSettings.RedZone : configData.eventSettings.BlueZone;
             float yaw = red ? configData.eventSettings.RedZoneRotation : configData.eventSettings.BlueZoneRotation;
@@ -510,6 +530,9 @@ namespace RustLeagueHarmony
             if (origin == Vector3.zero || size == Vector3.zero) return false;
             Vector3 local = Quaternion.Inverse(Quaternion.Euler(0f, yaw, 0f)) * (world - origin);
             Vector3 half = size * 0.5f;
+            half.x += pad;
+            half.y += pad;
+            half.z += pad;
             return Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.y) <= half.y && Mathf.Abs(local.z) <= half.z;
         }
 

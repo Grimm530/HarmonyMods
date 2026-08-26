@@ -56,6 +56,29 @@ namespace Oxide.Plugins
             Puts(message);
         }
 
+        /// <summary>
+        /// Current Gen2 wildlife (BaseNPC2 / FSM). Facepunch removed Gen1 <c>wolf.prefab</c>;
+        /// the live wolf is <c>wolf2.prefab</c>. GrimmBoss spawns these directly — AnimalSpawn
+        /// can only wrap Gen1 <see cref="BaseAnimalNPC"/> brains.
+        /// </summary>
+        internal static readonly Dictionary<string, string> Gen2AnimalPrefabs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Wolf"] = "assets/rust.ai/agents/wolf/wolf2.prefab",
+            ["Wolf2"] = "assets/rust.ai/agents/wolf/wolf2.prefab",
+            ["Tiger"] = "assets/rust.ai/agents/tiger/tiger.prefab",
+            ["Panther"] = "assets/rust.ai/agents/panther/panther.prefab",
+            ["Crocodile"] = "assets/rust.ai/agents/crocodile/crocodile.prefab",
+            ["Snake"] = "assets/rust.ai/agents/snake/snake.entity.prefab"
+        };
+
+        /// <summary>Remaining Gen1 animals that AnimalSpawn can still wrap as CustomAnimalNpc.</summary>
+        internal static readonly Dictionary<string, string> Gen1AnimalPrefabs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Bear"] = "assets/rust.ai/agents/bear/bear.prefab",
+            ["PolarBear"] = "assets/rust.ai/agents/bear/polarbear.prefab",
+            ["Polar"] = "assets/rust.ai/agents/bear/polarbear.prefab"
+        };
+
         protected override void LoadDefaultConfig()
         {
             Puts("Creating a default config...");
@@ -3768,6 +3791,18 @@ namespace Oxide.Plugins
                 }
             }
 
+            private static Vector3 PickAnimalSpawnPosition(Vector3 around)
+            {
+                Vector2 ring = UnityEngine.Random.insideUnitCircle.normalized * UnityEngine.Random.Range(3f, 6f);
+                Vector3 desired = new Vector3(around.x + ring.x, around.y + 1f, around.z + ring.y);
+                if (UnityEngine.AI.NavMesh.SamplePosition(desired, out UnityEngine.AI.NavMeshHit hit, 6f, 1))
+                    return hit.position;
+                Vector3 fallback = new Vector3(desired.x, TerrainMeta.HeightMap.GetHeight(desired), desired.z);
+                if (UnityEngine.AI.NavMesh.SamplePosition(fallback, out hit, 2f, 1))
+                    return hit.position;
+                return fallback;
+            }
+
             private void DeleteAllAnimals()
             {
                 int countLegacy = Animals != null ? Animals.Count : 0;
@@ -4621,20 +4656,18 @@ namespace Oxide.Plugins
                             return;
                         }
 
-                        // Gen2 map (prefab paths for internal spawn)
-                        var gen2Map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                        {
-                            ["Tiger"]       = "assets/rust.ai/agents/tiger/tiger.prefab",
-                            ["Panther"]     = "assets/rust.ai/agents/panther/panther.prefab",
-                            ["Crocodile"]   = "assets/rust.ai/agents/crocodile/crocodile.prefab",
-                            ["Snake"]       = "assets/rust.ai/agents/snake/snake.entity.prefab"
-                        };
-
                         string rawAnimalType = radiusActions.AnimalAbility.Type;
                         // JSON null/empty used to fall through to polarbear and fail on many maps; default to Wolf.
                         string requestedType = string.IsNullOrWhiteSpace(rawAnimalType) ? "Wolf" : rawAnimalType.Trim();
-                        bool isGen2 = gen2Map.ContainsKey(requestedType);
-                        string gen2PrefabPath = isGen2 ? gen2Map[requestedType] : null;
+                        bool isGen2 = Gen2AnimalPrefabs.TryGetValue(requestedType, out string gen2PrefabPath);
+                        string gen1Prefab = null;
+                        if (!isGen2 && !Gen1AnimalPrefabs.TryGetValue(requestedType, out gen1Prefab))
+                        {
+                            isGen2 = true;
+                            gen2PrefabPath = Gen2AnimalPrefabs["Wolf"];
+                            if (_ins._config != null && _ins._config.Debug)
+                                _ins.DebugLog($"[{BossName}] Unknown animal type '{rawAnimalType}', using Wolf (wolf2).", true);
+                        }
 
                         int toSpawn = Mathf.Max(0, radiusActions.AnimalAbility.Count);
                         if (toSpawn <= 0)
@@ -4647,20 +4680,14 @@ namespace Oxide.Plugins
                         int animalsSpawned = 0;
                         for (int i = 0; i < toSpawn; i++)
                         {
+                            Vector3 spawnPos = PickAnimalSpawnPosition(curTarget.transform.position);
                             if (isGen2)
                             {
-                                // === GEN2: INTERNAL prefab spawn (no APIs) ===
-                                // Spawn near the current target like the F1 `entity.spawn <animal>`
-                                Vector3 tpos = curTarget.transform.position;
-                                Vector2 off2 = UnityEngine.Random.insideUnitCircle.normalized * UnityEngine.Random.Range(4f, 7f);
-                                Vector3 spawnPos = new Vector3(tpos.x + off2.x, 0f, tpos.z + off2.y);
-                                // Ground to terrain (simple grounding; let Gen2 FSM handle movement/logic)
-                                spawnPos.y = TerrainMeta.HeightMap.GetHeight(spawnPos);
-
+                                // === GEN2: INTERNAL prefab spawn (Wolf2 / Tiger / Panther / Crocodile / Snake) ===
                                 BaseEntity ent = GameManager.server.CreateEntity(gen2PrefabPath, spawnPos, Quaternion.identity);
                                 if (ent != null)
                                 {
-                                    ent.enableSaving = false; // ephemeral helper, optional
+                                    ent.enableSaving = false;
                                     ent.Spawn();
                                     AnimalsAny.Add(ent);
                                     animalsSpawned++;
@@ -4672,41 +4699,8 @@ namespace Oxide.Plugins
                             }
                             else
                             {
-                                // === GEN1: original working path with NAVMESH SNAP + pathing kick (no AIFlags) ===
-                                string prefab;
-                                if (requestedType.Equals("Bear", StringComparison.OrdinalIgnoreCase))
-                                    prefab = "assets/rust.ai/agents/bear/bear.prefab";
-                                else if (requestedType.Equals("Wolf", StringComparison.OrdinalIgnoreCase))
-                                    prefab = "assets/rust.ai/agents/wolf/wolf.prefab";
-                                else if (requestedType.Equals("PolarBear", StringComparison.OrdinalIgnoreCase) || requestedType.Equals("Polar", StringComparison.OrdinalIgnoreCase))
-                                    prefab = "assets/rust.ai/agents/bear/polarbear.prefab";
-                                else
-                                {
-                                    prefab = "assets/rust.ai/agents/wolf/wolf.prefab";
-                                    if (_ins._config != null && _ins._config.Debug)
-                                        _ins.DebugLog($"[{BossName}] Unknown animal type '{rawAnimalType}', using Wolf.", true);
-                                }
-
-                                // --- compute a spawn point on the NAVMESH near the target ---
-                                Vector3 tpos = curTarget.transform.position;
-
-                                // random ring 3â€“6m around the player, then navmesh-snap (areaMask=1 Walkable)
-                                Vector2 ring = UnityEngine.Random.insideUnitCircle.normalized * UnityEngine.Random.Range(3.0f, 6.0f);
-                                Vector3 desired = new Vector3(tpos.x + ring.x, tpos.y + 1.0f, tpos.z + ring.y);
-
-                                UnityEngine.AI.NavMeshHit nhit;
-                                Vector3 spawnPos;
-                                if (UnityEngine.AI.NavMesh.SamplePosition(desired, out nhit, 6f, 1))
-                                {
-                                    spawnPos = nhit.position;
-                                }
-                                else
-                                {
-                                    // fallback: terrain height, then second-chance smaller navmesh snap
-                                    spawnPos = new Vector3(desired.x, TerrainMeta.HeightMap.GetHeight(desired), desired.z);
-                                    if (UnityEngine.AI.NavMesh.SamplePosition(spawnPos, out nhit, 2f, 1))
-                                        spawnPos = nhit.position;
-                                }
+                                // === GEN1: AnimalSpawn CustomAnimalNpc wrap (Bear / PolarBear) ===
+                                string prefab = gen1Prefab;
 
                                 var config = new JObject
                                 {
@@ -4762,10 +4756,12 @@ namespace Oxide.Plugins
 
                         if (animalsSpawned == 0)
                         {
-                            // Do not count a failed wave toward round-robin or advance cooldown — otherwise the rotation resets early.
-                            _roundRobinUsed.Remove(5);
-                            _pendingAnimal = true;
-                            _ins.DebugLog($"[{BossName}] Animals ability: no spawns succeeded; not marking round-robin used — will retry when picked again.", true);
+                            // Missing/invalid prefab: apply cooldown instead of retrying every rotation (console spam).
+                            _pendingAnimal = false;
+                            int seconds = radiusActions.AnimalAbility.Time;
+                            _timeToAnimal = seconds <= 0 ? 20 : Mathf.RoundToInt(Mathf.Max(seconds, 10) * 2f);
+                            _ins.DebugLog($"[{BossName}] Animals ability: no spawns succeeded; cooldown {_timeToAnimal} ticks (will not retry immediately).", true);
+                            executedAny = true;
                             continue;
                         }
 

@@ -22,7 +22,7 @@ Bosses and helper NPCs spawn through **0GrimmNPC** — the Harmony port of Oxide
   `.cursor/HarmonyMods/0GrimmNPC/`.
 - **0PveMode** (optional) — `"Use the PVE mode of the plugin?"` in config.
 - **Kits** (optional Harmony Kits mod) — kit loadouts via `GiveKit`.
-- **AnimalSpawn** (optional Harmony mod) — boss Animal Ability (`SpawnAnimal`). Source:
+- **AnimalSpawn** (optional Harmony mod) — Gen1 Animal Ability only (`Bear` / `PolarBear` via `SpawnAnimal`). Wolf is Gen2 (`wolf2.prefab`) and is spawned by GrimmBoss. Source:
   `.cursor/HarmonyMods/AnimalSpawn/`. Horse shop limits stay in **Shop**, not AnimalSpawn.
 - Soft-null optional Oxide plugins: Economics, ServerRewards, IQEconomic, XPerience,
   GUIAnnouncements, DiscordMessages, Notify.

@@ -67,7 +67,8 @@ Permission: `rustleague.admin` (server admins always pass).
 ## Match rules (unchanged)
 
 - Modular cars on a circle around the ball, red vs blue
-- Goals are trigger boxes; first to `WinPoints` or `MaxRounds` wins
+- Goals score when the ball crosses the mouth at pitch height (you do not need to bury it in the back of the net)
+- First to `WinPoints` or `MaxRounds` wins
 - Dismount fires a rocket; seat-swap flips the car during countdown
 - Event players/cars/ball take no damage
 - Optional join cost and win item from config

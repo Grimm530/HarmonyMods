@@ -58,6 +58,12 @@ namespace DynamicCupShareHarmony
             LoadData();
 
             AllowedShareTypes = Configuration.Sharing.Allowed.AllowedShareTypes;
+
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                if (player == null || !player.IsConnected) continue;
+                ChaosUI.Destroy(player, UI_MENU);
+            }
         }
 
         public void HarmonyServerInitialized()

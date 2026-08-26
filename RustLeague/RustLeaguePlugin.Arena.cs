@@ -75,13 +75,9 @@ namespace RustLeagueHarmony
                 UnityEngine.GameObject.Destroy(gameObject);
             }
 
-            private void OnTriggerEnter(Collider col)
-            {
-                BaseEntity baseEntity = col?.ToBaseEntity();
-                if (!baseEntity.IsValid() || baseEntity != Instance.ball)
-                    return;
-                Instance.ballMono.Score(false);
-            }
+            private void OnTriggerEnter(Collider col) => TryScore(col, false);
+
+            private void OnTriggerStay(Collider col) => TryScore(col, false);
         }
 
         public class golePostBlue : MonoBehaviour
@@ -116,13 +112,17 @@ namespace RustLeagueHarmony
                 UnityEngine.GameObject.Destroy(gameObject);
             }
 
-            private void OnTriggerEnter(Collider col)
-            {
-                BaseEntity baseEntity = col?.ToBaseEntity();
-                if (!baseEntity.IsValid() || baseEntity != Instance.ball)
-                    return;
-                Instance.ballMono.Score(true);
-            }
+            private void OnTriggerEnter(Collider col) => TryScore(col, true);
+
+            private void OnTriggerStay(Collider col) => TryScore(col, true);
+        }
+
+        private static void TryScore(Collider col, bool blueTeam)
+        {
+            BaseEntity baseEntity = col?.ToBaseEntity();
+            if (!baseEntity.IsValid() || baseEntity != Instance.ball)
+                return;
+            Instance.ballMono?.Score(blueTeam);
         }
 
         public class rustLeagueCar : MonoBehaviour
@@ -134,6 +134,8 @@ namespace RustLeagueHarmony
             public int rocketsShot;
             public int times = 2;
             public DateTime nextShot = DateTime.Now;
+            public Vector3 homePosition;
+            public Quaternion homeRotation;
             private float _blastReady;
             private float _invertedSince = -1f;
 
@@ -192,14 +194,27 @@ namespace RustLeagueHarmony
                 _invertedSince = -1f;
             }
 
+            public void ReturnHome()
+            {
+                if (car == null || car.IsDestroyed) return;
+                if (homePosition == Vector3.zero)
+                    return;
+                Instance.SnapCar(car.net.ID.Value, homePosition);
+            }
+
             private void RightCar()
             {
                 var rb = car.rigidBody;
                 if (rb == null) return;
+                Vector3 pos = car.transform.position;
+                if (Instance.PointInGoal(pos, true, 2f) || Instance.PointInGoal(pos, false, 2f))
+                {
+                    ReturnHome();
+                    return;
+                }
                 rb.velocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
                 Vector3 center = Instance.configData.eventSettings.eventCenter;
-                Vector3 pos = car.transform.position;
                 pos.y = center.y > 1f ? center.y : pos.y + 1.25f;
                 Quaternion rot = Quaternion.Euler(0f, car.transform.eulerAngles.y, 0f);
                 car.transform.SetPositionAndRotation(pos, rot);
@@ -215,6 +230,12 @@ namespace RustLeagueHarmony
                 if (center.y < 1f) return;
                 var rb = car.rigidBody;
                 Vector3 p = car.transform.position;
+                bool inGoal = Instance.PointInGoal(p, true, 2f) || Instance.PointInGoal(p, false, 2f);
+                if (inGoal && (p.y < center.y - 1.5f || p.y > center.y + 8f))
+                {
+                    ReturnHome();
+                    return;
+                }
                 bool dirty = false;
                 if (p.y < center.y - 1.5f)
                 {
@@ -454,9 +475,9 @@ namespace RustLeagueHarmony
             {
                 if (ball == null || Time.time < _scoreLockUntil || !notstarted) return;
                 Vector3 p = ball.transform.position;
-                if (Instance.PointInGoal(p, true))
+                if (Instance.PointInGoal(p, true, 1.5f))
                     Score(false);
-                else if (Instance.PointInGoal(p, false))
+                else if (Instance.PointInGoal(p, false, 1.5f))
                     Score(true);
             }
 

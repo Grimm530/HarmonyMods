@@ -1,4 +1,4 @@
-# DynamicCupShare Harmony Mod (3.1.23)
+# DynamicCupShare Harmony Mod (3.1.24)
 
 Oxide-free Harmony port of **DynamicCupShare 3.1.23** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AdminMenu / AutoCodeLock).
 
@@ -56,7 +56,7 @@ On first load, missing Harmony files are copied from `oxide/config/DynamicCupSha
 
 ## CUI
 
-Button commands are rewritten in `ChaosUI.Show` to `cui.endtest DYNAMICCUPSHARE dynamiccupshare.callback …`, then routed to `CommandCallbackHandler.HandleCallback` (same pattern as AdminMenu).
+Button commands are sent as `cui.endtest DYNAMICCUPSHARE <id>` (clients only forward ConsoleGen commands), then routed to `CommandCallbackHandler`. The × button and clicking outside the panel also use vanilla CUI `close` so the menu can always be dismissed.
 
 ## Soft dependencies
 

@@ -248,6 +248,12 @@ public class ButtonContainer : BaseContainer
 		return this;
 	}
 
+	public ButtonContainer WithClosePanel(string panelName)
+	{
+		m_Component.ClosePanel = panelName;
+		return this;
+	}
+
 	public ButtonContainer WithSprite(string sprite)
 	{
 		m_Component.Sprite = sprite;

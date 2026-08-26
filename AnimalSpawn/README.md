@@ -57,4 +57,4 @@ Copies only `AnimalSpawn.dll` into `HarmonyMods/`.
 
 ## GrimmBoss boss JSON
 
-Animal summons stay off until a boss profile sets Animal Ability cooldown not equal to `-1`, a type (`Wolf`, `Bear`, …), and count > 0. Wiring this mod only makes `SpawnAnimal` succeed when that ability runs.
+Animal summons stay off until a boss profile sets Animal Ability cooldown not equal to `-1`, a type (`Wolf`, `Bear`, `Tiger`, …), and count > 0. **Wolf** (and Tiger/Panther/Crocodile/Snake) are Gen2 — GrimmBoss spawns `wolf2.prefab` itself. This mod only wraps remaining Gen1 animals (`Bear`, `PolarBear`).

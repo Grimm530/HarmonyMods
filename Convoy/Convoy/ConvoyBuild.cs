@@ -116,5 +116,47 @@ namespace Convoy
             var f = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             return f?.GetValue(instance);
         }
+
+        public static void SetPrivateField(object instance, string name, object value)
+        {
+            if (instance == null) return;
+            var f = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            f?.SetValue(instance, value);
+        }
+
+        /// <summary>Destroy all components of type T on the entity hierarchy (Oxide BuildManager.DestroyEntityComponents).</summary>
+        public static void DestroyEntityComponents<T>(BaseEntity entity) where T : Component
+        {
+            if (entity == null) return;
+            var components = entity.GetComponentsInChildren<T>(true);
+            for (int i = 0; i < components.Length; i++)
+            {
+                if (components[i] != null)
+                    UnityEngine.Object.DestroyImmediate(components[i]);
+            }
+        }
+
+        /// <summary>
+        /// Oxide TravellingVendorVehicle.UpdateTravellingVendor parity: disable AI/pathing so road
+        /// TriggerPath volumes cannot call OnSplinePathTrigger → StopSplineMovement (null currentPath NRE
+        /// + isKinematic=false PhysX illegal-shape spam on kinematic convoy vans).
+        /// </summary>
+        public static void PrepareTravellingVendor(TravellingVendor vendor, ConvoyTravellingVendorConfig config)
+        {
+            if (vendor == null) return;
+
+            vendor.SetFlag(BaseEntity.Flags.Busy, true);
+            vendor.DoAI = false;
+            SetPrivateField(vendor, "currentPath", new System.Collections.Generic.List<Vector3> { Vector3.zero });
+
+            DestroyEntityComponents<TriggerBase>(vendor);
+
+            if (config != null && config.DeleteMapMarker)
+            {
+                var marker = GetPrivateField(vendor, "mapMarkerInstance") as MapMarker;
+                if (marker != null && !marker.IsDestroyed)
+                    marker.Kill();
+            }
+        }
     }
 }

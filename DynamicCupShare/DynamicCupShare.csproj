@@ -11,7 +11,7 @@
     <RootNamespace>DynamicCupShareHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: DynamicCupShare 3.1.23 Chaos UI port (Oxide-free).</Description>
+    <Description>Harmony mod: DynamicCupShare 3.1.24 Chaos UI port (Oxide-free).</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
   </PropertyGroup>

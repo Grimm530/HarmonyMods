@@ -8,6 +8,7 @@ namespace DynamicCupShareHarmony.Patches
     public static class Cui_Endtest_Patch
     {
         [HarmonyPrefix]
+        [HarmonyPriority(Priority.First)]
         public static bool Prefix(ConsoleSystem.Arg args)
         {
             var a = args?.Args;

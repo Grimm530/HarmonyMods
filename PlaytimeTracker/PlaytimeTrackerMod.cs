@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using UnityEngine;
 
@@ -24,7 +25,7 @@ namespace PlaytimeTrackerHarmony
         public const string AppDomainApiKey = "PlaytimeTracker_ApiType";
         public const int VersionMajor = 0;
         public const int VersionMinor = 2;
-        public const int VersionPatch = 21;
+        public const int VersionPatch = 22;
 
         internal ConfigData Configuration;
         internal StoredData storedData;
@@ -334,7 +335,7 @@ namespace PlaytimeTrackerHarmony
                     int count = Math.Min(Configuration.General.TopCount, _topList.Count);
                     for (int i = 0; i < count; i++)
                         str += string.Format(Msg("Top.Format"), _topList[i].displayName, FormatTime(_topList[i].playtime));
-                    user.ChatMessage(str);
+                    user.ChatMessage(ToUnityChat(str));
                     return;
                 default:
                     if (user.IsAdmin)
@@ -564,6 +565,20 @@ namespace PlaytimeTrackerHarmony
 
         private string Msg(string key) => _lang.TryGetValue(key, out var v) ? v : key;
 
+        // Oxide [#RRGGBB] / [+N] tags → Unity rich text (ChatMessage does not convert them).
+        private static readonly Regex OxideColorOpen = new Regex(@"\[#([0-9A-Fa-f]{3,8})\]", RegexOptions.Compiled);
+        private static readonly Regex OxideSizeOpen = new Regex(@"\[\+(\d+)\]", RegexOptions.Compiled);
+
+        private static string ToUnityChat(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.IndexOf('[') < 0) return text;
+            text = OxideColorOpen.Replace(text, "<color=#$1>");
+            text = text.Replace("[/#]", "</color>");
+            text = OxideSizeOpen.Replace(text, "<size=$1>");
+            text = text.Replace("[/+]", "</size>");
+            return text;
+        }
+
         private void Message(BasePlayer user, string key, params object[] args)
         {
             string text = Msg(key);
@@ -571,11 +586,12 @@ namespace PlaytimeTrackerHarmony
             {
                 try { text = string.Format(text, args); } catch { }
             }
-            user?.ChatMessage(text);
+            user?.ChatMessage(ToUnityChat(text));
         }
 
         private static void Reply(BasePlayer player, string msg)
         {
+            msg = ToUnityChat(msg);
             if (player != null && player.IsConnected) player.ChatMessage(msg);
             else Debug.Log("[PlaytimeTracker] " + msg);
         }
@@ -926,21 +942,21 @@ namespace PlaytimeTrackerHarmony
 
         private static readonly Dictionary<string, string> DefaultMessages = new Dictionary<string, string>
         {
-            ["Playtime.Both"] = "[#45b6fe]Playtime[/#] : [#ffd479]{0}[/#]\n[#45b6fe]AFK Time[/#] : [#ffd479]{1}[/#]",
-            ["Playtime.Single"] = "[#45b6fe]Playtime[/#] : [#ffd479]{0}[/#]",
-            ["Playtime.Help"] = "You can see the top scoring playtimes by typing [#a1ff46]/playtime top[/#]\nAdmins can check when a player was last seen with [#a1ff46]/playtime lastseen <playername>[/#]",
-            ["Top.Title"] = "[#45b6fe]Top Playtimes:[/#]",
-            ["Top.Format"] = "\n[#a1ff46]{0}[/#] - [#ffd479]{1}[/#]",
+            ["Playtime.Both"] = "<color=#45b6fe>Playtime</color> : <color=#ffd479>{0}</color>\n<color=#45b6fe>AFK Time</color> : <color=#ffd479>{1}</color>",
+            ["Playtime.Single"] = "<color=#45b6fe>Playtime</color> : <color=#ffd479>{0}</color>",
+            ["Playtime.Help"] = "You can see the top scoring playtimes by typing <color=#55ff55>/playtime top</color>\nAdmins can check when a player was last seen with <color=#55ff55>/playtime lastseen <playername></color>",
+            ["Top.Title"] = "<color=#45b6fe>Top Playtimes:</color>",
+            ["Top.Format"] = "\n<color=#55ff55>{0}</color> - <color=#ffd479>{1}</color>",
             ["Referral.Disabled"] = "The referral system is disabled",
-            ["Referral.Help"] = "[#ffd479]/refer <name or ID>[/#] - Add a referral for the specified player",
+            ["Referral.Help"] = "<color=#ffd479>/refer <name or ID></color> - Add a referral for the specified player",
             ["Referral.Submitted"] = "You have already submitted your referral",
             ["Referral.Self"] = "You can not refer yourself",
             ["Referral.Accepted"] = "Your referral has been accepted",
-            ["Referral.Acknowledged"] = "[#a1ff46]{0}[/#] has acknowledged a referral from you",
-            ["Reward.Given.ServerRewards"] = "You have received [#a1ff46]{0} RP[/#] for playing on our server!",
-            ["Reward.Given.Economics"] = "You have received [#a1ff46]{0}[/#] coins for playing on our server!",
+            ["Referral.Acknowledged"] = "<color=#55ff55>{0}</color> has acknowledged a referral from you",
+            ["Reward.Given.ServerRewards"] = "You have received <color=#55ff55>{0} RP</color> for playing on our server!",
+            ["Reward.Given.Economics"] = "You have received <color=#55ff55>{0}</color> coins for playing on our server!",
             ["Error.NoPlaytimeStored"] = "No playtime has been stored for you yet",
-            ["Error.NoPlayerFound"] = "No player found with the name [#a1ff46]{0}[/#]",
+            ["Error.NoPlayerFound"] = "No player found with the name <color=#55ff55>{0}</color>",
             ["Error.NoTimeStored"] = "No time stored for the specified player",
             ["Error.InvalidSyntax"] = "Invalid syntax",
         };

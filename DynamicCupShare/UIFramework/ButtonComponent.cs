@@ -13,6 +13,9 @@ public class ButtonComponent : BaseCuiComponent, ICuiColorComponent, ICuiCommand
 
 	public bool Close { get; set; }
 
+	/// <summary>Vanilla CUI <c>close</c> is a panel name string, not a bool.</summary>
+	public string ClosePanel { get; set; }
+
 	public string Sprite { get; set; } = Sprites.DEFAULT;
 
 	public string Material { get; set; } = Materials.DEFAULT;
@@ -57,6 +60,7 @@ public class ButtonComponent : BaseCuiComponent, ICuiColorComponent, ICuiCommand
 			Color = buttonComponent.Color;
 			Command = buttonComponent.Command;
 			Close = buttonComponent.Close;
+			ClosePanel = buttonComponent.ClosePanel;
 			Sprite = buttonComponent.Sprite;
 			Material = buttonComponent.Material;
 			ImageType = buttonComponent.ImageType;
@@ -94,7 +98,12 @@ public class ButtonComponent : BaseCuiComponent, ICuiColorComponent, ICuiCommand
 			jsonWriter.WritePropertyName("command");
 			jsonWriter.WriteValue(Command);
 		}
-		if (Close || IsFieldDirty("Close", dirtyFields))
+		if (!string.IsNullOrEmpty(ClosePanel) || IsFieldDirty("ClosePanel", dirtyFields))
+		{
+			jsonWriter.WritePropertyName("close");
+			jsonWriter.WriteValue(ClosePanel);
+		}
+		else if (Close || IsFieldDirty("Close", dirtyFields))
 		{
 			jsonWriter.WritePropertyName("close");
 			jsonWriter.WriteValue(Close);
@@ -113,6 +122,7 @@ public class ButtonComponent : BaseCuiComponent, ICuiColorComponent, ICuiCommand
 		Color = Color.DEFAULT;
 		Command = null;
 		Close = false;
+		ClosePanel = null;
 		Sprite = Sprites.DEFAULT;
 		Material = Materials.DEFAULT;
 		ImageType = Image.Type.Simple;

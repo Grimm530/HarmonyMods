@@ -66,3 +66,4 @@ Load: `harmony.load 0PveMode` then `harmony.load Convoy` (`0GrimmNPC` required f
 | Plain scientists | Load **0GrimmNPC** before Convoy (`harmony.load 0GrimmNPC`). |
 | No owner / anyone can loot on PVE | Load **0PveMode**, set `"Use the PVE mode of the plugin?"` true. Remove legacy `HarmonyMods/PveMode.dll` if present. |
 | Turrets shoot Bradley | Rebuild includes TurretOptimizer — `harmony.load Convoy`. |
+| PhysX `illegal collision shapes` + `TravellingVendor.FindClosestNode` NRE spam | Hard/Nightmare presets use TravellingVendor vans. Rebuild includes `PrepareTravellingVendor` + `OnSplinePathTrigger` block — `harmony.load Convoy` (or restart). |

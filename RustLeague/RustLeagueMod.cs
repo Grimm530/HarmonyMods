@@ -12,7 +12,7 @@ namespace RustLeagueHarmony
 
         public const int VersionMajor = 1;
         public const int VersionMinor = 3;
-        public const int VersionPatch = 27;
+        public const int VersionPatch = 28;
 
         public const string AppDomainApiKey = "RustLeague_ApiType";
 

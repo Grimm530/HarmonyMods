@@ -4238,7 +4238,8 @@ namespace Oxide.Plugins
                     info.damageTypes.Clear();
                     return true;
                 }
-                if (weapon is BasePlayer driver && (driver.GetMountedVehicle() is ScrapTransportHelicopter || info.WeaponPrefab is ScrapTransportHelicopter))
+                // Driver path: teleport only when hit target is a player (null victim NRE on BuildingBlock).
+                if (victim != null && weapon is BasePlayer driver && (driver.GetMountedVehicle() is ScrapTransportHelicopter || info.WeaponPrefab is ScrapTransportHelicopter))
                 {
                     victim.Teleport(weapon.transform.position + new Vector3(0f, 2.5f, 0f));
                     info.damageTypes.Clear();

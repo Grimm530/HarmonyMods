@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.IO;
-using System.Text;
 using HarmonyChat;
 using Oxide.Ext.Chaos.UIFramework;
 using UnityEngine;
@@ -9,7 +8,7 @@ using UnityEngine;
 namespace DynamicCupShareHarmony
 {
     /// <summary>
-    /// Harmony entry for DynamicCupShare 3.1.23 (Chaos UI port).
+    /// Harmony entry for DynamicCupShare 3.1.24 (Chaos UI port).
     /// Load order: 0Permissions -> DynamicCupShare (ready-callback safe).
     /// </summary>
     public class DynamicCupShareMod : IHarmonyModHooks
@@ -18,7 +17,7 @@ namespace DynamicCupShareHarmony
 
         public const int VersionMajor = 3;
         public const int VersionMinor = 1;
-        public const int VersionPatch = 23;
+        public const int VersionPatch = 24;
 
         public const string AppDomainApiKey = "DynamicCupShare_ApiType";
         public const string AppDomainPluginKey = "DynamicCupShare_Plugin";
@@ -214,54 +213,29 @@ namespace DynamicCupShareHarmony
         /// <summary>Route cui.endtest DYNAMICCUPSHARE … to CommandCallbackHandler.</summary>
         public void HandleCuiCallback(ConsoleSystem.Arg args, Array a)
         {
-            if (_plugin?.CallbackHandler == null || a == null || a.Length < 1) return;
+            if (_plugin?.CallbackHandler == null || a == null || a.Length < 2) return;
             var player = args.Connection?.player as BasePlayer ?? args.Player();
             if (player == null || player.IsDestroyed || !player.IsConnected) return;
 
             const string cmd = "dynamiccupshare.callback";
-            var sb = new StringBuilder(cmd);
-            int start = 1;
-            if (a.Length >= 2)
+            int idIndex = 1;
+            string second = a.GetValue(1)?.ToString() ?? string.Empty;
+            if (second.Equals(cmd, StringComparison.OrdinalIgnoreCase))
+                idIndex = 2;
+            else if (second.StartsWith(cmd, StringComparison.OrdinalIgnoreCase) && second.Length > cmd.Length)
             {
-                string second = a.GetValue(1)?.ToString() ?? "";
-                if (second.Equals(cmd, StringComparison.OrdinalIgnoreCase) ||
-                    second.StartsWith(cmd, StringComparison.OrdinalIgnoreCase))
+                string rest = second.Substring(cmd.Length).Trim();
+                if (!string.IsNullOrEmpty(rest))
                 {
-                    start = 2;
-                    if (second.Length > cmd.Length)
-                    {
-                        var rest = second.Substring(cmd.Length).Trim();
-                        if (!string.IsNullOrEmpty(rest))
-                        {
-                            sb.Append(' ');
-                            sb.Append(rest);
-                        }
-                    }
+                    _plugin.CallbackHandler.HandleCui(args, rest);
+                    return;
                 }
+                idIndex = 2;
             }
 
-            for (int i = start; i < a.Length; i++)
-            {
-                sb.Append(' ');
-                string s = a.GetValue(i)?.ToString() ?? string.Empty;
-                if (s.IndexOfAny(new[] { ' ', '"' }) >= 0)
-                    sb.Append('"').Append(s.Replace("\"", "\\\"")).Append('"');
-                else
-                    sb.Append(s);
-            }
-
-            try
-            {
-                var opt = ConsoleSystem.Option.Server.Quiet();
-                if (args.Connection != null)
-                    opt = opt.FromConnection(args.Connection);
-                var uiArg = new ConsoleSystem.Arg(opt, sb.ToString());
-                _plugin.CallbackHandler.HandleCallback(uiArg);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[DynamicCupShare] cui.endtest DYNAMICCUPSHARE: " + ex);
-            }
+            if (a.Length <= idIndex) return;
+            string identifier = a.GetValue(idIndex)?.ToString() ?? string.Empty;
+            _plugin.CallbackHandler.HandleCui(args, identifier);
         }
     }
 

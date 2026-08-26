@@ -13,13 +13,14 @@ public class CommandCallbackHandler
 		new Dictionary<string, KeyValuePair<ulong?, Action<ConsoleSystem.Arg>>>();
 
 	private readonly string m_Command;
+	private readonly string m_CuiEndtestMarker;
 	private readonly ConsoleSystem.Command m_CallbackCommand;
 	private readonly StringBuilder m_IdentifierBuilder = new StringBuilder();
 	private readonly string m_DisplayName;
 
 	public string CommandFullName => m_Command;
 
-	public CommandCallbackHandler(string pluginTitle)
+	public CommandCallbackHandler(string pluginTitle, string cuiEndtestMarker = null)
 	{
 		if (string.IsNullOrEmpty(pluginTitle))
 			pluginTitle = "adminmenu";
@@ -27,6 +28,7 @@ public class CommandCallbackHandler
 		string parent = pluginTitle.Replace(" ", "").ToLowerInvariant();
 		m_DisplayName = pluginTitle;
 		m_Command = parent + ".callback";
+		m_CuiEndtestMarker = cuiEndtestMarker;
 
 		m_CallbackCommand = new ConsoleSystem.Command
 		{
@@ -55,7 +57,12 @@ public class CommandCallbackHandler
 	/// Accepts a host object with a Title property (e.g. AdminMenu), or a string prefix.
 	/// </summary>
 	public CommandCallbackHandler(object pluginOrTitle)
-		: this(ResolveTitle(pluginOrTitle))
+		: this(ResolveTitle(pluginOrTitle), null)
+	{
+	}
+
+	public CommandCallbackHandler(object pluginOrTitle, string cuiEndtestMarker)
+		: this(ResolveTitle(pluginOrTitle), cuiEndtestMarker)
 	{
 	}
 
@@ -96,6 +103,8 @@ public class CommandCallbackHandler
 		}
 
 		m_ConsoleCommands[identifier] = new KeyValuePair<ulong?, Action<ConsoleSystem.Arg>>(userId, callback);
+		if (!string.IsNullOrEmpty(m_CuiEndtestMarker))
+			return "cui.endtest " + m_CuiEndtestMarker + " " + identifier;
 		return m_Command + " " + identifier;
 	}
 
@@ -106,12 +115,26 @@ public class CommandCallbackHandler
 
 	public void HandleCallback(ConsoleSystem.Arg arg)
 	{
-		string key = arg.GetString(0);
-		KeyValuePair<ulong?, Action<ConsoleSystem.Arg>> entry;
-		if (!m_ConsoleCommands.TryGetValue(key, out entry))
+		if (arg == null) return;
+		HandleCui(arg, arg.GetString(0));
+	}
+
+	/// <summary>
+	/// Invoke a registered callback using the original <c>cui.endtest</c> arg (keeps the player connection).
+	/// </summary>
+	public void HandleCui(ConsoleSystem.Arg sourceArg, string identifier)
+	{
+		if (sourceArg == null || string.IsNullOrEmpty(identifier))
 			return;
 
-		BasePlayer player = arg.Connection != null ? arg.Connection.player as BasePlayer : null;
+		identifier = StripIdentifier(identifier);
+		KeyValuePair<ulong?, Action<ConsoleSystem.Arg>> entry;
+		if (!m_ConsoleCommands.TryGetValue(identifier, out entry))
+			return;
+
+		BasePlayer player = sourceArg.Connection != null
+			? sourceArg.Connection.player as BasePlayer
+			: sourceArg.Player();
 		if (entry.Key.HasValue)
 		{
 			if (player == null)
@@ -127,7 +150,7 @@ public class CommandCallbackHandler
 			}
 		}
 
-		entry.Value?.Invoke(arg);
+		entry.Value?.Invoke(sourceArg);
 	}
 
 	public void Clear()

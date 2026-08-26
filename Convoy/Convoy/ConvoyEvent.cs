@@ -376,7 +376,7 @@ namespace Convoy
             {
                 var e = ConvoyBuild.SpawnRegularEntity("assets/prefabs/npc/travelling vendor/travellingvendor.prefab", pos, rot);
                 var tv = e as TravellingVendor;
-                if (tv != null) tv.DoAI = false;
+                if (tv != null) ConvoyBuild.PrepareTravellingVendor(tv, vendor);
                 return FinishVehicle(e, vendor, 0.5f);
             }
 

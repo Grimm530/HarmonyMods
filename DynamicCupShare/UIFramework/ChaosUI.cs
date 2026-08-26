@@ -21,10 +21,11 @@ public class ChaosUI
 
 	public static void Show(BasePlayer player, BaseContainer baseContainer, bool recycle = true)
 	{
-		string arg = ToJson(baseContainer);
-		// Clients only forward ConsoleGen commands; bridge dynamiccupshare.callback through cui.endtest DYNAMICCUPSHARE.
-		arg = arg.Replace("\"command\":\"dynamiccupshare.callback ", "\"command\":\"cui.endtest DYNAMICCUPSHARE dynamiccupshare.callback ");
-		arg = arg.Replace("\"command\": \"dynamiccupshare.callback ", "\"command\": \"cui.endtest DYNAMICCUPSHARE dynamiccupshare.callback ");
+        string arg = ToJson(baseContainer);
+		// Clients only forward ConsoleGen commands. Prefer commands already written as cui.endtest;
+		// rewrite leftover Oxide-style callback names if any remain.
+		arg = arg.Replace("\"command\":\"dynamiccupshare.callback ", "\"command\":\"cui.endtest DYNAMICCUPSHARE ");
+		arg = arg.Replace("\"command\": \"dynamiccupshare.callback ", "\"command\": \"cui.endtest DYNAMICCUPSHARE ");
 		SendInfo sendInfo = new SendInfo
 		{
 			connection = player.net.connection

@@ -1,4 +1,4 @@
-# PlaytimeTracker Harmony Mod (0.2.21)
+# PlaytimeTracker Harmony Mod (0.2.22)
 
 Tracks playtime / AFK / referrals. Migrates Oxide `PlaytimeTracker` and legacy `PTTracker` data.
 

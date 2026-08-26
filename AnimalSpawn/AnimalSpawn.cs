@@ -219,11 +219,37 @@ namespace AnimalSpawn
             return null;
         }
 
+        private static readonly HashSet<string> _loggedUnsupportedPrefabs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Old Gen1 wolf prefab was deleted; current wolf is Gen2 wolf2 (not wrappable here).</summary>
+        private static string ResolveAnimalPrefab(string prefab)
+        {
+            if (string.IsNullOrEmpty(prefab)) return prefab;
+            if (prefab.IndexOf("/wolf/wolf.prefab", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "assets/rust.ai/agents/wolf/wolf2.prefab";
+            return prefab;
+        }
+
         private CustomAnimalNpc CreateCustomAnimal(Vector3 position, AnimalConfig config)
         {
             if (config == null || string.IsNullOrEmpty(config.Prefab))
             {
                 PrintError("CreateCustomAnimal: null config or prefab");
+                return null;
+            }
+
+            config.Prefab = ResolveAnimalPrefab(config.Prefab);
+
+            GameObject prefabGo = GameManager.server.FindPrefab(config.Prefab);
+            if (prefabGo == null)
+            {
+                PrintError($"CreateCustomAnimal: prefab not found '{config.Prefab}' at {position}");
+                return null;
+            }
+            if (prefabGo.GetComponent<BaseAnimalNPC>() == null)
+            {
+                if (_loggedUnsupportedPrefabs.Add(config.Prefab))
+                    PrintError($"CreateCustomAnimal: '{config.Prefab}' is not a Gen1 BaseAnimalNPC (Wolf2/Tiger/etc. must be spawned by GrimmBoss Gen2 path).");
                 return null;
             }
 

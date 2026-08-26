@@ -13,6 +13,10 @@ namespace DynamicCupShareHarmony
     public partial class DynamicCupSharePlugin
     {
         private const string UI_MENU = "dcs.menu";
+        internal const string CuiEndtestMarker = "DYNAMICCUPSHARE";
+
+        /// <summary>Alpha 0 buttons do not receive clicks; keep a tiny alpha so the hit target works.</summary>
+        private static readonly Color ClickableClear = new Color(0f, 0f, 0f, 0.01f);
 
         private enum ShareUiPage { Sharing, Commands }
 
@@ -32,7 +36,7 @@ namespace DynamicCupShareHarmony
 
         private void SetupUIComponents()
         {
-            _callbackHandler = new CommandCallbackHandler(this);
+            _callbackHandler = new CommandCallbackHandler(this, CuiEndtestMarker);
 
             _backgroundStyle = new Style
             {
@@ -116,25 +120,18 @@ namespace DynamicCupShareHarmony
             }
 
             float width = Mathf.Max(250, list.Count * 130);
+            float height = 40 + (25 * (AllowedShareTypes.Count + 1)) + 5;
+            float shareWidth = list.Count > 0 ? width / list.Count : width;
             float halfWidth = width * 0.5f;
 
-            float height = 40 + (25 * (AllowedShareTypes.Count + 1)) + 5;
-            float halfHeight = height * 0.5f;
-
-            float shareWidth = list.Count > 0 ? width / list.Count : width;
-
-            BaseContainer root = ImageContainer.Create(UI_MENU, Layer.Overall, UIAnchor.Center, new Offset(-halfWidth, -halfHeight, halfWidth, halfHeight))
-                .WithStyle(_backgroundStyle)
-                .NeedsCursor()
-                .DestroyExisting()
-                .WithChildren(parent =>
+            BaseContainer root = CreateShareMenuRoot(player, width, height, parent =>
                 {
                     CreateMenuHeader(parent, player, playerData, shareTarget, ShareUiPage.Sharing, width);
 
                     for (int i = 0; i < list.Count; i++)
                     {
                         TeamType teamType = list[i];
-                        Offset offset = new Offset(-halfWidth + (shareWidth * i), -halfHeight, -halfWidth + (shareWidth * (i + 1)), halfHeight - 40);
+                        Offset offset = new Offset(-halfWidth + (shareWidth * i), -height * 0.5f, -halfWidth + (shareWidth * (i + 1)), height * 0.5f - 40);
 
                         BaseContainer.Create(parent, UIAnchor.Center, offset)
                             .WithChildren(column =>
@@ -161,7 +158,7 @@ namespace DynamicCupShareHarmony
                                                 .WithStyle(_buttonStyle);
 
                                             ButtonContainer.Create(button, UIAnchor.FullStretch, Offset.zero)
-                                                .WithColor(Color.Clear)
+                                                .WithColor(ClickableClear)
                                                 .WithCallback(_callbackHandler, arg =>
                                                 {
                                                     if (!isSharing)
@@ -228,15 +225,8 @@ namespace DynamicCupShareHarmony
             if (canSharePlayer) rows += 1;
 
             float height = HEADER + 10f + (rows * ROW);
-            float halfWidth = WIDTH * 0.5f;
-            float halfHeight = height * 0.5f;
 
-            BaseContainer root = ImageContainer.Create(UI_MENU, Layer.Overall, UIAnchor.Center, new Offset(-halfWidth, -halfHeight, halfWidth, halfHeight))
-                .WithStyle(_backgroundStyle)
-                .NeedsCursor()
-                .NeedsKeyboard()
-                .DestroyExisting()
-                .WithChildren(parent =>
+            BaseContainer root = CreateShareMenuRoot(player, WIDTH, height, parent =>
                 {
                     CreateMenuHeader(parent, player, playerData, shareTarget, ShareUiPage.Commands, WIDTH);
 
@@ -339,6 +329,29 @@ namespace DynamicCupShareHarmony
             ChaosUI.Show(player, root);
         }
 
+        private BaseContainer CreateShareMenuRoot(BasePlayer player, float width, float height, System.Action<BaseContainer> buildPanel)
+        {
+            float halfWidth = width * 0.5f;
+            float halfHeight = height * 0.5f;
+
+            return ImageContainer.Create(UI_MENU, Layer.Overall, UIAnchor.FullStretch, Offset.zero)
+                .WithColor(ClickableClear)
+                .NeedsCursor()
+                .NeedsKeyboard()
+                .DestroyExisting()
+                .WithChildren(overlay =>
+                {
+                    ButtonContainer.Create(overlay, UIAnchor.FullStretch, Offset.zero)
+                        .WithColor(ClickableClear)
+                        .WithClosePanel(UI_MENU)
+                        .WithCallback(_callbackHandler, arg => ChaosUI.Destroy(player, UI_MENU), $"{player.UserIDString}.close");
+
+                    ImageContainer.Create(overlay, UIAnchor.Center, new Offset(-halfWidth, -halfHeight, halfWidth, halfHeight))
+                        .WithStyle(_backgroundStyle)
+                        .WithChildren(buildPanel);
+                });
+        }
+
         private void CreateMenuHeader(BaseContainer parent, BasePlayer player, StoredData.PlayerData playerData, ulong shareTarget, ShareUiPage page, float width)
         {
             BaseContainer.Create(parent, UIAnchor.TopStretch, new Offset(5, -35, -5, -5))
@@ -371,7 +384,8 @@ namespace DynamicCupShareHarmony
                                 .WithStyle(_closeStyle);
 
                             ButtonContainer.Create(close, UIAnchor.FullStretch, Offset.zero)
-                                .WithColor(Color.Clear)
+                                .WithColor(ClickableClear)
+                                .WithClosePanel(UI_MENU)
                                 .WithCallback(_callbackHandler, arg => ChaosUI.Destroy(player, UI_MENU), $"{player.UserIDString}.close");
                         });
                 });
@@ -388,7 +402,7 @@ namespace DynamicCupShareHarmony
                 .WithSize(11);
 
             ButtonContainer.Create(tab, UIAnchor.FullStretch, Offset.zero)
-                .WithColor(Color.Clear)
+                .WithColor(ClickableClear)
                 .WithCallback(_callbackHandler, arg => onClick(), id);
 
             if (active)
@@ -436,7 +450,7 @@ namespace DynamicCupShareHarmony
                                 .WithSize(12);
 
                             ButtonContainer.Create(btn, UIAnchor.FullStretch, Offset.zero)
-                                .WithColor(Color.Clear)
+                                .WithColor(ClickableClear)
                                 .WithCallback(_callbackHandler, arg => onClick(), $"{player.UserIDString}.action.{index}");
                         });
                 });
@@ -472,7 +486,7 @@ namespace DynamicCupShareHarmony
                             }
 
                             ButtonContainer.Create(toggle, UIAnchor.FullStretch, Offset.zero)
-                                .WithColor(Color.Clear)
+                                .WithColor(ClickableClear)
                                 .WithCallback(_callbackHandler, arg => onClick(), $"{player.UserIDString}.toggle.{index}");
                         });
                 });
@@ -517,7 +531,7 @@ namespace DynamicCupShareHarmony
                                 .WithSize(11);
 
                             ButtonContainer.Create(btn, UIAnchor.FullStretch, Offset.zero)
-                                .WithColor(Color.Clear)
+                                .WithColor(ClickableClear)
                                 .WithCallback(_callbackHandler, arg =>
                                 {
                                     if (!_uiInputs.TryGetValue(callbackId, out string value) || string.IsNullOrWhiteSpace(value))
@@ -564,22 +578,39 @@ namespace DynamicCupShareHarmony
                         .WithSize(11);
 
                     ButtonContainer.Create(btn, UIAnchor.FullStretch, Offset.zero)
-                        .WithColor(Color.Clear)
+                        .WithColor(ClickableClear)
                         .WithCallback(_callbackHandler, arg => onClick(), id);
                 });
         }
 
         private static string GetUiInput(ConsoleSystem.Arg arg)
         {
-            if (arg == null || arg.Args == null || arg.Args.Length < 2)
+            if (arg == null || arg.Args == null || arg.Args.Length == 0)
                 return string.Empty;
 
-            if (arg.Args.Length == 2)
-                return arg.GetString(1, string.Empty);
+            int start = 0;
+            string first = arg.GetString(0, string.Empty);
+            if (first.Equals(CuiEndtestMarker, System.StringComparison.OrdinalIgnoreCase))
+                start = 1;
 
-            var parts = new string[arg.Args.Length - 1];
-            for (int i = 1; i < arg.Args.Length; i++)
-                parts[i - 1] = arg.GetString(i, string.Empty);
+            if (arg.Args.Length > start)
+            {
+                string token = arg.GetString(start, string.Empty);
+                if (token.Equals("dynamiccupshare.callback", System.StringComparison.OrdinalIgnoreCase) ||
+                    token.StartsWith("dynamiccupshare.callback", System.StringComparison.OrdinalIgnoreCase))
+                    start++;
+            }
+
+            start++;
+            if (arg.Args.Length <= start)
+                return string.Empty;
+
+            if (arg.Args.Length == start + 1)
+                return arg.GetString(start, string.Empty);
+
+            var parts = new string[arg.Args.Length - start];
+            for (int i = start; i < arg.Args.Length; i++)
+                parts[i - start] = arg.GetString(i, string.Empty);
             return string.Join(" ", parts);
         }
 

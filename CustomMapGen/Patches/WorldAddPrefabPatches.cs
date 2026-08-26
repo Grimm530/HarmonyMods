@@ -263,7 +263,7 @@ namespace CustomMapGen.Patches
                     string displayName = GetMonumentDisplayName(shortName, prefab.Name);
                     float movedDistSq = (position - originalPosition).sqrMagnitude;
                     bool moved = movedDistSq > 1f;
-                    UnityEngine.Debug.Log($"[CustomMapGen] Monument placed: {displayName} at ({position.x:F0}, {position.y:F0}, {position.z:F0}) {(moved ? $"(relocated from ({originalPosition.x:F0}, {originalPosition.z:F0}))" : "(generated position)")}");
+                    UnityEngine.Debug.Log($"[CustomMapGen] Monument placed: {displayName} at ({position.x:F0}, {position.y:F0}, {position.z:F0}) yaw={rotation.eulerAngles.y:F1} {(moved ? $"(relocated from ({originalPosition.x:F0}, {originalPosition.z:F0}))" : "(generated position)")}");
                 }
             }
 
