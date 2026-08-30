@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"runtime_profiler","columns":["time","avg_sm","max_sm","avg_net","max_net","avg_bp","max_bp","avg_phys","max_phys"],"values":[[1787946954733,297.54786641615993,2711.5904,19.455055808721458,900.0325,12.393908352879249,42.1575,1.3925147431908547,10.3413]]}]}]}

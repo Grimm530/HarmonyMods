@@ -14,13 +14,19 @@ None of the existing Harmony mods expose a livemap snapshot. Bolting this onto L
 
 ## What it writes
 
-Every ~0.4s (config):
+Every ~1s (config `IntervalSeconds`):
 
 | File | Role |
 |---|---|
 | `C:\!WEB RCON PANEL\livemap\data\snapshot.json` | Players + vehicles (MAP tab polls this) |
+| `C:\svr1\HarmonyData\Livemap\snapshot.json` | Server-local copy |
+
+Every ~30s (config `BuildingsIntervalSeconds`):
+
+| File | Role |
+|---|---|
 | `C:\!WEB RCON PANEL\livemap\data\buildings.json` | Building blocks |
-| `C:\svr1\HarmonyData\Livemap\*.json` | Server-local copies of the same dumps |
+| `C:\svr1\HarmonyData\Livemap\buildings.json` | Server-local copy |
 
 Once per load (when monument list is ready):
 
@@ -58,8 +64,8 @@ Requires the **Minimap** Harmony mod to finish its overworld render first (`Harm
 
 | Source | Types written |
 |---|---|
-| `PatrolHelicopter` | `patrolheli` |
-| `BradleyAPC` (not part of Convoy) | `bradley` — yaw follows parent `TrainCar` when welded (ArmoredTrain) |
+| `MapMarker.serverMapMarkers` parented to `PatrolHelicopter` | `patrolheli` |
+| Tracked `BradleyAPC` (ServerInit + load seed; not part of Convoy) | `bradley` — yaw follows parent `TrainCar` when welded (ArmoredTrain) |
 | ArmoredTrain event (`_trainEngine` + `_wagonDatas`) | `locomotive` / `wagon` / `wagon_fuel` / `wagon_loot` / `wagon_flat` |
 | Convoy `EventController._vehicles` (when event active) | `sedan`, `vendor`, `modular_car`, `bradley` |
 
@@ -69,7 +75,7 @@ Convoy positions are whatever the Convoy mod sets on the entity (road `Sample` p
 
 ### Buildings JSON
 
-Block rows: `x, y, z, yaw, k` (kind), `g` (grade), optional `h` (height scale for half / low walls), optional `t` (`1` = triangle footprint). Viewer treats `transform.position` as bottom-center; walls are thin on local X; Unity yaw is applied as +Y in Three.js.
+Block rows: `x, y, z, yaw, k` (kind), `g` (grade), optional `h` (height scale for half / low walls), optional `t` (`1` = triangle footprint). Viewer treats `transform.position` as bottom-center; walls are thin on local X; Unity yaw is applied as +Y in Three.js. Built from `BuildingManager.server.buildingDictionary` (same blocks + TCs as the old full-entity walk).
 
 ## RCON
 

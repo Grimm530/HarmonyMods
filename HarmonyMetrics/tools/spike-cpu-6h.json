@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"cpu_sample","columns":["time","avg_cpu","max_cpu","avg_update","max_update","avg_phys","max_phys"],"values":[[1787946954706,801.5994503949071,3218.1685,333.3240200708433,2748.7709,89.24131524101288,552.8094]]}]}]}

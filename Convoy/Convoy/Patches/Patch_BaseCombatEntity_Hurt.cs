@@ -15,6 +15,8 @@ namespace Convoy.Patches
         [HarmonyPrefix]
         public static void Prefix(BaseCombatEntity __instance, HitInfo info)
         {
+            TryScaleBradleyBuildingDamage(__instance, info);
+
             if (!TryGetConvoyHit(__instance, info, out var ec, out var attacker)) return;
 
             if (ServerMgr.Instance != null)
@@ -45,6 +47,17 @@ namespace Convoy.Patches
             bool justLocked = ConvoyState.RecordDamage(teamId, info.damageTypes.Total(), threshold, out _);
             if (justLocked && mod.Config.Debug)
                 UnityEngine.Debug.Log($"[Convoy] Event locked to team {teamId} (threshold {threshold}).");
+        }
+
+        private static void TryScaleBradleyBuildingDamage(BaseCombatEntity entity, HitInfo info)
+        {
+            if (entity is not BuildingBlock) return;
+            if (info?.Initiator is not BradleyAPC apc || apc.net == null) return;
+            var ec = EventController.Instance;
+            if (ec == null || !ec.IsFullySpawned()) return;
+            float scale = ec.GetBradleyBuildingDamageScale((ulong)apc.net.ID.Value);
+            if (scale < 0f || info.damageTypes == null) return;
+            info.damageTypes.ScaleAll(scale);
         }
 
         private static bool TryGetConvoyHit(BaseCombatEntity entity, HitInfo info, out EventController ec, out BasePlayer attacker)

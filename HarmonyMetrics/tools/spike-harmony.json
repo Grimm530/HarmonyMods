@@ -1,0 +1,82 @@
+[
+  {
+    "mod": "0GrimmNPC",
+    "patches": 0
+  },
+  {
+    "mod": "RustRewards",
+    "patches": 0
+  },
+  {
+    "mod": "RustLeague",
+    "patches": 0
+  },
+  {
+    "mod": "RocketGuidanceSystem",
+    "patches": 0
+  },
+  {
+    "mod": "RestoreItems",
+    "patches": 0
+  },
+  {
+    "mod": "RemoverTool",
+    "patches": 0
+  },
+  {
+    "mod": "RaidableBasesBuyableUI",
+    "patches": 0
+  },
+  {
+    "mod": "RaidableBases",
+    "patches": 0
+  },
+  {
+    "mod": "Radio",
+    "patches": 0
+  },
+  {
+    "mod": "Radar",
+    "patches": 0
+  },
+  {
+    "mod": "Quest",
+    "patches": 0
+  },
+  {
+    "mod": "Prodigy",
+    "patches": 0
+  },
+  {
+    "mod": "PrivateMessages",
+    "patches": 0
+  },
+  {
+    "mod": "PlaytimeTracker",
+    "patches": 0
+  },
+  {
+    "mod": "PlayerSkins",
+    "patches": 0
+  },
+  {
+    "mod": "PlayerDLCAPI",
+    "patches": 0
+  },
+  {
+    "mod": "PlatformSync",
+    "patches": 0
+  },
+  {
+    "mod": "PersonalNPC",
+    "patches": 0
+  },
+  {
+    "mod": "NoGibs",
+    "patches": 0
+  },
+  {
+    "mod": "NoActiveItemDrop",
+    "patches": 0
+  }
+]

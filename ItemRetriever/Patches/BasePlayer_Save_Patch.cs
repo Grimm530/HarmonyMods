@@ -12,10 +12,14 @@ namespace ItemRetrieverHarmony
         private static void Postfix(BasePlayer __instance, BaseNetworkable.SaveInfo info)
         {
             var plugin = ItemRetrieverHost.Instance?.Plugin;
-            if (plugin == null || info.msg?.basePlayer?.inventory?.invMain == null)
+            // Match Oxide IOnEntitySaved: network snapshots only. Disk saves include invMain, and
+            // injecting supplier items there writes ulong.MaxValue fake ItemIds into the world .sav
+            // (RegisterUID on load then exhausts TakeUID: "ran out of available UIDs").
+            if (plugin == null || info.forDisk || info.forConnection == null)
+                return;
+            if (info.msg?.basePlayer?.inventory?.invMain == null)
                 return;
 
-            // Oxide only fires for network snapshots with inventory; disk saves also have invMain when forDisk.
             try
             {
                 plugin.OnEntitySaved(__instance, info);

@@ -262,26 +262,17 @@ namespace StackManagerHarmony
             if (Configuration.Exclude.IsExcluded(item))
                 return null;
 
-            bool canStack = otherItem != item && item.info.stackable > 1 && otherItem.info.stackable > 1 &&
-                            otherItem.info.itemid == item.info.itemid && item.IsValid() &&
-                            (!item.IsBlueprint() || item.blueprintTarget == otherItem.blueprintTarget);
+            // Match StacksExtended 2.0.24: condition items only stack at max HP, and
+            // unskinned items return null so vanilla CanStack (including food spoil)
+            // decides. The Harmony port had been returning true/false for everything,
+            // which skipped BlockStackFoodItem and stacked damaged deployables.
+            bool canStack = otherItem != item && item.info.stackable > 1 && otherItem.info.stackable > 1 && 
+                            otherItem.info.itemid == item.info.itemid && (!item.hasCondition || Mathf.Approximately(item.condition, item.maxCondition)) &&
+                            (!otherItem.hasCondition ||  Mathf.Approximately(otherItem.condition, otherItem.maxCondition)) && 
+                            item.IsValid() && (!item.IsBlueprint() || item.blueprintTarget == otherItem.blueprintTarget);
 
             if (!canStack)
                 return false;
-
-            if (item.MaxStackable() <= 1)
-                return false;
-
-            // Vanilla only stacks condition items at exact max HP. Allow matching durability
-            // so deployables (furnaces, boxes, etc.) can stack when both items are equal.
-            if (item.hasCondition || otherItem.hasCondition)
-            {
-                if (!item.hasCondition || !otherItem.hasCondition)
-                    return false;
-                if (!Mathf.Approximately(item.condition, otherItem.condition) ||
-                    !Mathf.Approximately(item.maxCondition, otherItem.maxCondition))
-                    return false;
-            }
             
             if (item.GetHeldEntity() is BaseLiquidVessel)
             {
@@ -344,27 +335,28 @@ namespace StackManagerHarmony
                 }
             }
 
-            if (item.skin != otherItem.skin && Configuration.Options.BlockDifferentSkinStacks)
-                return false;
-
-            if ((!string.IsNullOrEmpty(item.name) || !string.IsNullOrEmpty(otherItem.name)) && item.name != otherItem.name)
-                return false;
-
-            if (item.iconImageId != otherItem.iconImageId)
-                return false;
-
-            if (item.info.amountType == ItemDefinition.AmountType.Genetics || otherItem.info.amountType == ItemDefinition.AmountType.Genetics)
+            if (item.skin != 0UL || otherItem.skin != 0UL)
             {
-                int geneticsA = item.instanceData != null ? item.instanceData.dataInt : -1;
-                int geneticsB = otherItem.instanceData != null ? otherItem.instanceData.dataInt : -1;
-                if (geneticsA != geneticsB)
+                if (item.skin != otherItem.skin && Configuration.Options.BlockDifferentSkinStacks) 
                     return false;
+
+                if (item.hasCondition && otherItem.hasCondition)
+                {
+                    if (!Mathf.Approximately(otherItem.maxCondition, item.maxCondition) || !Mathf.Approximately(otherItem.condition, item.condition))
+                        return false;
+                }
+
+                if (HasUniqueSignData(item) || HasUniqueSignData(otherItem))
+                    return false;
+
+                // 2.0.24 returned true here and skipped vanilla food-spoil checks.
+                // Cooking meals are skinned, so keep the Facepunch spoil-timer gate.
+                if (Item.BlockStackFoodItem(otherItem, item))
+                    return false;
+
+                return true;
             }
-
-            if (HasUniqueSignData(item) || HasUniqueSignData(otherItem))
-                return false;
-
-            return true;
+            return null;
         }
 
         private static bool HasUniqueSignData(Item item)
@@ -728,9 +720,32 @@ namespace StackManagerHarmony
                     
             if (item.hasCondition) 
                 splitItem.condition = item.condition;
+
+            splitItem.name = item.name;
+            CopyFoodSpoilInstanceData(item, splitItem);
                     
             splitItem.MarkDirty();
             return splitItem;
+        }
+
+        private static bool IsBackpackDefinition(ItemDefinition def)
+        {
+            if (def == null)
+                return false;
+            if ((def.flags & ItemDefinition.Flag.Backpack) != 0)
+                return true;
+            return def.GetComponent<ItemModBackpack>() != null;
+        }
+
+        private static void CopyFoodSpoilInstanceData(Item source, Item dest)
+        {
+            if (source?.instanceData == null || dest == null || source.info == null)
+                return;
+            if (source.info.GetComponent<ItemModFoodSpoiling>() == null)
+                return;
+            if (dest.instanceData == null)
+                return;
+            dest.instanceData.dataFloat = source.instanceData.dataFloat;
         }
         #endregion
         
@@ -952,6 +967,14 @@ namespace StackManagerHarmony
             if (def == null || stackLimit == null)
                 return;
 
+            // Wearable backpacks must stay unstackable. Stacking two largebackpacks
+            // discards the contents of one of them.
+            if (IsBackpackDefinition(def))
+            {
+                stackLimit.MaxStackSize = 1;
+                return;
+            }
+
             if (ShouldKeepUnstacked(def))
             {
                 if (IsProjectileWeapon(def) && !Configuration.Options.EnableProjectileWeaponStacks)
@@ -996,6 +1019,9 @@ namespace StackManagerHarmony
                 return true;
 
             if (IsVehicleItem(def))
+                return true;
+
+            if (IsBackpackDefinition(def))
                 return true;
 
             return false;

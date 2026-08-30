@@ -29,7 +29,7 @@
 
 | Oxide hook | Game method |
 |------------|-------------|
-| `OnEntitySaved` | `BasePlayer.Save` (Postfix) |
+| `OnEntitySaved` | `BasePlayer.Save` (Postfix). Skipped while the player is dead so supplier items are not copied into death-bag snapshots. |
 | `OnInventoryNetworkUpdate` | `PlayerInventory.SendUpdatedInventoryInternal` (Prefix reimpl) |
 | `OnInventoryItemsCount` | `PlayerInventory.GetAmount(int, bool, bool)` |
 | `OnInventoryItemsTake` | `PlayerInventory.Take(List, int, int)` |

@@ -1,0 +1,64 @@
+{
+  "generated": "2026-08-28T21:56:50.6062980-04:00",
+  "window": "last 6 hours",
+  "server": "stagingserver",
+  "health": {
+    "npc": {
+      "time": 1787946954757,
+      "avg_mod": 89.02063089368627,
+      "max_mod": 99,
+      "avg_grimm": 89.02063089368627,
+      "max_grimm": 99,
+      "avg_zombie": 73.1397252405342,
+      "max_zombie": 75,
+      "avg_pnpc": 0,
+      "max_pnpc": 0,
+      "avg_van": 509.4607247139917,
+      "max_van": 564,
+      "avg_animod": 0,
+      "max_animod": 0
+    },
+    "frametime_1h": {
+      "time": 1787964954676,
+      "avg_ms": 25.161244101074548,
+      "max_ms": 1160.789,
+      "p95_ms": 45.6684,
+      "p99_ms": 111.8666
+    },
+    "frametime_6h": {
+      "time": 1787946954615,
+      "avg_ms": 22.596859517974288,
+      "max_ms": 1437.661,
+      "p95_ms": 37.2561,
+      "p99_ms": 86.61951
+    },
+    "runtime": {
+      "time": 1787946954733,
+      "avg_sm": 297.54786641615993,
+      "max_sm": 2711.5904,
+      "avg_net": 19.455055808721458,
+      "max_net": 900.0325,
+      "avg_bp": 12.393908352879249,
+      "max_bp": 42.1575,
+      "avg_phys": 1.3925147431908547,
+      "max_phys": 10.3413
+    },
+    "players": {
+      "time": 1787946954750,
+      "avg_online": null,
+      "max_online": null,
+      "avg_join": 0.03838973720740989,
+      "avg_sleep": null,
+      "avg_bots": 509.4607247139917
+    },
+    "cpu": {
+      "time": 1787946954706,
+      "avg_cpu": 801.5994503949071,
+      "max_cpu": 3218.1685,
+      "avg_update": 333.3240200708433,
+      "max_update": 2748.7709,
+      "avg_phys": 89.24131524101288,
+      "max_phys": 552.8094
+    }
+  }
+}

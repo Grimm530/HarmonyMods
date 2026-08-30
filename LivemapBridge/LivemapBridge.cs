@@ -1,11 +1,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using Newtonsoft.Json;
 using UnityEngine;
+using Building = BuildingManager.Building;
+using Debug = UnityEngine.Debug;
 
 namespace LivemapBridge;
 
@@ -21,19 +26,34 @@ public class LivemapBridgeMod : IHarmonyModHooks
     string _configPath;
     bool _wrotePanelWarning;
     bool _loopStarted;
-    int _buildFlush;
+    bool _unloaded;
     bool _monumentsDumped;
     bool _mapExported;
     int _mapExportAttempts;
+    float _lastBuildRealtime = -999f;
+    float _lastSlowTickLog;
     FieldInfo _convoyVehiclesField;
+    FieldInfo _convoyEntityField;
     PropertyInfo _convoyInstanceProp;
     MethodInfo _convoyIsActiveMethod;
     MethodInfo _isConvoyEntityMethod;
-    readonly StringBuilder _sb = new StringBuilder(8192);
+    Type _armoredTrainModType;
+    PropertyInfo _armoredTrainPluginProp;
+    FieldInfo _armoredTrainControllerField;
+    FieldInfo _armoredTrainWagonsField;
+    FieldInfo _armoredTrainEngineField;
+    FieldInfo _armoredTrainWagonCarField;
+    bool _armoredTrainResolved;
+    readonly List<PlayerRow> _players = new List<PlayerRow>(64);
+    readonly List<VehicleRow> _vehicles = new List<VehicleRow>(32);
+    readonly HashSet<ulong> _seenVehicleIds = new HashSet<ulong>();
+    readonly StringBuilder _sb = new StringBuilder(262144);
+    static readonly Dictionary<string, PrefabKind> PrefabKindCache = new Dictionary<string, PrefabKind>(128);
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
         Instance = this;
+        _unloaded = false;
         LoadConfig();
         RegisterCommand();
         StartLoop();
@@ -42,8 +62,10 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
     {
+        _unloaded = true;
         StopLoop();
         UnregisterCommand();
+        LivemapBradleyTracker.Clear();
         Instance = null;
         Debug.Log("[LivemapBridge] Unloaded.");
     }
@@ -71,8 +93,12 @@ public class LivemapBridgeMod : IHarmonyModHooks
             Debug.LogWarning("[LivemapBridge] Config: " + ex.Message);
         }
 
-        if (_config.IntervalSeconds < 0.2f)
-            _config.IntervalSeconds = 0.2f;
+        if (_config.IntervalSeconds < 0.5f)
+            _config.IntervalSeconds = 0.5f;
+        if (_config.BuildingsIntervalSeconds < 5f)
+            _config.BuildingsIntervalSeconds = 30f;
+        if (_config.VehicleScanIntervalSeconds < 2f)
+            _config.VehicleScanIntervalSeconds = 5f;
     }
 
     void StartLoop(int attempt = 0)
@@ -92,6 +118,8 @@ public class LivemapBridgeMod : IHarmonyModHooks
             }
             InvokeHandler.InvokeRepeating(handler, Tick, 2f, _config.IntervalSeconds);
             _loopStarted = true;
+            _lastBuildRealtime = Time.realtimeSinceStartup;
+            LivemapBradleyTracker.SeedFromWorld();
             if (attempt > 0)
                 Debug.Log("[LivemapBridge] Snapshot loop started after boot wait (" + attempt + ").");
             else
@@ -205,26 +233,43 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     void Tick()
     {
-        if (BaseNetworkable.serverEntities == null)
+        if (_unloaded || BaseNetworkable.serverEntities == null)
             return;
 
+        var sw = Stopwatch.StartNew();
         MaybeDumpMonuments();
         MaybeExportMapImage();
 
         string json = BuildJson();
-        WriteAtomic(_config.HarmonyOutputPath, json);
-        if (!string.IsNullOrEmpty(_config.PanelOutputPath))
-            WriteAtomic(_config.PanelOutputPath, json);
+        QueueWrite(_config.HarmonyOutputPath, json);
+        QueueWrite(_config.PanelOutputPath, json);
 
-        _buildFlush++;
-        if (_buildFlush >= 8)
+        float now = Time.realtimeSinceStartup;
+        if (now - _lastBuildRealtime >= _config.BuildingsIntervalSeconds)
         {
-            _buildFlush = 0;
+            _lastBuildRealtime = now;
             string buildings = BuildBuildingsJson();
-            WriteAtomic(_config.HarmonyBuildingsPath, buildings);
-            if (!string.IsNullOrEmpty(_config.PanelBuildingsPath))
-                WriteAtomic(_config.PanelBuildingsPath, buildings);
+            QueueWrite(_config.HarmonyBuildingsPath, buildings);
+            QueueWrite(_config.PanelBuildingsPath, buildings);
         }
+
+        if (sw.ElapsedMilliseconds >= 80 && now - _lastSlowTickLog >= 10f)
+        {
+            _lastSlowTickLog = now;
+            Debug.LogWarning("[LivemapBridge] Tick took " + sw.ElapsedMilliseconds + "ms (markers=" + MapMarker.serverMapMarkers.Count + " bradleys=" + LivemapBradleyTracker.Count + ")");
+        }
+    }
+
+    void QueueWrite(string path, string json)
+    {
+        if (_unloaded || string.IsNullOrEmpty(path) || json == null)
+            return;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            if (_unloaded)
+                return;
+            WriteAtomic(path, json);
+        });
     }
 
     void WriteAtomic(string path, string json)
@@ -258,8 +303,8 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     string BuildJson()
     {
-        var players = new List<PlayerRow>(64);
-        var vehicles = new List<VehicleRow>(16);
+        _players.Clear();
+        _vehicles.Clear();
 
         if (BasePlayer.activePlayerList != null)
         {
@@ -271,7 +316,7 @@ public class LivemapBridgeMod : IHarmonyModHooks
                 float yaw = p.transform.eulerAngles.y;
                 if (p.eyes != null)
                     yaw = p.eyes.rotation.eulerAngles.y;
-                players.Add(new PlayerRow
+                _players.Add(new PlayerRow
                 {
                     id = p.UserIDString,
                     name = p.displayName ?? p.UserIDString,
@@ -283,27 +328,9 @@ public class LivemapBridgeMod : IHarmonyModHooks
             }
         }
 
-        foreach (BaseNetworkable ent in BaseNetworkable.serverEntities)
-        {
-            if (ent == null || ent.transform == null || ent.IsDestroyed)
-                continue;
-            if (ent is PatrolHelicopter)
-            {
-                AddVehicle(vehicles, ent, "patrolheli");
-                continue;
-            }
-            if (ent is BradleyAPC bradley)
-            {
-                if (IsConvoyVehicle(bradley))
-                    continue;
-                AddVehicle(vehicles, ent, "bradley");
-                continue;
-            }
-            // Vanilla / parked trains clutter the map — ArmoredTrain cars are added below.
-        }
-
-        AddConvoy(vehicles);
-        AddArmoredTrain(vehicles);
+        AddVehicles(_vehicles);
+        AddConvoy(_vehicles);
+        AddArmoredTrain(_vehicles);
 
         uint size = World.Size;
         if (size < 1000)
@@ -313,69 +340,113 @@ public class LivemapBridgeMod : IHarmonyModHooks
         {
             live = true,
             worldSize = size,
-            players = players,
-            vehicles = vehicles
+            players = _players,
+            vehicles = _vehicles
         };
         return JsonConvert.SerializeObject(snap);
     }
 
     string BuildBuildingsJson()
     {
-        var blocks = new List<BlockRow>(2048);
-        if (BaseNetworkable.serverEntities != null)
+        _sb.Length = 0;
+        _sb.Append("{\"live\":true,\"blocks\":[");
+        bool first = true;
+        int count = 0;
+
+        var dict = BuildingManager.server?.buildingDictionary;
+        if (dict != null)
         {
-            foreach (BaseNetworkable ent in BaseNetworkable.serverEntities)
+            var buildings = dict.Values;
+            for (int i = 0; i < buildings.Count && count < 15000; i++)
             {
-                if (ent == null || ent.transform == null || ent.IsDestroyed)
-                    continue;
-                if (ent.transform.position.y < -5f)
+                Building building = buildings[i];
+                if (building == null)
                     continue;
 
-                int kind = -1;
-                int grade = 0;
-                float hScale = 1f;
-                bool triangle = false;
-                Vector3 pos = ent.transform.position;
-                if (ent is BuildingPrivlidge)
+                for (int p = 0; p < building.buildingPrivileges.Count && count < 15000; p++)
                 {
-                    kind = 4;
+                    BuildingPrivlidge cup = building.buildingPrivileges[p];
+                    if (!TryAppendBlock(cup, 4, 0, 1f, false, ref first))
+                        continue;
+                    count++;
                 }
-                else if (ent is BuildingBlock block)
+
+                for (int b = 0; b < building.buildingBlocks.Count && count < 15000; b++)
                 {
-                    kind = KindFromPrefab(block.ShortPrefabName, out hScale, out triangle);
-                    grade = (int)block.grade;
+                    BuildingBlock block = building.buildingBlocks[b];
+                    if (block == null || block.IsDestroyed || block.transform == null)
+                        continue;
+                    if (block.transform.position.y < -5f)
+                        continue;
+                    int kind = KindFromPrefabCached(block.ShortPrefabName, out float hScale, out bool triangle);
+                    if (kind < 0)
+                        continue;
+                    int grade = (int)block.grade;
                     if (grade < 0) grade = 0;
                     if (grade > 4) grade = 4;
+                    if (!TryAppendBlock(block, kind, grade, hScale, triangle, ref first))
+                        continue;
+                    count++;
                 }
-                if (kind < 0)
-                    continue;
-
-                blocks.Add(new BlockRow
-                {
-                    x = pos.x,
-                    y = pos.y,
-                    z = pos.z,
-                    yaw = ent.transform.eulerAngles.y,
-                    k = kind,
-                    g = grade,
-                    h = hScale,
-                    t = triangle ? 1 : 0
-                });
-                if (blocks.Count >= 15000)
-                    break;
             }
         }
 
-        return JsonConvert.SerializeObject(new BuildingSnap
-        {
-            live = true,
-            blocks = blocks
-        });
+        _sb.Append("]}");
+        return _sb.ToString();
+    }
+
+    bool TryAppendBlock(BaseEntity ent, int kind, int grade, float hScale, bool triangle, ref bool first)
+    {
+        if (ent == null || ent.IsDestroyed || ent.transform == null)
+            return false;
+        Vector3 pos = ent.transform.position;
+        if (pos.y < -5f)
+            return false;
+        if (!first)
+            _sb.Append(',');
+        first = false;
+        _sb.Append("{\"x\":");
+        AppendFloat(pos.x);
+        _sb.Append(",\"y\":");
+        AppendFloat(pos.y);
+        _sb.Append(",\"z\":");
+        AppendFloat(pos.z);
+        _sb.Append(",\"yaw\":");
+        AppendFloat(ent.transform.eulerAngles.y);
+        _sb.Append(",\"k\":");
+        _sb.Append(kind);
+        _sb.Append(",\"g\":");
+        _sb.Append(grade);
+        _sb.Append(",\"h\":");
+        AppendFloat(hScale);
+        _sb.Append(",\"t\":");
+        _sb.Append(triangle ? 1 : 0);
+        _sb.Append('}');
+        return true;
+    }
+
+    void AppendFloat(float value)
+    {
+        _sb.Append(value.ToString("G9", CultureInfo.InvariantCulture));
     }
 
     // k: 0 foundation, 1 wall, 2 floor, 3 roof, 4 cupboard, 5 stairs/misc
     // t: 1 = triangle footprint (foundation/floor/roof.triangle)
     // h: wall height scale (half=0.5, low/third≈0.667)
+    static int KindFromPrefabCached(string name, out float heightScale, out bool triangle)
+    {
+        if (!string.IsNullOrEmpty(name) && PrefabKindCache.TryGetValue(name, out PrefabKind cached))
+        {
+            heightScale = cached.h;
+            triangle = cached.t;
+            return cached.k;
+        }
+        int kind = KindFromPrefab(name, out heightScale, out triangle);
+        if (!string.IsNullOrEmpty(name))
+            PrefabKindCache[name] = new PrefabKind { k = kind, h = heightScale, t = triangle };
+        return kind;
+    }
+
     static int KindFromPrefab(string name, out float heightScale, out bool triangle)
     {
         heightScale = 1f;
@@ -409,6 +480,51 @@ public class LivemapBridgeMod : IHarmonyModHooks
         if (n.Contains("wall") || n.Contains("doorway") || n.Contains("window") || n.Contains("frame"))
             return 1;
         return 5;
+    }
+
+    void AddVehicles(List<VehicleRow> vehicles)
+    {
+        _seenVehicleIds.Clear();
+        List<MapMarker> markers = MapMarker.serverMapMarkers;
+        if (markers != null)
+        {
+            for (int i = 0; i < markers.Count; i++)
+            {
+                MapMarker marker = markers[i];
+                if (marker == null || marker.IsDestroyed || marker is MapMarkerHelicopterFlee)
+                    continue;
+                if (marker.GetParentEntity() is not PatrolHelicopter heli)
+                    continue;
+                if (heli.IsDestroyed || heli.transform == null)
+                    continue;
+                ulong nid = heli.net != null ? heli.net.ID.Value : 0;
+                if (nid != 0 && !_seenVehicleIds.Add(nid))
+                    continue;
+                AddVehicle(vehicles, heli, "patrolheli");
+            }
+        }
+
+        PatrolHelicopter inst = PatrolHelicopter.Instance;
+        if (inst != null && !inst.IsDestroyed && inst.transform != null)
+        {
+            ulong nid = inst.net != null ? inst.net.ID.Value : 0;
+            if (nid == 0 || _seenVehicleIds.Add(nid))
+                AddVehicle(vehicles, inst, "patrolheli");
+        }
+
+        List<BradleyAPC> bradleys = LivemapBradleyTracker.LiveList;
+        for (int i = bradleys.Count - 1; i >= 0; i--)
+        {
+            BradleyAPC bradley = bradleys[i];
+            if (bradley == null || bradley.IsDestroyed || bradley.transform == null)
+            {
+                bradleys.RemoveAt(i);
+                continue;
+            }
+            if (IsConvoyVehicle(bradley))
+                continue;
+            AddVehicle(vehicles, bradley, "bradley");
+        }
     }
 
     static void AddVehicle(List<VehicleRow> vehicles, BaseNetworkable ent, string type)
@@ -470,9 +586,14 @@ public class LivemapBridgeMod : IHarmonyModHooks
         {
             if (item == null)
                 continue;
-            FieldInfo entField = item.GetType().GetField("Entity");
+            FieldInfo entField = _convoyEntityField;
             if (entField == null)
-                continue;
+            {
+                entField = item.GetType().GetField("Entity");
+                if (entField == null)
+                    continue;
+                _convoyEntityField = entField;
+            }
             if (entField.GetValue(item) is not BaseEntity ent || ent == null || ent.transform == null || ent.IsDestroyed)
                 continue;
             AddConvoyVehicle(vehicles, ent, ConvoyVehicleType(ent));
@@ -491,8 +612,8 @@ public class LivemapBridgeMod : IHarmonyModHooks
         if (controller == null)
             return;
 
-        FieldInfo wagonsField = controller.GetType().GetField("_wagonDatas", BindingFlags.NonPublic | BindingFlags.Instance);
-        FieldInfo engineField = controller.GetType().GetField("_trainEngine", BindingFlags.NonPublic | BindingFlags.Instance);
+        FieldInfo wagonsField = _armoredTrainWagonsField;
+        FieldInfo engineField = _armoredTrainEngineField;
         if (wagonsField == null)
             return;
 
@@ -512,9 +633,14 @@ public class LivemapBridgeMod : IHarmonyModHooks
         {
             if (wagonData == null)
                 continue;
-            FieldInfo carField = wagonData.GetType().GetField("TrainCar", BindingFlags.Public | BindingFlags.Instance);
+            FieldInfo carField = _armoredTrainWagonCarField;
             if (carField == null)
-                continue;
+            {
+                carField = wagonData.GetType().GetField("TrainCar", BindingFlags.Public | BindingFlags.Instance);
+                if (carField == null)
+                    continue;
+                _armoredTrainWagonCarField = carField;
+            }
             if (carField.GetValue(wagonData) is not TrainCar car || car == null || car.IsDestroyed || car.transform == null)
                 continue;
             ulong nid = car.net != null ? car.net.ID.Value : 0;
@@ -547,31 +673,54 @@ public class LivemapBridgeMod : IHarmonyModHooks
     {
         try
         {
-            Type modType = null;
-            Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
-            for (int i = 0; i < asms.Length; i++)
+            if (!_armoredTrainResolved)
             {
-                try
+                _armoredTrainResolved = true;
+                Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < asms.Length; i++)
                 {
-                    modType = asms[i].GetType("ArmoredTrain.ArmoredTrainMod");
-                }
-                catch
-                {
-                    continue;
-                }
-                if (modType != null)
+                    Type modType;
+                    try
+                    {
+                        modType = asms[i].GetType("ArmoredTrain.ArmoredTrainMod");
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                    if (modType == null)
+                        continue;
+                    _armoredTrainModType = modType;
+                    _armoredTrainPluginProp = modType.GetProperty("Plugin", BindingFlags.Public | BindingFlags.Static);
                     break;
+                }
             }
-            if (modType == null)
+
+            if (_armoredTrainPluginProp == null)
                 return null;
 
-            PropertyInfo pluginProp = modType.GetProperty("Plugin", BindingFlags.Public | BindingFlags.Static);
-            object plugin = pluginProp?.GetValue(null);
+            object plugin = _armoredTrainPluginProp.GetValue(null);
             if (plugin == null)
                 return null;
 
-            FieldInfo controllerField = plugin.GetType().GetField("_eventController", BindingFlags.NonPublic | BindingFlags.Instance);
-            return controllerField?.GetValue(plugin);
+            if (_armoredTrainControllerField == null)
+            {
+                _armoredTrainControllerField = plugin.GetType().GetField("_eventController", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (_armoredTrainControllerField == null)
+                    return null;
+            }
+
+            object controller = _armoredTrainControllerField.GetValue(plugin);
+            if (controller == null)
+                return null;
+
+            if (_armoredTrainWagonsField == null)
+            {
+                Type ct = controller.GetType();
+                _armoredTrainWagonsField = ct.GetField("_wagonDatas", BindingFlags.NonPublic | BindingFlags.Instance);
+                _armoredTrainEngineField = ct.GetField("_trainEngine", BindingFlags.NonPublic | BindingFlags.Instance);
+            }
+            return controller;
         }
         catch
         {
@@ -1151,9 +1300,14 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
             string harmonyMap = _config.HarmonyMapPath;
             string panelMap = _config.PanelMapPath;
-            WriteBytesAtomic(harmonyMap, png);
-            if (!string.IsNullOrEmpty(panelMap))
-                WriteBytesAtomic(panelMap, png);
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                if (_unloaded)
+                    return;
+                WriteBytesAtomic(harmonyMap, png);
+                if (!string.IsNullOrEmpty(panelMap))
+                    WriteBytesAtomic(panelMap, png);
+            });
 
             string metaJson = BuildTerrainMetaJson(pngPath, renderRes);
             var metaObj = JsonConvert.DeserializeObject<Dictionary<string, object>>(metaJson);
@@ -1328,9 +1482,18 @@ public class LivemapBridgeMod : IHarmonyModHooks
             File.Move(tmp, path);
     }
 
+    struct PrefabKind
+    {
+        public int k;
+        public float h;
+        public bool t;
+    }
+
     public class ConfigFile
     {
-        public float IntervalSeconds = 0.4f;
+        public float IntervalSeconds = 1f;
+        public float BuildingsIntervalSeconds = 30f;
+        public float VehicleScanIntervalSeconds = 5f;
         public string HarmonyOutputPath = @"C:\svr1\HarmonyData\Livemap\snapshot.json";
         public string PanelOutputPath = @"C:\!WEB RCON PANEL\livemap\data\snapshot.json";
         public string HarmonyBuildingsPath = @"C:\svr1\HarmonyData\Livemap\buildings.json";
@@ -1369,24 +1532,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
         public float y;
         public float z;
         public float yaw;
-    }
-
-    class BuildingSnap
-    {
-        public bool live;
-        public List<BlockRow> blocks;
-    }
-
-    class BlockRow
-    {
-        public float x;
-        public float y;
-        public float z;
-        public float yaw;
-        public int k;
-        public int g;
-        public float h = 1f;
-        public int t;
     }
 
     class MonumentSnap

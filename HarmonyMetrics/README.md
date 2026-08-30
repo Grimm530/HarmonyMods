@@ -11,12 +11,14 @@ The original `oxide_plugins` / `Oxide.Core` hook-time collector is gone. This se
 | InfluxDB 1.8 | `C:\InfluxDB-1.8` | `http://127.0.0.1:8086` |
 | Grafana 12 | `C:\Grafana` | `http://127.0.0.1:3000` |
 
-Quick start (minimized processes):
+Quick start (desktop shortcuts `Influx.lnk` / `grafana.lnk`, or):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .cursor\HarmonyMods\HarmonyMetrics\tools\Start-InfluxDB.ps1
-powershell -ExecutionPolicy Bypass -File .cursor\HarmonyMods\HarmonyMetrics\tools\Start-Grafana.ps1
+powershell -NoExit -ExecutionPolicy Bypass -File C:\svr1\.cursor\HarmonyMods\HarmonyMetrics\tools\Start-InfluxDB.ps1
+powershell -NoExit -ExecutionPolicy Bypass -File C:\svr1\.cursor\HarmonyMods\HarmonyMetrics\tools\Start-Grafana.ps1
 ```
+
+Each shortcut opens a PowerShell launcher that stays open, plus a console window for the service itself. Do not use a relative `-File` path from `System32` or the window will flash closed.
 
 Or use the elevated launchers under `C:\Rust-Server-Metrics-master\Start-InfluxDB-AsAdmin.bat` / `Start-Grafana-AsAdmin.bat` (those scripts now prefer `C:\InfluxDB-1.8` and `C:\Grafana`).
 

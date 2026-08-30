@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -26,6 +27,17 @@ public static class BetterBackpackConfig
             get => _debug;
             set => _debug = value;
         }
+
+        /// <summary>Logs loot MoveItem/GiveItem/Existing. Empty Steam IDs = all players. Auto-off after Duration Minutes (0 = until reload with flag false).</summary>
+        [JsonProperty("Loot Debug")]
+        public bool LootDebug = false;
+
+        [JsonProperty("Loot Debug Steam IDs")]
+        public List<string> LootDebugSteamIds = new List<string>();
+
+        /// <summary>0 = stay on until this flag is set false and the mod is reloaded.</summary>
+        [JsonProperty("Loot Debug Duration Minutes")]
+        public float LootDebugDurationMinutes = 15f;
 
         /// <summary>When false, Existing (auto-stack on loot) does nothing. Use to work around bugs.</summary>
         [JsonProperty("Existing (auto-stack into backpack when looting; false = disabled)")]

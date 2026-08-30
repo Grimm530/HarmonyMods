@@ -84,6 +84,7 @@ Oxide semantics (the Harmony prefix returns `false`).
 | `BaseCombatEntity.CanCompletePickup` prefix | `CanPickupEntity` (switch/counter) |
 | `NPCPlayer.CreateCorpse` postfix | `OnCorpsePopulate` |
 | `BradleyAPC.UpdateTargetList` postfix | `CanBradleyApcTarget` |
+| `BradleyAPC.VisibilityTest` prefix | Suppress Facepunch `Standard vis test!` log for non-player targets (config: `Log Facepunch Bradley standard vis test`) |
 | `PatrolHelicopterAI.UpdateTargetList` postfix | `CanHelicopterTarget` |
 | `ConsoleSystem.Index.Server.Find(StringView)` postfix (manual) | command routing fallback |
 

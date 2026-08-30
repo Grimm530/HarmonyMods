@@ -25,6 +25,7 @@ namespace Oxide.Plugins
     {
         public static CUI.Handler CuiHandler = new();
         private const string ExcavatorSignalTipUi = "VirtualQuarries_ExcavatorSignalTip";
+        private const string SupplyDropPrefab = "assets/prefabs/misc/supply drop/supply_drop.prefab";
 
         [PluginReference]
         private readonly Plugin
@@ -42,6 +43,7 @@ namespace Oxide.Plugins
         private readonly List<ExcavatorArm> excavatorArms = new();
         private readonly Dictionary<ulong, float> commandCooldowns = new();
         private readonly Dictionary<ulong, float> excavatorSignalPopupCooldowns = new();
+        private readonly Dictionary<ulong, float> excavatorPinnedTipUntil = new();
         private readonly Dictionary<ulong, (int, bool)> awaitingConnections = new();
         private readonly List<Vector3> giantExcPositions = new();
         private static DateTime lastOperation = DateTime.Now;
@@ -622,14 +624,14 @@ namespace Oxide.Plugins
             if (!TryGetExcavatorArmForEntity(comp, out ExcavatorArm arm)) return null;
             if (config.excavatorSupplyCallTime == 0)
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoAirDrops", player.UserIDString));
+                NotifyExcavatorPlayer(player, Lang("NoAirDrops", player.UserIDString));
                 return false;
             }
             int quarryId = GetPlayerExcavatorQuarryId(player.userID);
             if (quarryId == -1)
             {
                 TimeSpan ts = TimeSpan.FromSeconds(config.excavatorSupplyCallTime + config.excavatorTick);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
+                NotifyExcavatorPlayer(player, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
                 return false;
             }
             QuarryData qd = data.quarries[quarryId];
@@ -638,27 +640,25 @@ namespace Oxide.Plugins
             {
                 float remaining = Mathf.Max(0f, config.excavatorSupplyCallTime - (vq ? vq.quarryRunTime : 0f));
                 TimeSpan ts = TimeSpan.FromSeconds(remaining + config.excavatorTick);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
+                NotifyExcavatorPlayer(player, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
                 return false;
             }
             if (Interface.CallHook("OnCustomVirtualQuarrySupplyDropCalled", arm, comp, player) != null) return false;
-            if (!SpawnExcavatorSupplyDrop(comp))
+            if (!SpawnExcavatorSupplyDrop(comp, player, out Vector3 dropPos))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("ErrorOccured", player.UserIDString));
+                NotifyExcavatorPlayer(player, Lang("ErrorOccured", player.UserIDString));
                 return false;
             }
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("SupplyDropCalled", player.UserIDString));
+            string grid = MapHelper.PositionToString(dropPos);
+            NotifyExcavatorPlayer(player, Lang("SupplyDropCalled", player.UserIDString, grid), Lang("ExcavatorSignalTipDropping", player.UserIDString, grid));
+            if (config.consoleLogs)
+                Puts($"Excavator supply drop for {player.displayName} ({player.userID}) landing at {grid} ({dropPos})");
             vq.quarryRunTime = 0;
             return false;
         }
 
-        private static bool SpawnExcavatorSupplyDrop(ExcavatorSignalComputer computer)
+        private static Vector3 GetExcavatorDropPosition(ExcavatorSignalComputer computer)
         {
-            if (!computer || computer.supplyPlanePrefab == null || !computer.supplyPlanePrefab.isValid)
-                return false;
-            BaseEntity plane = GameManager.server.CreateEntity(computer.supplyPlanePrefab.resourcePath);
-            if (!plane)
-                return false;
             Vector3 dropPos = computer.transform.position;
             if (computer.dropPoints != null && computer.dropPoints.Length > 0)
             {
@@ -666,9 +666,30 @@ namespace Oxide.Plugins
                 if (point)
                     dropPos = point.position;
             }
-            dropPos += new Vector3(UnityEngine.Random.Range(-3f, 3f), 0f, UnityEngine.Random.Range(-3f, 3f));
-            plane.SendMessage("InitDropPosition", dropPos, SendMessageOptions.DontRequireReceiver);
-            plane.Spawn();
+            dropPos.x += UnityEngine.Random.Range(-3f, 3f);
+            dropPos.z += UnityEngine.Random.Range(-3f, 3f);
+            float terrain = TerrainMeta.HeightMap != null ? TerrainMeta.HeightMap.GetHeight(dropPos) : dropPos.y;
+            dropPos.y = terrain;
+            return dropPos;
+        }
+
+        private static bool SpawnExcavatorSupplyDrop(ExcavatorSignalComputer computer, BasePlayer player, out Vector3 dropPos)
+        {
+            dropPos = Vector3.zero;
+            if (!computer) return false;
+            dropPos = GetExcavatorDropPosition(computer);
+            // BetterAirDrop on this server uses InstantSupplyDrops + InstantSupplyDropFallsFromSky:
+            // spawn the crate in the sky at the target, no cargo plane. CargoPlane.InitDropPosition
+            // before Spawn was ignored, so the crate never appeared at the excavator.
+            Vector3 spawnPos = dropPos;
+            spawnPos.y = dropPos.y + 250f;
+            SupplyDrop crate = GameManager.server.CreateEntity(SupplyDropPrefab, spawnPos) as SupplyDrop;
+            if (!crate)
+                return false;
+            if (player && player.userID != 0UL)
+                crate.OwnerID = player.userID;
+            crate.globalBroadcast = true;
+            crate.Spawn();
             computer.SetFlag(BaseEntity.Flags.Reserved9, true);
             computer.Invoke(computer.StopTransmitting, 5f);
             computer.SendNetworkUpdate();
@@ -845,7 +866,7 @@ namespace Oxide.Plugins
             container.Add(new CuiPanel
             {
                 Image = { Color = "0.68 0.23 0.18 0.95" },
-                RectTransform = { AnchorMin = "0.455 0.42", AnchorMax = "0.545 0.48" }
+                RectTransform = { AnchorMin = "0.44 0.40", AnchorMax = "0.56 0.50" }
             }, "Overlay", ExcavatorSignalTipUi);
             container.Add(new CuiLabel
             {
@@ -859,6 +880,59 @@ namespace Oxide.Plugins
                 RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
             }, ExcavatorSignalTipUi);
             CuiHelper.AddUi(player, container);
+        }
+
+        private static string ClearColorAndSize(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return message;
+            message = message.Replace("</color>", string.Empty).Replace("</size>", string.Empty);
+            while (message.Contains("<color="))
+            {
+                int index = message.IndexOf("<color=", StringComparison.Ordinal);
+                int end = message.IndexOf('>', index);
+                if (index < 0 || end < 0) break;
+                message = message.Remove(index, end - index + 1);
+            }
+            while (message.Contains("<size="))
+            {
+                int index = message.IndexOf("<size=", StringComparison.Ordinal);
+                int end = message.IndexOf('>', index);
+                if (index < 0 || end < 0) break;
+                message = message.Remove(index, end - index + 1);
+            }
+            return message;
+        }
+
+        private void NotifyExcavatorPlayer(BasePlayer player, string popupMessage, string cuiMessage = null, float pinSeconds = 12f)
+        {
+            if (!player) return;
+            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, popupMessage);
+            ShowExcavatorSignalGameTip(player, cuiMessage ?? popupMessage);
+            excavatorPinnedTipUntil[player.userID] = Time.realtimeSinceStartup + pinSeconds;
+            string toast = ClearColorAndSize(popupMessage);
+            if (string.IsNullOrWhiteSpace(toast)) return;
+
+            bool toastSent = false;
+            try
+            {
+                player.ShowToast(GameTip.Styles.Blue_Long, new Translate.Phrase("virtualquarries.tip", toast), false);
+                toastSent = true;
+            }
+            catch
+            {
+                try
+                {
+                    player.SendConsoleCommand("gametip.showtoast_translated", (int)GameTip.Styles.Blue_Long, "virtualquarries.tip", toast, false, System.Array.Empty<string>());
+                    toastSent = true;
+                }
+                catch { }
+            }
+            if (!toastSent)
+            {
+                player.SendConsoleCommand("gametip.hidegametip");
+                player.SendConsoleCommand("gametip.showgametip", toast);
+            }
+            player.ChatMessage(toast);
         }
 
         private void VirtualQuarriesTipCommand(BasePlayer player, string _, string[] __)
@@ -876,6 +950,9 @@ namespace Oxide.Plugins
                     HideExcavatorSignalGameTip(player);
                     continue;
                 }
+                float now = Time.realtimeSinceStartup;
+                if (excavatorPinnedTipUntil.TryGetValue(player.userID, out float pinnedUntil) && now < pinnedUntil)
+                    continue;
                 if (!TryGetLookedAtSignalComputer(player, out ExcavatorSignalComputer comp))
                 {
                     HideExcavatorSignalGameTip(player);
@@ -887,7 +964,6 @@ namespace Oxide.Plugins
                     continue;
                 }
 
-                float now = Time.realtimeSinceStartup;
                 if (excavatorSignalPopupCooldowns.TryGetValue(player.userID, out float lastShown) && now - lastShown < 1.9f)
                     continue;
 
@@ -5575,10 +5651,11 @@ namespace Oxide.Plugins
                 ["ExcavatorSignalTipMissing"] = "<color=#ffffff>Supply Ready In</color>\n<color=#ff5f5f>Claim Excavator First</color>",
                 ["ExcavatorSignalTipReady"] = "<color=#ffffff>Supply Ready In</color>\n<color=#7CFF7C>READY</color>",
                 ["ExcavatorSignalTipLeft"] = "<color=#ffffff>Supply Ready In</color>\n<color=#ff5f5f>{0}</color>",
+                ["ExcavatorSignalTipDropping"] = "<color=#ffffff>Dropping At</color>\n<color=#7CFF7C>{0}</color>",
                 ["NoAccessToShare"] = "You don't have permission to <color=#5c81ed>share quarries</color>!",
                 ["NoAirDrops"] = "Excavator supply drops has been <color=#5c81ed>disabled</color>!",
                 ["NotEnoughMined"] = "You need to have excavator turned on for at least <color=#5c81ed>{0}</color> more in order to call supply drop!",
-                ["SupplyDropCalled"] = "Excavator supply drops has been <color=#5c81ed>successfully</color> called and will be delivered in few minutes!",
+                ["SupplyDropCalled"] = "Excavator supply drop is falling at <color=#5c81ed>{0}</color>!",
                 ["QuarryLinkStarted"] = "Quarry storage linking enabled. Open storage that you want to link to this quarry. You have <color=#5c81ed>30 seconds</color>. After that time, action will be canceled.",
                 ["QuarryUnlinked"] = "Quarry storage unlinked successfully!",
                 ["QuarryLinkedSuccessfully"] = "Quarry storage has been linked successfully!",

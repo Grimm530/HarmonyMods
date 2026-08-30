@@ -217,6 +217,14 @@ namespace Oxide.Plugins
             return _ins.CanBradleyApcTarget(bradley, entity);
         }
 
+        // Facepunch leftover Debug.LogWarning("Standard vis test!") in BradleyAPC.VisibilityTest.
+        // Default false: skip that log. True: let vanilla print it.
+        public static bool Dispatch_LogBradleyStandardVisTest()
+        {
+            return _ins != null && _ins._config != null && _ins._config.MainConfig != null
+                && _ins._config.MainConfig.LogBradleyStandardVisTest;
+        }
+
         // ----- heli target filter -----
         public static object Dispatch_CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player)
         {

@@ -1,0 +1,100 @@
+[
+  {
+    "behaviour": "AIThinkManager",
+    "method": "ProcessQueue",
+    "avg_ms": 128.25452969142165,
+    "max_ms": 2525.067,
+    "p95_ms": 502.9756
+  },
+  {
+    "behaviour": "BaseEntity",
+    "method": "Spawn",
+    "avg_ms": 5.918354862423851,
+    "max_ms": 420.9451,
+    "p95_ms": 37.2283
+  },
+  {
+    "behaviour": "BaseMountable",
+    "method": "FixedUpdateCycle",
+    "avg_ms": 22.37446453073475,
+    "max_ms": 72.5743,
+    "p95_ms": 29.2912
+  },
+  {
+    "behaviour": "BaseNetwork",
+    "method": "Cycle",
+    "avg_ms": 19.760136847285835,
+    "max_ms": 912.8744,
+    "p95_ms": 64.4409
+  },
+  {
+    "behaviour": "BaseNetworkable",
+    "method": "Kill",
+    "avg_ms": 0.9029251198104543,
+    "max_ms": 119.7646,
+    "p95_ms": 2.3728
+  },
+  {
+    "behaviour": "BasePet",
+    "method": "ProcessMovementQueue",
+    "avg_ms": 0.09103801368177554,
+    "max_ms": 0.2156,
+    "p95_ms": 0.1022
+  },
+  {
+    "behaviour": "BasePlayer",
+    "method": "ServerCycle",
+    "avg_ms": 12.58351815542098,
+    "max_ms": 39.8658,
+    "p95_ms": 19.2285
+  },
+  {
+    "behaviour": "Buoyancy",
+    "method": "Cycle",
+    "avg_ms": 3.855795905310319,
+    "max_ms": 13.788,
+    "p95_ms": 7.2348
+  },
+  {
+    "behaviour": "ConnectionQueue",
+    "method": "Cycle",
+    "avg_ms": 0.10862388897091436,
+    "max_ms": 0.4069,
+    "p95_ms": 0.1245
+  },
+  {
+    "behaviour": "IOEntity",
+    "method": "ProcessQueue",
+    "avg_ms": 0.21327077612087317,
+    "max_ms": 1.017,
+    "p95_ms": 0.4625
+  },
+  {
+    "behaviour": "ServerBuildingManager",
+    "method": "Cycle",
+    "avg_ms": 1.3251857030365641,
+    "max_ms": 139.8397,
+    "p95_ms": 4.5581
+  },
+  {
+    "behaviour": "ServerBuildingManager",
+    "method": "Merge",
+    "avg_ms": 0.09726666666666665,
+    "max_ms": 0.1547,
+    "p95_ms": 0.1547
+  },
+  {
+    "behaviour": "ServerBuildingManager",
+    "method": "Split",
+    "avg_ms": 4.175166379310345,
+    "max_ms": 42.9258,
+    "p95_ms": 14.3487
+  },
+  {
+    "behaviour": "ServerMgr",
+    "method": "Update",
+    "avg_ms": 306.0446012451391,
+    "max_ms": 2701.376,
+    "p95_ms": 677.4174
+  }
+]

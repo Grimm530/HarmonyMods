@@ -1,0 +1,184 @@
+[
+  {
+    "behaviour": "BradleyAPC",
+    "method": "BuildingCheck",
+    "avg": 0.119,
+    "p95": 0.249,
+    "max": 0.86
+  },
+  {
+    "behaviour": "BradleyAPC",
+    "method": "UpdateTargetList",
+    "avg": 0.265,
+    "p95": 0.742,
+    "max": 1.867
+  },
+  {
+    "behaviour": "BradleyAPC",
+    "method": "UpdateTargetVisibilities",
+    "avg": 0.003,
+    "p95": 0.006,
+    "max": 0.668
+  },
+  {
+    "behaviour": "BradleySpawner",
+    "method": "CheckIfRespawnNeeded",
+    "avg": 0.001,
+    "p95": 0.001,
+    "max": 0.003
+  },
+  {
+    "behaviour": "ControllerBoss",
+    "method": "CheckInvisible",
+    "avg": 0.04,
+    "p95": 0.05,
+    "max": 0.206
+  },
+  {
+    "behaviour": "ControllerBoss",
+    "method": "RadiusActions",
+    "avg": 0.047,
+    "p95": 0.06,
+    "max": 0.167
+  },
+  {
+    "behaviour": "ControllerBoss",
+    "method": "UpdateMapMarker",
+    "avg": 0.203,
+    "p95": 0.259,
+    "max": 0.453
+  },
+  {
+    "behaviour": "CustomScientistNpc",
+    "method": "CheckDestinationReached",
+    "avg": 0.162,
+    "p95": 0.191,
+    "max": 0.451
+  },
+  {
+    "behaviour": "CustomScientistNpc",
+    "method": "FinishEquiping",
+    "avg": 0.0,
+    "p95": 0.002,
+    "max": 0.002
+  },
+  {
+    "behaviour": "CustomScientistNpc",
+    "method": "FinishReloadGrenade",
+    "avg": 0.0,
+    "p95": 0.001,
+    "max": 0.001
+  },
+  {
+    "behaviour": "CustomScientistNpc",
+    "method": "FinishReloadSmoke",
+    "avg": 0.026,
+    "p95": 0.103,
+    "max": 0.103
+  },
+  {
+    "behaviour": "CustomScientistNpc",
+    "method": "UpdateTick",
+    "avg": 0.349,
+    "p95": 0.566,
+    "max": 1.71
+  },
+  {
+    "behaviour": "FeedBehaviour",
+    "method": "CheckExpired",
+    "avg": 0.001,
+    "p95": 0.002,
+    "max": 0.133
+  },
+  {
+    "behaviour": "HumanoidBrain",
+    "method": "<Init>b__70_0",
+    "avg": 0.013,
+    "p95": 0.04,
+    "max": 0.05
+  },
+  {
+    "behaviour": "HumanoidBrain",
+    "method": "TryToRoam",
+    "avg": 0.68,
+    "p95": 1.386,
+    "max": 75.206
+  },
+  {
+    "behaviour": "MetricsLogger",
+    "method": "LogHarmonyMods",
+    "avg": 0.877,
+    "p95": 0.779,
+    "max": 148.394
+  },
+  {
+    "behaviour": "MetricsLogger",
+    "method": "LogNetworkUpdates",
+    "avg": 0.066,
+    "p95": 0.083,
+    "max": 1.338
+  },
+  {
+    "behaviour": "NPCSpawner",
+    "method": "LateSpawn",
+    "avg": 0.985,
+    "p95": 6.43,
+    "max": 12.928
+  },
+  {
+    "behaviour": "NPCSpawner",
+    "method": "SpawnInitial",
+    "avg": 2.162,
+    "p95": 7.562,
+    "max": 21.423
+  },
+  {
+    "behaviour": "RaidBehaviour",
+    "method": "Run",
+    "avg": 0.445,
+    "p95": 1.081,
+    "max": 1.509
+  },
+  {
+    "behaviour": "RaidableBase",
+    "method": "CheckPaste",
+    "avg": 0.004,
+    "p95": 0.007,
+    "max": 0.008
+  },
+  {
+    "behaviour": "RaidableBase",
+    "method": "Protector",
+    "avg": 0.18,
+    "p95": 0.1,
+    "max": 186.267
+  },
+  {
+    "behaviour": "RaidableBase",
+    "method": "ResetPublicOwner",
+    "avg": 0.212,
+    "p95": 1.238,
+    "max": 1.238
+  },
+  {
+    "behaviour": "RaidableBase",
+    "method": "UpdateMarker",
+    "avg": 0.027,
+    "p95": 0.014,
+    "max": 0.739
+  },
+  {
+    "behaviour": "RustRewards",
+    "method": "CheckActivity",
+    "avg": 0.037,
+    "p95": 0.373,
+    "max": 0.812
+  },
+  {
+    "behaviour": "RustRewards",
+    "method": "CheckHappyHour",
+    "avg": 0.002,
+    "p95": 0.002,
+    "max": 0.308
+  }
+]

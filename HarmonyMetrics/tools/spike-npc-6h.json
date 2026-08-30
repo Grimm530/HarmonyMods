@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"npc_census","columns":["time","avg_mod","max_mod","avg_grimm","max_grimm","avg_zombie","max_zombie","avg_pnpc","max_pnpc","avg_van","max_van","avg_animod","max_animod"],"values":[[1787946954757,89.02063089368627,99,89.02063089368627,99,73.1397252405342,75,0,0,509.4607247139917,564,0,0]]}]}]}

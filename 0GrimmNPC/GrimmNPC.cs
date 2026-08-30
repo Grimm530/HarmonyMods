@@ -2586,6 +2586,10 @@ namespace GrimmNPC
                     Turret = turret;
                     BuildingBlock block = GetNearEntity<BuildingBlock>(Turret.transform.position, 0.1f, 1 << 21);
                     CurrentRaidTarget = block.IsExists() ? block : Turret;
+                    // Gun NPCs without C4/rockets never enter RaidState; still shoot the turret/wall
+                    // that just attacked us when no visible player is in engagement.
+                    if (CurrentTarget == null || CurrentTarget.IsDestroyed || !CanSeeTarget(CurrentTarget))
+                        CurrentTarget = CurrentRaidTarget;
                 }
             }
 

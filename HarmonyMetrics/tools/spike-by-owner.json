@@ -1,0 +1,163 @@
+[
+  {
+    "owner": "vanilla/unknown",
+    "methods": 321,
+    "avg_sum": 398.96,
+    "max_peak": 571.26,
+    "p95_peak": 113.08
+  },
+  {
+    "owner": "likely-mod:BaseNpc",
+    "methods": 1,
+    "avg_sum": 7.44,
+    "max_peak": 19.58,
+    "p95_peak": 12.84
+  },
+  {
+    "owner": "likely-mod:NPCPlayer",
+    "methods": 4,
+    "avg_sum": 6.14,
+    "max_peak": 16.98,
+    "p95_peak": 7.97
+  },
+  {
+    "owner": "likely-mod:NPCVendingMachine",
+    "methods": 3,
+    "avg_sum": 5.57,
+    "max_peak": 9.07,
+    "p95_peak": 9.07
+  },
+  {
+    "owner": "likely-mod:NPCSpawner",
+    "methods": 2,
+    "avg_sum": 3.15,
+    "max_peak": 21.42,
+    "p95_peak": 7.56
+  },
+  {
+    "owner": "likely-mod:NPCShopKeeper",
+    "methods": 2,
+    "avg_sum": 1.15,
+    "max_peak": 1.13,
+    "p95_peak": 1.13
+  },
+  {
+    "owner": "likely-mod:TrainSignal",
+    "methods": 1,
+    "avg_sum": 1.14,
+    "max_peak": 1.73,
+    "p95_peak": 1.2
+  },
+  {
+    "owner": "HarmonyMetrics",
+    "methods": 3,
+    "avg_sum": 1.0,
+    "max_peak": 148.39,
+    "p95_peak": 0.78
+  },
+  {
+    "owner": "GrimmNPC",
+    "methods": 2,
+    "avg_sum": 0.69,
+    "max_peak": 75.21,
+    "p95_peak": 1.39
+  },
+  {
+    "owner": "GrimmNPC / NpcSpawn",
+    "methods": 5,
+    "avg_sum": 0.54,
+    "max_peak": 1.71,
+    "p95_peak": 0.57
+  },
+  {
+    "owner": "likely-mod:RaidBehaviour",
+    "methods": 1,
+    "avg_sum": 0.44,
+    "max_peak": 1.51,
+    "p95_peak": 1.08
+  },
+  {
+    "owner": "RaidableBases",
+    "methods": 4,
+    "avg_sum": 0.42,
+    "max_peak": 186.27,
+    "p95_peak": 1.24
+  },
+  {
+    "owner": "likely-mod:TrainCar",
+    "methods": 2,
+    "avg_sum": 0.31,
+    "max_peak": 0.7,
+    "p95_peak": 0.46
+  },
+  {
+    "owner": "likely-mod:FarmableAnimal",
+    "methods": 3,
+    "avg_sum": 0.31,
+    "max_peak": 0.89,
+    "p95_peak": 0.61
+  },
+  {
+    "owner": "GrimmBoss",
+    "methods": 3,
+    "avg_sum": 0.29,
+    "max_peak": 0.45,
+    "p95_peak": 0.26
+  },
+  {
+    "owner": "likely-mod:ScientistNPC",
+    "methods": 2,
+    "avg_sum": 0.16,
+    "max_peak": 0.42,
+    "p95_peak": 0.22
+  },
+  {
+    "owner": "RustRewards",
+    "methods": 2,
+    "avg_sum": 0.04,
+    "max_peak": 0.81,
+    "p95_peak": 0.37
+  },
+  {
+    "owner": "likely-mod:NpcNoiseManager",
+    "methods": 1,
+    "avg_sum": 0.03,
+    "max_peak": 0.11,
+    "p95_peak": 0.04
+  },
+  {
+    "owner": "likely-mod:TrainEngine",
+    "methods": 1,
+    "avg_sum": 0.01,
+    "max_peak": 0.1,
+    "p95_peak": 0.01
+  },
+  {
+    "owner": "mod collider",
+    "methods": 1,
+    "avg_sum": 0.01,
+    "max_peak": 0.08,
+    "p95_peak": 0.02
+  },
+  {
+    "owner": "likely-mod:NPCPlayerCorpse",
+    "methods": 1,
+    "avg_sum": 0.0,
+    "max_peak": 0.0,
+    "p95_peak": 0.0
+  },
+  {
+    "owner": "GrimmNPC?",
+    "methods": 1,
+    "avg_sum": 0.0,
+    "max_peak": 0.13,
+    "p95_peak": 0.0
+  },
+  {
+    "owner": "likely-mod:HumanNPC",
+    "methods": 1,
+    "avg_sum": 0.0,
+    "max_peak": 0.33,
+    "p95_peak": 0.01
+  }
+]

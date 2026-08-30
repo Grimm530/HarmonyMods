@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"players","columns":["time","avg_online","max_online","avg_sleep","max_sleep","avg_bots","max_bots"],"values":[[1787947079835,2.0207276208712304,5,22.98669219722355,26,509.5549545236955,564]]}]}]}

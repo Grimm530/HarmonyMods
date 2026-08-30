@@ -1,0 +1,612 @@
+[
+  {
+    "t": "15:54",
+    "ft_avg": 23.15,
+    "ft_max": 29.45,
+    "cpu": 749.5,
+    "grimm": 92.0,
+    "zombie": 75.0,
+    "vanilla": 462.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:00",
+    "ft_avg": 18.78,
+    "ft_max": 61.19,
+    "cpu": 727.7,
+    "grimm": 92.0,
+    "zombie": 75.0,
+    "vanilla": 459.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:06",
+    "ft_avg": 21.51,
+    "ft_max": 91.87,
+    "cpu": 775.0,
+    "grimm": 94.0,
+    "zombie": 71.0,
+    "vanilla": 462.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:12",
+    "ft_avg": 19.13,
+    "ft_max": 36.84,
+    "cpu": 745.8,
+    "grimm": 89.0,
+    "zombie": 69.0,
+    "vanilla": 453.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:18",
+    "ft_avg": 21.34,
+    "ft_max": 203.11,
+    "cpu": 798.4,
+    "grimm": 85.0,
+    "zombie": 65.0,
+    "vanilla": 452.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:24",
+    "ft_avg": 18.8,
+    "ft_max": 38.47,
+    "cpu": 749.3,
+    "grimm": 86.0,
+    "zombie": 66.0,
+    "vanilla": 453.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:30",
+    "ft_avg": 58.29,
+    "ft_max": 683.51,
+    "cpu": 1035.9,
+    "grimm": 88.0,
+    "zombie": 68.0,
+    "vanilla": 488.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:36",
+    "ft_avg": 20.32,
+    "ft_max": 52.37,
+    "cpu": 815.3,
+    "grimm": 93.0,
+    "zombie": 73.0,
+    "vanilla": 498.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:42",
+    "ft_avg": 21.08,
+    "ft_max": 93.7,
+    "cpu": 803.9,
+    "grimm": 96.0,
+    "zombie": 75.0,
+    "vanilla": 517.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:48",
+    "ft_avg": 26.13,
+    "ft_max": 351.8,
+    "cpu": 840.3,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 507.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "16:54",
+    "ft_avg": 24.67,
+    "ft_max": 95.29,
+    "cpu": 860.0,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 495.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:00",
+    "ft_avg": 23.84,
+    "ft_max": 207.31,
+    "cpu": 815.1,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 487.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:06",
+    "ft_avg": 19.73,
+    "ft_max": 67.03,
+    "cpu": 788.5,
+    "grimm": 87.0,
+    "zombie": 75.0,
+    "vanilla": 475.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:12",
+    "ft_avg": 23.9,
+    "ft_max": 221.15,
+    "cpu": 856.7,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 483.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:18",
+    "ft_avg": 22.88,
+    "ft_max": 108.54,
+    "cpu": 919.5,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 472.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:24",
+    "ft_avg": 21.03,
+    "ft_max": 141.92,
+    "cpu": 814.4,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 473.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:30",
+    "ft_avg": 21.76,
+    "ft_max": 44.04,
+    "cpu": 853.2,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 475.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:36",
+    "ft_avg": 22.15,
+    "ft_max": 83.63,
+    "cpu": 838.4,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 527.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:42",
+    "ft_avg": 23.62,
+    "ft_max": 250.88,
+    "cpu": 799.0,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 536.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:48",
+    "ft_avg": 19.03,
+    "ft_max": 71.45,
+    "cpu": 750.5,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 540.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "17:54",
+    "ft_avg": 20.67,
+    "ft_max": 136.75,
+    "cpu": 783.9,
+    "grimm": 93.0,
+    "zombie": 75.0,
+    "vanilla": 538.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:00",
+    "ft_avg": 19.11,
+    "ft_max": 48.83,
+    "cpu": 744.2,
+    "grimm": 93.0,
+    "zombie": 75.0,
+    "vanilla": 538.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:06",
+    "ft_avg": 20.33,
+    "ft_max": 84.42,
+    "cpu": 742.6,
+    "grimm": 93.0,
+    "zombie": 75.0,
+    "vanilla": 538.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:12",
+    "ft_avg": 18.6,
+    "ft_max": 50.17,
+    "cpu": 740.5,
+    "grimm": 93.0,
+    "zombie": 75.0,
+    "vanilla": 534.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:18",
+    "ft_avg": 19.16,
+    "ft_max": 71.8,
+    "cpu": 727.0,
+    "grimm": 93.0,
+    "zombie": 75.0,
+    "vanilla": 532.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:24",
+    "ft_avg": 22.96,
+    "ft_max": 206.56,
+    "cpu": 757.9,
+    "grimm": 99.0,
+    "zombie": 75.0,
+    "vanilla": 532.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:30",
+    "ft_avg": 22.07,
+    "ft_max": 305.53,
+    "cpu": 755.9,
+    "grimm": 99.0,
+    "zombie": 75.0,
+    "vanilla": 535.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:36",
+    "ft_avg": 18.6,
+    "ft_max": 41.02,
+    "cpu": 725.1,
+    "grimm": 99.0,
+    "zombie": 75.0,
+    "vanilla": 538.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:42",
+    "ft_avg": 19.36,
+    "ft_max": 80.15,
+    "cpu": 732.5,
+    "grimm": 99.0,
+    "zombie": 75.0,
+    "vanilla": 536.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:48",
+    "ft_avg": 22.79,
+    "ft_max": 222.05,
+    "cpu": 766.9,
+    "grimm": 99.0,
+    "zombie": 75.0,
+    "vanilla": 539.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "18:54",
+    "ft_avg": 20.06,
+    "ft_max": 72.26,
+    "cpu": 754.7,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 550.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:00",
+    "ft_avg": 20.37,
+    "ft_max": 149.99,
+    "cpu": 758.0,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 551.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:06",
+    "ft_avg": 18.77,
+    "ft_max": 53.61,
+    "cpu": 721.0,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 549.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:12",
+    "ft_avg": 21.62,
+    "ft_max": 259.05,
+    "cpu": 748.5,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 551.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:18",
+    "ft_avg": 20.14,
+    "ft_max": 137.57,
+    "cpu": 765.6,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 553.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:24",
+    "ft_avg": 23.97,
+    "ft_max": 203.1,
+    "cpu": 789.9,
+    "grimm": 89.0,
+    "zombie": 75.0,
+    "vanilla": 560.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:30",
+    "ft_avg": 20.61,
+    "ft_max": 78.29,
+    "cpu": 781.4,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 561.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:36",
+    "ft_avg": 21.71,
+    "ft_max": 177.98,
+    "cpu": 794.5,
+    "grimm": 84.0,
+    "zombie": 75.0,
+    "vanilla": 558.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:42",
+    "ft_avg": 21.5,
+    "ft_max": 135.78,
+    "cpu": 774.3,
+    "grimm": 83.0,
+    "zombie": 75.0,
+    "vanilla": 549.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:48",
+    "ft_avg": 20.1,
+    "ft_max": 62.92,
+    "cpu": 768.3,
+    "grimm": 83.0,
+    "zombie": 75.0,
+    "vanilla": 551.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "19:54",
+    "ft_avg": 18.72,
+    "ft_max": 44.57,
+    "cpu": 732.1,
+    "grimm": 83.0,
+    "zombie": 75.0,
+    "vanilla": 541.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:00",
+    "ft_avg": 20.27,
+    "ft_max": 115.69,
+    "cpu": 782.0,
+    "grimm": 92.0,
+    "zombie": 75.0,
+    "vanilla": 540.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:06",
+    "ft_avg": 22.62,
+    "ft_max": 200.77,
+    "cpu": 821.9,
+    "grimm": 86.0,
+    "zombie": 70.0,
+    "vanilla": 539.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:12",
+    "ft_avg": 21.06,
+    "ft_max": 59.1,
+    "cpu": 834.7,
+    "grimm": 86.0,
+    "zombie": 70.0,
+    "vanilla": 541.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:18",
+    "ft_avg": 21.13,
+    "ft_max": 107.43,
+    "cpu": 814.7,
+    "grimm": 86.0,
+    "zombie": 70.0,
+    "vanilla": 537.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:24",
+    "ft_avg": 23.6,
+    "ft_max": 294.95,
+    "cpu": 852.8,
+    "grimm": 88.0,
+    "zombie": 72.0,
+    "vanilla": 529.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:30",
+    "ft_avg": 22.29,
+    "ft_max": 190.99,
+    "cpu": 854.0,
+    "grimm": 91.0,
+    "zombie": 75.0,
+    "vanilla": 473.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:36",
+    "ft_avg": 25.39,
+    "ft_max": 576.34,
+    "cpu": 840.0,
+    "grimm": 91.0,
+    "zombie": 75.0,
+    "vanilla": 478.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:42",
+    "ft_avg": 24.47,
+    "ft_max": 102.18,
+    "cpu": 870.6,
+    "grimm": 91.0,
+    "zombie": 75.0,
+    "vanilla": 489.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:48",
+    "ft_avg": 22.6,
+    "ft_max": 187.27,
+    "cpu": 803.2,
+    "grimm": 86.0,
+    "zombie": 70.0,
+    "vanilla": 469.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "20:54",
+    "ft_avg": 25.33,
+    "ft_max": 165.26,
+    "cpu": 861.0,
+    "grimm": 93.0,
+    "zombie": 70.0,
+    "vanilla": 470.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:00",
+    "ft_avg": 25.26,
+    "ft_max": 266.29,
+    "cpu": 876.7,
+    "grimm": 87.0,
+    "zombie": 65.0,
+    "vanilla": 478.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:06",
+    "ft_avg": 21.84,
+    "ft_max": 72.73,
+    "cpu": 826.8,
+    "grimm": 81.0,
+    "zombie": 66.0,
+    "vanilla": 477.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:12",
+    "ft_avg": 29.53,
+    "ft_max": 671.05,
+    "cpu": 872.6,
+    "grimm": 80.0,
+    "zombie": 65.0,
+    "vanilla": 477.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:18",
+    "ft_avg": 25.45,
+    "ft_max": 168.84,
+    "cpu": 870.9,
+    "grimm": 82.0,
+    "zombie": 67.0,
+    "vanilla": 481.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:24",
+    "ft_avg": 26.36,
+    "ft_max": 266.27,
+    "cpu": 854.8,
+    "grimm": 84.0,
+    "zombie": 69.0,
+    "vanilla": 481.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:30",
+    "ft_avg": 21.17,
+    "ft_max": 54.18,
+    "cpu": 828.2,
+    "grimm": 86.0,
+    "zombie": 71.0,
+    "vanilla": 487.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:36",
+    "ft_avg": 26.04,
+    "ft_max": 417.47,
+    "cpu": 850.7,
+    "grimm": 88.0,
+    "zombie": 73.0,
+    "vanilla": 491.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:42",
+    "ft_avg": 23.16,
+    "ft_max": 86.62,
+    "cpu": 848.8,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 478.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:48",
+    "ft_avg": 26.99,
+    "ft_max": 604.55,
+    "cpu": 843.3,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 478.0,
+    "animals_mod": 0.0
+  },
+  {
+    "t": "21:54",
+    "ft_avg": 22.06,
+    "ft_max": 92.64,
+    "cpu": 864.9,
+    "grimm": 90.0,
+    "zombie": 75.0,
+    "vanilla": 477.0,
+    "animals_mod": 0.0
+  }
+]

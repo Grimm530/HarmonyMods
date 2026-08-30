@@ -4148,6 +4148,24 @@ namespace Oxide.Plugins
             return priv != null && priv.authorizedPlayers.Contains(attacker.userID);
         }
 
+        /// <summary>
+        /// TruePVE flag <see cref="RuleFlags.NpcsCanHurtAnything"/> historically only matched
+        /// NPCPlayer (no Steam ID) / animals. BradleyAPC and cannon shells never qualified, so
+        /// defaultAllowDamage:false blocked event tanks from damaging player buildings.
+        /// </summary>
+        private bool NpcsCanHurtAnythingNow(RuleFlags flags, BaseEntity initiator, BaseEntity weapon, bool isAttacker, bool isAtkId)
+        {
+            if ((flags & RuleFlags.NpcsCanHurtAnything) == 0) return false;
+            if (isAttacker && !isAtkId) return true;
+            if (initiator is BaseNpc or BaseNPC2 or BeeSwarmAI or BradleyAPC or PatrolHelicopter) return true;
+            if (weapon is BradleyAPC or PatrolHelicopter) return true;
+            if (initiator != null && initiator.prefabID == maincannonshell) return true;
+            if (weapon != null && weapon.prefabID == maincannonshell) return true;
+            if (initiator?.creatorEntity is BradleyAPC or PatrolHelicopter or NPCPlayer) return true;
+            if (weapon?.creatorEntity is BradleyAPC or PatrolHelicopter or NPCPlayer) return true;
+            return false;
+        }
+
         // determines if an entity is "allowed" to take damage
         private bool AllowDamage(BaseEntity entity, HitInfo info)
         {
@@ -4332,6 +4350,20 @@ namespace Oxide.Plugins
             RuleFlags _flags = ruleSet._flags;
 
             if (trace) Trace($"Using RuleSet \"{ruleSet.name}\"", 1);
+
+            // NpcsCanHurtAnything must run before Bradley EvaluateRules and locked-door/box
+            // immortal flags. BradleyAPC is in the "npcs" group but is not a BasePlayer, so the
+            // later NPCPlayer-only check never allowed cannon/MG damage to player buildings.
+            if (NpcsCanHurtAnythingNow(_flags, initiator, weapon, isAttacker, isAtkId))
+            {
+                if (isVictim && (_flags & RuleFlags.ProtectedSleepers) != 0 && victim.IsSleeping())
+                {
+                    if (trace) Trace("Target is sleeping player, with ProtectedSleepers flag set; block and return", 1);
+                    return false;
+                }
+                if (trace) Trace("NpcsCanHurtAnything; initiator is NPC/Bradley/heli; allow and return", 1);
+                return true;
+            }
 
             var selfDamageFlag = (_flags & RuleFlags.SelfDamage) != 0;
             var mountRulesEvaluated = false;
@@ -4645,12 +4677,6 @@ namespace Oxide.Plugins
                 {
                     if (trace) Trace("Target is sleeping player, with ProtectedSleepers flag set; block and return", 1);
                     return false;
-                }
-
-                if ((_flags & RuleFlags.NpcsCanHurtAnything) != 0)
-                {
-                    if (trace) Trace("Initiator is NPC; flag set; allow damage and return", 1);
-                    return true;
                 }
             }
 

@@ -25,7 +25,7 @@ Harmony port of the Oxide **Convoy** event. Spawns vehicles on roads, mounts Gri
 2. Spawns vehicles from Convoy Presets (sedan, bike, bradley, modular, vendor, karuza).
 3. Spawns NPCs via **GrimmNPC.SpawnNpc** (`0GrimmNPC.dll`), mounts them, equips wear/belt from NPC Configurations.
 4. Spawns child crates / turrets / samsites from vehicle configs.
-5. Moves the convoy **kinematically along the route** (on-rails). Attack → stop + aggressive turrets + event zone spheres.
+5. Moves the convoy **kinematically along the route** (on-rails). Attack → stop + aggressive turrets + event zone spheres. After the stop timer, the convoy only resumes if roaming NPCs are still alive; killed NPCs are **not** respawned on remount. All crates opened/destroyed → stay stopped and despawn after `Time to destroy the convoy after opening all the crates`.
 6. Map marker follows the lead vehicle.
 7. **PVE Mode Setting** (when Enable + **0PveMode** loaded): registers a PveMode ownership zone on stop (`OwnerIsStopper`, damage threshold, owner-only loot, cooldowns). When disabled, falls back to Convoy's simple team damage lock.
 

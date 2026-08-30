@@ -227,6 +227,7 @@ namespace Convoy
             public BaseEntity Entity;
             public float HeightOffset;
             public Rigidbody Body;
+            public float BradleyBuildingDamageScale = -1f;
         }
 
         private class NpcSlot
@@ -259,6 +260,8 @@ namespace Convoy
         private int _eventTime;
         private int _aggressiveTime;
         private int _stopTime;
+        private bool _isEventLooted;
+        private readonly HashSet<ulong> _lootedContainersUids = new HashSet<ulong>();
         private BasePlayer _lastAttacker;
 
         private float _netTimer;
@@ -368,7 +371,10 @@ namespace Convoy
                     ConvoyBuild.UpdateEntityMaxHealth(apc, bradley.Hp > 0 ? bradley.Hp : 1000f);
                     apc.moveForceMax = 0f;
                 }
-                return FinishVehicle(apc, bradley, 1.0f);
+                var spawned = FinishVehicle(apc, bradley, 1.0f);
+                if (spawned != null)
+                    spawned.BradleyBuildingDamageScale = bradley.BradleyBuildingDamageScale;
+                return spawned;
             }
 
             var vendor = cfg.TravelingVendorConfigs?.FirstOrDefault(x => x.PresetName == presetName);
@@ -729,11 +735,18 @@ namespace Convoy
         {
             while (_eventTime > 0)
             {
-                if (_isStopped)
+                // Oxide: only resume after StopTime if unmounted NPCs are still alive and crates are not all looted.
+                if (_isStopped && !_isEventLooted)
                 {
                     _stopTime--;
-                    if (_stopTime <= 0 && ConvoyGrimmNpc.LiveNpcCount > 0)
-                        SwitchMoving(true);
+                    if (_stopTime == 0)
+                    {
+                        int roaming = GetUnmountedLiveNpcCount();
+                        if (roaming > 0)
+                            SwitchMoving(true);
+                        else
+                            UnityEngine.Debug.Log("[Convoy] Stop timer expired with no roaming NPCs left — staying stopped for loot.");
+                    }
                 }
 
                 if (!_isStopped && _aggressiveTime > 0)
@@ -751,17 +764,70 @@ namespace Convoy
                     UpdateAllMountedNpcLookRotation();
 
                 var timeNotify = Cfg?.NotifyConfig?.TimeNotifications;
-                if (timeNotify != null && timeNotify.Contains(_eventTime))
+                if (timeNotify != null && timeNotify.Contains(_eventTime) && !_isEventLooted)
                 {
                     string prefix = Cfg?.Prefix ?? "[Convoy]";
                     ConvoyNotifyStub.SendMessageToAll("RemainTime", prefix, EventConfig.DisplayName ?? "Convoy", _eventTime);
                 }
+
+                if (_eventTime % 30 == 0 && EventConfig != null && EventConfig.EventTime - _eventTime > 30)
+                    EventPassingCheck();
 
                 _eventTime--;
                 yield return CoroutineExWait(1f);
             }
 
             EventLauncher.StopEvent();
+        }
+
+        /// <summary>Oxide NpcSpawnManager.GetEventNpcCount: living event NPCs that are on foot.</summary>
+        private int GetUnmountedLiveNpcCount()
+        {
+            int n = 0;
+            for (int i = 0; i < _npcSlots.Count; i++)
+            {
+                ScientistNPC npc = _npcSlots[i]?.Npc;
+                if (npc == null || npc.IsDestroyed) continue;
+                if (npc.isMounted) continue;
+                n++;
+            }
+            return n;
+        }
+
+        public void OnEventCrateLooted(BaseEntity crate)
+        {
+            if (crate?.net == null) return;
+            _lootedContainersUids.Add((ulong)crate.net.ID.Value);
+            EventPassingCheck();
+        }
+
+        /// <summary>
+        /// Oxide EventPassingCheck: once every crate is opened or destroyed, freeze the convoy
+        /// and despawn after Main Setting → Time to destroy the convoy after opening all the crates.
+        /// </summary>
+        public void EventPassingCheck()
+        {
+            if (_isEventLooted) return;
+            if (_crates.Count == 0) return;
+
+            int unlooted = 0;
+            foreach (var c in _crates)
+            {
+                if (c == null || c.IsDestroyed || c.net == null) continue;
+                if (_lootedContainersUids.Contains((ulong)c.net.ID.Value)) continue;
+                unlooted++;
+            }
+
+            if (unlooted > 0) return;
+
+            _isEventLooted = true;
+            SwitchMoving(false);
+            int endTime = Cfg?.MainConfig?.EndAfterLootTime ?? 300;
+            if (endTime < 0) endTime = 0;
+            _eventTime = endTime;
+            string prefix = Cfg?.Prefix ?? "[Convoy]";
+            ConvoyNotifyStub.SendMessageToAll("Looted", prefix, EventConfig?.DisplayName ?? "Convoy");
+            UnityEngine.Debug.Log("[Convoy] All crates opened or destroyed — convoy will despawn in " + endTime + "s.");
         }
 
         private void UpdateConvoyState()
@@ -983,41 +1049,49 @@ namespace Convoy
             }
         }
 
-        /// <summary>Remount roaming NPCs when the convoy starts moving again.</summary>
+        /// <summary>
+        /// Remount living roaming NPCs when the convoy starts moving again.
+        /// Oxide parity: do not spawn replacements for NPCs the player already killed.
+        /// Movement is kinematic, so dead drivers are not replaced either.
+        /// </summary>
         private void MountAllNpc()
         {
+            int remounted = 0;
+            int skippedDead = 0;
             foreach (var slot in _npcSlots)
             {
                 if (slot == null || !slot.IsRoaming) continue;
-                if (slot.Seat == null || slot.Seat.IsDestroyed) continue;
+                if (slot.Seat == null || slot.Seat.IsDestroyed)
+                {
+                    slot.IsRoaming = false;
+                    continue;
+                }
 
                 var npc = slot.Npc;
                 if (npc == null || npc.IsDestroyed)
                 {
-                    // Respawn a mounted replacement if the roaming NPC died.
-                    if (slot.Config == null) continue;
-                    Vector3 pos = slot.Seat.transform.position;
-                    npc = ConvoyGrimmNpc.SpawnNpc(slot.Config, pos, slot.Seat.transform.rotation, mounted: true);
-                    if (npc == null) continue;
-                    slot.Npc = npc;
-                    if (npc.net != null)
-                        ConvoyState.RegisterNpcPreset((ulong)npc.net.ID.Value, slot.PresetName);
+                    skippedDead++;
+                    slot.Npc = null;
+                    slot.IsRoaming = false;
+                    continue;
                 }
-                else
+
+                ConvoyGrimmNpc.PauseForMount(npc);
+                try
                 {
-                    ConvoyGrimmNpc.PauseForMount(npc);
-                    try
-                    {
-                        npc.EnsureDismounted();
-                    }
-                    catch { }
+                    npc.EnsureDismounted();
                 }
+                catch { }
 
                 ConfigureConvoySeat(slot.Seat, slot.Vehicle as BaseVehicle);
                 slot.Seat.AttemptMount(npc, false);
                 SyncMountedNpcLook(npc, slot.Seat);
                 slot.IsRoaming = false;
+                remounted++;
             }
+
+            if (skippedDead > 0)
+                UnityEngine.Debug.Log("[Convoy] Remount skipped " + skippedDead + " dead NPC slot(s); remounted " + remounted + " survivor(s).");
         }
 
         private static bool TryFindGroundNear(Vector3 origin, out Vector3 ground)
@@ -1166,6 +1240,16 @@ namespace Convoy
                 if (v?.Entity?.net != null && (ulong)v.Entity.net.ID.Value == netId)
                     return true;
             return false;
+        }
+
+        public float GetBradleyBuildingDamageScale(ulong bradleyNetId)
+        {
+            foreach (var v in _vehicles)
+            {
+                if (v?.Entity?.net != null && (ulong)v.Entity.net.ID.Value == bradleyNetId)
+                    return v.BradleyBuildingDamageScale;
+            }
+            return -1f;
         }
 
         // -------- Cleanup --------

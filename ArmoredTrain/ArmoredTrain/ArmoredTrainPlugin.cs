@@ -501,6 +501,10 @@ namespace Oxide.Plugins
             if (!_eventController.IsTrainBradley(bradley.net.ID.Value))
                 return null;
 
+            AutoTurret playerTurret = entity as AutoTurret;
+            if (playerTurret != null && playerTurret.OwnerID.IsSteamId())
+                return null;
+
             BasePlayer targetPlayer = entity as BasePlayer;
 
             if (!targetPlayer.IsRealPlayer())
@@ -1534,6 +1538,7 @@ namespace Oxide.Plugins
             private int _eventTime;
             private int _aggressiveTime;
             private int _stopTime;
+            private bool _stayStoppedLogged;
             private bool _isReverse;
             private bool _isUnderGround;
             private bool _isEventLooted;
@@ -1607,6 +1612,9 @@ namespace Oxide.Plugins
 
                     _lootedContainersUids.Add(baseEntity.net.ID.Value);
                 }
+
+                if (_stopTime > 0 && _ins._config.MainConfig.IsRestoreStopTimeAfterDamageOrLoot)
+                    _stopTime = EventConfig.StopTime;
 
                 EventPassingCheck();
             }
@@ -2853,9 +2861,21 @@ namespace Oxide.Plugins
 
                         if (_stopTime <= 0)
                         {
-                            _isReverse = false;
-                            StartMoving();
-                            Interface.CallHook($"On{_ins.Name}StartMoving", GetEventPosition());
+                            if (ShouldStayStoppedForLoot())
+                            {
+                                _stopTime = 1;
+                                if (!_stayStoppedLogged)
+                                {
+                                    _stayStoppedLogged = true;
+                                    UnityEngine.Debug.Log("[ArmoredTrain] Stop timer expired with no roaming NPCs left — staying stopped for loot.");
+                                }
+                            }
+                            else
+                            {
+                                _isReverse = false;
+                                StartMoving();
+                                Interface.CallHook($"On{_ins.Name}StartMoving", GetEventPosition());
+                            }
                         }
                     }
 
@@ -2891,6 +2911,26 @@ namespace Oxide.Plugins
                 }
 
                 EventLauncher.StopEvent();
+            }
+
+            /// <summary>
+            /// Oxide Convoy parity: after the stop timer, do not auto-resume (and revive the driver)
+            /// if combat NPCs are dead and loot remains / players are still in the zone.
+            /// The emergency brake switch still calls StartMoving() directly.
+            /// </summary>
+            private bool ShouldStayStoppedForLoot()
+            {
+                if (_isEventLooted)
+                    return true;
+
+                if (NpcSpawnManager.GetEventNpcCount() > 0)
+                    return false;
+
+                UpdateCountOfUnlootedCrates();
+                if (GetCountOfUnlootedCrates() > 0)
+                    return true;
+
+                return ZoneController.IsAnyPlayerInEventZone();
             }
 
             public void EventPassingCheck()
@@ -3032,6 +3072,7 @@ namespace Oxide.Plugins
                     return;
 
                 Interface.CallHook($"On{_ins.Name}StopMoving", GetEventPosition());
+                _stayStoppedLogged = false;
                 _stopTime = EventConfig.StopTime;
                 ChangeSpeed(EngineSpeeds.Zero);
 
@@ -4501,23 +4542,48 @@ namespace Oxide.Plugins
                 {
                     TargetInfo targetInfo = targetList[0];
 
-                    if (targetInfo == null)
+                    if (targetInfo != null)
                     {
-                        mainGunTarget = null;
-                        return;
+                        BasePlayer player = targetInfo.entity as BasePlayer;
+                        if (player.IsRealPlayer() && targetInfo.IsVisible())
+                        {
+                            mainGunTarget = targetInfo.entity as BaseCombatEntity;
+                            return;
+                        }
+
+                        AutoTurret listedTurret = targetInfo.entity as AutoTurret;
+                        if (listedTurret != null && !listedTurret.IsDestroyed && listedTurret.OwnerID.IsSteamId())
+                        {
+                            mainGunTarget = listedTurret;
+                            return;
+                        }
                     }
-
-                    BasePlayer player = targetInfo.entity as BasePlayer;
-
-                    if (player.IsRealPlayer() && targetInfo.IsVisible())
-                        mainGunTarget = targetList[0].entity as BaseCombatEntity;
-                    else
-                        mainGunTarget = null;
                 }
-                else
+
+                mainGunTarget = FindNearbyPlayerTurret();
+            }
+
+            private AutoTurret FindNearbyPlayerTurret()
+            {
+                float range = viewDistance > 0f ? viewDistance : 100f;
+                List<AutoTurret> list = Facepunch.Pool.Get<List<AutoTurret>>();
+                Vis.Entities(transform.position, range, list, 1 << 8);
+                AutoTurret best = null;
+                float bestDist = float.MaxValue;
+                for (int i = 0; i < list.Count; i++)
                 {
-                    mainGunTarget = null;
+                    AutoTurret turret = list[i];
+                    if (turret == null || turret.IsDestroyed || !turret.OwnerID.IsSteamId())
+                        continue;
+                    float dist = Vector3.Distance(transform.position, turret.transform.position);
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        best = turret;
+                    }
                 }
+                Facepunch.Pool.FreeUnmanaged(ref list);
+                return best;
             }
         }
 
@@ -6422,6 +6488,9 @@ namespace Oxide.Plugins
             
             [JsonProperty(En ? "Enable logging of the start and end of the event? [true/false]" : "Включить логирование начала и окончания ивента? [true/false]")] 
             public bool EnableStartStopLogs { get; set; }
+
+            [JsonProperty(En ? "Log Facepunch Bradley standard vis test [true/false]" : "Логировать Facepunch Standard vis test у Bradley [true/false]")]
+            public bool LogBradleyStandardVisTest { get; set; }
             
             [JsonProperty(En ? "The turrets of the train will drop loot after destruction? [true/false]" : "Турели поезда будут оставлять лут после уничтожения? [true/false]")] 
             public bool IsTurretDropWeapon { get; set; }
@@ -7330,6 +7399,7 @@ namespace Oxide.Plugins
                         AllowDriverDamage = true,
                         ReviveTrainDriver = true,
                         EnableStartStopLogs = false,
+                        LogBradleyStandardVisTest = false,
                         IsTurretDropWeapon = false,
                         MaxGroundDamageDistance = 100,
                         MaxHeliDamageDistance = 250,

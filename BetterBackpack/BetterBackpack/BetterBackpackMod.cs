@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Network;
 using UnityEngine;
 
 namespace BetterBackpack;
@@ -38,18 +37,37 @@ public class BetterBackpackMod : IHarmonyModHooks
             Debug.LogWarning("[BetterBackpack] betterbackpack command registration failed: " + ex.Message);
         }
 
+        BindItemRetriever();
+        StartReminderLoop();
+        LootDebug.ApplyFromConfig();
+        ItemRetrieverSupplier.HideAllOnlineWornBackpacks();
+        ForceMainInventorySyncForAllPlayers();
+    }
+
+    private static void BindItemRetriever()
+    {
         try
         {
-            var harmony = new HarmonyLib.Harmony("com.facepunch.rust_dedicated.BetterBackpack");
-            PlayerInventory_FindAmmo_Patch.Patch(harmony);
+            ItemRetrieverBinder.RegisterReadyCallback(() =>
+            {
+                try
+                {
+                    ItemRetrieverSupplier.Register();
+                    ItemRetrieverSupplier.HideAllOnlineWornBackpacks();
+                    ForceMainInventorySyncForAllPlayers();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[BetterBackpack] ItemRetriever ready callback: " + ex.Message);
+                }
+            });
+            if (!ItemRetrieverBinder.IsReady)
+                Debug.Log("[BetterBackpack] ItemRetriever not loaded yet. Will bind when it loads.");
         }
         catch (Exception ex)
         {
-            Debug.LogWarning("[BetterBackpack] Ammo patch failed: " + ex.Message);
+            Debug.LogWarning("[BetterBackpack] BindItemRetriever: " + ex.Message);
         }
-
-        StartReminderLoop();
-        ForceMainInventorySyncForAllPlayers();
     }
 
     private void StartReminderLoop()
@@ -83,7 +101,7 @@ public class BetterBackpackMod : IHarmonyModHooks
 
     private static void CmdHelp(ConsoleSystem.Arg arg)
     {
-        var msg = "[BetterBackpack] Toggle backpack: /existing (auto-stack on loot), /retrieval (craft from backpack)";
+        var msg = "[BetterBackpack] Toggle backpack: /existing (yank matching loot into bag after it hits inventory), /retrieval (craft from backpack)";
         var player = arg.Player();
         if (player != null && BetterBackpackConfig.Config?.ChatNotifications == true)
             player.ChatMessage(msg);
@@ -99,6 +117,12 @@ public class BetterBackpackMod : IHarmonyModHooks
             if (invokeHandler != null)
                 InvokeHandler.CancelInvoke(invokeHandler, ReminderTick);
         }
+        catch { }
+        try { LootDebug.Stop("mod unloaded"); }
+        catch { }
+        try { ItemRetrieverSupplier.Unregister(); }
+        catch { }
+        try { ItemRetrieverSupplier.ShowAllOnlineWornBackpacks(); }
         catch { }
         PlayerPrefsByUserId.Clear();
         try
@@ -136,7 +160,7 @@ public class BetterBackpackMod : IHarmonyModHooks
         {
             prefs.ExistingEnabled = !prefs.ExistingEnabled;
             if (BetterBackpackConfig.Config?.ChatNotifications == true)
-                player.ChatMessage($"[BetterBackpack] Existing (auto-stack to backpack): {(prefs.ExistingEnabled ? "ON" : "OFF")}");
+                player.ChatMessage($"[BetterBackpack] Existing (yank matching items to backpack after loot): {(prefs.ExistingEnabled ? "ON" : "OFF")}");
             return true;
         }
         if (cmd == "/retrieval")
@@ -144,8 +168,8 @@ public class BetterBackpackMod : IHarmonyModHooks
             prefs.RetrievalEnabled = !prefs.RetrievalEnabled;
             if (BetterBackpackConfig.Config?.ChatNotifications == true)
                 player.ChatMessage($"[BetterBackpack] Retrieval (craft from backpack): {(prefs.RetrievalEnabled ? "ON" : "OFF")}");
-            if (prefs.RetrievalEnabled)
-                ForceMainInventorySync(player);
+            ItemRetrieverSupplier.HideWornBackpack(player);
+            ForceMainInventorySync(player);
             return true;
         }
         return false;

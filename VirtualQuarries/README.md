@@ -32,3 +32,4 @@ Copies **only** `VirtualQuarries.dll` to root `HarmonyMods/`.
 
 - Economy plugins (Economics, ServerRewards, IQEconomic, BankSystem, ShoppyStock), PopUpAPI, and RedeemStorageAPI are optional Harmony/AppDomain bridges; missing refs log warnings like the Oxide plugin.
 - Static quarry / excavator hooks patch `EngineSwitch`, `ExcavatorArm.RPC_SetResourceTarget`, and `ExcavatorSignalComputer.RequestSupplies`.
+- Excavator supply calls spawn a **per-player** crate at the monument (BetterAirDrop-style sky drop, no cargo plane). Harmony mods do not hot-reload from a file copy — restart or `harmony.unload` / `harmony.load` VirtualQuarries after a build.

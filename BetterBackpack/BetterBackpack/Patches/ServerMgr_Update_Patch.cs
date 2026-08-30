@@ -11,6 +11,7 @@ internal class ServerMgr_Update_Patch
     [HarmonyPostfix]
     private static void Postfix()
     {
+        LootDebug.Tick();
         // ProcessDeferredMoves no-ops quickly when no deferred backpack stacking is pending.
         PlayerInventory_OnItemAddedOrRemoved_Patch.ProcessDeferredMoves();
     }

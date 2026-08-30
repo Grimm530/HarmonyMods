@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"frametime","columns":["fieldKey","fieldType"],"values":[["average","float"],["instant","float"]]}]}]}

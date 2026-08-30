@@ -48,5 +48,13 @@ namespace Convoy.Patches
             __result = false;
             return false;
         }
+
+        [HarmonyPostfix]
+        public static void Postfix(BaseEntity targetEntity, bool __runOriginal)
+        {
+            if (!__runOriginal || targetEntity?.net == null) return;
+            if (!ConvoyState.IsConvoyCrate((ulong)targetEntity.net.ID.Value)) return;
+            EventController.Instance?.OnEventCrateLooted(targetEntity);
+        }
     }
 }

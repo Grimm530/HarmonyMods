@@ -18,6 +18,9 @@ namespace Convoy.Patches
                 ConvoyState.NotifyConvoyNpcDeath(netId);
                 ConvoyGrimmNpc.Unregister(netId);
             }
+
+            if (ConvoyState.IsConvoyCrate(netId))
+                EventController.Instance?.EventPassingCheck();
         }
     }
 }

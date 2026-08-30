@@ -1,0 +1,102 @@
+[
+  {
+    "command": "chat.say",
+    "avg_ms": 3.0597885321100913,
+    "max_ms": 36.4461
+  },
+  {
+    "command": "chat.teamsay",
+    "avg_ms": 0.9621,
+    "max_ms": 1.6276
+  },
+  {
+    "command": "craft.add",
+    "avg_ms": 0.40152380952380956,
+    "max_ms": 2.2135
+  },
+  {
+    "command": "cui.endtest",
+    "avg_ms": 2.73374623921085,
+    "max_ms": 143.5322
+  },
+  {
+    "command": "global.banlistex",
+    "avg_ms": 0.11584134615384618,
+    "max_ms": 0.6802
+  },
+  {
+    "command": "global.bans",
+    "avg_ms": 0.5451818737270875,
+    "max_ms": 3.2968
+  },
+  {
+    "command": "global.playerlist",
+    "avg_ms": 0.14684899738448146,
+    "max_ms": 2.8922
+  },
+  {
+    "command": "global.quarriesui",
+    "avg_ms": 1.68945,
+    "max_ms": 4.1922
+  },
+  {
+    "command": "global.respawn",
+    "avg_ms": 5.8568,
+    "max_ms": 8.7481
+  },
+  {
+    "command": "global.respawn_sleepingbag",
+    "avg_ms": 6.259133333333334,
+    "max_ms": 8.763
+  },
+  {
+    "command": "global.serverinfo",
+    "avg_ms": 0.08228589883950078,
+    "max_ms": 1.4838
+  },
+  {
+    "command": "global.setinfo",
+    "avg_ms": 0.7638,
+    "max_ms": 0.7638
+  },
+  {
+    "command": "global.status",
+    "avg_ms": 0.04395689851767392,
+    "max_ms": 0.591
+  },
+  {
+    "command": "global.ui_buyable_show",
+    "avg_ms": 3.01285,
+    "max_ms": 6.6988
+  },
+  {
+    "command": "harmony.load",
+    "avg_ms": 897.7561333333333,
+    "max_ms": 1274.986
+  },
+  {
+    "command": "inventory.endloot",
+    "avg_ms": 0.9302705084745759,
+    "max_ms": 2.9803
+  },
+  {
+    "command": "inventory.lighttoggle",
+    "avg_ms": 0.03548181818181818,
+    "max_ms": 0.067
+  },
+  {
+    "command": "server.fps",
+    "avg_ms": 0.0019133333333333333,
+    "max_ms": 0.0166
+  },
+  {
+    "command": "vehicle.swapseats",
+    "avg_ms": 0.3086,
+    "max_ms": 1.3809
+  },
+  {
+    "command": "vehicle.swaptoseat",
+    "avg_ms": 0.003675,
+    "max_ms": 0.0069
+  }
+]

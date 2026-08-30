@@ -1,0 +1,202 @@
+[
+  {
+    "behaviour": "CargoShip",
+    "method": "FindInitialNode",
+    "avg_ms": 51.4881,
+    "max_ms": 59.6917,
+    "p95_ms": 59.6917,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "BaseEntity",
+    "method": "NetworkPositionTick",
+    "avg_ms": 33.12124013484911,
+    "max_ms": 54.4644,
+    "p95_ms": 37.7639,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "FireBall",
+    "method": "Think",
+    "avg_ms": 29.491224682846134,
+    "max_ms": 571.2624,
+    "p95_ms": 113.0818,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "CH47HelicopterAIController",
+    "method": "DelayedKill",
+    "avg_ms": 28.48266666666667,
+    "max_ms": 64.6349,
+    "p95_ms": 64.6349,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "BaseAIBrain",
+    "method": "TickMovement",
+    "avg_ms": 27.544896633692616,
+    "max_ms": 41.3553,
+    "p95_ms": 29.6789,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "TimedExplosive",
+    "method": "Explode",
+    "avg_ms": 19.158713017751477,
+    "max_ms": 88.1702,
+    "p95_ms": 45.2259,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "<>c__DisplayClass785_0",
+    "method": "<OnTimedExplosiveExplode>b__0",
+    "avg_ms": 18.549775999999998,
+    "max_ms": 85.6863,
+    "p95_ms": 50.2943,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "SpawnGroup",
+    "method": "Spawn",
+    "avg_ms": 14.500325728155337,
+    "max_ms": 160.0039,
+    "p95_ms": 42.4096,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "<>c__DisplayClass542_0",
+    "method": "<SetupNpc>b__0",
+    "avg_ms": 11.027777215189875,
+    "max_ms": 62.2728,
+    "p95_ms": 39.3039,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "CargoShip",
+    "method": "RespawnLoot",
+    "avg_ms": 10.79762,
+    "max_ms": 12.695,
+    "p95_ms": 12.695,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "CargoShip",
+    "method": "DelayedDestroy",
+    "avg_ms": 10.2141,
+    "max_ms": 13.623,
+    "p95_ms": 13.623,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "AutoTurret",
+    "method": "ServerDo",
+    "avg_ms": 9.371149544761057,
+    "max_ms": 15.9001,
+    "p95_ms": 12.0002,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "HackableLockedCrate",
+    "method": "LandCheck",
+    "avg_ms": 8.619514079483697,
+    "max_ms": 16.9068,
+    "p95_ms": 13.7731,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "RidableHorse",
+    "method": "PostPlayerLateUpdate",
+    "avg_ms": 8.559902153846155,
+    "max_ms": 12.8201,
+    "p95_ms": 12.2247,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "BaseAIBrain",
+    "method": "DoMovementTick",
+    "avg_ms": 8.503842187115504,
+    "max_ms": 12.9993,
+    "p95_ms": 9.2536,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "<>c__DisplayClass211_0",
+    "method": "<ClearAllEffects>b__0",
+    "avg_ms": 8.378896397460514,
+    "max_ms": 184.2788,
+    "p95_ms": 11.6432,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "BaseNpc",
+    "method": "TickAi",
+    "avg_ms": 7.444687115507665,
+    "max_ms": 19.5844,
+    "p95_ms": 12.8443,
+    "owner": "likely-mod:BaseNpc"
+  },
+  {
+    "behaviour": "CH47HelicopterAIController",
+    "method": "SpawnScientists",
+    "avg_ms": 6.765533333333334,
+    "max_ms": 11.1159,
+    "p95_ms": 11.1159,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "NPCVendingMachine",
+    "method": "InstallFromVendingOrders",
+    "avg_ms": 5.50775,
+    "max_ms": 9.074,
+    "p95_ms": 9.074,
+    "owner": "likely-mod:NPCVendingMachine"
+  },
+  {
+    "behaviour": "BaseVehicle",
+    "method": "DismountAllPlayers",
+    "avg_ms": 4.875722857142856,
+    "max_ms": 28.3462,
+    "p95_ms": 21.9442,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "FlameExplosive",
+    "method": "Explode",
+    "avg_ms": 4.0427,
+    "max_ms": 5.6467,
+    "p95_ms": 5.6467,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "DiveSiteBuoy",
+    "method": "UpdateMovement",
+    "avg_ms": 3.4194323843416363,
+    "max_ms": 15.1107,
+    "p95_ms": 7.0978,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "MetalDetectorSource",
+    "method": "SpawnSources",
+    "avg_ms": 2.9297176696542877,
+    "max_ms": 8.5608,
+    "p95_ms": 6.4231,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "Flashbang",
+    "method": "Explode",
+    "avg_ms": 2.8232,
+    "max_ms": 4.9881,
+    "p95_ms": 4.9881,
+    "owner": "vanilla/unknown"
+  },
+  {
+    "behaviour": "VineSwingingTree",
+    "method": "RefreshVineState",
+    "avg_ms": 2.7738,
+    "max_ms": 2.7738,
+    "p95_ms": 2.7738,
+    "owner": "vanilla/unknown"
+  }
+]

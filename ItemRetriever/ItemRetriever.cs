@@ -98,12 +98,20 @@ namespace ItemRetrieverHarmony
 
         internal void OnEntitySaved(BasePlayer player, BaseNetworkable.SaveInfo saveInfo)
         {
+            if (player == null || player.IsDead())
+                return;
+            if (saveInfo.forDisk || saveInfo.forConnection == null)
+                return;
+            if (saveInfo.msg?.basePlayer?.inventory?.invMain == null)
+                return;
             SerializeForNetwork(player, saveInfo.msg.basePlayer.inventory.invMain);
         }
 
         internal void OnInventoryNetworkUpdate(PlayerInventory inventory, ItemContainer container, ProtoBuf.UpdateItemContainer updatedItemContainer, PlayerInventory.Type inventoryType)
         {
             if (inventoryType != PlayerInventory.Type.Main)
+                return;
+            if (inventory?.baseEntity == null || inventory.baseEntity.IsDead())
                 return;
 
             SerializeForNetwork(inventory.baseEntity, updatedItemContainer.container[0]);
