@@ -212,13 +212,9 @@ namespace Oxide.Plugins
         {
             if (crate == null || !crate.IsExists())
                 return;
-            GameObject lockingEnt = crate.lockingEnt;
-            if (lockingEnt != null)
-            {
-                BaseEntity fireEnt = lockingEnt.GetComponent<BaseEntity>();
-                if (fireEnt != null && fireEnt.IsExists())
-                    fireEnt.Kill();
-            }
+            BaseEntity fireEnt = crate.lockingEnt;
+            if (fireEnt != null && fireEnt.IsExists())
+                fireEnt.Kill();
         }
 
         private object OnEntityTakeDamage(TrainCar trainCar, HitInfo info)

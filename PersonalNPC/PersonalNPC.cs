@@ -6039,7 +6039,7 @@ namespace PersonalNPCHarmony
                     for (int i = 0; i < target.capacity; i++)
                     {
                         if (target.GetSlot(i) != null) continue;
-                        if (!target.canAcceptItem(item, i)) continue;
+                        if (!target.canAcceptItem(null, item, i)) continue;
 
                         if (TryMoveItemToSlot(item, target, i, debug))
                             return true;
@@ -6080,7 +6080,7 @@ namespace PersonalNPCHarmony
                     return false;
                 }
 
-                if (!target.canAcceptItem(item, slot))
+                if (!target.canAcceptItem(null, item, slot))
                 {
                     DepositDebug(debug, $"Move failed for {item.info?.shortname}: target rejected item in slot {slot}.");
                     return false;
@@ -8193,17 +8193,7 @@ namespace PersonalNPCHarmony
 
             private int GetResourceStage(StagedResourceEntity ent)
             {
-                float num = Mathf.InverseLerp(0f, ent.MaxHealth(), ent.Health());
-                StagedResourceEntity.ResourceStage[] array = ent.stages.ToArray();
-                for (int i = 0; i < array.Length; i++)
-                {
-                    if (num >= array[i].health)
-                    {
-                        return i;
-                    }
-                }
-
-                return array.Length - 1;
+                return ent != null ? ent.GetStage() : 0;
             }
 
             private float _lastTimeTargetHealthChanged;
@@ -8232,7 +8222,7 @@ namespace PersonalNPCHarmony
                 Vector3 velocity = Vector3.zero;
 
                 if (target is BaseNpc npc && npc.NavAgent != null && npc.NavAgent.enabled)
-                    velocity = npc.NavAgent.velocity;
+                    velocity = npc.NavAgent.velocity.Value;
                 else if (target is BasePlayer player && player.IsRunning())
                     velocity = player.estimatedVelocity;
 

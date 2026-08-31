@@ -6155,7 +6155,7 @@ namespace BackpacksHarmony
             private Backpack _backpack;
 
             private Action _onDirty;
-            private Func<Item, int, bool> _canAcceptItem;
+            private Func<BasePlayer, Item, int, bool> _canAcceptItem;
             private Action<Item, bool> _onItemAddedRemoved;
 
             private Backpacks _plugin => _backpack.Plugin;
@@ -6164,7 +6164,7 @@ namespace BackpacksHarmony
             public ItemContainerAdapter()
             {
                 _onDirty = () => _backpack.MarkDirty();
-                _canAcceptItem = (item, amount) =>
+                _canAcceptItem = (player, item, amount) =>
                 {
                     // Explicitly track hook time so server owners can be informed of the cost.
                     var result = _backpack.ShouldAcceptItem(item, ItemContainer);

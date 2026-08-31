@@ -12,28 +12,28 @@
   <ItemGroup />
   <ItemGroup>
     <Reference Include="Rust.Harmony">
-      <HintPath>..\Managed\Rust.Harmony.dll</HintPath>
+      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>..\Managed\0Harmony.dll</HintPath>
+      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>..\Managed\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>$(RustManaged)\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.System">
-      <HintPath>..\Managed\Facepunch.System.dll</HintPath>
+      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
-      <HintPath>..\Managed\Facepunch.UnityEngine.dll</HintPath>
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>..\Managed\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>..\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

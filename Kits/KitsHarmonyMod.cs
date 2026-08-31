@@ -29,8 +29,74 @@ namespace KitsHarmony
         private KitsPluginWrapper _pluginWrapper;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
         private readonly HashSet<string> _chatCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool _wipedThisLoad;
 
         public Kits Plugin => _plugin;
+
+        internal static string LastWipeIdPath
+        {
+            get
+            {
+                var dataDir = KitsHost.Instance?.DataDirectory;
+                if (string.IsNullOrEmpty(dataDir))
+                    dataDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "HarmonyData"));
+                return Path.Combine(dataDir, "Kits", "last_wipe_id.txt");
+            }
+        }
+
+        /// <summary>True the first time this boot should wipe player kit files.</summary>
+        internal bool TryBeginPlayerWipe()
+        {
+            if (_wipedThisLoad) return false;
+            _wipedThisLoad = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Compare SaveRestore.WipeId to the value stored on disk.
+        /// AppDomain data is lost on process restart, so a map wipe that stops the
+        /// dedicated process never looked like a wipe to the old in-memory check.
+        /// </summary>
+        internal static void CheckPersistedWipeId()
+        {
+            var plugin = Instance?._plugin;
+            if (plugin == null) return;
+
+            string wipeId;
+            try { wipeId = SaveRestore.WipeId ?? ""; }
+            catch { return; }
+            if (string.IsNullOrEmpty(wipeId)) return;
+
+            var path = LastWipeIdPath;
+            var prev = "";
+            try
+            {
+                if (File.Exists(path))
+                    prev = File.ReadAllText(path).Trim();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Kits] Read last WipeId: " + ex.Message);
+            }
+
+            if (string.Equals(prev, wipeId, StringComparison.Ordinal))
+                return;
+
+            if (!string.IsNullOrEmpty(prev))
+                plugin.OnNewSave("WipeId " + prev + " → " + wipeId);
+
+            try
+            {
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(path, wipeId);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Kits] Persist WipeId: " + ex.Message);
+            }
+        }
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
@@ -61,6 +127,7 @@ namespace KitsHarmony
                 {
                     _plugin.HarmonyServerInitialized();
                     RefreshChatCommandsFromConfig();
+                    CheckPersistedWipeId();
                     Debug.Log($"[Kits Harmony] Server initialized (v{VersionMajor}.{VersionMinor}.{VersionPatch})");
                     return;
                 }
@@ -74,6 +141,7 @@ namespace KitsHarmony
                 {
                     _plugin.HarmonyServerInitialized();
                     RefreshChatCommandsFromConfig();
+                    CheckPersistedWipeId();
                 }
                 catch (Exception ex) { Debug.LogError("[Kits Harmony] Init failed: " + ex); }
                 return;

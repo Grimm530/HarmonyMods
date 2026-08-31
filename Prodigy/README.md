@@ -1,6 +1,6 @@
 # Prodigy (Harmony Mod)
 
-Prodigy is a Harmony mod that provides detailed entity information (“prod” info) when you look at an entity and run the `prodigy` command. It shows owner, position, prefab, type, health, code lock, auth list, build date (for blocks/TC), and entity-specific details. No Oxide dependency.
+Prodigy is a Harmony mod that provides detailed entity information (“prod” info) when you look at an entity and run the `prodigy` command. It shows owner, last online, position, prefab, type, health, code lock, auth list, build date (for blocks/TC), and entity-specific details. No Oxide dependency.
 
 ## Mod identity
 
@@ -72,6 +72,7 @@ Then press **P** while looking at an entity to run prodigy. Use `bind p "chat.sa
 ## UI behavior
 
 - **Panel:** Large or small layout; per-user offsets and “small UI” stored in data.
+- **Rows:** Position/Type/Size/Col/Last/**Owner** on the left; PrefabId/Health/Building ID/Skin/Code/**Last Online** on the right. Last Online is `Online` when the owner is connected, otherwise the last-seen date/time from PlaytimeTracker (`yyyy-MM-dd HH:mm` local), or `N/A`.
 - **Timed:** Panel auto-closes after 10 seconds unless user held Sprint when running prodigy (then “Timed UI disabled”). Duck when running prodigy toggles small UI.
 - **Buttons:** Move (up/down/left/right) and close; commands are `prodigy_ui_move …` and executed server-side.
 

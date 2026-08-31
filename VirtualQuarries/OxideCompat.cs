@@ -863,7 +863,7 @@ namespace Oxide.Plugins
         {
             if (secs > 0f) yield return new WaitForSeconds(secs); else yield return null;
             if (t.Destroyed) yield break;
-            try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex.Message); }
+            try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex); }
             t.Destroy();
             lock (_active) _active.Remove(t);
         }
@@ -875,7 +875,7 @@ namespace Oxide.Plugins
             {
                 if (secs > 0f) yield return new WaitForSeconds(secs); else yield return null;
                 if (t.Destroyed) break;
-                try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex.Message); }
+                try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex); }
                 count++;
             }
             t.Destroy();

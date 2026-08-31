@@ -15,21 +15,29 @@ namespace VirtualQuarriesHarmony.Patches
         }
     }
 
+    /// <summary>
+    /// Oxide OnNewSave: no save restored (new map) or wipe id change during this process.
+    /// Plugin init reads PendingNewSave — Instance/data are not ready during Bootstrap Load.
+    /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     public static class SaveRestore_Load_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(string strFilename, bool __result)
+        public static void Postfix(string strFilename, bool allowOutOfDateSaves, bool __result)
         {
-            if (!__result) return;
             try
             {
+                if (!__result)
+                {
+                    VQ.PendingNewSave = true;
+                    return;
+                }
+
                 var wipeId = SaveRestore.WipeId ?? "";
                 var prev = System.AppDomain.CurrentDomain.GetData("VirtualQuarries_LastWipeId") as string;
-                if (prev != null && prev == wipeId) return;
                 System.AppDomain.CurrentDomain.SetData("VirtualQuarries_LastWipeId", wipeId);
-                if (prev == null) return;
-                VQ.Dispatch_OnNewSave();
+                if (prev != null && prev != wipeId)
+                    VQ.PendingNewSave = true;
             }
             catch (System.Exception ex) { Debug.LogWarning("[VirtualQuarries] OnNewSave: " + ex.Message); }
         }

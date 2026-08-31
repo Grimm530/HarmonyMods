@@ -8,7 +8,7 @@ namespace PlayerSkinsHarmony.Patches
     internal static class ItemContainer_CanAcceptItem_Patch
     {
         [HarmonyPostfix]
-        private static void Postfix(ItemContainer __instance, Item item, int targetPos, ref ItemContainer.CanAcceptResult __result)
+        private static void Postfix(ItemContainer __instance, BasePlayer player, Item item, int targetPos, ref ItemContainer.CanAcceptResult __result)
         {
             if (!PlayerSkinsPlugin.ReskinLootHooksActive) return;
             if (__result != ItemContainer.CanAcceptResult.CanAccept) return;

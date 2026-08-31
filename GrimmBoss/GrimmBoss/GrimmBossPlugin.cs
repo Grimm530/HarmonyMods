@@ -5669,11 +5669,14 @@ namespace Oxide.Plugins
         {
             if (entity == null || entity.net == null) return;
             ulong scientistId = entity.net.ID.Value;
-            if (_controllers.ContainsKey(scientistId))
+            ControllerBoss controller;
+            if (_controllers.TryGetValue(scientistId, out controller) && controller != null)
             {
                 _controllers.Remove(scientistId);
 
-                NpcConfig config = Configs.FirstOrDefault(x => x.Name == entity.displayName);
+                NpcConfig config = controller.Config;
+                if (config == null) config = Configs.FirstOrDefault(x => x.Name == entity.displayName);
+                Vector3 deathPos = entity.transform.position;
 
                 if (!config.DisableTimer)
                 {
@@ -5696,7 +5699,7 @@ namespace Oxide.Plugins
 
                 if (!string.IsNullOrEmpty(config.CratePrefab))
                 {
-                    BaseEntity crate = GameManager.server.CreateEntity(config.CratePrefab, entity.transform.position, entity.transform.rotation);
+                    BaseEntity crate = GameManager.server.CreateEntity(config.CratePrefab, deathPos, entity.transform.rotation);
                     if (crate == null) _ins.PrintWarning($"Unknown entity! ({config.CratePrefab})");
                     else
                     {
@@ -5709,6 +5712,11 @@ namespace Oxide.Plugins
                 NextTick(() =>
                 {
                     if (corpse == null) return;
+                    if (config.TypeLootTable == 4 || config.TypeLootTable == 5)
+                    {
+                        ApplyPrefabLootOnDeath(config, corpse, deathPos, scientistId);
+                        return;
+                    }
                     ItemContainer container = corpse.containers[0];
                     if (config.TypeLootTable == 0)
                     {
@@ -5729,8 +5737,7 @@ namespace Oxide.Plugins
                         return;
                     }
                     container.ClearItemsContainer();
-                    if (config.TypeLootTable == 4 || config.TypeLootTable == 5) AddToContainerPrefab(container, config.PrefabLootTable);
-                    if (config.TypeLootTable == 1 || config.TypeLootTable == 5) AddToContainerItem(container, config.OwnLootTable);
+                    if (config.TypeLootTable == 1) AddToContainerItem(container, config.OwnLootTable);
                     if (config.IsRemoveCorpse && !corpse.IsDestroyed) corpse.Kill();
                 });
             }
@@ -5784,6 +5791,151 @@ namespace Oxide.Plugins
 
             if (config.TypeLootTable == 6) return null;
             else return true;
+        }
+
+        // Type 4/5: spawn LootContainer prefabs on the ground at the corpse; copy NPC loot tables into the bag.
+        private void ApplyPrefabLootOnDeath(NpcConfig config, NPCPlayerCorpse corpse, Vector3 deathPos, ulong scientistId)
+        {
+            Vector3 crateOrigin = deathPos;
+            if (corpse != null && !corpse.IsDestroyed) crateOrigin = corpse.transform.position;
+
+            List<string> groundCrates = new List<string>();
+            List<string> corpsePrefabs = new List<string>();
+            if (config.PrefabLootTable != null)
+            {
+                List<string> selected = SelectPrefabs(config.PrefabLootTable);
+                for (int i = 0; i < selected.Count; i++)
+                {
+                    string path = selected[i];
+                    if (IsLootContainerPrefab(path)) groundCrates.Add(path);
+                    else corpsePrefabs.Add(path);
+                }
+            }
+
+            if (groundCrates.Count > 0) SpawnLootContainersOnGround(crateOrigin, groundCrates, scientistId);
+
+            bool addOwn = config.TypeLootTable == 5 && config.OwnLootTable != null;
+            if (corpsePrefabs.Count == 0 && !addOwn)
+            {
+                if (config.IsRemoveCorpse && corpse != null && !corpse.IsDestroyed) corpse.Kill();
+                return;
+            }
+            if (corpse == null || corpse.IsDestroyed || corpse.containers == null || corpse.containers.Length == 0) return;
+            ItemContainer container = corpse.containers[0];
+            if (container == null) return;
+            container.ClearItemsContainer();
+            for (int i = 0; i < corpsePrefabs.Count; i++) SpawnIntoContainer(container, corpsePrefabs[i]);
+            if (addOwn) AddToContainerItem(container, config.OwnLootTable);
+            if (config.IsRemoveCorpse && !corpse.IsDestroyed) corpse.Kill();
+        }
+
+        private List<string> SelectPrefabs(PrefabLootTableConfig lootTable)
+        {
+            List<string> selected = new List<string>();
+            if (lootTable == null || lootTable.Prefabs == null || lootTable.Prefabs.Count == 0) return selected;
+
+            HashSet<string> used = new HashSet<string>();
+            if (lootTable.UseCount)
+            {
+                int toSpawn = UnityEngine.Random.Range(lootTable.Min, lootTable.Max + 1);
+                int spawned = 0;
+                while (spawned < toSpawn)
+                {
+                    bool progressed = false;
+                    for (int i = 0; i < lootTable.Prefabs.Count; i++)
+                    {
+                        PrefabConfig prefab = lootTable.Prefabs[i];
+                        if (used.Count < lootTable.Prefabs.Count && used.Contains(prefab.PrefabDefinition)) continue;
+                        if (UnityEngine.Random.Range(0f, 100f) > prefab.Chance) continue;
+                        selected.Add(prefab.PrefabDefinition);
+                        used.Add(prefab.PrefabDefinition);
+                        spawned++;
+                        progressed = true;
+                        if (spawned >= toSpawn) break;
+                    }
+                    if (!progressed) used.Clear();
+                }
+            }
+            else
+            {
+                for (int i = 0; i < lootTable.Prefabs.Count; i++)
+                {
+                    PrefabConfig prefab = lootTable.Prefabs[i];
+                    if (UnityEngine.Random.Range(0f, 100f) > prefab.Chance) continue;
+                    selected.Add(prefab.PrefabDefinition);
+                }
+            }
+            return selected;
+        }
+
+        private void SpawnLootContainersOnGround(Vector3 center, List<string> prefabPaths, ulong scientistId)
+        {
+            if (prefabPaths == null || prefabPaths.Count == 0) return;
+
+            int count = prefabPaths.Count;
+            for (int i = 0; i < count; i++)
+            {
+                string def = prefabPaths[i];
+                if (!IsLootContainerPrefab(def)) continue;
+                float baseRadius = 2f + (i / 6f) * 1.5f;
+                float baseAngle = (360f / Mathf.Max(1, count)) * i + UnityEngine.Random.Range(-10f, 10f);
+                Vector3 pos = GetSafeStructureAwareGround(center, baseRadius, baseAngle, 1.5f) + Vector3.up * 0.1f;
+                BaseEntity crate = GameManager.server.CreateEntity(def, pos, Quaternion.identity);
+                if (crate == null)
+                {
+                    PrintWarning($"Unknown entity! ({def})");
+                    continue;
+                }
+                crate.enableSaving = false;
+                crate.Spawn();
+                if (_config.Pve && plugins.Exists("PveMode")) PveMode.Call("CrateAddScientistPveMode", crate.net.ID.Value, scientistId);
+            }
+        }
+
+        private bool IsLootContainerPrefab(string prefabPath)
+        {
+            if (string.IsNullOrEmpty(prefabPath)) return false;
+            if (_lootContainerPrefabPaths.Contains(prefabPath)) return true;
+            GameObject prefab = GameManager.server.FindPrefab(prefabPath);
+            if (prefab == null) return false;
+            return prefab.GetComponent<LootContainer>() != null;
+        }
+
+        private Vector3 GetStructureAwareGroundPosition(Vector3 center, float radius, float angleDegrees)
+        {
+            Vector3 dir = new Vector3(Mathf.Cos(angleDegrees * Mathf.Deg2Rad), 0f, Mathf.Sin(angleDegrees * Mathf.Deg2Rad));
+            Vector3 desired = center + dir * radius;
+            Vector3 surface;
+            if (GetStructureTop(new Vector3(desired.x, center.y, desired.z), out surface)) return surface;
+            Vector3 guess = desired + Vector3.up * 10f;
+            RaycastHit hit;
+            if (Physics.Raycast(guess, Vector3.down, out hit, 30f, LayerMask.GetMask("Terrain", "World", "Construction"))) return hit.point;
+            return desired;
+        }
+
+        private Vector3 GetSafeStructureAwareGround(Vector3 center, float radius, float baseAngleDegrees, float minPlayerDistance)
+        {
+            for (int rStep = 0; rStep < 4; rStep++)
+            {
+                float tryRadius = radius + rStep * 1.0f;
+                for (int aStep = 0; aStep < 24; aStep++)
+                {
+                    float angle = baseAngleDegrees + aStep * 15f;
+                    Vector3 pos = GetStructureAwareGroundPosition(center, tryRadius, angle);
+                    bool nearPlayer = false;
+                    foreach (BasePlayer player in BasePlayer.activePlayerList)
+                    {
+                        if (!player.IsPlayer()) continue;
+                        if (Vector3.Distance(player.transform.position, pos) < minPlayerDistance)
+                        {
+                            nearPlayer = true;
+                            break;
+                        }
+                    }
+                    if (!nearPlayer) return pos;
+                }
+            }
+            return GetStructureAwareGroundPosition(center, radius, baseAngleDegrees);
         }
 
         private void AddToContainerPrefab(ItemContainer container, PrefabLootTableConfig lootTable)
@@ -5924,11 +6076,18 @@ namespace Oxide.Plugins
                     else if (lootContainer != null && lootContainer.LootSpawnSlots.Length != 0)
                     {
                         if (!_allLootSpawnSlots.ContainsKey(prefabConfig.PrefabDefinition)) _allLootSpawnSlots.Add(prefabConfig.PrefabDefinition, lootContainer.LootSpawnSlots);
+                        _lootContainerPrefabPaths.Add(prefabConfig.PrefabDefinition);
                         prefabs.Add(prefabConfig);
                     }
                     else if (lootContainer != null && lootContainer.lootDefinition != null)
                     {
                         if (!_allLootSpawn.ContainsKey(prefabConfig.PrefabDefinition)) _allLootSpawn.Add(prefabConfig.PrefabDefinition, lootContainer.lootDefinition);
+                        _lootContainerPrefabPaths.Add(prefabConfig.PrefabDefinition);
+                        prefabs.Add(prefabConfig);
+                    }
+                    else if (lootContainer != null)
+                    {
+                        _lootContainerPrefabPaths.Add(prefabConfig.PrefabDefinition);
                         prefabs.Add(prefabConfig);
                     }
                     else PrintWarning($"Unknown prefab removed! ({prefabConfig.PrefabDefinition})");
@@ -5943,6 +6102,8 @@ namespace Oxide.Plugins
         private readonly Dictionary<string, LootSpawn> _allLootSpawn = new Dictionary<string, LootSpawn>();
 
         private readonly Dictionary<string, LootContainer.LootSpawnSlot[]> _allLootSpawnSlots = new Dictionary<string, LootContainer.LootSpawnSlot[]>();
+
+        private readonly HashSet<string> _lootContainerPrefabPaths = new HashSet<string>();
         #endregion Spawn Loot
 
         #region NTeleportation

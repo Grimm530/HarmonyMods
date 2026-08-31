@@ -355,12 +355,10 @@ namespace BetterChatHarmony
             if (chatMessage.CancelOption != BetterChatMessage.CancelOptions.None)
                 return false;
 
+            ApplyMaximalTitles(chatMessage.Titles);
+            ApplyTitleDisplayOrder(chatMessage.Titles);
+
             SendFormatted(chatMessage, channel);
-            Debug.Log("[BetterChat] " + player.displayName + " id=" + player.UserIDString +
-                      " permGroups=[" + string.Join(",", PermissionsBridge.GetUserGroups(player.UserIDString)) + "]" +
-                      " primary=" + chatMessage.PrimaryGroup +
-                      " titles=" + (chatMessage.Titles == null ? "0" : chatMessage.Titles.Count.ToString()) +
-                      " namePrefix=" + (string.IsNullOrEmpty(chatMessage.NamePrefix) ? "(none)" : chatMessage.NamePrefix));
             player.NextChatTime = UnityEngine.Time.realtimeSinceStartup + 1.5f;
             try { Facepunch.Rust.Analytics.Azure.OnChatMessage(player, message, (int)channel); } catch { }
             return false;
@@ -378,11 +376,9 @@ namespace BetterChatHarmony
                 userGroups.Add(primary);
             }
 
+            // Lower Priority = higher rank (owner 0 before admin 1). Keep that order so
+            // Maximal Titles can take the first N after every title source has run.
             userGroups.Sort((a, b) => a.Priority.CompareTo(b.Priority));
-
-            var cfg = BetterChatConfig.Config;
-            int maxTitles = cfg != null ? cfg.MaxTitles : 3;
-            bool reverse = cfg != null && cfg.ReverseTitleOrder;
 
             var titles = new List<string>();
             var namePrefix = new StringBuilder();
@@ -401,10 +397,6 @@ namespace BetterChatHarmony
                 titles.Add(ChatFormatter.FormatTitle(g.Title));
             }
 
-            if (titles.Count > maxTitles)
-                titles.RemoveRange(maxTitles, titles.Count - maxTitles);
-            if (reverse) titles.Reverse();
-
             foreach (var kvp in _thirdPartyTitles)
             {
                 try
@@ -418,6 +410,8 @@ namespace BetterChatHarmony
                     Debug.LogWarning("[BetterChat] Third-party title '" + kvp.Key + "': " + ex.Message);
                 }
             }
+
+            ApplyMaximalTitles(titles);
 
             var chatMessage = new BetterChatMessage
             {
@@ -434,6 +428,27 @@ namespace BetterChatHarmony
 
             Colours?.ApplyToMessage(chatMessage);
             return chatMessage;
+        }
+
+        /// <summary>
+        /// Keep the first N titles. List must already be highest-rank first (lowest Priority,
+        /// then third-party / OnBetterChat extras). Name-attached titles are not in this list.
+        /// </summary>
+        private static void ApplyMaximalTitles(List<string> titles)
+        {
+            if (titles == null) return;
+            var cfg = BetterChatConfig.Config;
+            int maxTitles = cfg != null ? cfg.MaxTitles : 3;
+            if (maxTitles < 0) maxTitles = 0;
+            if (titles.Count > maxTitles)
+                titles.RemoveRange(maxTitles, titles.Count - maxTitles);
+        }
+
+        private static void ApplyTitleDisplayOrder(List<string> titles)
+        {
+            if (titles == null) return;
+            if (BetterChatConfig.Config != null && BetterChatConfig.Config.ReverseTitleOrder)
+                titles.Reverse();
         }
 
         private object InvokeModifiers(Dictionary<string, object> dict)
@@ -1439,12 +1454,19 @@ namespace BetterChatHarmony
         public static string API_GetFormattedMessage(BasePlayer player, string message, bool console = false)
         {
             if (Instance == null || player == null) return message;
-            var output = Instance.PrepareMessage(player, message).GetOutput();
+            var chatMessage = Instance.PrepareMessage(player, message);
+            ApplyTitleDisplayOrder(chatMessage.Titles);
+            var output = chatMessage.GetOutput();
             return console ? output.Console : output.Chat;
         }
 
-        public static Dictionary<string, object> API_GetMessageData(BasePlayer player, string message) =>
-            Instance?.PrepareMessage(player, message)?.ToDictionary();
+        public static Dictionary<string, object> API_GetMessageData(BasePlayer player, string message)
+        {
+            var chatMessage = Instance?.PrepareMessage(player, message);
+            if (chatMessage == null) return null;
+            ApplyTitleDisplayOrder(chatMessage.Titles);
+            return chatMessage.ToDictionary();
+        }
 
         public static bool API_AddGroup(string group)
         {

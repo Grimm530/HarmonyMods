@@ -2332,7 +2332,7 @@ namespace KaruzaVehicles
 
             void OnDefaultInventoryFirstCreated();
 
-            bool DefaultInventoryItemFilter(Item item, int targetSlot);
+            bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot);
 
             void OnItemAddedOrRemoved(Item item, bool added);
 
@@ -2840,7 +2840,7 @@ namespace KaruzaVehicles
             public virtual bool EnableSavingToDiskByDefault => true;
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
             public virtual void OnDefaultInventoryDirty()
             {
 
@@ -2962,7 +2962,7 @@ namespace KaruzaVehicles
 
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
@@ -3180,7 +3180,7 @@ namespace KaruzaVehicles
 
             public virtual bool DefaultInventoryHandledByBaseType => true; //this is important!
 
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {

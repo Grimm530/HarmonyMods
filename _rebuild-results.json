@@ -1,0 +1,86 @@
+[
+  {
+    "Mod": "0GrimmNPC",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 17.2
+  },
+  {
+    "Mod": "ArmoredTrain",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 6.1
+  },
+  {
+    "Mod": "BetterBackpack",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 5.9
+  },
+  {
+    "Mod": "Convoy",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 6.6
+  },
+  {
+    "Mod": "CustomMapGen",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 1.6
+  },
+  {
+    "Mod": "DynamicCupShare",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 6.4
+  },
+  {
+    "Mod": "MapVoter",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 1.5
+  },
+  {
+    "Mod": "NoActiveItemDrop",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 1.5
+  },
+  {
+    "Mod": "NoGibs",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 1.3
+  },
+  {
+    "Mod": "PlayerSkins",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 5.9
+  },
+  {
+    "Mod": "StackManager",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 6.1
+  },
+  {
+    "Mod": "TimedExecute",
+    "Exit": 0,
+    "Ok": true,
+    "DllFresh": true,
+    "Sec": 1.6
+  }
+]

@@ -1,0 +1,98 @@
+[
+  {
+    "Mod": "0GrimmNPC",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\0GrimmNPC\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\0GrimmNPC",
+    "SrcTime": "2026-08-27T23:39:40.254378-04:00",
+    "DllTime": "2026-08-20T21:46:55.6739246-04:00",
+    "NewestSrc": "GrimmNPC.cs"
+  },
+  {
+    "Mod": "ArmoredTrain",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\ArmoredTrain\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\ArmoredTrain",
+    "SrcTime": "2026-08-28T14:50:09.2017287-04:00",
+    "DllTime": "2026-08-20T21:47:00.0077896-04:00",
+    "NewestSrc": "Patch_BradleyAPC_VisibilityTest.cs"
+  },
+  {
+    "Mod": "BetterBackpack",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\BetterBackpack\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\BetterBackpack",
+    "SrcTime": "2026-08-29T17:55:29.0631672-04:00",
+    "DllTime": "2026-08-20T21:47:03.0790763-04:00",
+    "NewestSrc": "PlayerInventory_OnItemAddedOrRemoved_Patch.cs"
+  },
+  {
+    "Mod": "Convoy",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\Convoy\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\Convoy",
+    "SrcTime": "2026-08-27T23:39:40.2346891-04:00",
+    "DllTime": "2026-08-20T21:47:06.0093533-04:00",
+    "NewestSrc": "Patch_PlayerLoot_StartLootingEntity.cs"
+  },
+  {
+    "Mod": "CustomMapGen",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\CustomMapGen\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\CustomMapGen",
+    "SrcTime": "2026-08-24T01:12:57.1265026-04:00",
+    "DllTime": "2026-08-20T21:47:08.7463069-04:00",
+    "NewestSrc": "WorldAddPrefabPatches.cs"
+  },
+  {
+    "Mod": "DynamicCupShare",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\DynamicCupShare\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\DynamicCupShare",
+    "SrcTime": "2026-08-29T21:36:50.2371423-04:00",
+    "DllTime": "2026-08-22T10:17:26.3193607-04:00",
+    "NewestSrc": "ButtonContainer.cs"
+  },
+  {
+    "Mod": "MapVoter",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\MapVoter\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\MapVoter",
+    "SrcTime": "2026-08-20T22:14:51.3602227-04:00",
+    "DllTime": "2026-08-20T21:47:21.069188-04:00",
+    "NewestSrc": "MapVoterMod.cs"
+  },
+  {
+    "Mod": "NoActiveItemDrop",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\NoActiveItemDrop\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\NoActiveItemDrop",
+    "SrcTime": "2026-08-21T07:27:35.915482-04:00",
+    "DllTime": "2026-08-20T23:20:48.6336602-04:00",
+    "NewestSrc": "NoActiveItemDrop.csproj"
+  },
+  {
+    "Mod": "NoGibs",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\NoGibs\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\NoGibs",
+    "SrcTime": "2026-08-21T07:27:35.9169828-04:00",
+    "DllTime": "2026-08-20T23:20:49.1396491-04:00",
+    "NewestSrc": "NoGibs.csproj"
+  },
+  {
+    "Mod": "PlayerSkins",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\PlayerSkins\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\PlayerSkins",
+    "SrcTime": "2026-08-21T07:27:35.9169828-04:00",
+    "DllTime": "2026-08-21T00:04:53.446594-04:00",
+    "NewestSrc": "PlayerSkinsPlugin.cs"
+  },
+  {
+    "Mod": "StackManager",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\StackManager\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\StackManager",
+    "SrcTime": "2026-08-27T23:39:40.2321855-04:00",
+    "DllTime": "2026-08-21T21:47:12.331556-04:00",
+    "NewestSrc": "StacksExtended.cs"
+  },
+  {
+    "Mod": "TimedExecute",
+    "Build": "C:\\!2XRUST\\.cursor\\HarmonyMods\\TimedExecute\\build.ps1",
+    "ProjDir": "C:\\!2XRUST\\.cursor\\HarmonyMods\\TimedExecute",
+    "SrcTime": "2026-08-22T06:25:53.8324891-04:00",
+    "DllTime": "2026-08-20T22:29:05.3373704-04:00",
+    "NewestSrc": "TimedExecute.csproj"
+  }
+]

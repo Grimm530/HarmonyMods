@@ -4,7 +4,7 @@ using RustEditStandalone.Features;
 
 namespace RustEditStandalone.Patches;
 
-[HarmonyPatch(typeof(AutoTurret), nameof(AutoTurret.AddSelfAuthorize), new[] { typeof(BasePlayer) })]
+[HarmonyPatch(typeof(AutoTurret), "AddSelfAuthorize", new[] { typeof(BasePlayer) })]
 public static class AutoTurret_AddSelfAuthorize_Patch
 {
     static bool Prefix(AutoTurret __instance, BasePlayer player)

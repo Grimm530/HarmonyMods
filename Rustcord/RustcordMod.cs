@@ -20,6 +20,14 @@ public class RustcordMod : IHarmonyModHooks
 
     private static string _lastLogMessage;
     private static readonly object _sendLock = new();
+    private static readonly HttpClient Http = CreateHttp();
+
+    private static HttpClient CreateHttp()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "RustcordHarmony (https://grimmzone.com, 1.0)");
+        return client;
+    }
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
@@ -114,19 +122,17 @@ public class RustcordMod : IHarmonyModHooks
     {
         var url = $"https://discord.com/api/v10/channels/{channelId}/messages";
         var payload = JsonConvert.SerializeObject(new { content });
-        using var client = new HttpClient();
-        client.Timeout = TimeSpan.FromSeconds(10);
-        client.DefaultRequestHeaders.Add("Authorization", "Bot " + botToken);
 
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
+        request.Headers.TryAddWithoutValidation("Authorization", "Bot " + botToken);
 
         Task<HttpResponseMessage> task;
         lock (_sendLock)
         {
-            task = client.SendAsync(request);
+            task = Http.SendAsync(request);
         }
         yield return new WaitUntil(() => task.IsCompleted);
 
@@ -156,8 +162,6 @@ public class RustcordMod : IHarmonyModHooks
     private static IEnumerator PostToWebhookCoroutine(string webhookUrl, string content)
     {
         var payload = JsonConvert.SerializeObject(new { content });
-        using var client = new HttpClient();
-        client.Timeout = TimeSpan.FromSeconds(10);
 
         var request = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
         {
@@ -167,7 +171,7 @@ public class RustcordMod : IHarmonyModHooks
         Task<HttpResponseMessage> task;
         lock (_sendLock)
         {
-            task = client.SendAsync(request);
+            task = Http.SendAsync(request);
         }
         yield return new WaitUntil(() => task.IsCompleted);
 

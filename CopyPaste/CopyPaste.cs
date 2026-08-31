@@ -319,7 +319,7 @@ namespace CopyPasteHarmony
             [JsonProperty(PropertyName =
                  "Prevent These Prefabs From Spawning", ObjectCreationHandling = ObjectCreationHandling.Replace),
             DefaultValue(new string[] { "saddletest" })]
-            public List<string> BlockedPrefabs = new() { "saddletest" };
+            public List<string> BlockedPrefabs = new() { "saddletest", "elevatorioentity" };
 
             [JsonProperty(PropertyName = "Enable data saving feature")]
             [DefaultValue(true)]
@@ -2726,6 +2726,11 @@ namespace CopyPasteHarmony
             if (prefabname.Contains("pillar"))
                 return;
 
+            // Facepunch folded elevator IO into Elevator itself; this child prefab no longer exists.
+            // Keep vanilla elevator.prefab / elevator_lift.prefab — do not substitute UpLifted custom lifts.
+            if (prefabname.Contains("elevatorioentity"))
+                return;
+
             // Used to copy locks for no reason in previous versions (is included in the slots info so no need to copy locks) so just skipping them.
             if (prefabname.Contains("locks") && pasteData.Version < new VersionNumber(4, 2, 0))
                 return;
@@ -4085,7 +4090,7 @@ namespace CopyPasteHarmony
 
                     // Clear the on flag and rerun sprinkler startup so DoSplash is invoked without clearing fuel state
                     sprinkler.SetFlag(BaseEntity.Flags.On, false);
-                    sprinkler.TurnOn();
+                    sprinkler.RefreshSprinklerState();
                 });
             }
 
@@ -5450,7 +5455,11 @@ namespace CopyPasteHarmony
                     continue;
 
                 var slotData = structure[slotName] as Dictionary<string, object>;
-                var slotEntity = GameManager.server.CreateEntity(GetPrefabName((string)slotData?["prefabname"]), Vector3.zero);
+                var slotPrefab = GetPrefabName((string)slotData?["prefabname"]);
+                if (string.IsNullOrEmpty(slotPrefab) || slotPrefab.Contains("elevatorioentity"))
+                    continue;
+
+                var slotEntity = GameManager.server.CreateEntity(slotPrefab, Vector3.zero);
                 if (slotEntity == null)
                     continue;
 

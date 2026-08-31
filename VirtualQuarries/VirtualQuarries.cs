@@ -34,6 +34,7 @@ namespace Oxide.Plugins
             RedeemStorageAPI; //QUARRY REFUND - REQUIRED IF REFUNDING ENABLED
 
         private static VirtualQuarries _plugin;
+        internal static bool PendingNewSave;
 
         private readonly List<ulong> adminModes = new();
         private readonly Dictionary<ulong, UiCache> cache = new();
@@ -304,12 +305,22 @@ namespace Oxide.Plugins
             {
                 foreach (var quarry in BaseNetworkable.serverEntities.OfType<MiningQuarry>())
                 {
+                    if (quarry == null || quarry.IsDestroyed) continue;
                     if (quarry.staticType == MiningQuarry.QuarryType.None && quarry.OwnerID != 0) continue;
-                    quarry.SetOn(false);
-                    quarry.CancelInvoke();
-                    quarry.engineSwitchPrefab.instance.SetFlag(BaseEntity.Flags.On, true);
-                    quarry.SetFlag(BaseEntity.Flags.On, true);
-                    quarry.SendNetworkUpdate();
+                    try
+                    {
+                        quarry.SetOn(false);
+                        quarry.CancelInvoke();
+                        var engineSwitch = quarry.engineSwitchPrefab?.instance;
+                        if (engineSwitch != null && !engineSwitch.IsDestroyed)
+                            engineSwitch.SetFlag(BaseEntity.Flags.On, true);
+                        quarry.SetFlag(BaseEntity.Flags.On, true);
+                        quarry.SendNetworkUpdate();
+                    }
+                    catch (Exception ex)
+                    {
+                        PrintWarning($"Static quarry setup {quarry.net?.ID.Value}: {ex.Message}");
+                    }
                 }
             }
             if (config.excavatorQuarry)
@@ -340,64 +351,87 @@ namespace Oxide.Plugins
             }
             foreach (var quarry in data.quarries)
             {
-                bool isVirtual = quarry.Value.quarryType == QuarryType.Virtual;
-                QuarryProfile qp = isVirtual ? config.quarryProfiles[quarry.Value.profile] : null;
-                BoxStorage storage = GetQuarryBox(quarry.Key, BoxType.Core);
-                GameObject.Destroy(storage.GetComponent<GroundWatch>());
-                GameObject.Destroy(storage.GetComponent<DestroyOnGroundMissing>());
-                VirtualQuarry vQuarry = storage.GetOrAddComponent<VirtualQuarry>();
-                vQuarry.SetupQuarry(quarry.Key);
-                BoxStorage fuelStorage = GetQuarryBox(quarry.Key, BoxType.Fuel);
-                if (isVirtual && qp.enableInputLink)
-                    if (fuelStorage && fuelStorage.transform.position.y < -300)
-                        quarry.Value.fuelNetId = 0;
-                if (quarry.Value.redirectNetId != 0 && !anyLinkedQuarryOutputs.Contains(quarry.Value.redirectNetId))
-                    anyLinkedQuarryOutputs.Add(quarry.Value.redirectNetId);
-                if (!isVirtual || !qp.enableInputLink)
+                try
                 {
-                    List<UpgradeConfig> upgrades;
-                    if (isVirtual)
-                        upgrades = qp.upgrades;
-                    else if (quarry.Value.quarryType == QuarryType.Static)
-                        upgrades = config.staticQuarryUpgrades;
-                    else
-                        upgrades = config.excavatorUpgrades;
-                    if (quarry.Value.level < upgrades.Count)
+                    bool isVirtual = quarry.Value.quarryType == QuarryType.Virtual;
+                    QuarryProfile qp = null;
+                    if (isVirtual && (config.quarryProfiles == null || !config.quarryProfiles.TryGetValue(quarry.Value.profile, out qp) || qp == null))
                     {
-                        UpgradeConfig uc = upgrades[quarry.Value.level];
-                        storage.inventory.capacity = uc.capacity;
+                        PrintWarning($"Quarry {quarry.Key} profile '{quarry.Value.profile}' is missing; skipping setup.");
+                        continue;
+                    }
+                    BoxStorage storage = GetQuarryBox(quarry.Key, BoxType.Core);
+                    if (!storage)
+                    {
+                        PrintWarning($"Quarry {quarry.Key} core storage could not be spawned; skipping setup.");
+                        continue;
+                    }
+                    GameObject.Destroy(storage.GetComponent<GroundWatch>());
+                    GameObject.Destroy(storage.GetComponent<DestroyOnGroundMissing>());
+                    VirtualQuarry vQuarry = storage.GetOrAddComponent<VirtualQuarry>();
+                    vQuarry.SetupQuarry(quarry.Key);
+                    BoxStorage fuelStorage = GetQuarryBox(quarry.Key, BoxType.Fuel);
+                    if (isVirtual && qp.enableInputLink)
+                        if (fuelStorage && fuelStorage.transform.position.y < -300)
+                            quarry.Value.fuelNetId = 0;
+                    if (quarry.Value.redirectNetId != 0 && !anyLinkedQuarryOutputs.Contains(quarry.Value.redirectNetId))
+                        anyLinkedQuarryOutputs.Add(quarry.Value.redirectNetId);
+                    if (!isVirtual || !qp.enableInputLink)
+                    {
+                        List<UpgradeConfig> upgrades;
+                        if (isVirtual)
+                            upgrades = qp.upgrades;
+                        else if (quarry.Value.quarryType == QuarryType.Static)
+                            upgrades = config.staticQuarryUpgrades;
+                        else
+                            upgrades = config.excavatorUpgrades;
+                        if (upgrades != null && quarry.Value.level < upgrades.Count && storage.inventory != null)
+                        {
+                            UpgradeConfig uc = upgrades[quarry.Value.level];
+                            storage.inventory.capacity = uc.capacity;
+                        }
+                    }
+                    if (!isVirtual || !qp.enableInputLink)
+                    {
+                        if (!fuelStorage)
+                        {
+                            PrintWarning($"Quarry {quarry.Key} fuel storage could not be spawned; skipping fuel setup.");
+                            continue;
+                        }
+                        GameObject.Destroy(fuelStorage.GetComponent<GroundWatch>());
+                        GameObject.Destroy(fuelStorage.GetComponent<DestroyOnGroundMissing>());
+                        List<UpgradeConfig> upgrades;
+                        if (isVirtual)
+                            upgrades = qp.upgrades;
+                        else if (quarry.Value.quarryType == QuarryType.Static)
+                            upgrades = config.staticQuarryUpgrades;
+                        else
+                            upgrades = config.excavatorUpgrades;
+                        if (upgrades != null && quarry.Value.level < upgrades.Count && fuelStorage.inventory != null)
+                        {
+                            UpgradeConfig uc = upgrades[quarry.Value.level];
+                            fuelStorage.inventory.capacity = uc.fuelCapacity;
+                        }
+                        else if (upgrades == null || quarry.Value.level >= upgrades.Count)
+                            PrintWarning($"Quarry with ID {quarry.Key} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
+                    }
+                    if (quarry.Value.quarryType == QuarryType.Excavator)
+                    {
+                        BoxStorage output2 = GetQuarryBox(quarry.Key, BoxType.Output2);
+                        if (output2)
+                        {
+                            GameObject.Destroy(output2.GetComponent<GroundWatch>());
+                            GameObject.Destroy(output2.GetComponent<DestroyOnGroundMissing>());
+                            if (config.excavatorUpgrades != null && quarry.Value.level < config.excavatorUpgrades.Count && output2.inventory != null)
+                                output2.inventory.capacity = config.excavatorUpgrades[quarry.Value.level].capacity;
+                            if (output2.inventory != null)
+                                output2.inventory.canAcceptItem = (_, _, _) => false;
+                        }
                     }
                 }
-                if (!isVirtual || !qp.enableInputLink)
+                catch (Exception ex)
                 {
-                    GameObject.Destroy(fuelStorage.GetComponent<GroundWatch>());
-                    GameObject.Destroy(fuelStorage.GetComponent<DestroyOnGroundMissing>());
-                    List<UpgradeConfig> upgrades;
-                    if (isVirtual)
-                        upgrades = qp.upgrades;
-                    else if (quarry.Value.quarryType == QuarryType.Static)
-                        upgrades = config.staticQuarryUpgrades;
-                    else
-                        upgrades = config.excavatorUpgrades;
-                    if (quarry.Value.level < upgrades.Count)
-                    {
-                        UpgradeConfig uc = upgrades[quarry.Value.level];
-                        fuelStorage.inventory.capacity = uc.fuelCapacity;
-                    }
-                    else
-                        PrintWarning($"Quarry with ID {quarry.Key} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
-                }
-                if (quarry.Value.quarryType == QuarryType.Excavator)
-                {
-                    BoxStorage output2 = GetQuarryBox(quarry.Key, BoxType.Output2);
-                    if (output2)
-                    {
-                        GameObject.Destroy(output2.GetComponent<GroundWatch>());
-                        GameObject.Destroy(output2.GetComponent<DestroyOnGroundMissing>());
-                        if (quarry.Value.level < config.excavatorUpgrades.Count)
-                            output2.inventory.capacity = config.excavatorUpgrades[quarry.Value.level].capacity;
-                        output2.inventory.canAcceptItem = (_, _) => false;
-                    }
+                    PrintWarning($"Quarry {quarry.Key} setup failed: {ex.Message}");
                 }
             }
         }
@@ -466,34 +500,86 @@ namespace Oxide.Plugins
 
         private void OnNewSave()
         {
-            if (config.wipeData)
-            {
-                if (config.wipeDataForceOnly)
-                {
-                    DateTime now = DateTime.Now;
-                    if (now.Day < 8 && now.DayOfWeek == DayOfWeek.Thursday)
-                    {
-                        previousGatheredDispensers = new(data.gatheredDispensers);
-                        data = new PluginData();
-                        SaveData();
-                        SavePrevDispensers();
-                        Puts("Force wipe found! Plugin data has been wiped successfully!");
-                    }
-                    return;
-                }
-                previousGatheredDispensers = new(data.gatheredDispensers);
-                data = new PluginData();
-                SaveData();
-                SavePrevDispensers();
-                Puts("Regular wipe found! Plugin data has been wiped successfully!");
-            }
+            PendingNewSave = true;
+            ApplyWipeIfNeeded();
         }
 
         private void TryWipeFromMapVoterSignal()
         {
+            ApplyWipeIfNeeded();
+        }
+
+        private void StampWipeIdentity()
+        {
+            if (data == null) data = new PluginData();
+            data.protocol = Rust.Protocol.save;
+            data.wipeId = SaveRestore.WipeId ?? "";
+        }
+
+        private void WipePluginData(string reason)
+        {
+            previousGatheredDispensers = new(data?.gatheredDispensers ?? new Dictionary<ulong, Dictionary<string, int>>());
+            data = new PluginData();
+            StampWipeIdentity();
+            playerCache = new Dictionary<ulong, string>();
+            if (!config.storeContainers)
+                storageCache = new Dictionary<int, StorageData>();
+            SaveData();
+            SavePrevDispensers();
+            if (!config.storeContainers)
+                Interface.Oxide.DataFileSystem.WriteObject($"{Name}/storageCache", storageCache);
+            Puts($"Server wipe detected ({reason}). Plugin data has been wiped.");
+        }
+
+        private void ApplyWipeIfNeeded()
+        {
+            if (config == null || data == null) return;
+
+            int currentProtocol = Rust.Protocol.save;
+            string currentWipeId = SaveRestore.WipeId ?? "";
             var statePath = Path.Combine(Environment.CurrentDirectory, "HarmonyData", Name, "last_wipe_signal.txt");
-            if (!WipeSignal.ShouldWipe(statePath)) return;
-            OnNewSave();
+            bool mapVoter = WipeSignal.ShouldWipe(statePath);
+            bool pending = PendingNewSave;
+            bool protocolChanged = data.protocol != currentProtocol;
+            bool wipeIdChanged = !string.IsNullOrEmpty(data.wipeId)
+                && !string.IsNullOrEmpty(currentWipeId)
+                && !string.Equals(data.wipeId, currentWipeId, StringComparison.Ordinal);
+
+            if (!config.wipeData)
+            {
+                PendingNewSave = false;
+                StampWipeIdentity();
+                return;
+            }
+
+            if (config.wipeDataForceOnly)
+            {
+                DateTime now = DateTime.Now;
+                bool forceThursday = now.Day < 8 && now.DayOfWeek == DayOfWeek.Thursday;
+                if (!forceThursday && !mapVoter)
+                {
+                    PendingNewSave = false;
+                    StampWipeIdentity();
+                    return;
+                }
+            }
+
+            if (!mapVoter && !pending && !protocolChanged && !wipeIdChanged)
+            {
+                if (data.protocol == 0 || string.IsNullOrEmpty(data.wipeId))
+                {
+                    StampWipeIdentity();
+                    SaveData();
+                }
+                return;
+            }
+
+            string reason = pending ? "new map"
+                : protocolChanged ? $"protocol {data.protocol} -> {currentProtocol}"
+                : wipeIdChanged ? "wipe id change"
+                : "MapVoter wipe signal";
+            PendingNewSave = false;
+            WipePluginData(reason);
             WipeSignal.MarkWiped(statePath);
         }
 
@@ -1984,8 +2070,11 @@ namespace Oxide.Plugins
 
         private BoxStorage GetQuarryBox(int quarryId, BoxType type)
         {
-            if (!data.quarries.TryGetValue(quarryId, out var qd)) return null;
-            bool isLink = qd.quarryType == QuarryType.Virtual && type == BoxType.Fuel && config.quarryProfiles[qd.profile].enableInputLink;
+            if (!data.quarries.TryGetValue(quarryId, out var qd) || qd == null) return null;
+            bool isLink = false;
+            if (qd.quarryType == QuarryType.Virtual && type == BoxType.Fuel &&
+                config.quarryProfiles != null && config.quarryProfiles.TryGetValue(qd.profile, out var linkProfile) && linkProfile != null)
+                isLink = linkProfile.enableInputLink;
             if (type == BoxType.Output2 && qd.quarryType != QuarryType.Excavator) return null;
             ulong netId = GetBoxNetId(qd, type);
             BoxStorage storage = BaseNetworkable.serverEntities.Find(new NetworkableId(netId)) as BoxStorage;
@@ -2436,7 +2525,7 @@ namespace Oxide.Plugins
                 upgrades = config.excavatorUpgrades;
             if (qd.level < upgrades.Count)
                 storage.inventory.capacity = input ? upgrades[qd.level].fuelCapacity : upgrades[qd.level].capacity;
-            storage.inventory.canAcceptItem = (item, _) => input && IsFuelItem(item, qd.profile);
+            storage.inventory.canAcceptItem = (_, item, _) => input && IsFuelItem(item, qd.profile);
             if (input)
                 OpenQuarryFuelPanel(player, uc.quarryId);
             else
@@ -2482,7 +2571,7 @@ namespace Oxide.Plugins
                 upgrades = config.excavatorUpgrades;
             if (qd.level < upgrades.Count)
                 storage.inventory.capacity = input ? upgrades[qd.level].fuelCapacity : upgrades[qd.level].capacity;
-            storage.inventory.canAcceptItem = (item, _) => input && IsStaticFuelItem(item, qd.quarryType);
+            storage.inventory.canAcceptItem = (_, item, _) => input && IsStaticFuelItem(item, qd.quarryType);
             if (input)
             {
                 OpenQuarryFuelPanel(player, quarryId);
@@ -2528,20 +2617,22 @@ namespace Oxide.Plugins
             else
                 qd.netId = storage.net.ID.Value;
             bool isVirtual = qd.quarryType == QuarryType.Virtual;
-            QuarryProfile qp = isVirtual ? config.quarryProfiles[qd.profile] : null;
+            QuarryProfile qp = null;
+            if (isVirtual)
+                config.quarryProfiles?.TryGetValue(qd.profile, out qp);
             List<UpgradeConfig> upgrades;
             if (isVirtual)
-                upgrades = qp.upgrades;
+                upgrades = qp?.upgrades;
             else if (qd.quarryType == QuarryType.Static)
                 upgrades = config.staticQuarryUpgrades;
             else
                 upgrades = config.excavatorUpgrades;
-            if (qd.level < upgrades.Count)
+            if (upgrades != null && qd.level < upgrades.Count && storage.inventory != null)
             {
                 UpgradeConfig uc = upgrades[qd.level];
                 storage.inventory.capacity = type == BoxType.Fuel ? uc.fuelCapacity : uc.capacity;
             }
-            else
+            else if (upgrades == null || qd.level >= upgrades.Count)
                 PrintWarning($"Quarry with ID {quarryId} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
             VirtualQuarry qr = null;
             if (type == BoxType.Core)
@@ -2551,12 +2642,13 @@ namespace Oxide.Plugins
                 if (type == BoxType.Core)
                 {
                     VirtualQuarry vQuarry = storage.GetComponent<VirtualQuarry>();
-                    vQuarry.SetupQuarry(quarryId);
+                    vQuarry?.SetupQuarry(quarryId);
                 }
                 else if (type == BoxType.Fuel)
                 {
-                    VirtualQuarry vq = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId)).GetComponent<VirtualQuarry>();
-                    vq.SetupQuarry(quarryId);
+                    var coreEnt = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId));
+                    var vq = coreEnt ? coreEnt.GetComponent<VirtualQuarry>() : null;
+                    vq?.SetupQuarry(quarryId);
                 }
             }
             if (config.storeContainers && restore && storageCache.TryGetValue(quarryId, out var sc))
@@ -2574,7 +2666,7 @@ namespace Oxide.Plugins
                 }
             }
             if (type != BoxType.Fuel)
-                storage.inventory.canAcceptItem = (_, _) => false;
+                storage.inventory.canAcceptItem = (_, _, _) => false;
             return qr;
         }
 
@@ -5167,6 +5259,7 @@ namespace Oxide.Plugins
             private void Awake()
             {
                 storage = GetComponent<BoxStorage>();
+                if (storage == null) return;
 
                 //OLD IMPLEMENTATION NEED TO KEEP TO MAKE OLD QUARRIES WORK
                 if (storage.ChildCount > 0)
@@ -5177,13 +5270,15 @@ namespace Oxide.Plugins
             {
                 dataId = quarryId;
                 qd = data.quarries[dataId];
-                bool requireInputLinking = qd.quarryType == QuarryType.Virtual && config.quarryProfiles[qd.profile].enableInputLink;
+                QuarryProfile profile = null;
+                bool hasProfile = qd.quarryType != QuarryType.Virtual || (config.quarryProfiles != null && config.quarryProfiles.TryGetValue(qd.profile, out profile) && profile != null);
+                bool requireInputLinking = qd.quarryType == QuarryType.Virtual && hasProfile && profile.enableInputLink;
                 if (!fuelStorage)
                     fuelStorage = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.fuelNetId)) as BoxStorage;
                 else if (!requireInputLinking)
                     //OLD IMPLEMENTATION NEED TO KEEP TO MAKE OLD QUARRIES WORK
                     qd.fuelNetId = fuelStorage.net.ID.Value;
-                bool requireOutputLinking = qd.quarryType == QuarryType.Virtual && config.quarryProfiles[qd.profile].enableOutputLink;
+                bool requireOutputLinking = qd.quarryType == QuarryType.Virtual && hasProfile && profile.enableOutputLink;
                 if (requireOutputLinking)
                 {
                     isRedirect = true;
@@ -5201,7 +5296,7 @@ namespace Oxide.Plugins
                 if (quarryType == VqType.Static)
                     staticQuarry = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.staticNetId)) as MiningQuarry;
                 CancelInvoke(MineResources);
-                if (quarryType == VqType.Default && !config.quarryProfiles.ContainsKey(qd.profile))
+                if (quarryType == VqType.Default && (config.quarryProfiles == null || !config.quarryProfiles.ContainsKey(qd.profile)))
                 {
                     _plugin.Puts($"Profile {qd.profile} is missing from the configuration, but is found in data. Quarry with ID {dataId} will not work!");
                     return;
@@ -5224,7 +5319,7 @@ namespace Oxide.Plugins
 
             private void HookFuelListener()
             {
-                if (!fuelStorage) return;
+                if (!fuelStorage || fuelStorage.inventory == null) return;
                 if (hookedFuelStorage == fuelStorage) return;
                 if (hookedFuelStorage && hookedFuelStorage.inventory != null)
                 {
@@ -5394,9 +5489,9 @@ namespace Oxide.Plugins
                     Item single = ItemManager.Create(resource.def, amount, resource.skin);
                     if (!string.IsNullOrEmpty(resource.name))
                         single.name = resource.name;
-                    storage.inventory.canAcceptItem = (_, _) => true;
+                    storage.inventory.canAcceptItem = (_, _, _) => true;
                     bool movedItem = single.MoveToContainer(storage.inventory);
-                    storage.inventory.canAcceptItem = (_, _) => false;
+                    storage.inventory.canAcceptItem = (_, _, _) => false;
                     if (!movedItem)
                     {
                         qd.isRunning = false;
@@ -5412,9 +5507,9 @@ namespace Oxide.Plugins
                 Item item = ItemManager.Create(resource.def, amount, resource.skin);
                 if (!string.IsNullOrEmpty(resource.name))
                     item.name = resource.name;
-                box.inventory.canAcceptItem = (_, _) => true;
+                box.inventory.canAcceptItem = (_, _, _) => true;
                 bool moved = item.MoveToContainer(box.inventory);
-                box.inventory.canAcceptItem = (_, _) => false;
+                box.inventory.canAcceptItem = (_, _, _) => false;
                 if (!moved)
                     item.Remove();
                 return moved;
@@ -5919,7 +6014,7 @@ namespace Oxide.Plugins
             public bool shareClanOnly = false;
 
             [JsonProperty("Data - Enable Data Wipe On Server Wipe")]
-            public bool wipeData = false;
+            public bool wipeData = true;
 
             [JsonProperty("Data - Wipe Data Only On Force Wipe")]
             public bool wipeDataForceOnly = false;
@@ -6294,6 +6389,12 @@ namespace Oxide.Plugins
             [JsonProperty("Static Quarries")]
             public Dictionary<ulong, Dictionary<ulong, ulong>> _oldStaticQuarries = null;
 
+            [JsonProperty("Protocol")]
+            public int protocol;
+
+            [JsonProperty("Wipe Id")]
+            public string wipeId = "";
+
             [OnDeserialized]
             private void OnDeserialized(StreamingContext context)
             {
@@ -6431,6 +6532,7 @@ namespace Oxide.Plugins
             previousGatheredDispensers = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, Dictionary<string, int>>>($"{Name}/oldDispensers") ?? new Dictionary<ulong, Dictionary<string, int>>();
             if (config.storeContainers)
                 storageCache = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<int, StorageData>>($"{Name}/storageCache");
+            ApplyWipeIfNeeded();
             timer.Every(Core.Random.Range(500, 700), SaveData);
         }
 

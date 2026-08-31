@@ -55,6 +55,11 @@ namespace KaruzaVehicles
 
         public static KaruzaEntitiesCommon Instance;
 
+        public KaruzaEntitiesCommon()
+        {
+            Instance = this;
+        }
+
         public Dictionary<string, ItemDefinition> WeaponsToAmmoTypeItemIdMap = new Dictionary<string, ItemDefinition>();
         public Dictionary<string, Mesh> CachedMeshes = new Dictionary<string, Mesh>();
         public Dictionary<int, CargoShip> CargoColliders = new Dictionary<int, CargoShip>();
@@ -345,12 +350,23 @@ namespace KaruzaVehicles
         {
             public static void Prefix(List<SamSite.ISamSiteTarget> allTargets, float scanRadius, SamSite __instance)
             {
-                foreach (SamSite.ISamSiteTarget target in Instance.CustomSAMTargets)
+                var inst = Instance;
+                if (inst?.CustomSAMTargets == null || allTargets == null || __instance == null)
+                    return;
+
+                var eye = __instance.eyePoint;
+                if (eye == null)
+                    return;
+
+                Vector3 eyePos = eye.transform.position;
+                var targets = inst.CustomSAMTargets;
+                for (int i = 0; i < targets.Count; i++)
                 {
-                    if (Vector3.Distance(target.CenterPoint(), __instance.eyePoint.transform.position) < target.SAMTargetType.scanRadius)
-                    {
+                    var target = targets[i];
+                    if (target == null || target.SAMTargetType == null)
+                        continue;
+                    if (Vector3.Distance(target.CenterPoint(), eyePos) < target.SAMTargetType.scanRadius)
                         allTargets.Add(target);
-                    }
                 }
             }
         }
@@ -4761,9 +4777,9 @@ namespace KaruzaVehicles
                 }
             }
 
-            public override bool ItemFilter(Item item, int targetSlot)
+            public override bool ItemFilter(BasePlayer player, Item item, int targetSlot)
             {
-                if (!base.ItemFilter(item, targetSlot))
+                if (!base.ItemFilter(player, item, targetSlot))
                 {
                     return false;
                 }
@@ -5016,9 +5032,9 @@ namespace KaruzaVehicles
                 RefreshLoadoutData();
             }
 
-            public override bool ItemFilter(Item item, int targetSlot)
+            public override bool ItemFilter(BasePlayer player, Item item, int targetSlot)
             {
-                if (!base.ItemFilter(item, targetSlot))
+                if (!base.ItemFilter(player, item, targetSlot))
                 {
                     return false;
                 }
@@ -5140,7 +5156,7 @@ namespace KaruzaVehicles
 
                 if (bAdded)
                 {
-                    var isCookable = item.info.ItemModCookable;
+                    var isCookable = item.info.ItemModCookable != null;
                     if (isCookable && !HasFlag(Flags.On))
                     {
                         StartCooking();
@@ -5411,7 +5427,7 @@ namespace KaruzaVehicles
                 }
             }
 
-            public bool CanAcceptItem(Item item, int targetSlot)
+            public bool CanAcceptItem(BasePlayer player, Item item, int targetSlot)
             {
                 if (OnlyAcceptCategory == ItemCategory.All)
                 {
@@ -7808,7 +7824,7 @@ namespace KaruzaVehicles
 
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
@@ -19067,7 +19083,7 @@ namespace KaruzaVehicles
                 for (int i = 0; i < itemContainer.itemList.Count; i++)
                 {
                     var item = itemContainer.itemList[i];
-                    if (item.info.itemid == itemid && item.skin == skinId && !item.IsBusy())
+                    if (item.info.itemid == itemid && item.skin == skinId)
                     {
                         amount += item.amount;
                     }

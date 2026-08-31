@@ -91,13 +91,35 @@ internal static class LootDebug
         Debug.Log("[BetterBackpack:Loot] " + message);
     }
 
-    internal static string ItemDesc(Item item)
+    /// <summary>Successful stack-merge: the source UID is destroyed after its amount is added to an existing stack.</summary>
+    internal const string StackedAway = "stacked-away";
+
+    internal static bool WasStackedAway(Item item, bool succeeded)
+    {
+        return succeeded && (item == null || !item.IsValid());
+    }
+
+    internal static string ItemDesc(Item item, bool stackedAway = false)
     {
         if (item == null)
-            return "null";
+            return stackedAway ? "null " + StackedAway : "null";
         var name = item.info != null ? item.info.shortname : "?";
-        var valid = item.IsValid() ? "valid" : "INVALID";
-        return $"{name} x{item.amount} uid={item.uid.Value} {valid}";
+        var state = stackedAway ? StackedAway : (item.IsValid() ? "valid" : "INVALID");
+        return $"{name} x{item.amount} uid={item.uid.Value} {state}";
+    }
+
+    /// <summary>Where the item is after a move/give. Stack-merge uses stacked-away, not GONE/INVALID.</summary>
+    internal static string AfterMove(Item item, BasePlayer player, bool succeeded, ItemContainer intendedDest = null)
+    {
+        if (WasStackedAway(item, succeeded))
+        {
+            if (intendedDest != null)
+                return $"{StackedAway} into {ContainerDesc(intendedDest, player)}";
+            return StackedAway;
+        }
+        if (item == null || !item.IsValid())
+            return "GONE";
+        return $"parent={ContainerDesc(item.parent, player)} pos={item.position} amt={item.amount}";
     }
 
     internal static string ContainerDesc(ItemContainer container, BasePlayer player = null)

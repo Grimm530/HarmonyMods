@@ -281,8 +281,8 @@ namespace Trade
             var customerPerms = GetPermission(customerPlayer);
             shopFront.vendorInventory.capacity = Mathf.Clamp(vendorPerms.TradingSlots, 1, 12);
             shopFront.customerInventory.capacity = Mathf.Clamp(_cfg.EnableIndividualTradeSlots ? customerPerms.TradingSlots : vendorPerms.TradingSlots, 1, 12);
-            shopFront.vendorInventory.canAcceptItem = (item, i) => shopFront.ItemFilter(item, i) && CanAcceptVendorItem(shopFront, item, i) && TradeItemFilter(item, vendorPerms);
-            shopFront.customerInventory.canAcceptItem = (item, i) => shopFront.ItemFilter(item, i) && CanAcceptCustomerItem(shopFront, item, i) && TradeItemFilter(item, customerPerms);
+            shopFront.vendorInventory.canAcceptItem = (player, item, i) => shopFront.ItemFilter(player, item, i) && CanAcceptVendorItem(shopFront, item, i) && TradeItemFilter(item, vendorPerms);
+            shopFront.customerInventory.canAcceptItem = (player, item, i) => shopFront.ItemFilter(player, item, i) && CanAcceptCustomerItem(shopFront, item, i) && TradeItemFilter(item, customerPerms);
             SendEntitiesSnapshot(vendorPlayer, customerPlayer);
             SendEntitiesSnapshot(customerPlayer, vendorPlayer);
             vendorPlayer.EndLooting();

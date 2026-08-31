@@ -7,10 +7,17 @@
   <PropertyGroup>
     <RustManaged Condition="'$(RustManaged)' != ''">$(RustManaged)</RustManaged>
     <RustManaged Condition="'$(RustManaged)' == '' And '$(RUST_MANAGED)' != ''">$(RUST_MANAGED)</RustManaged>
-    <RustManaged Condition="'$(RustManaged)' == '' And Exists('$(MSBuildThisFileDirectory)..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll')">$(MSBuildThisFileDirectory)..\..\RustDedicated_Data\Managed</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('C:\StagingSvr\RustDedicated_Data\Managed\Assembly-CSharp.dll')">C:\StagingSvr\RustDedicated_Data\Managed</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == '' And Exists('$(MSBuildThisFileDirectory)..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\RustDedicated_Data\Managed'))</RustManaged>
     <RustManaged Condition="'$(RustManaged)' == '' And Exists('D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll')">D:\!RustServer\RustDedicated_Data\Managed</RustManaged>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <SkipHarmonyEntityFlagCompat Condition="'$(SkipHarmonyEntityFlagCompat)' == ''">false</SkipHarmonyEntityFlagCompat>
   </PropertyGroup>
+
+  <!-- Staging game build removed BaseEntity.SetFlag; restore it as an extension for all mods. -->
+  <ItemGroup Condition="'$(SkipHarmonyEntityFlagCompat)' != 'true'">
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\BaseEntityFlagCompat.cs" Link="Shared\BaseEntityFlagCompat.cs" />
+  </ItemGroup>
 
   <!-- Current Assembly-CSharp exposes ReadOnlySpan in RPC signatures; compile against game facades. -->
   <ItemGroup Condition="'$(RustSpanRefs)' != 'false' And '$(RustManaged)' != ''">
