@@ -28,8 +28,6 @@ They share one chat pipeline: ColouredChat already mutated BetterChat’s `OnBet
 }
 ```
 
-`Maximal Titles` keeps the N highest-ranking tags (lowest group `Priority` first). SkillTree / CombatClasses titles only fill leftover slots. Name-attached titles (verified √) do not count.
-
 Oxide `oxide/config/BetterChat.json` and `oxide/config/ColouredChat.json` are merged once if present. Unload the Oxide plugins after this mod is loaded so they do not double-send chat.
 
 ## Commands

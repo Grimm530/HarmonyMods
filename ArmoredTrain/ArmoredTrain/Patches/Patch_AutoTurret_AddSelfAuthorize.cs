@@ -4,7 +4,7 @@ using ATPlugin = Oxide.Plugins.ArmoredTrain;
 namespace ArmoredTrain.Patches
 {
     /// <summary>Oxide OnTurretAuthorize — block authorizing event train turrets.</summary>
-    [HarmonyPatch(typeof(AutoTurret), "AddSelfAuthorize", new[] { typeof(BaseEntity.RPCMessage) })]
+    [HarmonyPatch(typeof(AutoTurret), nameof(AutoTurret.AddSelfAuthorize), new[] { typeof(BaseEntity.RPCMessage) })]
     public static class Patch_AutoTurret_AddSelfAuthorize
     {
         [HarmonyPrefix]

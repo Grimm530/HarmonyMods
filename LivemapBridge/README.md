@@ -35,17 +35,15 @@ Once per load (when monument list is ready):
 | `C:\!WEB RCON PANEL\livemap\data\monuments.json` | Runtime `MonumentInfo` placements |
 | `C:\svr1\HarmonyData\Livemap\monuments.json` | Server-local copy |
 
-Once per load (when terrain is ready):
+Once per load (when Minimap cache exists):
 
 | File | Role |
 |---|---|
-| `map.png` | Overworld paint — **built in** (`MapCreation/OverworldRenderer.cs`) using the same TerrainMeta + OceanMargin 500 math as Minimap. If Minimap’s cache already exists, that PNG is copied instead (`PreferMinimapCache`). |
-| `height.bin` | 513² uint16 heights from `TerrainHeightMap.GetHeight01` (no offline `extract_map.py`) |
-| `terrain.json` | `mapImageSource: livemap` or `minimap`, `oceanMargin: 500` |
+| `C:\!WEB RCON PANEL\livemap\data\map.png` | Minimap overworld render (same image/coords as in-game map) |
+| `C:\!WEB RCON PANEL\livemap\data\terrain.json` | Live `TerrainMeta` + `oceanMargin: 500` for UV math |
+| `C:\svr1\HarmonyData\Livemap\map.png` | Server-local copy |
 
-Does **not** require the Minimap Harmony mod. That mod is in-game UI. This DLL is what you hand out.
-
-Force a rebuild after a wipe: `livemap.render`.
+Requires the **Minimap** Harmony mod to finish its overworld render first (`HarmonyData/Minimap/cache/world.minimap.*.png`).
 
 ### Snapshot JSON
 
@@ -81,8 +79,7 @@ Block rows: `x, y, z, yaw, k` (kind), `g` (grade), optional `h` (height scale fo
 
 ## RCON
 
-`livemap.snapshot` — same JSON as the file dump, admin only.  
-`livemap.render` — rebuild `map.png` + `height.bin` + `terrain.json` (admin only).
+`livemap.snapshot` — same JSON as the file dump, admin only. Useful to test without the panel path.
 
 ## Build / load
 
@@ -94,7 +91,5 @@ harmony.load LivemapBridge
 On boot the snapshot loop waits until `InvokeHandler` exists (same pattern as Minimap). If the map still shows a stale `players: []` after a restart, reload with `harmony.load LivemapBridge`.
 
 Config: `HarmonyConfig/LivemapBridge.json`
-
-`IngestUrl` + `IngestToken` (optional): POST live files to the panel (`/ingest/<token>/snapshot` etc.) so a remote server does not need a shared disk. Leave blank on this machine if `PanelOutputPath` already writes into `db/orgs/.../livemap/`.
 
 Do **not** point Staging / 2X at the same panel snapshot path or they will overwrite SVR1.

@@ -153,11 +153,7 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
         if (wornHas && worn != null && pm.Item.MoveToContainer(worn, -1, allowStack: true))
         {
             if (LootDebug.ShouldLog(player))
-            {
-                var stacked = LootDebug.WasStackedAway(pm.Item, true);
-                var dest = stacked ? worn : pm.Item.parent;
-                LootDebug.Log(player, $"Existing deferred OK worn {LootDebug.ItemDesc(pm.Item, stacked)} from={beforeParent} dest={LootDebug.ContainerDesc(dest, player)}");
-            }
+                LootDebug.Log(player, $"Existing deferred OK worn {LootDebug.ItemDesc(pm.Item)} from={beforeParent} dest={LootDebug.ContainerDesc(pm.Item.parent, player)}");
             return;
         }
 
@@ -170,13 +166,7 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
         if (virtualHas && VirtualBackpackApi.TryDeposit(player, pm.Item))
         {
             if (LootDebug.ShouldLog(player))
-            {
-                var stacked = LootDebug.WasStackedAway(pm.Item, true);
-                var dest = stacked || pm.Item.parent == null
-                    ? "virtual-backpack"
-                    : LootDebug.ContainerDesc(pm.Item.parent, player);
-                LootDebug.Log(player, $"Existing deferred OK virtual {LootDebug.ItemDesc(pm.Item, stacked)} from={beforeParent} dest={dest}");
-            }
+                LootDebug.Log(player, $"Existing deferred OK virtual {LootDebug.ItemDesc(pm.Item)} from={beforeParent}");
             return;
         }
 

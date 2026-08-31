@@ -36,9 +36,8 @@ namespace Oxide.Plugins
 
         public static void Dispatch_OnNewSave()
         {
-            PendingNewSave = true;
             var inst = Instance;
-            if (inst == null) return;
+            if (inst == null || !inst.IsSubscribed(nameof(OnNewSave))) return;
             try { inst.OnNewSave(); }
             catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] OnNewSave: " + ex.Message); }
         }

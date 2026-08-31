@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace DynamicCupShareHarmony.Patches
 {
-    [HarmonyPatch(typeof(AutoTurret), "AddSelfAuthorize", typeof(BasePlayer))]
+    [HarmonyPatch(typeof(AutoTurret), nameof(AutoTurret.AddSelfAuthorize), typeof(BasePlayer))]
     internal static class AutoTurret_AddSelfAuthorize_Patch
     {
         [HarmonyPrefix]

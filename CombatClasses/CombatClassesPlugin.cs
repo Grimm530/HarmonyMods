@@ -1909,12 +1909,12 @@ namespace Oxide.Plugins
                 }
                
                 // If wearable and auto equip enabled put on player
-                if (config.mainSettings.autoequip && createitem.CanMoveTo(player, player.inventory.containerWear))
+                if (config.mainSettings.autoequip && createitem.CanMoveTo(player.inventory.containerWear))
                 {
                     createitem.MoveToContainer(player.inventory.containerWear);
                 }
                 // If weapon and auto equip enabled put in belt
-                else if (config.mainSettings.autoequip && createitem.CanMoveTo(player, player.inventory.containerBelt))
+                else if (config.mainSettings.autoequip && createitem.CanMoveTo(player.inventory.containerBelt))
                 {
                     createitem.MoveToContainer(player.inventory.containerBelt);
                 }

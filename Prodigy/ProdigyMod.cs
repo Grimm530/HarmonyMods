@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using ConVar;
 using Facepunch;
@@ -30,7 +29,6 @@ public class ProdigyMod : IHarmonyModHooks
     private readonly object _dataLock = new();
     private float _saveTimer;
     private readonly Dictionary<string, int> _deployables = new();
-    private static MethodInfo _playtimeTrackerGetLastSeen;
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
@@ -95,12 +93,6 @@ public class ProdigyMod : IHarmonyModHooks
                 _data.Blocks ??= new Dictionary<ulong, List<LogObject>>();
                 _data.TC ??= new Dictionary<ulong, List<LogObject>>();
                 _data.Offsets ??= new Dictionary<ulong, UiOffsets>();
-                foreach (var ui in _data.Offsets.Values)
-                {
-                    if (ui == null) continue;
-                    ui.MigratePanelSize();
-                    if (ui.Changed) _data.Changed = true;
-                }
 
                 var currentWipeId = SaveRestore.WipeId;
                 if (!string.IsNullOrEmpty(currentWipeId) && _data.WipeId != currentWipeId)
@@ -329,10 +321,9 @@ public class ProdigyMod : IHarmonyModHooks
             if (!string.IsNullOrEmpty(encodedArg))
             {
                 var parts = encodedArg.Replace("_", " ").Split('|');
-                if (parts.Length >= 13)
+                if (parts.Length == 13)
                 {
-                    string lastOnline = parts.Length >= 14 ? parts[13] : "N/A";
-                    string msg = $"Entity: {parts[0]}\nOwner: {parts[1]}\nPosition: {parts[2]}\nPrefabId: {parts[3]}\nType: {parts[4]}\nHealth: {parts[5]}\nSize: {parts[6]}\nBuilding ID: {parts[7]}\nCollider: {parts[8]}\nSkin: {parts[9]}\nLast: {parts[10]}\nCode: {parts[11]}\nLast Online: {lastOnline}\nDetails: {parts[12]}";
+                    string msg = $"Entity: {parts[0]}\nOwner: {parts[1]}\nPosition: {parts[2]}\nPrefabId: {parts[3]}\nType: {parts[4]}\nHealth: {parts[5]}\nSize: {parts[6]}\nBuilding ID: {parts[7]}\nCollider: {parts[8]}\nSkin: {parts[9]}\nLast: {parts[10]}\nCode: {parts[11]}\nDetails: {parts[12]}";
                     player.ConsoleMessage(msg);
                 }
             }
@@ -356,10 +347,9 @@ public class ProdigyMod : IHarmonyModHooks
         offsets.Changed = true;
         _data.Changed = true;
         var args = encodedArg.Replace("_", " ").Split('|');
-        if (args.Length >= 13)
+        if (args.Length == 13)
         {
-            string lastOnline = args.Length >= 14 ? args[13] : "N/A";
-            ProdigyUI.Show(player, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], lastOnline, offsets.IsSmallUi, offsets.Min, offsets.Max, offsets.IsTimed);
+            ProdigyUI.Show(player, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], offsets.IsSmallUi, offsets.Min, offsets.Max, offsets.IsTimed);
             SetTimer(player);
         }
     }
@@ -384,7 +374,7 @@ public class ProdigyMod : IHarmonyModHooks
             {
                 _data.Offsets[player.userID] = ui = new UiOffsets();
                 if (player.serverInput.IsDown(BUTTON.SPRINT)) { ui.IsTimed = false; player.ChatMessage("Timed UI disabled"); }
-                if (player.serverInput.IsDown(BUTTON.DUCK)) { ui.IsSmallUi = true; ui.Min = UiOffsets.DefaultSmallMin; ui.Max = UiOffsets.DefaultSmallMax; player.ChatMessage("Small UI enabled"); }
+                if (player.serverInput.IsDown(BUTTON.DUCK)) { ui.IsSmallUi = true; ui.Min = "8.204 14.617"; ui.Max = "228.796 115.983"; player.ChatMessage("Small UI enabled"); }
             }
             return ui;
         }
@@ -454,8 +444,7 @@ public class ProdigyMod : IHarmonyModHooks
         float size = Mathf.Max(Mathf.Max(entity.bounds.size.x, entity.bounds.size.y), entity.bounds.size.z);
         size = Mathf.Max(size, Mathf.Max(entity.transform.localScale.x, Mathf.Max(entity.transform.localScale.y, entity.transform.localScale.z)));
         string buildingID = entity is DecayEntity de ? de.buildingID.ToString() : (entity.GetBuildingPrivilege()?.buildingID ?? 0).ToString();
-        string lastOnline = GetLastOnline(userid);
-        ProdigyUI.Show(player, entityShortname, actualName, entity.transform.position.ToString(), entity.prefabID.ToString(), entity.GetType().Name, entity.Health().ToString(), size.ToString(), buildingID, colliderName, entity.skinID.ToString(), lastAttackerName, code, info, lastOnline, ui.IsSmallUi, ui.Min, ui.Max, ui.IsTimed);
+        ProdigyUI.Show(player, entityShortname, $"{targetName} ({userid})", entity.transform.position.ToString(), entity.prefabID.ToString(), entity.GetType().Name, entity.Health().ToString(), size.ToString(), buildingID, colliderName, entity.skinID.ToString(), lastAttackerName, code, info, ui.IsSmallUi, ui.Min, ui.Max, ui.IsTimed);
         SetTimer(player);
         lock (_dataLock) _data.Changed = true;
     }
@@ -481,7 +470,7 @@ public class ProdigyMod : IHarmonyModHooks
     private static void AppendLockedCrate(List<string> details, bool isHoldingHammer, LockedByEntCrate crate)
     {
         foreach (var item in crate.inventory.itemList) details.Add($"{item.info.shortname} {item.amount}");
-        if (isHoldingHammer) crate.lockingEnt?.Kill();
+        if (isHoldingHammer) crate.lockingEnt?.ToBaseEntity()?.Kill();
     }
 
     private static void AppendGunTrap(List<string> details, GunTrap gunTrap) { foreach (var item in gunTrap.inventory.itemList) details.Add($"{item.info.shortname} {item.amount}"); }
@@ -525,7 +514,7 @@ public class ProdigyMod : IHarmonyModHooks
         sb.AppendFormat("Navmesh enabled: {0}, stopped: {1}, stuck: {2}, type: {3}, ", nav.Agent.enabled, nav.Agent.isOnNavMesh && nav.Agent.isStopped, nav.StuckOffNavmesh, nav.CurrentNavigationType);
         if (npc.TryGetComponent<BaseAIBrain>(out var brain)) sb.AppendFormat("SenseRange: {0}, ListenRange: {1}, TargetLostRange: {2}, StoppingDistance: {3}", brain.SenseRange, brain.ListenRange, brain.TargetLostRange, nav.StoppingDistance);
         sb.AppendLine();
-        DrawNavDebug(player, npc.eyes.position, nav.Agent.destinationWS, nav.Destination, npc);
+        DrawNavDebug(player, npc.eyes.position, nav.Agent.destination, nav.Destination, npc);
     }
 
     private static void HandleNavigator(BaseNavigator nav, StringBuilder sb, BasePlayer player)
@@ -534,7 +523,7 @@ public class ProdigyMod : IHarmonyModHooks
         sb.AppendFormat("Navmesh enabled: {0}, stopped: {1}, stuck: {2}, type: {3}, ", nav.Agent.enabled, nav.Agent.isOnNavMesh && nav.Agent.isStopped, nav.StuckOffNavmesh, nav.CurrentNavigationType);
         sb.AppendLine();
         var entity = nav.GetComponent<BaseEntity>();
-        DrawNavDebug(player, nav.transform.position, nav.Agent.destinationWS, nav.Destination, entity);
+        DrawNavDebug(player, nav.transform.position, nav.Agent.destination, nav.Destination, entity);
     }
 
     /// <summary>Draws sphere on NPC, line to nav destination (max 75m), arrow at end; cyan = actual movement direction.</summary>
@@ -681,61 +670,6 @@ public class ProdigyMod : IHarmonyModHooks
         if (name != null && name != "[unknown]") return name;
         var p = BasePlayer.FindAwakeOrSleeping(playerId.ToString());
         return p?.displayName ?? playerId.ToString();
-    }
-
-    private static string GetLastOnline(ulong playerId)
-    {
-        if (!SteamIdHelper.IsSteamId(playerId)) return "N/A";
-
-        var player = BasePlayer.FindAwakeOrSleepingByID(playerId);
-        if (player != null && player.IsConnected) return "Online";
-
-        var getLastSeen = GetPlaytimeTrackerLastSeen();
-        if (getLastSeen != null)
-        {
-            try
-            {
-                object result = getLastSeen.Invoke(null, new object[] { playerId.ToString() });
-                if (TryToUnixSeconds(result, out double epoch) && epoch > 0)
-                    return FormatLastOnline(epoch);
-            }
-            catch
-            {
-                _playtimeTrackerGetLastSeen = null;
-            }
-        }
-
-        return "N/A";
-    }
-
-    private static MethodInfo GetPlaytimeTrackerLastSeen()
-    {
-        if (_playtimeTrackerGetLastSeen != null) return _playtimeTrackerGetLastSeen;
-        try
-        {
-            var apiType = AppDomain.CurrentDomain.GetData("PlaytimeTracker_ApiType") as Type;
-            if (apiType == null) return null;
-            _playtimeTrackerGetLastSeen = apiType.GetMethod("GetLastSeen", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null);
-        }
-        catch { }
-        return _playtimeTrackerGetLastSeen;
-    }
-
-    private static bool TryToUnixSeconds(object value, out double epoch)
-    {
-        epoch = 0;
-        if (value == null) return false;
-        if (value is double d) { epoch = d; return true; }
-        if (value is float f) { epoch = f; return true; }
-        if (value is long l) { epoch = l; return true; }
-        if (value is int i) { epoch = i; return true; }
-        return false;
-    }
-
-    private static string FormatLastOnline(double unixSeconds)
-    {
-        var utc = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(unixSeconds);
-        return utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private bool IsDeployableEntity(BaseEntity entity)

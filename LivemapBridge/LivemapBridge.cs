@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -12,7 +11,6 @@ using Newtonsoft.Json;
 using UnityEngine;
 using Building = BuildingManager.Building;
 using Debug = UnityEngine.Debug;
-using LivemapBridge.MapCreation;
 
 namespace LivemapBridge;
 
@@ -22,30 +20,23 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     const string CmdName = "livemap.snapshot";
     const string CmdFull = "global.livemap.snapshot";
-    const string CmdRenderName = "livemap.render";
-    const string CmdRenderFull = "global.livemap.render";
 
     ConsoleSystem.Command _cmd;
-    ConsoleSystem.Command _cmdRender;
     ConfigFile _config;
     string _configPath;
     bool _wrotePanelWarning;
-    bool _ingestSnapshotBusy;
-    float _lastIngestWarn;
     bool _loopStarted;
     bool _unloaded;
     bool _monumentsDumped;
     bool _mapExported;
     int _mapExportAttempts;
-    float _nextBuildAt = -999f;
+    float _lastBuildRealtime = -999f;
     float _lastSlowTickLog;
     FieldInfo _convoyVehiclesField;
     FieldInfo _convoyEntityField;
     PropertyInfo _convoyInstanceProp;
     MethodInfo _convoyIsActiveMethod;
     MethodInfo _isConvoyEntityMethod;
-    bool _convoyTypesResolved;
-    bool _convoyEntityMethodResolved;
     Type _armoredTrainModType;
     PropertyInfo _armoredTrainPluginProp;
     FieldInfo _armoredTrainControllerField;
@@ -56,19 +47,8 @@ public class LivemapBridgeMod : IHarmonyModHooks
     readonly List<PlayerRow> _players = new List<PlayerRow>(64);
     readonly List<VehicleRow> _vehicles = new List<VehicleRow>(32);
     readonly HashSet<ulong> _seenVehicleIds = new HashSet<ulong>();
+    readonly StringBuilder _sb = new StringBuilder(262144);
     static readonly Dictionary<string, PrefabKind> PrefabKindCache = new Dictionary<string, PrefabKind>(128);
-
-    const int MaxBuildingBlocks = 15000;
-    const int BuildingSliceMs = 2;
-    const float BuildingPumpInterval = 0.05f;
-    readonly BlockSnap[] _blockBuf = new BlockSnap[MaxBuildingBlocks];
-    int _blockCount;
-    int _buildBuildingIndex;
-    int _buildPrivIndex;
-    int _buildBlockIndex;
-    bool _buildCollecting;
-    bool _buildingsWritePending;
-    bool _buildingsPumpStarted;
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
@@ -77,8 +57,7 @@ public class LivemapBridgeMod : IHarmonyModHooks
         LoadConfig();
         RegisterCommand();
         StartLoop();
-        Debug.Log("[LivemapBridge] Loaded. Writes " + _config.PanelOutputPath +
-                  (string.IsNullOrEmpty(_config.IngestUrl) ? "" : " ingest " + _config.IngestUrl));
+        Debug.Log("[LivemapBridge] Loaded. Writes " + _config.PanelOutputPath);
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
@@ -104,9 +83,10 @@ public class LivemapBridgeMod : IHarmonyModHooks
             {
                 _config = JsonConvert.DeserializeObject<ConfigFile>(File.ReadAllText(_configPath)) ?? new ConfigFile();
             }
-
-            NormalizeInstancePaths(root);
-            File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, Formatting.Indented));
+            else
+            {
+                File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, Formatting.Indented));
+            }
         }
         catch (Exception ex)
         {
@@ -121,106 +101,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
             _config.VehicleScanIntervalSeconds = 5f;
     }
 
-    void NormalizeInstancePaths(string root)
-    {
-        string live = Path.Combine(root, "HarmonyData", "Livemap");
-        Directory.CreateDirectory(live);
-        _config.HarmonyOutputPath = Path.Combine(live, "snapshot.json");
-        _config.HarmonyBuildingsPath = Path.Combine(live, "buildings.json");
-        _config.HarmonyMonumentsPath = Path.Combine(live, "monuments.json");
-        _config.HarmonyMapPath = Path.Combine(live, "map.png");
-        _config.HarmonyTerrainPath = Path.Combine(live, "terrain.json");
-        _config.HarmonyHeightPath = Path.Combine(live, "height.bin");
-
-        string panelId = GuessLocalPanelServerId(root);
-        if (!string.IsNullOrEmpty(panelId))
-        {
-            if (!string.IsNullOrEmpty(_config.PanelServerId) &&
-                !string.Equals(_config.PanelServerId, panelId, StringComparison.OrdinalIgnoreCase))
-            {
-                Debug.LogWarning("[LivemapBridge] PanelServerId was for another instance (" +
-                                 _config.PanelServerId + "); this root is " + panelId + ". Clearing copied ingest token.");
-                _config.IngestToken = "";
-            }
-            _config.PanelServerId = panelId;
-            ApplyPanelDir(Path.Combine(@"C:\!WEB RCON PANEL", "db", "orgs", "grimmzone", "servers", panelId, "livemap"));
-            return;
-        }
-
-        if (IsSharedLegacyPanelPath(_config.PanelOutputPath) || IsForeignGameServerPath(_config.PanelOutputPath, root))
-        {
-            Debug.LogError("[LivemapBridge] Refusing panel path " + _config.PanelOutputPath +
-                           " (shared livemap/data or another game server). Set PanelServerId or IngestToken.");
-            ClearPanelPaths();
-        }
-    }
-
-    void ApplyPanelDir(string panelDir)
-    {
-        Directory.CreateDirectory(panelDir);
-        _config.PanelOutputPath = Path.Combine(panelDir, "snapshot.json");
-        _config.PanelBuildingsPath = Path.Combine(panelDir, "buildings.json");
-        _config.PanelMonumentsPath = Path.Combine(panelDir, "monuments.json");
-        _config.PanelMapPath = Path.Combine(panelDir, "map.png");
-        _config.PanelTerrainPath = Path.Combine(panelDir, "terrain.json");
-        _config.PanelHeightPath = Path.Combine(panelDir, "height.bin");
-    }
-
-    void ClearPanelPaths()
-    {
-        _config.PanelOutputPath = "";
-        _config.PanelBuildingsPath = "";
-        _config.PanelMonumentsPath = "";
-        _config.PanelMapPath = "";
-        _config.PanelTerrainPath = "";
-        _config.PanelHeightPath = "";
-    }
-
-    static string GuessLocalPanelServerId(string root)
-    {
-        string n = (root ?? "").TrimEnd('\\', '/');
-        if (string.Equals(n, @"C:\svr1", StringComparison.OrdinalIgnoreCase))
-            return "4982e71e3c3765f36f244e5e4af874ba";
-        if (string.Equals(n, @"C:\StagingSvr", StringComparison.OrdinalIgnoreCase))
-            return "9eb0aa00c1a145d3b249e8ba6cc86e47";
-        if (string.Equals(n, @"C:\!2XRUST", StringComparison.OrdinalIgnoreCase))
-            return "409debab5ecc19a841830ef0a14b93db";
-        return "";
-    }
-
-    static bool IsSharedLegacyPanelPath(string panelPath)
-    {
-        if (string.IsNullOrEmpty(panelPath))
-            return false;
-        string n = panelPath.Replace('/', '\\');
-        return n.IndexOf(@"livemap\data\", StringComparison.OrdinalIgnoreCase) >= 0 ||
-               n.EndsWith(@"livemap\data", StringComparison.OrdinalIgnoreCase);
-    }
-
-    static bool IsForeignGameServerPath(string panelPath, string root)
-    {
-        if (string.IsNullOrEmpty(panelPath))
-            return false;
-        try
-        {
-            string full = Path.GetFullPath(panelPath);
-            string[] others = { @"C:\svr1", @"C:\StagingSvr", @"C:\!2XRUST" };
-            string thisRoot = Path.GetFullPath(root).TrimEnd('\\', '/');
-            foreach (string other in others)
-            {
-                string o = Path.GetFullPath(other).TrimEnd('\\', '/');
-                if (string.Equals(o, thisRoot, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (full.StartsWith(o + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-        }
-        catch
-        {
-        }
-        return false;
-    }
-
     void StartLoop(int attempt = 0)
     {
         if (_loopStarted)
@@ -232,16 +112,13 @@ public class LivemapBridgeMod : IHarmonyModHooks
             try
             {
                 InvokeHandler.CancelInvoke(handler, Tick);
-                InvokeHandler.CancelInvoke(handler, PumpBuildings);
             }
             catch
             {
             }
             InvokeHandler.InvokeRepeating(handler, Tick, 2f, _config.IntervalSeconds);
             _loopStarted = true;
-            _buildingsPumpStarted = false;
-            _buildCollecting = false;
-            _nextBuildAt = Time.realtimeSinceStartup + _config.BuildingsIntervalSeconds;
+            _lastBuildRealtime = Time.realtimeSinceStartup;
             LivemapBradleyTracker.SeedFromWorld();
             if (attempt > 0)
                 Debug.Log("[LivemapBridge] Snapshot loop started after boot wait (" + attempt + ").");
@@ -283,13 +160,9 @@ public class LivemapBridgeMod : IHarmonyModHooks
         var handler = SingletonComponent<InvokeHandler>.Instance;
         if (handler == null)
             return;
-        _buildCollecting = false;
-        _buildingsPumpStarted = false;
-        _buildingsWritePending = false;
         try
         {
             InvokeHandler.CancelInvoke(handler, Tick);
-            InvokeHandler.CancelInvoke(handler, PumpBuildings);
         }
         catch
         {
@@ -333,18 +206,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
             ConsoleSystem.Index.Server.Dict[CmdFull] = _cmd;
             if (ConsoleSystem.Index.Server.GlobalDict != null)
                 ConsoleSystem.Index.Server.GlobalDict[CmdName] = _cmd;
-
-            _cmdRender = new ConsoleSystem.Command
-            {
-                Name = CmdRenderName,
-                FullName = CmdRenderFull,
-                Variable = false,
-                ServerAdmin = true,
-                Call = CmdRender
-            };
-            ConsoleSystem.Index.Server.Dict[CmdRenderFull] = _cmdRender;
-            if (ConsoleSystem.Index.Server.GlobalDict != null)
-                ConsoleSystem.Index.Server.GlobalDict[CmdRenderName] = _cmdRender;
         }
         catch (Exception ex)
         {
@@ -357,11 +218,8 @@ public class LivemapBridgeMod : IHarmonyModHooks
         try
         {
             ConsoleSystem.Index.Server.Dict?.Remove(CmdFull);
-            ConsoleSystem.Index.Server.Dict?.Remove(CmdRenderFull);
             ConsoleSystem.Index.Server.GlobalDict?.Remove(CmdName);
-            ConsoleSystem.Index.Server.GlobalDict?.Remove(CmdRenderName);
             _cmd = null;
-            _cmdRender = null;
         }
         catch
         {
@@ -371,14 +229,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
     void CmdSnapshot(ConsoleSystem.Arg arg)
     {
         arg?.ReplyWith(BuildJson());
-    }
-
-    void CmdRender(ConsoleSystem.Arg arg)
-    {
-        _mapExported = false;
-        _mapExportAttempts = 0;
-        MaybeExportMapImage();
-        arg?.ReplyWith(_mapExported ? "livemap.render ok" : "livemap.render waiting for terrain");
     }
 
     void Tick()
@@ -393,15 +243,20 @@ public class LivemapBridgeMod : IHarmonyModHooks
         string json = BuildJson();
         QueueWrite(_config.HarmonyOutputPath, json);
         QueueWrite(_config.PanelOutputPath, json);
-        QueueIngestJson("snapshot", json);
-
-        MaybeStartBuildingDump();
 
         float now = Time.realtimeSinceStartup;
+        if (now - _lastBuildRealtime >= _config.BuildingsIntervalSeconds)
+        {
+            _lastBuildRealtime = now;
+            string buildings = BuildBuildingsJson();
+            QueueWrite(_config.HarmonyBuildingsPath, buildings);
+            QueueWrite(_config.PanelBuildingsPath, buildings);
+        }
+
         if (sw.ElapsedMilliseconds >= 80 && now - _lastSlowTickLog >= 10f)
         {
             _lastSlowTickLog = now;
-            Debug.LogWarning("[LivemapBridge] Tick took " + sw.ElapsedMilliseconds + "ms (bradleys=" + LivemapBradleyTracker.Count + ")");
+            Debug.LogWarning("[LivemapBridge] Tick took " + sw.ElapsedMilliseconds + "ms (markers=" + MapMarker.serverMapMarkers.Count + " bradleys=" + LivemapBradleyTracker.Count + ")");
         }
     }
 
@@ -491,202 +346,88 @@ public class LivemapBridgeMod : IHarmonyModHooks
         return JsonConvert.SerializeObject(snap);
     }
 
-    void MaybeStartBuildingDump()
+    string BuildBuildingsJson()
     {
-        if (_unloaded || _buildCollecting || _buildingsWritePending)
-            return;
-        if (Time.realtimeSinceStartup < _nextBuildAt)
-            return;
+        _sb.Length = 0;
+        _sb.Append("{\"live\":true,\"blocks\":[");
+        bool first = true;
+        int count = 0;
 
-        _buildCollecting = true;
-        _blockCount = 0;
-        _buildBuildingIndex = 0;
-        _buildPrivIndex = 0;
-        _buildBlockIndex = 0;
-        _nextBuildAt = Time.realtimeSinceStartup + _config.BuildingsIntervalSeconds;
-
-        if (_buildingsPumpStarted)
-            return;
-        var handler = SingletonComponent<InvokeHandler>.Instance;
-        if (handler == null)
-            return;
-        InvokeHandler.InvokeRepeating(handler, PumpBuildings, 0f, BuildingPumpInterval);
-        _buildingsPumpStarted = true;
-    }
-
-    void PumpBuildings()
-    {
-        if (_unloaded)
-            return;
-        if (!_buildCollecting)
-            return;
-        CollectBuildingSlice();
-        if (_buildCollecting)
-            return;
-        QueueBuildingsWrite();
-        StopBuildingPump();
-    }
-
-    void StopBuildingPump()
-    {
-        if (!_buildingsPumpStarted)
-            return;
-        _buildingsPumpStarted = false;
-        var handler = SingletonComponent<InvokeHandler>.Instance;
-        if (handler == null)
-            return;
-        try
-        {
-            InvokeHandler.CancelInvoke(handler, PumpBuildings);
-        }
-        catch
-        {
-        }
-    }
-
-    void CollectBuildingSlice()
-    {
         var dict = BuildingManager.server?.buildingDictionary;
-        if (dict == null)
+        if (dict != null)
         {
-            _buildCollecting = false;
-            return;
+            var buildings = dict.Values;
+            for (int i = 0; i < buildings.Count && count < 15000; i++)
+            {
+                Building building = buildings[i];
+                if (building == null)
+                    continue;
+
+                for (int p = 0; p < building.buildingPrivileges.Count && count < 15000; p++)
+                {
+                    BuildingPrivlidge cup = building.buildingPrivileges[p];
+                    if (!TryAppendBlock(cup, 4, 0, 1f, false, ref first))
+                        continue;
+                    count++;
+                }
+
+                for (int b = 0; b < building.buildingBlocks.Count && count < 15000; b++)
+                {
+                    BuildingBlock block = building.buildingBlocks[b];
+                    if (block == null || block.IsDestroyed || block.transform == null)
+                        continue;
+                    if (block.transform.position.y < -5f)
+                        continue;
+                    int kind = KindFromPrefabCached(block.ShortPrefabName, out float hScale, out bool triangle);
+                    if (kind < 0)
+                        continue;
+                    int grade = (int)block.grade;
+                    if (grade < 0) grade = 0;
+                    if (grade > 4) grade = 4;
+                    if (!TryAppendBlock(block, kind, grade, hScale, triangle, ref first))
+                        continue;
+                    count++;
+                }
+            }
         }
 
-        var buildings = dict.Values;
-        var sw = Stopwatch.StartNew();
-        while (_buildBuildingIndex < buildings.Count && _blockCount < MaxBuildingBlocks)
-        {
-            if (sw.ElapsedMilliseconds >= BuildingSliceMs)
-                return;
-
-            Building building = buildings[_buildBuildingIndex];
-            if (building == null)
-            {
-                _buildBuildingIndex++;
-                _buildPrivIndex = 0;
-                _buildBlockIndex = 0;
-                continue;
-            }
-
-            int cups = building.buildingPrivileges.Count;
-            while (_buildPrivIndex < cups && _blockCount < MaxBuildingBlocks)
-            {
-                if (sw.ElapsedMilliseconds >= BuildingSliceMs)
-                    return;
-                TryCopyBlock(building.buildingPrivileges[_buildPrivIndex], 4, 0, 1f, false);
-                _buildPrivIndex++;
-            }
-
-            int blocks = building.buildingBlocks.Count;
-            while (_buildBlockIndex < blocks && _blockCount < MaxBuildingBlocks)
-            {
-                if (sw.ElapsedMilliseconds >= BuildingSliceMs)
-                    return;
-                BuildingBlock block = building.buildingBlocks[_buildBlockIndex];
-                _buildBlockIndex++;
-                if (block == null || block.IsDestroyed || block.transform == null)
-                    continue;
-                int kind = KindFromPrefabCached(block.ShortPrefabName, out float hScale, out bool triangle);
-                if (kind < 0)
-                    continue;
-                int grade = (int)block.grade;
-                if (grade < 0) grade = 0;
-                if (grade > 4) grade = 4;
-                TryCopyBlock(block, kind, grade, hScale, triangle);
-            }
-
-            _buildBuildingIndex++;
-            _buildPrivIndex = 0;
-            _buildBlockIndex = 0;
-        }
-
-        _buildCollecting = false;
+        _sb.Append("]}");
+        return _sb.ToString();
     }
 
-    void TryCopyBlock(BaseEntity ent, int kind, int grade, float hScale, bool triangle)
+    bool TryAppendBlock(BaseEntity ent, int kind, int grade, float hScale, bool triangle, ref bool first)
     {
         if (ent == null || ent.IsDestroyed || ent.transform == null)
-            return;
+            return false;
         Vector3 pos = ent.transform.position;
         if (pos.y < -5f)
-            return;
-        if (_blockCount >= MaxBuildingBlocks)
-            return;
-        _blockBuf[_blockCount++] = new BlockSnap
-        {
-            x = pos.x,
-            y = pos.y,
-            z = pos.z,
-            yaw = ent.transform.eulerAngles.y,
-            h = hScale,
-            k = (byte)kind,
-            g = (byte)grade,
-            t = triangle ? (byte)1 : (byte)0
-        };
+            return false;
+        if (!first)
+            _sb.Append(',');
+        first = false;
+        _sb.Append("{\"x\":");
+        AppendFloat(pos.x);
+        _sb.Append(",\"y\":");
+        AppendFloat(pos.y);
+        _sb.Append(",\"z\":");
+        AppendFloat(pos.z);
+        _sb.Append(",\"yaw\":");
+        AppendFloat(ent.transform.eulerAngles.y);
+        _sb.Append(",\"k\":");
+        _sb.Append(kind);
+        _sb.Append(",\"g\":");
+        _sb.Append(grade);
+        _sb.Append(",\"h\":");
+        AppendFloat(hScale);
+        _sb.Append(",\"t\":");
+        _sb.Append(triangle ? 1 : 0);
+        _sb.Append('}');
+        return true;
     }
 
-    void QueueBuildingsWrite()
+    void AppendFloat(float value)
     {
-        int n = _blockCount;
-        var copy = new BlockSnap[n];
-        if (n > 0)
-            Array.Copy(_blockBuf, copy, n);
-        _buildingsWritePending = true;
-        string harmonyPath = _config.HarmonyBuildingsPath;
-        string panelPath = _config.PanelBuildingsPath;
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            try
-            {
-                if (_unloaded)
-                    return;
-                string json = FormatBlocksJson(copy);
-                WriteAtomic(harmonyPath, json);
-                WriteAtomic(panelPath, json);
-                QueueIngestJson("buildings", json);
-            }
-            finally
-            {
-                _buildingsWritePending = false;
-            }
-        });
-    }
-
-    static string FormatBlocksJson(BlockSnap[] blocks)
-    {
-        var sb = new StringBuilder(blocks.Length * 72 + 32);
-        sb.Append("{\"live\":true,\"blocks\":[");
-        for (int i = 0; i < blocks.Length; i++)
-        {
-            if (i > 0)
-                sb.Append(',');
-            BlockSnap b = blocks[i];
-            sb.Append("{\"x\":");
-            AppendFloat(sb, b.x);
-            sb.Append(",\"y\":");
-            AppendFloat(sb, b.y);
-            sb.Append(",\"z\":");
-            AppendFloat(sb, b.z);
-            sb.Append(",\"yaw\":");
-            AppendFloat(sb, b.yaw);
-            sb.Append(",\"k\":");
-            sb.Append(b.k);
-            sb.Append(",\"g\":");
-            sb.Append(b.g);
-            sb.Append(",\"h\":");
-            AppendFloat(sb, b.h);
-            sb.Append(",\"t\":");
-            sb.Append(b.t);
-            sb.Append('}');
-        }
-        sb.Append("]}");
-        return sb.ToString();
-    }
-
-    static void AppendFloat(StringBuilder sb, float value)
-    {
-        sb.Append(value.ToString("G9", CultureInfo.InvariantCulture));
+        _sb.Append(value.ToString("G9", CultureInfo.InvariantCulture));
     }
 
     // k: 0 foundation, 1 wall, 2 floor, 3 roof, 4 cupboard, 5 stairs/misc
@@ -1005,10 +746,25 @@ public class LivemapBridgeMod : IHarmonyModHooks
     {
         if (ent?.net == null)
             return false;
-        if (!_convoyEntityMethodResolved)
+        if (_isConvoyEntityMethod == null)
         {
-            _convoyEntityMethodResolved = true;
-            _isConvoyEntityMethod = FindTypeMethod("Convoy.ConvoyState", "IsConvoyEntity", BindingFlags.Public | BindingFlags.Static);
+            Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
+            for (int i = 0; i < asms.Length; i++)
+            {
+                Type state;
+                try
+                {
+                    state = asms[i].GetType("Convoy.ConvoyState");
+                }
+                catch
+                {
+                    continue;
+                }
+                if (state == null)
+                    continue;
+                _isConvoyEntityMethod = state.GetMethod("IsConvoyEntity", BindingFlags.Public | BindingFlags.Static);
+                break;
+            }
         }
         if (_isConvoyEntityMethod == null)
             return false;
@@ -1024,8 +780,26 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     bool IsConvoyEventActive()
     {
-        if (!_convoyTypesResolved)
-            ResolveConvoyTypes();
+        if (_convoyIsActiveMethod == null)
+        {
+            Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
+            for (int i = 0; i < asms.Length; i++)
+            {
+                Type launcher;
+                try
+                {
+                    launcher = asms[i].GetType("Convoy.EventLauncher");
+                }
+                catch
+                {
+                    continue;
+                }
+                if (launcher == null)
+                    continue;
+                _convoyIsActiveMethod = launcher.GetMethod("IsEventActive", BindingFlags.Public | BindingFlags.Static);
+                break;
+            }
+        }
         if (_convoyIsActiveMethod == null)
             return FindConvoyInstance() != null;
         try
@@ -1036,43 +810,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
         {
             return false;
         }
-    }
-
-    void ResolveConvoyTypes()
-    {
-        _convoyTypesResolved = true;
-        _convoyIsActiveMethod = FindTypeMethod("Convoy.EventLauncher", "IsEventActive", BindingFlags.Public | BindingFlags.Static);
-        Type controller = FindType("Convoy.EventController");
-        if (controller == null)
-            return;
-        _convoyInstanceProp = controller.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
-        _convoyVehiclesField = controller.GetField("_vehicles", BindingFlags.NonPublic | BindingFlags.Instance);
-    }
-
-    static Type FindType(string fullName)
-    {
-        Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
-        for (int i = 0; i < asms.Length; i++)
-        {
-            Type t;
-            try
-            {
-                t = asms[i].GetType(fullName);
-            }
-            catch
-            {
-                continue;
-            }
-            if (t != null)
-                return t;
-        }
-        return null;
-    }
-
-    static MethodInfo FindTypeMethod(string typeName, string methodName, BindingFlags flags)
-    {
-        Type t = FindType(typeName);
-        return t?.GetMethod(methodName, flags);
     }
 
     void MaybeDumpMonuments()
@@ -1093,7 +830,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
         WriteAtomic(_config.HarmonyMonumentsPath, json);
         if (!string.IsNullOrEmpty(_config.PanelMonumentsPath))
             WriteAtomic(_config.PanelMonumentsPath, json);
-        QueueIngestJson("monuments", json);
 
         _monumentsDumped = true;
         Debug.Log("[LivemapBridge] Wrote " + monuments.Count + " monument placements (MonumentInfo only).");
@@ -1516,104 +1252,64 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     object FindConvoyInstance()
     {
-        if (!_convoyTypesResolved)
-            ResolveConvoyTypes();
-        if (_convoyInstanceProp == null)
-            return null;
-        return _convoyInstanceProp.GetValue(null);
+        if (_convoyInstanceProp != null)
+            return _convoyInstanceProp.GetValue(null);
+
+        Assembly[] asms = AppDomain.CurrentDomain.GetAssemblies();
+        for (int i = 0; i < asms.Length; i++)
+        {
+            Type t;
+            try
+            {
+                t = asms[i].GetType("Convoy.EventController");
+            }
+            catch
+            {
+                continue;
+            }
+            if (t == null)
+                continue;
+            PropertyInfo prop = t.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+            if (prop == null)
+                continue;
+            _convoyInstanceProp = prop;
+            _convoyVehiclesField = t.GetField("_vehicles", BindingFlags.NonPublic | BindingFlags.Instance);
+            return prop.GetValue(null);
+        }
+        return null;
     }
 
     void MaybeExportMapImage()
     {
-        if (_mapExported || !OverworldRenderer.TerrainReady())
+        if (_mapExported || TerrainMeta.Size.x <= 0f)
             return;
 
         _mapExportAttempts++;
         if (_mapExportAttempts > 900)
             return;
 
-        string source = "livemap";
-        int renderRes = OverworldRenderer.ClampResolution(_config.MapRenderResolution);
-        string cachePath = "";
-        byte[] png = null;
-
-        if (_config.PreferMinimapCache)
-        {
-            cachePath = FindMinimapOverworldPng(out int cacheRes);
-            if (!string.IsNullOrEmpty(cachePath))
-            {
-                try
-                {
-                    png = File.ReadAllBytes(cachePath);
-                    if (png != null && png.Length > 0)
-                    {
-                        source = "minimap";
-                        renderRes = cacheRes;
-                    }
-                    else
-                        png = null;
-                }
-                catch
-                {
-                    png = null;
-                }
-            }
-        }
-
-        if (png == null)
-        {
-            try
-            {
-                png = OverworldRenderer.RenderPng(_config.MapRenderResolution, out renderRes);
-                source = "livemap";
-                cachePath = "";
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[LivemapBridge] Map render: " + ex.Message);
-                return;
-            }
-        }
-
-        if (png == null || png.Length == 0)
+        string pngPath = FindMinimapOverworldPng(out int renderRes);
+        if (string.IsNullOrEmpty(pngPath))
             return;
 
-        byte[] height = null;
         try
         {
-            height = OverworldRenderer.RenderHeightBin(513);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogWarning("[LivemapBridge] Height dump: " + ex.Message);
-        }
+            byte[] png = File.ReadAllBytes(pngPath);
+            if (png == null || png.Length == 0)
+                return;
 
-        try
-        {
             string harmonyMap = _config.HarmonyMapPath;
             string panelMap = _config.PanelMapPath;
-            byte[] pngCopy = png;
-            byte[] heightCopy = height;
-            string harmonyHeight = _config.HarmonyHeightPath;
-            string panelHeight = _config.PanelHeightPath;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 if (_unloaded)
                     return;
-                WriteBytesAtomic(harmonyMap, pngCopy);
+                WriteBytesAtomic(harmonyMap, png);
                 if (!string.IsNullOrEmpty(panelMap))
-                    WriteBytesAtomic(panelMap, pngCopy);
-                QueueIngestBytes("map", pngCopy, "image/png");
-                if (heightCopy != null && heightCopy.Length > 0)
-                {
-                    WriteBytesAtomic(harmonyHeight, heightCopy);
-                    if (!string.IsNullOrEmpty(panelHeight))
-                        WriteBytesAtomic(panelHeight, heightCopy);
-                    QueueIngestBytes("height", heightCopy, "application/octet-stream");
-                }
+                    WriteBytesAtomic(panelMap, png);
             });
 
-            string metaJson = BuildTerrainMetaJson(source, cachePath, renderRes, height != null);
+            string metaJson = BuildTerrainMetaJson(pngPath, renderRes);
             var metaObj = JsonConvert.DeserializeObject<Dictionary<string, object>>(metaJson);
             if (metaObj != null)
                 metaObj["mapImage"] = Path.GetFileName(panelMap ?? harmonyMap);
@@ -1621,11 +1317,9 @@ public class LivemapBridgeMod : IHarmonyModHooks
             WriteAtomic(_config.HarmonyTerrainPath, metaJson);
             if (!string.IsNullOrEmpty(_config.PanelTerrainPath))
                 WriteAtomic(_config.PanelTerrainPath, metaJson);
-            QueueIngestJson("terrain", metaJson);
 
             _mapExported = true;
-            Debug.Log("[LivemapBridge] Exported " + source + " overworld → " + (panelMap ?? harmonyMap) +
-                      " (" + renderRes + "px, oceanMargin " + OverworldRenderer.OceanMargin + ")");
+            Debug.Log("[LivemapBridge] Exported Minimap overworld → " + panelMap + " (" + renderRes + "px, oceanMargin " + ReadMinimapOceanMargin() + ")");
         }
         catch (Exception ex)
         {
@@ -1669,9 +1363,9 @@ public class LivemapBridgeMod : IHarmonyModHooks
         return best;
     }
 
-    string BuildTerrainMetaJson(string source, string minimapPng, int renderRes, bool wroteHeight)
+    string BuildTerrainMetaJson(string minimapPng, int renderRes)
     {
-        int oceanMargin = source == "minimap" ? ReadMinimapOceanMargin() : OverworldRenderer.OceanMargin;
+        int oceanMargin = ReadMinimapOceanMargin();
         float water01 = SampleEdgeWater01();
         var meta = new Dictionary<string, object>
         {
@@ -1679,21 +1373,20 @@ public class LivemapBridgeMod : IHarmonyModHooks
             ["water01"] = water01,
             ["seed"] = World.Seed,
             ["mapImage"] = "map.png",
-            ["mapImageSource"] = source,
+            ["mapImageSource"] = "minimap",
             ["oceanMargin"] = oceanMargin,
             ["renderResolution"] = renderRes,
             ["mapImageSize"] = new[] { renderRes, renderRes },
-            ["minimapCache"] = minimapPng ?? "",
+            ["minimapCache"] = minimapPng,
             ["live"] = true,
-            ["heightScale"] = TerrainMeta.Size.y,
-            ["terrainPosY"] = TerrainMeta.Position.y,
+            // height.bin uses Facepunch .map encoding — NOT TerrainMeta.Size.y / Position.y.
+            ["heightScale"] = 2000.0,
+            ["terrainPosY"] = -1500.0,
             ["heightBin"] = "height.bin",
             ["resolution"] = 513
         };
-        if (!wroteHeight)
-            MergeHeightMeta(meta, _config.PanelTerrainPath);
-        if (!wroteHeight)
-            MergeHeightMeta(meta, _config.HarmonyTerrainPath);
+        MergeHeightMeta(meta, _config.PanelTerrainPath);
+        MergeHeightMeta(meta, _config.HarmonyTerrainPath);
         return JsonConvert.SerializeObject(meta, Formatting.Indented);
     }
 
@@ -1706,12 +1399,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
             var existing = JsonConvert.DeserializeObject<Dictionary<string, object>>(File.ReadAllText(path));
             if (existing == null)
                 return;
-            if (existing.TryGetValue("seed", out object seedObj) && seedObj != null)
-            {
-                uint existingSeed = Convert.ToUInt32(seedObj);
-                if (existingSeed != 0 && existingSeed != World.Seed)
-                    return;
-            }
             foreach (string key in new[] {
                 "heightBin", "resolution", "sourceResolution", "mapFile", "water01"
             })
@@ -1795,69 +1482,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
             File.Move(tmp, path);
     }
 
-    void QueueIngestJson(string kind, string json)
-    {
-        if (string.IsNullOrEmpty(json))
-            return;
-        QueueIngestBytes(kind, Encoding.UTF8.GetBytes(json), "application/json");
-    }
-
-    void QueueIngestBytes(string kind, byte[] body, string contentType)
-    {
-        if (_unloaded || body == null || body.Length == 0)
-            return;
-        if (string.IsNullOrEmpty(_config.IngestUrl) || string.IsNullOrEmpty(_config.IngestToken))
-            return;
-        if (kind == "snapshot" && _ingestSnapshotBusy)
-            return;
-        if (kind == "snapshot")
-            _ingestSnapshotBusy = true;
-        string url = _config.IngestUrl.TrimEnd('/') + "/" + _config.IngestToken + "/" + kind;
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            try
-            {
-                if (_unloaded)
-                    return;
-                var req = (HttpWebRequest)WebRequest.Create(url);
-                req.Method = "POST";
-                req.ContentType = contentType;
-                req.Timeout = kind == "snapshot" ? 8000 : 60000;
-                req.ReadWriteTimeout = req.Timeout;
-                req.ContentLength = body.Length;
-                using (var stream = req.GetRequestStream())
-                    stream.Write(body, 0, body.Length);
-                using (var resp = (HttpWebResponse)req.GetResponse())
-                    resp.Close();
-            }
-            catch (Exception ex)
-            {
-                if (Time.realtimeSinceStartup - _lastIngestWarn > 30f)
-                {
-                    _lastIngestWarn = Time.realtimeSinceStartup;
-                    Debug.LogWarning("[LivemapBridge] Ingest " + kind + ": " + ex.Message);
-                }
-            }
-            finally
-            {
-                if (kind == "snapshot")
-                    _ingestSnapshotBusy = false;
-            }
-        });
-    }
-
-    struct BlockSnap
-    {
-        public float x;
-        public float y;
-        public float z;
-        public float yaw;
-        public float h;
-        public byte k;
-        public byte g;
-        public byte t;
-    }
-
     struct PrefabKind
     {
         public int k;
@@ -1870,23 +1494,16 @@ public class LivemapBridgeMod : IHarmonyModHooks
         public float IntervalSeconds = 1f;
         public float BuildingsIntervalSeconds = 30f;
         public float VehicleScanIntervalSeconds = 5f;
-        public string PanelServerId = "";
-        public string HarmonyOutputPath = "";
-        public string PanelOutputPath = "";
-        public string HarmonyBuildingsPath = "";
-        public string PanelBuildingsPath = "";
-        public string HarmonyMonumentsPath = "";
-        public string PanelMonumentsPath = "";
-        public string HarmonyMapPath = "";
-        public string PanelMapPath = "";
-        public string HarmonyTerrainPath = "";
-        public string PanelTerrainPath = "";
-        public string HarmonyHeightPath = "";
-        public string PanelHeightPath = "";
-        public int MapRenderResolution = 2048;
-        public bool PreferMinimapCache = true;
-        public string IngestUrl = "";
-        public string IngestToken = "";
+        public string HarmonyOutputPath = @"C:\svr1\HarmonyData\Livemap\snapshot.json";
+        public string PanelOutputPath = @"C:\!WEB RCON PANEL\livemap\data\snapshot.json";
+        public string HarmonyBuildingsPath = @"C:\svr1\HarmonyData\Livemap\buildings.json";
+        public string PanelBuildingsPath = @"C:\!WEB RCON PANEL\livemap\data\buildings.json";
+        public string HarmonyMonumentsPath = @"C:\svr1\HarmonyData\Livemap\monuments.json";
+        public string PanelMonumentsPath = @"C:\!WEB RCON PANEL\livemap\data\monuments.json";
+        public string HarmonyMapPath = @"C:\svr1\HarmonyData\Livemap\map.png";
+        public string PanelMapPath = @"C:\!WEB RCON PANEL\livemap\data\map.png";
+        public string HarmonyTerrainPath = @"C:\svr1\HarmonyData\Livemap\terrain.json";
+        public string PanelTerrainPath = @"C:\!WEB RCON PANEL\livemap\data\terrain.json";
     }
 
     class Snapshot

@@ -9330,7 +9330,7 @@ namespace RaidableBases
                 return true;
             }
 
-            private bool CanAcceptItem(BasePlayer player, Item item, int targetPos)
+            private bool CanAcceptItem(Item item, int targetPos)
             {
                 if (targetPos == 0)
                 {

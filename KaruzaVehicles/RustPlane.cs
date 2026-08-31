@@ -3974,7 +3974,7 @@ namespace KaruzaVehicles
                 //throw new NotImplementedException();
             }
 
-            public bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot)
+            public bool DefaultInventoryItemFilter(Item item, int targetSlot)
             {
                 //throw new NotImplementedException();
                 return true;

@@ -1845,15 +1845,9 @@ namespace Oxide.Plugins
                         if (_apcProfile.Gibs.KillGibs)
                             debris.Kill();
                         else if (_apcProfile.Fireball.DisableFire)
-                        {
-                            debris.CancelInvoke(debris.OnCooledDown);
-                            debris.OnCooledDown();
-                        }
+                            debris.tooHotUntil = Time.realtimeSinceStartup;
                         else if (_apcProfile.Gibs.GibsHotTime >= 0)
-                        {
-                            debris.CancelInvoke(debris.OnCooledDown);
-                            debris.Invoke(debris.OnCooledDown, _apcProfile.Gibs.GibsHotTime);
-                        }
+                            debris.tooHotUntil = Time.realtimeSinceStartup + _apcProfile.Gibs.GibsHotTime;
 
                         if (_apcProfile.Gibs.ProtectGibs && _apcProfile.Gibs.UnlockGibs > 0)
                             RemoveBradleyOwner(debris, _apcProfile.Gibs.UnlockGibs);

@@ -7759,11 +7759,8 @@ namespace KitsHarmony
         internal void OnNewSave(string filename)
         {
             if (!_config.AutoWipe) return;
-            if (KitsHarmonyMod.Instance != null && !KitsHarmonyMod.Instance.TryBeginPlayerWipe())
-                return;
 
-            Puts($"New save detected ({filename}) — resetting player kit data.");
-            DoWipePlayers(count => Puts($"Reset {count} player kit data files."));
+            DoWipePlayers();
         }
 
         #endregion
@@ -8728,16 +8725,11 @@ MainKitsContentUI(player, container); });
 
                         default:
                         {
-                            if (!targetID.IsSteamId())
+                            var targetPlayer = covalence.Players.FindPlayerById(targetID);
+                            if (targetPlayer == null)
                             {
-                                var targetPlayer = covalence.Players.FindPlayerById(targetID);
-                                if (targetPlayer == null)
-                                {
-                                    SendReply(arg, "Player not found!");
-                                    return;
-                                }
-
-                                targetID = targetPlayer.Id;
+                                SendReply(arg, "Player not found!");
+                                return;
                             }
 
                             if (arg.Args.Length == 3)
@@ -13564,30 +13556,18 @@ MainKitsContentUI(player, container); });
             try
             {
                 var players = PlayerData.GetFiles();
-                if (players is not { Length: > 0 })
+                if (players is {Length: > 0})
                 {
-                    callback?.Invoke(0);
-                    return;
-                }
+                    var playersCount = players.Length;
 
-                var playersCount = players.Length;
-
-                if (ServerMgr.Instance != null)
-                {
                     _wipePlayers =
                         ServerMgr.Instance.StartCoroutine(StartOnAllPlayers(
                             players,
                             userID => PlayerData.DoWipe(userID),
                             () => _usersData?.Clear()));
-                }
-                else
-                {
-                    for (var i = 0; i < players.Length; i++)
-                        PlayerData.DoWipe(players[i]);
-                    _usersData?.Clear();
-                }
 
-                callback?.Invoke(playersCount);
+                    callback?.Invoke(playersCount);
+                }
             }
             catch (Exception e)
             {

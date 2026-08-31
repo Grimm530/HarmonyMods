@@ -1678,7 +1678,7 @@ namespace Oxide.Plugins
             }
             
             // Check if the container can accept this item at this position
-            var canAccept = container.CanAcceptItem(player, item, position);
+            var canAccept = container.CanAcceptItem(item, position);
             if (canAccept != ItemContainer.CanAcceptResult.CanAccept)
             {
                 DebugLog($"Container cannot accept {item.info.shortname} at position {position}: {canAccept}");
@@ -1898,7 +1898,7 @@ namespace Oxide.Plugins
                             try
                             {
                                 // Check if container can accept this item
-                                var canAccept = item.contents.CanAcceptItem(null, recreatedContent, contentItem.Position);
+                                var canAccept = item.contents.CanAcceptItem(recreatedContent, contentItem.Position);
                                 if (canAccept == ItemContainer.CanAcceptResult.CanAccept)
                                 {
                                     // Try to move item to container using normal game method

@@ -71,7 +71,7 @@ Path: `HarmonyConfig/BetterBackpack.json`
 
 - **Existing** / **Retrieval** master switches and per-player defaults
 - Chat notifications / reminder
-- **Loot Debug**: empty Steam IDs = all players. Duration minutes auto-off (0 = until you set the flag false and reload). Grep `[BetterBackpack:Loot]`. Successful stack-merges log as `stacked-away` (the source UID is destroyed after its amount is added to an existing stack) — not `INVALID` / `GONE` / `dest=world/none`.
+- **Loot Debug**: empty Steam IDs = all players. Duration minutes auto-off (0 = until you set the flag false and reload). Grep `[BetterBackpack:Loot]`.
 - CUI parent/anchors (legacy; current build uses chat commands)
 
 ## Build & Deploy

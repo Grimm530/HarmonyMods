@@ -59,44 +59,36 @@ namespace KitsHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnNewSave: SaveRestore.Load returns false when there is no save file
-    /// (map wipe / fresh world). That is the wipe — not a successful load.
+    /// Oxide OnNewSave — when SaveRestore.Load runs with a new wipe.
+    /// Calls Kits.OnNewSave so AutoWipe can clear player kit data.
     /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     public static class SaveRestore_Load_Patch
     {
         [HarmonyPostfix]
-        public static void Postfix(string strFilename, bool __result)
+        public static void Postfix(string strFilename, bool allowOutOfDateSaves, bool __result)
         {
-            if (__result) return;
+            if (!__result) return;
             try
             {
+                // Treat successful load as potential new-save signal for AutoWipe.
+                // Oxide fires OnNewSave only on wipe; we approximate via WipeId change stored in AppDomain.
+                var wipeId = SaveRestore.WipeId ?? "";
+                var prev = AppDomain.CurrentDomain.GetData("Kits_LastWipeId") as string;
+                if (prev != null && prev == wipeId) return;
+                AppDomain.CurrentDomain.SetData("Kits_LastWipeId", wipeId);
+                // Skip first load after mod start if we just set the id (no previous)
+                if (prev == null)
+                {
+                    // First observation — still call OnNewSave only if AutoWipe and this looks like a fresh wipe.
+                    // Safer: call OnNewSave when prev was set and changed. First boot: store only.
+                    return;
+                }
                 KitsHarmonyMod.Instance?.Plugin?.OnNewSave(strFilename ?? "");
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 Debug.LogWarning("[Kits] OnNewSave: " + ex.Message);
-            }
-        }
-    }
-
-    /// <summary>
-    /// WipeId is assigned here (from the save, or a new guid after a wipe).
-    /// Persist it to disk so AutoWipe still runs after a process restart.
-    /// </summary>
-    [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.InitializeWipeId))]
-    public static class SaveRestore_InitializeWipeId_Patch
-    {
-        [HarmonyPostfix]
-        public static void Postfix()
-        {
-            try
-            {
-                KitsHarmonyMod.CheckPersistedWipeId();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[Kits] CheckPersistedWipeId: " + ex.Message);
             }
         }
     }

@@ -109,14 +109,12 @@ internal static class BridgeMapPlacer
         if (cfg.DebugLogging)
         {
             Vector3 pathMid = BridgeTerrain.SamplePoint(crossing.Path, (crossing.StartDist + crossing.EndDist) * 0.5f);
-            float y0 = BridgeTerrain.SamplePoint(crossing.Path, crossing.StartDist).y;
-            float y1 = BridgeTerrain.SamplePoint(crossing.Path, crossing.EndDist).y;
             float terrainMid = TerrainMeta.HeightMap.GetHeight(pathMid);
             Debug.Log(
                 $"[RoadFix] Queued bridge from {Path.GetFileName(fullPath)} at {crossing.Center} " +
                 $"span={crossing.SpanLength:F1} nodes={crossing.NodeCount} lengthScale={lengthScale:F2} " +
                 $"nodeY={yPrev:F1}→{yNext:F1} pitch={pitchDeg:F1}° pivot={pivotWorld} " +
-                $"bankPathY={y0:F2}→{y1:F2} pathMidY={pathMid.y:F2} terrainMidY={terrainMid:F2} " +
+                $"pathMidY={pathMid.y:F2} terrainMidY={terrainMid:F2} " +
                 $"banks={crossing.StartDeckY:F2}→{crossing.EndDeckY:F2} bedDetect={crossing.RiverBedY:F2} " +
                 $"heightOffset={cfg.BridgeHeightOffset} yaw={cfg.BridgeYawOffset} axis={cfg.BridgeLengthAxis} " +
                 $"serialized={serialized} deferred={deferred} skipped={skipped}");
@@ -141,7 +139,7 @@ internal static class BridgeMapPlacer
         return flat.normalized;
     }
 
-    /// <summary>Yaw-only placement: pathCenterLocal sits on the road center at bank grade.</summary>
+    /// <summary>Yaw-only placement: pathCenterLocal sits on the road center node (pivot).</summary>
     private static void GetYawPlacement(
         BridgeCrossing crossing,
         Vector3 pathCenterLocal,
@@ -152,14 +150,9 @@ internal static class BridgeMapPlacer
         out Vector3 pivotWorld)
     {
         float mid = (crossing.StartDist + crossing.EndDist) * 0.5f;
+        // Place on road/rail path node height (same as before the bank-average experiment).
         pivotWorld = BridgeTerrain.SamplePoint(crossing.Path, mid);
-
-        // Match the road at the span ends — mid-path Y is often higher over water and
-        // leaves a step where the asphalt meets the bridge.
-        float y0 = BridgeTerrain.SamplePoint(crossing.Path, crossing.StartDist).y;
-        float y1 = BridgeTerrain.SamplePoint(crossing.Path, crossing.EndDist).y;
-        float bankAvg = (y0 + y1) * 0.5f;
-        pivotWorld.y = bankAvg + cfg.BridgeHeightOffset;
+        pivotWorld.y += cfg.BridgeHeightOffset;
 
         yawRotation = Quaternion.LookRotation(pathDir, Vector3.up)
             * Quaternion.Euler(0f, cfg.BridgeYawOffset, 0f);

@@ -83,7 +83,7 @@ internal class PlayerInventory_MoveItem_Patch
         var item = __instance.FindItemByUID(new ItemId(__state.Uid));
         string after;
         if (item == null || !item.IsValid())
-            after = $"{LootDebug.StackedAway} (uid merged; not in inventory/loot)";
+            after = "GONE (uid not in inventory/loot)";
         else
             after = $"{LootDebug.ItemDesc(item)} parent={LootDebug.ContainerDesc(item.parent, player)} pos={item.position}";
 

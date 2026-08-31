@@ -64,11 +64,14 @@ internal class Item_MoveToContainer_Patch
             var player = LootDebug.ResolvePlayer(newcontainer, sourcePlayer, __instance);
             if (LootDebug.ShouldLog(player))
             {
-                var stacked = LootDebug.WasStackedAway(__instance, __result);
                 var gone = !__instance.IsValid() || __instance.parent == null;
-                var after = LootDebug.AfterMove(__instance, player, __result, newcontainer);
+                string after;
+                if (!__instance.IsValid())
+                    after = "GONE";
+                else
+                    after = $"parent={LootDebug.ContainerDesc(__instance.parent, player)} pos={__instance.position} amt={__instance.amount}";
                 var flag = !__result && gone ? " PARENTLESS/DELETED" : "";
-                LootDebug.Log(player, $"MoveToContainer {(__result ? "OK" : "FAIL")} {LootDebug.ItemDesc(__instance, stacked)} from={__state.From} dest={LootDebug.ContainerDesc(newcontainer, player)} slot={iTargetPos} toBag={__state.ToBag} | after {after}{flag}");
+                LootDebug.Log(player, $"MoveToContainer {(__result ? "OK" : "FAIL")} {LootDebug.ItemDesc(__instance)} from={__state.From} dest={LootDebug.ContainerDesc(newcontainer, player)} slot={iTargetPos} toBag={__state.ToBag} | after {after}{flag}");
             }
         }
 

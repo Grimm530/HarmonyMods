@@ -1563,11 +1563,6 @@ namespace Oxide.Plugins
                 Puts("Couldn't load player data, creating new Playerfile");
                 pcdData = new PlayerEntity();
             }
-            if (pcdData == null)
-                pcdData = new PlayerEntity();
-            pcdData.pEntity ??= new Dictionary<ulong, PCDInfo>();
-            pcdData.bag ??= new Dictionary<ulong, List<BagInfo>>();
-            pcdData.npcs ??= new List<NPCInfo>();
         }
 
         class PlayerEntity
@@ -2402,29 +2397,12 @@ namespace Oxide.Plugins
 
         void OnServerInitialized(bool initial)
         {
-            if (config == null)
-            {
-                Puts("OnServerInitialized skipped: config is null.");
-                return;
-            }
-
             SetupSubscriptions();
 
-            if (pcdData == null)
-                LoadData();
-
-            var defs = ItemManager.GetItemDefinitions();
-            if (defs != null)
+            foreach (var kvp in ItemManager.GetItemDefinitions())
             {
-                foreach (var kvp in defs)
-                {
-                    if (kvp == null) continue;
-                    string english = kvp.displayName != null ? kvp.displayName.english : null;
-                    if (!string.IsNullOrEmpty(english) && !DefaultDisplayNames.ContainsKey(english))
-                        DefaultDisplayNames.Add(english, kvp.shortname);
-                    if (!string.IsNullOrEmpty(kvp.shortname) && !ItemID.ContainsKey(kvp.shortname))
-                        ItemID.Add(kvp.shortname, kvp.itemid);
-                }
+                if (!DefaultDisplayNames.ContainsKey(kvp.displayName.english)) DefaultDisplayNames.Add(kvp.displayName.english, kvp.shortname);
+                if (!ItemID.ContainsKey(kvp.shortname)) ItemID.Add(kvp.shortname, kvp.itemid);
             }
 
             bool updateConfig = false;
@@ -9365,8 +9343,7 @@ namespace Oxide.Plugins
         Dictionary<string, bool> IsSubscribed = new Dictionary<string, bool>();
         void SetupSubscriptions()
         {
-            if (config?.generalSettings != null && !config.generalSettings.cookingHandleSplits)
-                Unsubscribe(nameof(OnItemSplit));
+            if (!config.generalSettings.cookingHandleSplits) Unsubscribe(nameof(OnItemSplit));
             foreach (var sub in Subscriptions)
             {
                 if (!IsSubscribed.ContainsKey(sub.Key))

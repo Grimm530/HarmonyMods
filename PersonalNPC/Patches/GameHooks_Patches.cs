@@ -157,7 +157,7 @@ namespace PersonalNPCHarmony.Patches
     public static class ItemContainer_CanAcceptItem_Patch
     {
         [HarmonyPrefix]
-        public static bool Prefix(ItemContainer __instance, BasePlayer player, Item item, int targetPos, ref ItemContainer.CanAcceptResult __result)
+        public static bool Prefix(ItemContainer __instance, Item item, int targetPos, ref ItemContainer.CanAcceptResult __result)
         {
             if (__instance == null || item == null) return true;
             try

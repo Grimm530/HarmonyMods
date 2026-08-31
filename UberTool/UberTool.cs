@@ -244,7 +244,7 @@ namespace Oxide.Plugins
                     p1.skin = skin;
                     p1.GetHeldEntity().skinID = skin;
                     p1.name = (string)tool[0];
-                    if (p1.CanMoveTo(player, player.inventory.containerBelt, -1))
+                    if (p1.CanMoveTo(player.inventory.containerBelt, -1))
                     {
                         p1.MoveToContainer(player.inventory.containerBelt, -1, true);
                         p1.MarkDirty();

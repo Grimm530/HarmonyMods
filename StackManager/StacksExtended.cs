@@ -468,7 +468,7 @@ namespace StackManagerHarmony
                     Item otherItem = itemContainer.GetSlot(targetSlot);
                     if (otherItem != null && otherItem.info.itemid != item.info.itemid)
                     {
-                        if (item.parent.CanAcceptItem(null, otherItem, -1) == ItemContainer.CanAcceptResult.CanAccept)
+                        if (item.parent.CanAcceptItem(otherItem, -1) == ItemContainer.CanAcceptResult.CanAccept)
                         {
                             int storageLimit = GetMaxStackable(otherItem, item.parent);
                             if (storageLimit > 0)

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using Newtonsoft.Json;
 using UnityEngine;
 
@@ -61,14 +60,9 @@ public class Vector3Converter : JsonConverter
 
 public class UiOffsets
 {
-    public const string DefaultLargeMin = "-246.581 74.284";
-    public const string DefaultLargeMax = "227.581 264.116";
-    public const string DefaultSmallMin = "8.204 -1.883";
-    public const string DefaultSmallMax = "228.796 132.483";
-
     internal bool Changed { get; set; }
-    public string Min { get; set; } = DefaultLargeMin;
-    public string Max { get; set; } = DefaultLargeMax;
+    public string Min { get; set; } = "-246.581 97.284";
+    public string Max { get; set; } = "227.581 241.116";
     public bool IsSmallUi { get; set; }
     public bool IsTimed { get; set; } = true;
 
@@ -79,34 +73,4 @@ public class UiOffsets
         Min = min;
         Max = max;
     }
-
-    internal void MigratePanelSize()
-    {
-        if (!TryParseXy(Min, out float minX, out float minY) || !TryParseXy(Max, out float maxX, out float maxY))
-            return;
-
-        float height = maxY - minY;
-        float oldHeight = IsSmallUi ? 101.366f : 143.832f;
-        float extra = IsSmallUi ? 33f : 46f;
-        if (Math.Abs(height - oldHeight) > 0.6f) return;
-
-        float half = extra * 0.5f;
-        Min = FormatXy(minX, minY - half);
-        Max = FormatXy(maxX, maxY + half);
-        Changed = true;
-    }
-
-    private static bool TryParseXy(string s, out float x, out float y)
-    {
-        x = 0f;
-        y = 0f;
-        if (string.IsNullOrWhiteSpace(s)) return false;
-        var parts = s.Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) return false;
-        return float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x)
-            && float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
-    }
-
-    private static string FormatXy(float x, float y) =>
-        string.Format(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###}", x, y);
 }

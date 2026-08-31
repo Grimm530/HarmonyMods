@@ -49,8 +49,5 @@
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
-    <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>$(RustManaged)\UnityEngine.ImageConversionModule.dll</HintPath>
-    </Reference>
   </ItemGroup>
 </Project>

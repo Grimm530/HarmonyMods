@@ -43,7 +43,12 @@ internal class PlayerInventory_GiveItem_Patch
         var player = __instance.baseEntity;
         if (player == null) return;
 
-        var after = LootDebug.AfterMove(item, player, __result);
+        string after;
+        if (item == null || !item.IsValid())
+            after = "GONE";
+        else
+            after = $"{LootDebug.ItemDesc(item)} parent={LootDebug.ContainerDesc(item.parent, player)} pos={item.position}";
+
         LootDebug.Log(player, $"GiveItem {(__result ? "OK" : "FAIL")} {__state.Item} x{__state.AmountBefore} uid={__state.Uid} | after {after} | {LootDebug.InvSnap(player)}");
     }
 }

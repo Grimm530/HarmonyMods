@@ -131,7 +131,5 @@
     <Error Condition="'$(RustManaged)' == '' Or !Exists('$(RustManaged)\Assembly-CSharp.dll')"
            Text="Could not find Rust Managed folder (Assembly-CSharp.dll). Build with: dotnet build -p:RustManaged=&quot;D:\your\RustDedicated_Data\Managed&quot;" />
   </Target>
-  <ItemGroup>
-    <Compile Include="..\Shared\BaseEntityFlagCompat.cs" Link="Shared\BaseEntityFlagCompat.cs" />
-  </ItemGroup>
+  <!-- SDK auto-includes all *.cs files; no explicit Compile items needed. -->
 </Project>

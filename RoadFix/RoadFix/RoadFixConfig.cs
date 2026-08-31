@@ -135,12 +135,8 @@ public class RoadFixConfig
         /// World Y nudge for the whole bridge map. -5 ≈ Bridgeonly -53 → -58.
         /// </summary>
         /// <summary>World Y nudge for the whole bridge (more negative = lower).</summary>
-        /// <summary>
-        /// World Y nudge after aligning path-center local to bank-average path height.
-        /// Negative lowers the deck onto the road (screenshot lip was ~1.5m with -0.5).
-        /// </summary>
         [JsonProperty("BridgeHeightOffset")]
-        public float BridgeHeightOffset = -2f;
+        public float BridgeHeightOffset = -0.5f;
 
         /// <summary>
         /// When two rail spans' centers are within this radius (metres), keep only the longer one.

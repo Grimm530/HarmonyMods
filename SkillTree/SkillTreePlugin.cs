@@ -15032,7 +15032,7 @@ namespace Oxide.Plugins
                 if (itemModCookable == null || itemModCookable.becomeOnCooked == null || itemModCookable.amountOfBecome < 1) continue;
                 if (item.temperature < itemModCookable.lowTemp || item.temperature > itemModCookable.highTemp || itemModCookable.cookTime < 0) continue;
 
-                var itemToGive = ItemManager.Create(itemModCookable.becomeOnCooked, Mathf.Max(1, Mathf.FloorToInt(itemModCookable.amountOfBecome)));
+                var itemToGive = ItemManager.Create(itemModCookable.becomeOnCooked, itemModCookable.amountOfBecome);
                 if (itemToGive == null) continue;
 
                 if (!itemToGive.MoveToContainer(inventory))
