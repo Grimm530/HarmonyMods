@@ -16,14 +16,6 @@ internal class Chat_sayImpl_Patch
         if (ChatTranslatorMod.Instance == null || !ChatTranslatorMod.IsTranslationAPIAvailable())
             return true; // Let original run
 
-        // BetterChat owns formatted send (titles + colours). Skip to avoid double messages.
-        try
-        {
-            if (AppDomain.CurrentDomain.GetData("BetterChat_SkipTranslator") is true)
-                return true;
-        }
-        catch { }
-
         var config = ChatTranslatorConfig.Config;
         if (config == null) return true;
 
@@ -39,12 +31,17 @@ internal class Chat_sayImpl_Patch
             return false;
         }
 
-        // Handle /lang command
+        // Handle /lang command (also registered on ChatSayBridge when BetterChat owns chat.say)
         var rawMessage = arg.GetString(0, "text");
         if (TryHandleLangCommand(player, rawMessage, arg))
         {
             return false;
         }
+
+        // BetterChat (Priority.High) formats+sends and translates via ChatTranslator.Translate.
+        // Do not send a second unformatted/translated copy.
+        if (ChatTranslatorMod.IsBetterChatOwningChat())
+            return true;
 
         // Rate limiting (replicate from sayImpl)
         if (!player.IsAdmin && !player.IsDeveloper)
@@ -66,7 +63,7 @@ internal class Chat_sayImpl_Patch
         var message = rawMessage.Replace("\n", "").Replace("\r", "").Trim();
         if (message.Length > 128) message = message.Substring(0, 128);
         if (message.Length <= 0) return false;
-        // Oxide plugin chat commands (/skilltree, /sortbutton, etc.) - let original sayImpl run so Oxide receives them
+        // Harmony mod chat commands (/skilltree, /sortbutton, etc.) - let original sayImpl run so Oxide receives them
         if (message.StartsWith("/") || message.StartsWith("\\")) return true;
 
         message = message.EscapeRichText();
@@ -101,13 +98,22 @@ internal class Chat_sayImpl_Patch
         return false; // Skip original
     }
 
-    private static bool TryHandleLangCommand(BasePlayer player, string message, ConsoleSystem.Arg arg)
+    internal static bool TryHandleLangCommand(BasePlayer player, string message, ConsoleSystem.Arg arg)
     {
         var trimmed = message?.Trim();
-        if (string.IsNullOrEmpty(trimmed) || !trimmed.StartsWith("/lang", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(trimmed))
             return false;
 
-        var parts = trimmed.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+        // Accept "/lang" or "lang" (ChatSayBridge may strip leading slash in other mods; we keep it)
+        bool hasSlash = trimmed.StartsWith("/", StringComparison.Ordinal) || trimmed.StartsWith("\\", StringComparison.Ordinal);
+        var body = hasSlash ? trimmed.Substring(1).Trim() : trimmed;
+        if (!body.StartsWith("lang", StringComparison.OrdinalIgnoreCase))
+            return false;
+        // Exact command: lang or lang <code> — not language, etc.
+        if (body.Length > 4 && !char.IsWhiteSpace(body[4]))
+            return false;
+
+        var parts = body.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2)
         {
             var current = ChatTranslatorMod.GetLanguage(player.UserIDString) ?? "en";

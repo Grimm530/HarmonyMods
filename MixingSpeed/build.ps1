@@ -1,5 +1,5 @@
 # Build script for MixingSpeed Harmony Mod
-# Output: <workspace>\HarmonyMods\MixingSpeed.dll
+# Output: D:\!RustServer\HarmonyMods\MixingSpeed.dll
 
 Write-Host "Building MixingSpeed..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "MixingSpeed.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

@@ -1,9 +1,15 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using HarmonyLib;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace RaidableBasesBuyableUI
 {
@@ -30,6 +36,7 @@ namespace RaidableBasesBuyableUI
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(RaidableBasesUI.GrimmCuiRegistration.Register);
             Instance = this;
             Paths.EnsureDataDirs();
             Plugin = new RaidableBasesBuyableUIPlugin();
@@ -132,7 +139,7 @@ namespace RaidableBasesBuyableUI
             Debug.Log("[RaidableBasesBuyableUI] Unloaded.");
         }
 
-        /// <summary>Oxide-style Call dispatcher for ServerPanel PluginBridge and other consumers.</summary>
+        /// <summary>compat-style Call dispatcher for ServerPanel PluginBridge and other consumers.</summary>
         public object Call(string method, params object[] args)
         {
             if (Plugin == null || string.IsNullOrEmpty(method)) return null;
@@ -324,7 +331,7 @@ namespace RaidableBasesBuyableUI
                     nameof(Patches.RaidableBases_CallHook_Patch.Prefix),
                     BindingFlags.Public | BindingFlags.Static);
                 _manualHarmony.Patch(method, prefix: new HarmonyMethod(prefix));
-                Debug.Log("[RaidableBasesBuyableUI] Patched RaidableBases.Interface.CallHook for OnPurchaseBase / purchase tracking.");
+                Debug.Log("[RaidableBasesBuyableUI] Patched RaidableBases.HarmonyModInterface.CallHook for OnPurchaseBase / purchase tracking.");
                 return true;
             }
             catch (Exception ex)

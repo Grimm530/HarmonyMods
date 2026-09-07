@@ -1,13 +1,23 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
-using Oxide.Core.Libraries.Covalence;
+using GrimmCuiHarmony;
+using Harmony.Core.Libraries.Covalence;
+using GrimmCuiHarmony;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.UberTool;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.UberTool;
+using GrimmCuiHarmony;
 
 namespace UberToolHarmony
 {
@@ -53,7 +63,7 @@ namespace UberToolHarmony
     public class UberToolMod : IHarmonyModHooks
     {
         public static UberToolMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -69,14 +79,15 @@ namespace UberToolHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -103,7 +114,7 @@ namespace UberToolHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.HarmonyResolvePluginReferences();
             }
@@ -126,13 +137,13 @@ namespace UberToolHarmony
                 ModRunner.Instance.StopCoroutine(_initCoroutine);
                 _initCoroutine = null;
             }
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
             UnregisterConsoleCommands();
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[UberTool] Harmony mod unloaded.");
         }
@@ -191,11 +202,11 @@ namespace UberToolHarmony
         private void RegisterAttributedChatCommands()
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                 if (attrs == null || attrs.Length == 0) continue;
-                foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                 {
                     if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                     var cmdName = attr.Command.Trim().ToLowerInvariant();
@@ -206,19 +217,19 @@ namespace UberToolHarmony
             }
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args, bool attributedOnly = false)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args, bool attributedOnly = false)
         {
             if (plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 if (string.IsNullOrEmpty(methodName) && attributedOnly)
                 {
                     foreach (var miScan in type.GetMethods(bf))
                     {
-                        var attrs = miScan.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), false);
-                        foreach (Oxide.Plugins.ChatCommandAttribute a in attrs)
+                        var attrs = miScan.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), false);
+                        foreach (Harmony.Plugins.ChatCommandAttribute a in attrs)
                         {
                             if (string.Equals(a.Command, command, StringComparison.OrdinalIgnoreCase))
                             { methodName = miScan.Name; break; }
@@ -264,11 +275,11 @@ namespace UberToolHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -454,10 +465,10 @@ namespace UberToolHarmony
             var plugin = Plugin;
             if (plugin == null) return;
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), false);
-                foreach (Oxide.Plugins.ConsoleCommandAttribute a in attrs)
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), false);
+                foreach (Harmony.Plugins.ConsoleCommandAttribute a in attrs)
                 {
                     if (string.Equals(a.Command, cmdName, StringComparison.OrdinalIgnoreCase))
                     {
@@ -483,7 +494,7 @@ namespace UberToolHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { arg }); return; }
 

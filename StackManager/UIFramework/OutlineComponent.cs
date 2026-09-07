@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Unity.Mathematics;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class OutlineComponent : BaseCuiComponent, ICuiColorComponent, IStyleComponent
 {

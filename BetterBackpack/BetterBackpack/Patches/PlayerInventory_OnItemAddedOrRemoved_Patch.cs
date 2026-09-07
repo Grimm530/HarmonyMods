@@ -7,22 +7,23 @@ using UnityEngine;
 namespace BetterBackpack;
 
 /// <summary>
-/// Existing: after loot/pickup lands in main or belt, yank it into a worn Rust backpack
-/// or virtual Backpacks bag if that item already exists there. Stack if there is room,
-/// otherwise take an empty slot. If the bag has no space, leave the item in inventory.
-/// Does not change crate loot destinations — full main stays vanilla (item stays in crate).
+/// When an item is added to main or belt and Existing is enabled, try to stack it into the backpack
+/// if the backpack already has a matching stack with room. Moves are deferred to the next tick to
+/// avoid re-entrancy (e.g. when gathering with GatherManager causes NullRef in ItemContainer.Remove).
 /// </summary>
 [HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.OnItemAddedOrRemoved))]
 internal class PlayerInventory_OnItemAddedOrRemoved_Patch
 {
     private static readonly Queue<PendingMove> DeferredMoves = new Queue<PendingMove>();
-    private const int MaxDeferredPerTick = 12;
+    private const int MaxDeferredPerTick = 5;
+    /// <summary>1 when the queue may contain work; lets ServerMgr.Update skip lock+ dequeue when idle.</summary>
     private static int _deferredWorkHint;
 
     private struct PendingMove
     {
         public PlayerInventory Inventory;
         public Item Item;
+        public ItemContainer BackpackContainer;
     }
 
     [HarmonyPostfix]
@@ -32,52 +33,33 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
         var player = __instance.GetComponent<BasePlayer>();
         if (player == null || player.IsDead() || player.IsSleeping()) return;
 
-        if (item.IsBackpack())
-        {
-            if (item.parent == __instance.containerWear)
-                ItemRetrieverSupplier.HideFromItemRetrieverWalk(item);
-            return;
-        }
+        if (item.IsBackpack()) return;
 
         var parent = item.parent;
         if (parent != __instance.containerMain && parent != __instance.containerBelt) return;
 
-        if (!Item_MoveToContainer_Patch.ConsumeExternalPickupMark(item)) return;
+        if (!(BetterBackpackConfig.Config?.ExistingEnabled ?? true)) return;
+        var mod = BetterBackpackMod.Instance;
+        if (mod == null) return;
+        var prefs = mod.GetOrCreatePrefs(player);
+        if (prefs == null || !prefs.ExistingEnabled) return;
 
-        if (Item_MoveToContainer_Patch.IsLootingOwnBackpack(player))
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing SKIP looting-backpack {LootDebug.ItemDesc(item)}");
-            return;
-        }
+        if (IsLootingBackpack(player)) return;
 
-        if (!(BetterBackpackConfig.Config?.ExistingEnabled ?? true)
-            || BetterBackpackMod.Instance?.GetOrCreatePrefs(player)?.ExistingEnabled != true)
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing SKIP disabled {LootDebug.ItemDesc(item)} | {LootDebug.InvSnap(player)}");
-            return;
-        }
+        var backpack = __instance.GetBackpackWithInventory();
+        if (backpack?.contents == null) return;
 
-        if (item.info == null)
-            return;
+        var backpackContainer = backpack.contents;
+        var existingInBackpack = backpackContainer.FindItemByItemID(item.info.itemid);
+        if (existingInBackpack == null) return;
 
-        var worn = __instance.GetBackpackWithInventory()?.contents;
-        var wornHas = ContainerHasItem(worn, item);
-        var virtualHas = VirtualBackpackApi.HasMatchingItem(player, item);
-        if (!wornHas && !virtualHas)
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing SKIP not-in-backpack {LootDebug.ItemDesc(item)}");
-            return;
-        }
+        if (item.info.stackable <= 1) return;
+        if (existingInBackpack.amount >= existingInBackpack.MaxStackable()) return;
 
-        if (LootDebug.ShouldLog(player))
-            LootDebug.Log(player, $"Existing QUEUE {LootDebug.ItemDesc(item)} wornHas={wornHas} virtualHas={virtualHas} | {LootDebug.InvSnap(player)}");
-
+        // Defer move to next tick to avoid re-entrancy during Insert (fixes NullRef when jackhammering with GatherManager).
         lock (DeferredMoves)
         {
-            DeferredMoves.Enqueue(new PendingMove { Inventory = __instance, Item = item });
+            DeferredMoves.Enqueue(new PendingMove { Inventory = __instance, Item = item, BackpackContainer = backpackContainer });
         }
 
         Interlocked.Exchange(ref _deferredWorkHint, 1);
@@ -102,7 +84,11 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
             n++;
             try
             {
-                TryGatherDeferred(pm);
+                if (pm.Item == null || !pm.Item.IsValid()) continue;
+                if (pm.Inventory == null || pm.BackpackContainer == null) continue;
+                var parent = pm.Item.parent;
+                if (parent != pm.Inventory.containerMain && parent != pm.Inventory.containerBelt) continue;
+                pm.Item.MoveToContainer(pm.BackpackContainer, -1, allowStack: true);
             }
             catch (Exception ex)
             {
@@ -119,88 +105,11 @@ internal class PlayerInventory_OnItemAddedOrRemoved_Patch
         }
     }
 
-    private static void TryGatherDeferred(PendingMove pm)
+    private static bool IsLootingBackpack(BasePlayer player)
     {
-        var player = pm.Inventory != null ? pm.Inventory.baseEntity : null;
-        if (pm.Item == null || !pm.Item.IsValid())
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, "Existing deferred GONE before move (item invalid)");
-            return;
-        }
-        if (pm.Inventory == null) return;
-
-        var parent = pm.Item.parent;
-        if (parent != pm.Inventory.containerMain && parent != pm.Inventory.containerBelt)
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing deferred SKIP relocated {LootDebug.ItemDesc(pm.Item)} parent={LootDebug.ContainerDesc(parent, player)}");
-            return;
-        }
-
-        if (Item_MoveToContainer_Patch.IsLootingOwnBackpack(player))
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing deferred SKIP looting-backpack {LootDebug.ItemDesc(pm.Item)}");
-            return;
-        }
-
-        var beforeParent = LootDebug.ContainerDesc(pm.Item.parent, player);
-        var worn = pm.Inventory.GetBackpackWithInventory()?.contents;
-        var wornHas = ContainerHasItem(worn, pm.Item);
-        var virtualHas = VirtualBackpackApi.HasMatchingItem(player, pm.Item);
-
-        if (wornHas && worn != null && pm.Item.MoveToContainer(worn, -1, allowStack: true))
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing deferred OK worn {LootDebug.ItemDesc(pm.Item)} from={beforeParent} dest={LootDebug.ContainerDesc(pm.Item.parent, player)}");
-            return;
-        }
-
-        if (pm.Item.IsValid() && pm.Item.parent == null)
-        {
-            DropOrStay(pm.Item, player, "worn insert parentless");
-            return;
-        }
-
-        if (virtualHas && VirtualBackpackApi.TryDeposit(player, pm.Item))
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing deferred OK virtual {LootDebug.ItemDesc(pm.Item)} from={beforeParent}");
-            return;
-        }
-
-        if (pm.Item.IsValid() && pm.Item.parent == null)
-        {
-            DropOrStay(pm.Item, player, "virtual insert parentless");
-            return;
-        }
-
-        if (LootDebug.ShouldLog(player))
-            LootDebug.Log(player, $"Existing deferred FAIL stayed in inventory {LootDebug.ItemDesc(pm.Item)} parent={LootDebug.ContainerDesc(pm.Item.parent, player)}");
-    }
-
-    private static void DropOrStay(Item item, BasePlayer player, string reason)
-    {
-        if (player != null && !player.IsDestroyed)
-        {
-            if (LootDebug.ShouldLog(player))
-                LootDebug.Log(player, $"Existing deferred FAIL {reason} → DROP {LootDebug.ItemDesc(item)}");
-            item.Drop(player.GetDropPosition(), player.GetDropVelocity());
-        }
-    }
-
-    private static bool ContainerHasItem(ItemContainer container, Item item)
-    {
-        if (container?.itemList == null || item?.info == null) return false;
-        var list = container.itemList;
-        for (int i = 0; i < list.Count; i++)
-        {
-            var other = list[i];
-            if (other == null || other == item || other.info == null) continue;
-            if (other.info.itemid == item.info.itemid)
-                return true;
-        }
-        return false;
+        var loot = player?.inventory?.loot;
+        if (loot == null || loot.containers == null || loot.containers.Count == 0) return false;
+        var first = loot.containers[0];
+        return first?.parent?.info?.GetComponent<ItemModBackpack>() != null;
     }
 }

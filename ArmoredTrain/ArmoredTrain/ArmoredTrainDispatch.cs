@@ -1,11 +1,11 @@
 using System;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
-    /// Harmony glue for the ported plugin: exposes the Oxide-style lifecycle + hook methods (which are
+    /// Harmony glue for the ported plugin: exposes the compat-style lifecycle + hook methods (which are
     /// private instance members of ArmoredTrain) to the Harmony patches and console commands. Each
-    /// dispatcher early-outs when no event/instance is active, replacing Oxide Subscribe/Unsubscribe.
+    /// dispatcher early-outs when no event/instance is active, replacing compat Subscribe/Unsubscribe.
     /// </summary>
     public partial class ArmoredTrain
     {

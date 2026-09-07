@@ -1,7 +1,7 @@
 using System;
 using HarmonyLib;
 using UnityEngine;
-using UL = Oxide.Plugins.UpLifted;
+using UL = Harmony.Plugins.UpLifted;
 
 namespace UpLiftedHarmony.Patches
 {
@@ -146,16 +146,6 @@ namespace UpLiftedHarmony.Patches
         {
             try { UL.Dispatch_OnDoorKnocked(__instance, rpc.player); }
             catch (Exception ex) { Debug.LogWarning("[UpLifted] OnDoorKnocked: " + ex.Message); }
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    public static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            return UL.Dispatch_OnEntityTakeDamage(__instance, info) == null;
         }
     }
 

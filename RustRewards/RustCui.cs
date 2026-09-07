@@ -10,9 +10,9 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Game.Rust.Cui
+namespace Game.Rust.Cui
 {
-    // Simplified: no Oxide pooling. JsonTextWriter works without ArrayPool.
+    // Simplified: Harmony-only pooling. JsonTextWriter works without ArrayPool.
 
     public static class CuiHelper
     {
@@ -81,7 +81,7 @@ namespace Oxide.Game.Rust.Cui
         {
             if (player?.net != null)
             {
-                // Clients only forward ConsoleGen commands. Rewrite Oxide-style RustRewards UI commands
+                // Clients only forward ConsoleGen commands. Rewrite compat-style RustRewards UI commands
                 // callbacks to cui.endtest so RustRewardsHarmony.Patches.Cui_Endtest_Patch can route them.
                 json = RewriteHarmonyButtonCommands(json);
                 CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection ), json);

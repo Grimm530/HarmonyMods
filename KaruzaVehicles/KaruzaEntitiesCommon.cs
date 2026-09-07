@@ -46,7 +46,7 @@ using static SeekerTarget;
 
 namespace KaruzaVehicles
 {
-    [Info("KaruzaEntitiesCommon", "Karuza", "1.10.00")]
+    [Info("KaruzaEntitiesCommon", "Karuza", "1.11.00")]
     public class KaruzaEntitiesCommon : RustPlugin
     {
         internal Plugin BulletProjectile;
@@ -114,6 +114,7 @@ namespace KaruzaVehicles
         public const int BLADE_ITEMID = 1882709339;
         public const int WEAPON_FLASHLIGHT_ITEMID = 952603248;
         public const int NAIL_ITEMID = -2097376851;
+        public const int WOOD_ITEMID = -151838493;
 
         public static readonly Vector3 DISMOUNT_START_MODIFIER = new Vector3(0.0f, 0.5f, 0.0f);
         public static readonly Vector3 DISMOUNT_END_MODIFIER = new Vector3(0.0f, 1.3f, 0.0f);
@@ -345,12 +346,23 @@ namespace KaruzaVehicles
         {
             public static void Prefix(List<SamSite.ISamSiteTarget> allTargets, float scanRadius, SamSite __instance)
             {
-                foreach (SamSite.ISamSiteTarget target in Instance.CustomSAMTargets)
+                var inst = Instance;
+                var targets = inst?.CustomSAMTargets;
+                if (targets == null || allTargets == null || __instance?.eyePoint == null)
+                    return;
+
+                var eye = __instance.eyePoint.transform;
+                if (eye == null)
+                    return;
+
+                for (int i = 0; i < targets.Count; i++)
                 {
-                    if (Vector3.Distance(target.CenterPoint(), __instance.eyePoint.transform.position) < target.SAMTargetType.scanRadius)
-                    {
+                    var target = targets[i];
+                    if (target == null || target.SAMTargetType == null)
+                        continue;
+
+                    if (Vector3.Distance(target.CenterPoint(), eye.position) < target.SAMTargetType.scanRadius)
                         allTargets.Add(target);
-                    }
                 }
             }
         }
@@ -646,6 +658,11 @@ namespace KaruzaVehicles
 
         #region Init
 
+        public KaruzaEntitiesCommon()
+        {
+            Instance = this;
+        }
+
         internal void Init()
         {
             Instance = this;
@@ -665,6 +682,7 @@ namespace KaruzaVehicles
             InitializeMixingTableRecipes();
             InitializeTechTreeData();
             InitializeAllowedFluids();
+            PropUtilities.InitCollections();
             RegisterVehicleBundles();
             StatusUtilities.InitializeStatusBars();
             InitializeCargoTriggers();
@@ -685,6 +703,7 @@ namespace KaruzaVehicles
             isUnloading = true;
 
             SaveAndUnregisterEntityBundles();
+            PropUtilities.DestroyCollections();
 
             CachedMeshes.Clear();
             CachedMeshes = null;
@@ -1843,6 +1862,7 @@ namespace KaruzaVehicles
             public Action<BasePlayer> OnWeaponFired;
             public Rigidbody RigidBody;
             public bool HasRigidBody;
+            public bool SendToNetworkGroupOnly;
 
             List<DamageTypeEntry> damageTypes;
             public List<DamageTypeEntry> DamageTypes
@@ -2358,6 +2378,14 @@ namespace KaruzaVehicles
                 {
                     vehicle.OnMountedChange += OnMountedChange;
                     collider.isTrigger = true;
+
+                    if (vehicle.VehicleConfig.AllowTerrainTrigger)
+                    {
+                        var wheelCols = vehicle.BaseVehicle.transform.GetComponentsInChildren<WheelCollider>();
+                        gameObject.layer = (int)Layer.Vehicle_World;
+                        var tcp = gameObject.AddComponent<TerrainCollisionProxy>();
+                        tcp.colliders = wheelCols;
+                    }
                 }
                 else if (Config.RequireEngineOff)
                 {
@@ -3124,7 +3152,8 @@ namespace KaruzaVehicles
                     {
                         Config = wc,
                         HasRigidBody = true,
-                        RigidBody = Vehicle.BaseVehicle.rigidBody
+                        RigidBody = Vehicle.BaseVehicle.rigidBody,
+                        SendToNetworkGroupOnly = wc.SendToNetworkGroupOnly
                     };
 
                     for (int n = 0; n < wc.CounterConfigurations.Count; n++)
@@ -5141,7 +5170,7 @@ namespace KaruzaVehicles
                 if (bAdded)
                 {
                     var isCookable = item.info.ItemModCookable;
-                    if (isCookable && !HasFlag(Flags.On))
+                    if (isCookable != null && !HasFlag(Flags.On))
                     {
                         StartCooking();
                     }
@@ -5168,6 +5197,27 @@ namespace KaruzaVehicles
                 }
 
                 return false;
+            }
+        }
+
+        public class SpecialRefineryOven : SpecialOven
+        {
+            public override void ServerInit()
+            {
+                inputSlots = 1;
+                _inputSlotIndex = 1;
+                outputSlots = 3;
+                _outputSlotIndex = 2;
+                fuelSlots = 1;
+
+                fuelType = ItemManager.FindItemDefinition(WOOD_ITEMID);
+
+                using (FlagsUpdateScope flagsUpdateScope = StartSetFlags(FlagsUpdateMode.SendNetworkUpdate))
+                {
+                    flagsUpdateScope.Set(Flags.Reserved5, true);
+                }
+
+                base.ServerInit();
             }
         }
 
@@ -11401,7 +11451,8 @@ namespace KaruzaVehicles
 
                         var ws = new WeaponSystem()
                         {
-                            Config = wc
+                            Config = wc,
+                            SendToNetworkGroupOnly = wc.SendToNetworkGroupOnly
                         };
 
                         if (hasVehicle)
@@ -15726,7 +15777,11 @@ namespace KaruzaVehicles
 
                 var fuelContainer = GetFuelContainer();
                 Item slot = fuelContainer.inventory.GetSlot(0);
-                slot.UseItem(amount);
+
+                if (slot != null)
+                {
+                    slot.UseItem(amount);
+                }
             }
         }
 
@@ -17559,7 +17614,8 @@ namespace KaruzaVehicles
             Locker = 7,
             CookingBench = 8,
             ShopFront = 9,
-            Beehive = 10
+            Beehive = 10,
+            Refinery = 11
         }
 
         public enum ContainerAdaptorType
@@ -19061,13 +19117,13 @@ namespace KaruzaVehicles
                 return GetAmount(itemContainer, itemId, weaponConfiguration.AmmoSkinId);
             }
 
-            public static int GetAmount(ItemContainer itemContainer, int itemid, ulong skinId)
+            public static int GetAmount(ItemContainer itemContainer, int itemid, ulong skinId, bool redirectAllowed = false)
             {
                 int amount = 0;
                 for (int i = 0; i < itemContainer.itemList.Count; i++)
                 {
                     var item = itemContainer.itemList[i];
-                    if (item.info.itemid == itemid && item.skin == skinId && !item.IsBusy())
+                    if (item.info.MatchesItemId(itemid, redirectAllowed) && item.skin == skinId)
                     {
                         amount += item.amount;
                     }
@@ -19091,7 +19147,8 @@ namespace KaruzaVehicles
                         Config = wc,
                         MagazineCapacity = wc.MagazineCapacity,
                         HasRigidBody = true,
-                        RigidBody = vehicle.BaseVehicle.rigidBody
+                        RigidBody = vehicle.BaseVehicle.rigidBody,
+                        SendToNetworkGroupOnly = wc.SendToNetworkGroupOnly
                     };
 
                     vehicle.WeaponSystems.Add(ws);
@@ -19241,41 +19298,35 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                var isCombatEntity = false;
                 if (hitEntity is BaseCombatEntity bce)
                 {
-                    isCombatEntity = true;
                     if (bce.IsDead())
                     {
                         return;
                     }
-                }
 
-                var hitPos = hitEntity.transform.position;
-                var rot = hitEntity.transform.rotation;
-                if (hitEntity is BasePlayer bp)
-                {
                     HitInfo hitInfo = new HitInfo();
                     hitInfo.Initiator = attackingPlayer;
                     hitInfo.WeaponPrefab = weaponPrefab;
-                    hitInfo.damageTypes.Add(DamageType.Explosion, 1000);
-                    bp.OnAttacked(hitInfo);
+                    hitInfo.damageTypes.Add(DamageType.Explosion, 10000000);
+                    bce.OnAttacked(hitInfo);
                 }
-                else
+                else if (hitEntity is ResourceEntity)
                 {
                     hitEntity.Kill(DestroyMode.Gib);
-                }
 
-                // Trees aren't combat entities so can skip
-                if (replaceTreeWithDeadVariantForStep && !isCombatEntity && hitEntity is TreeEntity && !hitEntity.ShortPrefabName.Contains("dead"))
-                {
-                    //var newTree;
-                    //spawnedTrees.Add();
-                    var deadTreePrefab = Instance.DeadTreePrefabs[UnityEngine.Random.Range(0, Instance.DeadTreePrefabs.Count - 1)];
-                    var deadTree = GameManager.server.CreateEntity(deadTreePrefab, hitPos, rot);
-                    deadTree.Spawn();
+                    var hitPos = hitEntity.transform.position;
+                    var rot = hitEntity.transform.rotation;
 
-                    spawnedTrees.Add(deadTree.net.ID.Value);
+                    // Trees aren't combat entities so can skip
+                    if (hitEntity is TreeEntity && replaceTreeWithDeadVariantForStep && !hitEntity.ShortPrefabName.Contains("dead"))
+                    {
+                        var deadTreePrefab = Instance.DeadTreePrefabs[UnityEngine.Random.Range(0, Instance.DeadTreePrefabs.Count - 1)];
+                        var deadTree = GameManager.server.CreateEntity(deadTreePrefab, hitPos, rot);
+                        deadTree.Spawn();
+
+                        spawnedTrees.Add(deadTree.net.ID.Value);
+                    }
                 }
             }
         }
@@ -19283,20 +19334,53 @@ namespace KaruzaVehicles
         public static class PropUtilities
         {
             public static readonly Flags[] FlagValues = Enum.GetValues(typeof(Flags)).Cast<Flags>().ToArray();
+            public static Dictionary<string, ItemDefinition> CachedItemDef;
+
+            public static void InitCollections()
+            {
+                CachedItemDef = new Dictionary<string, ItemDefinition>();
+            }
+
+            public static void DestroyCollections()
+            {
+                if (CachedItemDef == null)
+                {
+                    return;
+                }
+
+                foreach (var kv in CachedItemDef)
+                {
+                    GameObject.Destroy(kv.Value.gameObject);
+                }
+
+                CachedItemDef.Clear();
+            }
 
             public static void InitializeVehicle(IVehicle vehicle)
             {
-                List<ItemAmount> buildCosts = new List<ItemAmount>();
-                foreach (var buildItems in vehicle.VehicleConfig.BuildCosts)
+                if (!CachedItemDef.TryGetValue(vehicle.BaseVehicle.ShortPrefabName, out ItemDefinition itemDef))
                 {
-                    ItemDefinition repairCostDef = ItemManager.FindItemDefinition(buildItems.Key);
-                    buildCosts.Add(new ItemAmount(repairCostDef, buildItems.Value));
+                    List<ItemAmount> buildCosts = new List<ItemAmount>();
+                    foreach (var buildItems in vehicle.VehicleConfig.BuildCosts)
+                    {
+                        var repairCostDef = ItemManager.FindItemDefinition(buildItems.Key);
+                        if (repairCostDef == null)
+                        {
+                            continue;
+                        }
+
+                        buildCosts.Add(new ItemAmount(repairCostDef, buildItems.Value));
+                    }
+
+                    var newGo = new GameObject();
+                    itemDef = newGo.GetOrAddComponent<ItemDefinition>();
+                    var itemBp = newGo.GetOrAddComponent<ItemBlueprint>();
+
+                    itemBp.ingredients = buildCosts;
+                    CachedItemDef[vehicle.BaseVehicle.ShortPrefabName] = itemDef;
+                    ItemManager.itemToBlueprint.Add(itemDef, itemBp);
                 }
 
-                var itemDef = vehicle.BaseVehicle.GetOrAddComponent<ItemDefinition>();
-                var itemBp = vehicle.BaseVehicle.GetOrAddComponent<ItemBlueprint>();
-
-                itemBp.ingredients = buildCosts;
                 vehicle.BaseVehicle.repair.itemTarget = itemDef;
                 vehicle.BaseVehicle.rigidBody.SetActive(true);
                 if (vehicle.BaseEntity.triggers == null)
@@ -19336,7 +19420,6 @@ namespace KaruzaVehicles
                     InitializePhysicalEngine(vehicle);
                     InitializeFoilageInteractionTriggers(vehicle.VehicleConfig.FoilageInteraction, vehicle, vehicle.BaseVehicle.gameObject.transform);
                     InitializeTowTriggers(vehicle);
-                    InitializeWorldCollider(vehicle);
 
                     InitializePhysicsTriggers(vehicle.VehicleConfig.PhysicsTriggers, vehicle.BaseVehicle, vehicle.BaseVehicle.transform);
                     InitializeSafeZoneTriggers(vehicle.VehicleConfig.SafeZoneTriggers, vehicle.BaseVehicle, vehicle.BaseVehicle.transform);
@@ -19356,6 +19439,7 @@ namespace KaruzaVehicles
                     InitializeEject(vehicle, vehicle.VehicleConfig.EjectSettings);
                     InitializeBaseCollider(vehicle.BaseVehicle);
                     InitializeNavMeshObstacles(vehicle.BaseVehicle);
+                    InitializeWorldCollider(vehicle);
                 }
                 finally
                 {
@@ -19381,6 +19465,10 @@ namespace KaruzaVehicles
                 var nmo = newNavNeshObstacle.AddComponent<NavMeshObstacle>();
                 nmo.center = baseEntity.bounds.center;
                 nmo.size = baseEntity.bounds.size;
+                nmo.carving = true;
+                nmo.carvingMoveThreshold = 0.1f;
+                nmo.carvingTimeToStationary = 0.5f;
+                nmo.shape = NavMeshObstacleShape.Box;
             }
 
             public static void InitializePipes(BaseEntity baseEntity, PipePropSettings pipeProps)
@@ -21381,6 +21469,7 @@ namespace KaruzaVehicles
                             var furnace = PropUtilities.CreateContainer<SpecialFurnaceOven>(baseEntity, storageContainer, false);
                             furnace.temperature = TemperatureType.Smelting;
                             furnace.smeltSpeed = 5;
+                            furnace.IndustrialMode = IndustrialSlotMode.Furnace;
                             furnace.Spawn();
 
                             container = furnace;
@@ -21444,6 +21533,18 @@ namespace KaruzaVehicles
 
                         case StorageContainerType.Beehive:
                             container = PropUtilities.CreateContainer<SpecialBeehive>(baseEntity, storageContainer);
+                            break;
+
+                        case StorageContainerType.Refinery:
+                            var refinery = PropUtilities.CreateContainer<SpecialRefineryOven>(baseEntity, storageContainer, false);
+                            refinery.temperature = TemperatureType.Fractioning;
+                            refinery.smeltSpeed = 5;
+                            refinery.IndustrialMode = IndustrialSlotMode.OilRefinery;
+                            refinery.inventorySlots = 6;
+                            refinery.allowByproductCreation = true;
+                            refinery.Spawn();
+
+                            container = refinery;
                             break;
 
                         case StorageContainerType.Storage:
@@ -24404,7 +24505,7 @@ namespace KaruzaVehicles
             public bool SpawnMeshColliderVehicles { get; set; } = true;
             public bool EnableRadio { get; set; } = false;
             public bool SaveApiConfigsToDisk { get; set; } = true;
-            public string APIPath { get; set; }
+            public string APIPath { get; set; } = "https://server-api.karuza.dev/api/server/entities/";
             public string APIId { get; set; }
             public string APISecret { get; set; }
         }
@@ -24647,6 +24748,7 @@ namespace KaruzaVehicles
             public static void GetEntityConfigs(int entityTypeId, Action<int, string> successCallback = null, Action<int, string> errorCallback = null)
             {
                 var path = $"{Instance.configuration.APIPath}{entityTypeId}";
+                Instance.Puts($"Requesting {path}");
 
                 var headers = APIHelper.GetHeaders(Oxide.Core.Libraries.RequestMethod.GET, path, string.Empty, Instance.configuration.APIId.ToLower(), Instance.configuration.APISecret);
                 Instance.webrequest.Enqueue(path, string.Empty, (code, response) => CallbackHandler(code, response, successCallback, errorCallback), Instance, Oxide.Core.Libraries.RequestMethod.GET, headers, 180, decompressionMethod: DecompressionMethods.GZip);
@@ -24659,7 +24761,17 @@ namespace KaruzaVehicles
                 if (code != 200)
                 {
                     errorCallback?.Invoke(code, response);
-                    Instance.Puts($"CallbackHandler Error - {response}");
+                    var body = string.IsNullOrEmpty(response) ? "(empty body)" : response;
+                    var titleMatch = System.Text.RegularExpressions.Regex.Match(body, @"<title>([^<]+)</title>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (titleMatch.Success)
+                        Instance.Puts($"CallbackHandler Error - HTTP {code} page title: {titleMatch.Groups[1].Value.Trim()}");
+                    if (body.Length > 240)
+                        body = body.Substring(0, 240);
+                    Instance.Puts($"CallbackHandler Error - {body}");
+                    if (code == 401)
+                        Instance.Puts("401 Unauthorized: IP allowlist, API secret, or APIPath mismatch. If you clicked Reset Secret, update APISecret in HarmonyConfig/KaruzaEntitiesCommon.json.");
+                    else if (code == 403)
+                        Instance.Puts("403 Forbidden: Cloudflare blocked the HTTP client (or the server IP is not allowed). Harmony now sends the same Oxide User-Agent as the original plugin.");
                     return;
                 }
 
@@ -24682,10 +24794,11 @@ namespace KaruzaVehicles
                 };
 
                 string requestContentBase64String = string.Empty;
-                // Karuza's API signs with HttpUtility.UrlEncode (lowercase %xx).
-                // Uri.EscapeDataString uses uppercase hex and will 401.
-                string requestUri = Uri.EscapeDataString(url.ToLowerInvariant()).ToLowerInvariant();
-                string requestHttpMethod = $"{requestMethod}";
+                // Match System.Web.HttpUtility.UrlEncode: lowercase %xx, space as +.
+                string requestUri = UrlEncodeLower(url.ToLowerInvariant());
+                string requestHttpMethod = "GET";
+                if (requestMethod != Oxide.Core.Libraries.RequestMethod.GET)
+                    requestHttpMethod = $"{requestMethod}";
 
                 DateTime epochStart = new DateTime(1970, 01, 01, 0, 0, 0, 0, DateTimeKind.Utc);
                 TimeSpan timeSpan = DateTime.UtcNow - epochStart;
@@ -24710,6 +24823,35 @@ namespace KaruzaVehicles
                 }
 
                 return toReturn;
+            }
+
+            // System.Web.HttpUtility.UrlEncode equivalent (Unity has no System.Web).
+            static string UrlEncodeLower(string value)
+            {
+                if (string.IsNullOrEmpty(value))
+                    return string.Empty;
+
+                var bytes = Encoding.UTF8.GetBytes(value);
+                var sb = new StringBuilder(bytes.Length * 2);
+                for (int i = 0; i < bytes.Length; i++)
+                {
+                    byte b = bytes[i];
+                    char ch = (char)b;
+                    if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
+                        || ch == '-' || ch == '_' || ch == '.' || ch == '!' || ch == '*' || ch == '(' || ch == ')')
+                    {
+                        sb.Append(ch);
+                    }
+                    else if (ch == ' ')
+                    {
+                        sb.Append('+');
+                    }
+                    else
+                    {
+                        sb.Append('%').Append(b.ToString("x2"));
+                    }
+                }
+                return sb.ToString();
             }
         }
 

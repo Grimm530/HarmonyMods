@@ -4,8 +4,8 @@ using HarmonyLib;
 namespace DeveloperListOverride.Patches
 {
     /// <summary>
-    /// PlayerInit already sent a snapshot before Harmony postfix would run if we
-    /// only set the flag here. Apply full developer state and re-sync to the client.
+    /// After the game sets IsDeveloper from DeveloperList, force it true for our override list.
+    /// This guarantees the player flag is set so all game code that checks player.IsDeveloper works.
     /// </summary>
     [HarmonyPatch]
     public static class BasePlayer_PlayerInit_Patch
@@ -17,7 +17,8 @@ namespace DeveloperListOverride.Patches
 
         static void Postfix(BasePlayer __instance)
         {
-            DeveloperListOverrideMod.ApplyDeveloperPrivileges(__instance);
+            if (DeveloperListOverrideConfig.IsOverrideDeveloper(__instance.UserIDString))
+                __instance.SetPlayerFlag(BasePlayer.PlayerFlags.IsDeveloper, true);
         }
     }
 }

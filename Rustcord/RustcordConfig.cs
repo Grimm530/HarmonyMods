@@ -7,8 +7,8 @@ using UnityEngine;
 namespace Rustcord;
 
 /// <summary>
-/// Config for Rustcord Harmony mod. Slim structure (no Oxide).
-/// Loads from HarmonyConfig/Rustcord.json (or oxide/config/Rustcord.json as fallback).
+/// Config for Rustcord Harmony mod. Slim structure (Harmony-only).
+/// Loads from HarmonyConfig/Rustcord.json (or legacy/config/Rustcord.json as fallback).
 /// Generates default config file if none exists.
 /// </summary>
 public static class RustcordConfig
@@ -21,7 +21,7 @@ public static class RustcordConfig
     {
         var serverRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
-        // Try HarmonyConfig first, then oxide/config (per README)
+        // Try HarmonyConfig first, then legacy/config (per README)
         var harmonyPath = Path.Combine(serverRoot, "HarmonyConfig", "Rustcord.json");
         var oxidePath = Path.Combine(serverRoot, "oxide", "config", "Rustcord.json");
 
@@ -69,7 +69,7 @@ public static class RustcordConfig
         }
     }
 
-    /// <summary>Create default config matching Oxide Rustcord structure. Uses Bot token + channel IDs (no webhooks required).</summary>
+    /// <summary>Create default config matching original plugin Rustcord structure. Uses Bot token + channel IDs (no webhooks required).</summary>
     private static ConfigData CreateDefaultConfig()
     {
         return new ConfigData
@@ -200,7 +200,7 @@ public static class RustcordConfig
         public bool DebugDiscordToGame { get; set; } = false;
     }
 
-    /// <summary>Minimal: what the Harmony mod posts. No Oxide plugin hooks.</summary>
+    /// <summary>Minimal: what the Harmony mod posts. No Harmony mod hooks.</summary>
     public class PostSettings
     {
         [JsonProperty("Player Chat")]

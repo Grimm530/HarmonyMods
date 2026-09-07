@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"runtime_profiler","columns":["time","sm","max_sm","net","max_net","bp","max_bp"],"values":[[1788667200000,321.6339688018984,2549.9591,17.248829655990516,374.1151,null,null]]}]}]}

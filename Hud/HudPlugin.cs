@@ -3,17 +3,17 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using UnityEngine;
 using UnityEngine.Networking;
-using UnityEngine.UI; 
+using UnityEngine.UI;
+using HudHarmony;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("Hud", "Grimm530", "3.4.0")]
         public partial class Hud : RustPlugin
@@ -27,7 +27,15 @@ namespace Oxide.Plugins
         private Vector3 largeOilRigPosition, smallOilRigPosition;
 
         private HashSet<ulong> _inComputerStation = new();
-        
+
+        // Ownerless world-event entity tracking (avoids serverEntities.OfType scans on touch/UI refresh)
+        private readonly HashSet<ulong> _eventBradley = new();
+        private readonly HashSet<ulong> _eventPatrolHeli = new();
+        private readonly HashSet<ulong> _eventCH47 = new();
+        private readonly HashSet<ulong> _eventCargoUndocked = new();
+        private readonly HashSet<ulong> _eventCargoDocked = new();
+        private readonly HashSet<ulong> _eventAirDrop = new();
+
         [PluginReference]
         private Plugin Economics, ServerRewards, ShoppyStock;
         
@@ -580,7 +588,7 @@ namespace Oxide.Plugins
 
         #endregion
 
-        #region OxideHooks
+        #region HarmonyHooks
 
         private void ValidateConfig()
         {
@@ -706,8 +714,8 @@ namespace Oxide.Plugins
                 timer.In(5, () =>
                 {
                     _data.FirstRun = false;
-                    Interface.Oxide.ReloadPlugin("ImageLibrary");
-                    Interface.Oxide.ReloadPlugin("Hud");
+                    HarmonyModInterface.Mods.ReloadPlugin("ImageLibrary");
+                    HarmonyModInterface.Mods.ReloadPlugin("Hud");
                 });
                   
             permission.RegisterPermission(PERM_STREAMER, this);
@@ -752,13 +760,49 @@ namespace Oxide.Plugins
             _data.PlayersState.TryAdd(player.UserIDString, States.Full);
 
             ShowUIBG(player);
+            ScheduleInventoryLayerUiRetries(player);
         }
 
         private void OnConnectionQueue(Network.Connection connection) { }
         private void OnPlayerSleep(BasePlayer player) { }
         
         private void OnPlayerDisconnected(BasePlayer player) { }
-        private void OnPlayerSleepEnded(BasePlayer player) { }
+        private void OnPlayerSleepEnded(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected)
+                return;
+
+            ShowUIBG(player);
+            ScheduleInventoryLayerUiRetries(player);
+        }
+
+        /// <summary>
+        /// Inventory-layer CUI (parent "Inventory") is only present after the client builds the inventory UI.
+        /// Re-send on a short schedule so connect/wake is not a single-shot that misses the panel.
+        /// </summary>
+        private void ScheduleInventoryLayerUiRetries(BasePlayer player)
+        {
+            if (player == null || !_config.MainSetup.IsOverall)
+                return;
+
+            var userId = player.userID;
+            foreach (var delay in new[] { 1f, 3f, 8f, 15f, 30f })
+            {
+                timer.Once(delay, () =>
+                {
+                    var p = BasePlayer.FindByID(userId);
+                    if (p == null || !p.IsConnected || p.IsSleeping())
+                        return;
+                    if (InventoryLayerUiBridge.IsReady(userId))
+                        return;
+
+                    ShowUIBG(p);
+                    InventoryLayerUiBridge.RefreshBackpackButton(p);
+                    if (InventoryLayerUiBridge.HasBeenConnectedLongEnough(p))
+                        InventoryLayerUiBridge.MarkReady(userId);
+                });
+            }
+        }
 
         #region ComputerStation
 
@@ -810,46 +854,49 @@ namespace Oxide.Plugins
 
         #region EVENTS
 
-        private void OnEntitySpawned(BradleyAPC entity) => EventTouch(entity);
+        private void OnEntitySpawned(BradleyAPC entity) => TrackEventEntity(entity, true);
 
-        private void OnEntityKill(BradleyAPC entity) => EventTouch(entity);
+        private void OnEntityKill(BradleyAPC entity) => TrackEventEntity(entity, false);
 
-        private void OnEntitySpawned(PatrolHelicopter entity) => EventTouch(entity);
+        private void OnEntitySpawned(PatrolHelicopter entity) => TrackEventEntity(entity, true);
 
-        private void OnEntityKill(PatrolHelicopter entity) => EventTouch(entity);
+        private void OnEntityKill(PatrolHelicopter entity) => TrackEventEntity(entity, false);
 
-        private void OnEntitySpawned(CH47Helicopter entity) => EventTouch(entity);
+        private void OnEntitySpawned(CH47Helicopter entity) => TrackEventEntity(entity, true);
 
-        private void OnEntityKill(CH47Helicopter entity) => EventTouch(entity);
+        private void OnEntityKill(CH47Helicopter entity) => TrackEventEntity(entity, false);
 
-        private void OnEntitySpawned(CargoShip entity) => EventTouch(entity);
+        private void OnEntitySpawned(CargoShip entity) => TrackEventEntity(entity, true);
 
-        private void OnEntityKill(CargoShip entity) => EventTouch(entity);
+        private void OnEntityKill(CargoShip entity) => TrackEventEntity(entity, false);
 
-        private void OnEntitySpawned(SupplyDrop entity) => EventTouch(entity);
+        private void OnEntitySpawned(SupplyDrop entity) => TrackEventEntity(entity, true);
 
-        private void OnEntityKill(SupplyDrop entity) => EventTouch(entity);
+        private void OnEntityKill(SupplyDrop entity) => TrackEventEntity(entity, false);
 
         private void OnCargoShipHarborArrived(CargoShip entity) 
         {
-            _config.GetEventByName("HarborCargoArrive").isActive = true;
-
-            NextTick(() =>
-            { 
-               _config.GetEventByName("Cargo").isActive = BaseNetworkable.serverEntities.OfType<CargoShip>().Any(x => !x.IsShipDocked);
-                ShowUIEvents();
-            });
+            if (entity?.net != null)
+            {
+                ulong id = entity.net.ID.Value;
+                _eventCargoUndocked.Remove(id);
+                _eventCargoDocked.Add(id);
+            }
+            ApplyCargoEventFlags();
+            ShowUIEvents();
         }
 
         private void OnCargoShipHarborLeave(CargoShip entity)
         {
-            _config.GetEventByName("HarborCargoArrive").isActive = false;
-
-            NextTick(() =>
+            if (entity?.net != null)
             {
-                _config.GetEventByName("Cargo").isActive = BaseNetworkable.serverEntities.OfType<CargoShip>().Any(x => !x.IsShipDocked);
-                ShowUIEvents();
-            });
+                ulong id = entity.net.ID.Value;
+                _eventCargoDocked.Remove(id);
+                if (entity.OwnerID == 0)
+                    _eventCargoUndocked.Add(id);
+            }
+            ApplyCargoEventFlags();
+            ShowUIEvents();
         }
 
         private void OnCrateHack(HackableLockedCrate crate)
@@ -885,32 +932,70 @@ namespace Oxide.Plugins
             ShowUIEvents();
         }
 
-        private void EventTouch(BaseEntity entity) =>
+        private void ApplyCargoEventFlags()
+        {
+            _config.GetEventByName("Cargo").isActive = _eventCargoUndocked.Count > 0;
+            _config.GetEventByName("HarborCargoArrive").isActive = _eventCargoDocked.Count > 0;
+        }
+
+        private void TrackEventEntity(BaseEntity entity, bool spawned)
+        {
             NextTick(() =>
             {
-                if (entity?.OwnerID != 0)
+                if (entity == null || entity.net == null)
                     return;
 
+                ulong id = entity.net.ID.Value;
+                if (spawned && entity.OwnerID != 0)
+                    return;
+
+                bool changed = false;
                 if (entity is BradleyAPC)
-                    _config.GetEventByName("Bradley").isActive = BaseNetworkable.serverEntities.OfType<BradleyAPC>().Any();
-
+                {
+                    changed = spawned ? _eventBradley.Add(id) : _eventBradley.Remove(id);
+                    _config.GetEventByName("Bradley").isActive = _eventBradley.Count > 0;
+                }
                 else if (entity is PatrolHelicopter)
-                    _config.GetEventByName("PatrolHeli").isActive = BaseNetworkable.serverEntities.OfType<PatrolHelicopter>().Any();
-
+                {
+                    changed = spawned ? _eventPatrolHeli.Add(id) : _eventPatrolHeli.Remove(id);
+                    _config.GetEventByName("PatrolHeli").isActive = _eventPatrolHeli.Count > 0;
+                }
                 else if (entity is CH47Helicopter)
-                    _config.GetEventByName("CH47").isActive = BaseNetworkable.serverEntities.OfType<CH47Helicopter>().Any();
-
-                else if (entity is CargoShip)
-                    _config.GetEventByName("Cargo").isActive = BaseNetworkable.serverEntities.OfType<CargoShip>().Any();
-
+                {
+                    changed = spawned ? _eventCH47.Add(id) : _eventCH47.Remove(id);
+                    _config.GetEventByName("CH47").isActive = _eventCH47.Count > 0;
+                }
+                else if (entity is CargoShip cargo)
+                {
+                    if (!spawned)
+                    {
+                        changed = _eventCargoUndocked.Remove(id) | _eventCargoDocked.Remove(id);
+                    }
+                    else if (cargo.IsShipDocked)
+                    {
+                        _eventCargoUndocked.Remove(id);
+                        changed = _eventCargoDocked.Add(id);
+                    }
+                    else
+                    {
+                        _eventCargoDocked.Remove(id);
+                        changed = _eventCargoUndocked.Add(id);
+                    }
+                    ApplyCargoEventFlags();
+                }
                 else if (entity is SupplyDrop)
-                    _config.GetEventByName("AirDrop").isActive = BaseNetworkable.serverEntities.OfType<SupplyDrop>().Any();
-
+                {
+                    changed = spawned ? _eventAirDrop.Add(id) : _eventAirDrop.Remove(id);
+                    _config.GetEventByName("AirDrop").isActive = _eventAirDrop.Count > 0;
+                }
                 else
                     return;
 
-                ShowUIEvents();
+                if (changed)
+                    ShowUIEvents();
             });
+        }
+
 
         #endregion
 
@@ -929,7 +1014,7 @@ namespace Oxide.Plugins
             { 
                 case "CHANGESTATE":
                     var state = _data.PlayersState[player.UserIDString];
-                    if (Interface.CallHook("CanHudChangeState", player, state.ToString(), (state == States.Full ? States.Events : state == States.Events ? States.Hide : States.Full).ToString()) != null)
+                    if (HarmonyModInterface.CallHook("CanHudChangeState", player, state.ToString(), (state == States.Full ? States.Events : state == States.Events ? States.Hide : States.Full).ToString()) != null)
                         return;
 
                     _data.PlayersState[player.UserIDString] = state == States.Full ? States.Events : state == States.Events ? States.Hide : States.Full;
@@ -1405,7 +1490,7 @@ namespace Oxide.Plugins
             }
             
             var playerState = _data.PlayersState[player.UserIDString];
-            if (!player.IsAdmin && Interface.CallHook("CanHudChangeState", player, playerState.ToString(), (playerState == States.Full ? States.Events : playerState == States.Events ? States.Hide : States.Full).ToString()) != null)
+            if (!player.IsAdmin && HarmonyModInterface.CallHook("CanHudChangeState", player, playerState.ToString(), (playerState == States.Full ? States.Events : playerState == States.Events ? States.Hide : States.Full).ToString()) != null)
                 return;
              
             switch (args[0])
@@ -1489,39 +1574,50 @@ namespace Oxide.Plugins
         private void EventsInit()
         {
             CalculateEventsWidth();
+            _eventBradley.Clear();
+            _eventPatrolHeli.Clear();
+            _eventCH47.Clear();
+            _eventCargoUndocked.Clear();
+            _eventCargoDocked.Clear();
+            _eventAirDrop.Clear();
+
             foreach (var entity in BaseNetworkable.serverEntities)
             {
-                if (entity == null || entity.IsDestroyed || !(entity is BaseEntity) || (entity as BaseEntity).OwnerID != 0)
+                if (entity == null || entity.IsDestroyed || entity is not BaseEntity be || be.OwnerID != 0 || be.net == null)
                     continue;
 
-                if (entity is BradleyAPC)
-                    _config.GetEventByName("Bradley").isActive = BaseNetworkable.serverEntities.OfType<BradleyAPC>().Any();
-
-                else if (entity is PatrolHelicopter)
-                    _config.GetEventByName("PatrolHeli").isActive = BaseNetworkable.serverEntities.OfType<PatrolHelicopter>().Any();
-
-                else if (entity is CH47Helicopter)
-                    _config.GetEventByName("CH47").isActive = BaseNetworkable.serverEntities.OfType<CH47Helicopter>().Any();
-
-                else if (entity is CargoShip)
+                ulong id = be.net.ID.Value;
+                if (be is BradleyAPC)
+                    _eventBradley.Add(id);
+                else if (be is PatrolHelicopter)
+                    _eventPatrolHeli.Add(id);
+                else if (be is CH47Helicopter)
+                    _eventCH47.Add(id);
+                else if (be is CargoShip cargo)
                 {
-                    _config.GetEventByName("Cargo").isActive = BaseNetworkable.serverEntities.OfType<CargoShip>().Any(x => !x.IsShipDocked);
-                    _config.GetEventByName("HarborCargoArrive").isActive = BaseNetworkable.serverEntities.OfType<CargoShip>().Any(x => x.IsShipDocked);
+                    if (cargo.IsShipDocked)
+                        _eventCargoDocked.Add(id);
+                    else
+                        _eventCargoUndocked.Add(id);
                 }
+                else if (be is SupplyDrop)
+                    _eventAirDrop.Add(id);
+                else if (be is HackableLockedCrate crate)
+                {
+                    if (!crate.IsBeingHacked() || (!IsSmallOilRig(crate.transform.position) && !IsLargeOilRig(crate.transform.position)))
+                        continue;
 
-                else if (entity is SupplyDrop)
-                    _config.GetEventByName("AirDrop").isActive = BaseNetworkable.serverEntities.OfType<SupplyDrop>().Any();
+                    var oilRig = _config.GetEventByName(IsSmallOilRig(crate.transform.position) ? "SmallOilRig" : "LargeOilRig");
+                    oilRig.isActive = true;
+                    oilRig.isContested = true;
+                }
             }
 
-            foreach (var crate in BaseNetworkable.serverEntities.OfType<HackableLockedCrate>())
-            {
-                if (crate is null || !crate.IsBeingHacked() || (!IsSmallOilRig(crate.transform.position) && !IsLargeOilRig(crate.transform.position)))
-                    continue;
-
-                var oilRig = _config.GetEventByName(IsSmallOilRig(crate.transform.position) ? "SmallOilRig" : "LargeOilRig");
-                oilRig.isActive = true;
-                oilRig.isContested = true;
-            }
+            _config.GetEventByName("Bradley").isActive = _eventBradley.Count > 0;
+            _config.GetEventByName("PatrolHeli").isActive = _eventPatrolHeli.Count > 0;
+            _config.GetEventByName("CH47").isActive = _eventCH47.Count > 0;
+            ApplyCargoEventFlags();
+            _config.GetEventByName("AirDrop").isActive = _eventAirDrop.Count > 0;
 
             var deepSea = _config.GetEventByName("DeepSea");
             if (deepSea != null)
@@ -1533,9 +1629,12 @@ namespace Oxide.Plugins
 
         private bool IsAnyEconomyEnabled() => _config.MainSetup.Economy.IsEnable || _config.MainSetup.SecondEconomy.IsEnable;
 
+        private static readonly Dictionary<string, MethodInfo> _harmonyCallMethods = new Dictionary<string, MethodInfo>(4);
+        private static readonly object[] _harmonyCallInvokeArgs = new object[2];
+
         /// <summary>
-        /// Oxide PluginReference first; if missing, Harmony ports via AppDomain
-        /// (Economics_Plugin / RustRewards_Plugin — Economics is no longer an Oxide plugin).
+        /// Harmony ModReference first; if missing, Harmony ports via AppDomain
+        /// (Economics_Plugin / RustRewards_Plugin — Economics is no longer an Harmony mod).
         /// </summary>
         private static object CallHarmonyPlugin(string appDomainKey, string method, params object[] args)
         {
@@ -1544,12 +1643,18 @@ namespace Oxide.Plugins
                 var wrapper = AppDomain.CurrentDomain.GetData(appDomainKey);
                 if (wrapper == null) return null;
 
-                var call = wrapper.GetType().GetMethod("Call",
-                    BindingFlags.Public | BindingFlags.Instance, null,
-                    new[] { typeof(string), typeof(object[]) }, null);
+                if (!_harmonyCallMethods.TryGetValue(appDomainKey, out MethodInfo call) || call == null)
+                {
+                    call = wrapper.GetType().GetMethod("Call",
+                        BindingFlags.Public | BindingFlags.Instance, null,
+                        new[] { typeof(string), typeof(object[]) }, null);
+                    _harmonyCallMethods[appDomainKey] = call;
+                }
                 if (call == null) return null;
 
-                return call.Invoke(wrapper, new object[] { method, args ?? Array.Empty<object>() });
+                _harmonyCallInvokeArgs[0] = method;
+                _harmonyCallInvokeArgs[1] = args ?? Array.Empty<object>();
+                return call.Invoke(wrapper, _harmonyCallInvokeArgs);
             }
             catch (Exception ex)
             {
@@ -2242,7 +2347,16 @@ namespace Oxide.Plugins
                 return;
 
             if (_config.MainSetup.ActivePlayersAppearance.IsEnable)
-                UI.Label(ref into, ".Main.bg", ".ActivePlayers.count", ".ActivePlayers.count", "0 1", "1 1", oXMin: 44, oYMin: -70, oXMax: 0, oYMax: -50, text: BasePlayer.activePlayerList.Count(x => _config.MainSetup.ActivePlayersAppearance.IsAdminsCount ? !x.IsAdmin : true).ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.ActivePlayersAppearance.Color);
+            {
+                int activeCount = 0;
+                bool excludeAdmins = _config.MainSetup.ActivePlayersAppearance.IsAdminsCount;
+                foreach (var p in BasePlayer.activePlayerList)
+                {
+                    if (!excludeAdmins || !p.IsAdmin)
+                        activeCount++;
+                }
+                UI.Label(ref into, ".Main.bg", ".ActivePlayers.count", ".ActivePlayers.count", "0 1", "1 1", oXMin: 44, oYMin: -70, oXMax: 0, oYMax: -50, text: activeCount.ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.ActivePlayersAppearance.Color);
+            }
    
             if (_config.MainSetup.SleepPlayersAppearance.IsEnable)
                 UI.Label(ref into, ".Main.bg",".SleepPlayers.count", ".SleepPlayers.count", "0 1", "1 1", oXMin: 99, oYMin: -70, oXMax: 0, oYMax: -50,text: BasePlayer.sleepingPlayerList.Count.ToString(), align:TextAnchor.MiddleLeft, color:_config.MainSetup.SleepPlayersAppearance.Color);
@@ -2406,13 +2520,16 @@ namespace Oxide.Plugins
             if (CachedCultures.TryGetValue(name, out var cultureInfo))
                 return cultureInfo;
 
-            if (!CultureInfo.GetCultures(CultureTypes.AllCultures).Any(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase)))
+            try
             {
-                CachedCultures.TryAdd(name, cultureInfo = CultureInfo.GetCultureInfo("en"));
-                return cultureInfo;
+                cultureInfo = CultureInfo.GetCultureInfo(name);
+            }
+            catch (CultureNotFoundException)
+            {
+                cultureInfo = CultureInfo.GetCultureInfo("en");
             }
 
-            CachedCultures.TryAdd(name, cultureInfo = CultureInfo.GetCultureInfo(name));
+            CachedCultures.TryAdd(name, cultureInfo);
             return cultureInfo;
         }
 
@@ -2444,9 +2561,9 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var imagePath = Path.Combine(Oxide.Core.OxideMod.ResolveServerRoot(), "HarmonyImages", "Hud", Path.GetFileName(imageName));
+            var imagePath = Path.Combine(Harmony.Core.HarmonyModRuntime.ResolveServerRoot(), "HarmonyImages", "Hud", Path.GetFileName(imageName));
             if (!File.Exists(imagePath))
-                imagePath = Path.Combine(Interface.Oxide.DataDirectory, "Hud", "Images", Path.GetFileName(imageName));
+                imagePath = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "Hud", "Images", Path.GetFileName(imageName));
             if (!File.Exists(imagePath))
             {
                 PrintWarning($"Image file not found: {imagePath}");
@@ -2575,7 +2692,7 @@ namespace Oxide.Plugins
                     if (checkConfig == null || JsonConvert.SerializeObject(Config.ReadObject<Configuration>()) == _config.JSON)
                         throw new Exception();
 
-                    Interface.Oxide.ReloadPlugin(Name);
+                    HarmonyModInterface.Mods.ReloadPlugin(Name);
 
                     jError = string.Empty;
                 }
@@ -2599,12 +2716,12 @@ namespace Oxide.Plugins
 
         private Data _data;
 
-        private void LoadData() => _data = Interface.Oxide.DataFileSystem.ExistsDatafile($"{Name}/data") ? Interface.Oxide.DataFileSystem.ReadObject<Data>($"{Name}/data") : new Data();
+        private void LoadData() => _data = HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile($"{Name}/data") ? HarmonyModInterface.Mods.DataFileSystem.ReadObject<Data>($"{Name}/data") : new Data();
         private void OnServerSave() => SaveData();
 
         private void SaveData()
         {
-            if (_data != null) Interface.Oxide.DataFileSystem.WriteObject($"{Name}/data", _data);
+            if (_data != null) HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/data", _data);
         } 
 
         #endregion

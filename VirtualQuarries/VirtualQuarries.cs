@@ -6,10 +6,10 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Text;
 using Newtonsoft.Json;
-using Oxide.Core;
+using Harmony.Core;
 using UnityEngine;
-using Oxide.Game.Rust.Cui;
-using Oxide.Core.Plugins;
+using Game.Rust.Cui;
+using Harmony.Core.Plugins;
 using Facepunch;
 using Network;
 using Newtonsoft.Json.Linq;
@@ -18,7 +18,7 @@ using VLB;
 using Image = UnityEngine.UI.Image;
 using VirtualQuarriesCuiShim;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("VirtualQuarries", "ThePitereq", "2.6.0")]
     public partial class VirtualQuarries : RustPlugin
@@ -396,7 +396,7 @@ namespace Oxide.Plugins
                         GameObject.Destroy(output2.GetComponent<DestroyOnGroundMissing>());
                         if (quarry.Value.level < config.excavatorUpgrades.Count)
                             output2.inventory.capacity = config.excavatorUpgrades[quarry.Value.level].capacity;
-                        output2.inventory.canAcceptItem = (_, _) => false;
+                        output2.inventory.canAcceptItem = (_, _, _) => false;
                     }
                 }
             }
@@ -643,7 +643,7 @@ namespace Oxide.Plugins
                 NotifyExcavatorPlayer(player, Lang("NotEnoughMined", player.UserIDString, ts.ToString("hh'h 'mm'm'")));
                 return false;
             }
-            if (Interface.CallHook("OnCustomVirtualQuarrySupplyDropCalled", arm, comp, player) != null) return false;
+            if (HarmonyModInterface.CallHook("OnCustomVirtualQuarrySupplyDropCalled", arm, comp, player) != null) return false;
             if (!SpawnExcavatorSupplyDrop(comp, player, out Vector3 dropPos))
             {
                 NotifyExcavatorPlayer(player, Lang("ErrorOccured", player.UserIDString));
@@ -1600,7 +1600,7 @@ namespace Oxide.Plugins
             storage.GetComponent<VirtualQuarry>().SetupQuarry(uc.quarryId);
             SendEffect(player, "assets/prefabs/deployable/quarry/effects/mining-quarry-deploy.prefab");
             SendEffect(player, "assets/bundled/prefabs/fx/build/promote_toptier.prefab");
-            Interface.CallHook("OnQuarryUpgraded", player, qd.level, qd.profile);
+            HarmonyModInterface.CallHook("OnQuarryUpgraded", player, qd.level, qd.profile);
             if (isVirtual && !qp.enableOutputLink)
                 OpenQuarry(player, false, true);
             else
@@ -1784,7 +1784,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            Interface.CallHook("OnQuarryRemoved", player, qd.profile);
+            HarmonyModInterface.CallHook("OnQuarryRemoved", player, qd.profile);
             quarry.Kill();
             if (!qp.enableInputLink)
                 quarryFuel.Kill();
@@ -1878,7 +1878,7 @@ namespace Oxide.Plugins
             }
             Pool.FreeUnmanaged(ref reqItems);
             SendEffect(player, "assets/prefabs/deployable/quarry/effects/mining-quarry-deploy.prefab");
-            Interface.CallHook("OnQuarryPlaced", player, uc.cachedSurvey.profile);
+            HarmonyModInterface.CallHook("OnQuarryPlaced", player, uc.cachedSurvey.profile);
             int newId = CreateNewQuarry(player);
             CuiHelper.DestroyUi(player, "QuarriesUI_QuarryRoll");
             UpdateNewQuarryRecord(player, newId);
@@ -1912,7 +1912,7 @@ namespace Oxide.Plugins
                 }
                 containerCount++;
             }
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/storageCache", storageCache);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/storageCache", storageCache);
             if (config.consoleLogs)
                 Puts($"Successfully saved {containerCount} quarry containers!");
 
@@ -2436,7 +2436,7 @@ namespace Oxide.Plugins
                 upgrades = config.excavatorUpgrades;
             if (qd.level < upgrades.Count)
                 storage.inventory.capacity = input ? upgrades[qd.level].fuelCapacity : upgrades[qd.level].capacity;
-            storage.inventory.canAcceptItem = (item, _) => input && IsFuelItem(item, qd.profile);
+            storage.inventory.canAcceptItem = (_, item, _) => input && IsFuelItem(item, qd.profile);
             if (input)
                 OpenQuarryFuelPanel(player, uc.quarryId);
             else
@@ -2450,7 +2450,7 @@ namespace Oxide.Plugins
                 player.inventory.loot.SendImmediate();
                 CuiHelper.DestroyUi(player, "QuarriesUI");
                 player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), "generic_resizable");
-                Interface.CallHook("OnLootEntity", player, storage);
+                HarmonyModInterface.CallHook("OnLootEntity", player, storage);
             });
         }
 
@@ -2482,7 +2482,7 @@ namespace Oxide.Plugins
                 upgrades = config.excavatorUpgrades;
             if (qd.level < upgrades.Count)
                 storage.inventory.capacity = input ? upgrades[qd.level].fuelCapacity : upgrades[qd.level].capacity;
-            storage.inventory.canAcceptItem = (item, _) => input && IsStaticFuelItem(item, qd.quarryType);
+            storage.inventory.canAcceptItem = (_, item, _) => input && IsStaticFuelItem(item, qd.quarryType);
             if (input)
             {
                 OpenQuarryFuelPanel(player, quarryId);
@@ -2497,7 +2497,7 @@ namespace Oxide.Plugins
             player.inventory.loot.MarkDirty();
             player.inventory.loot.SendImmediate();
             player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), "generic_resizable");
-            Interface.CallHook("OnLootEntity", player, storage);
+            HarmonyModInterface.CallHook("OnLootEntity", player, storage);
             PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("PrivateInventoryInfo", player.UserIDString));
         }
 
@@ -2574,7 +2574,7 @@ namespace Oxide.Plugins
                 }
             }
             if (type != BoxType.Fuel)
-                storage.inventory.canAcceptItem = (_, _) => false;
+                storage.inventory.canAcceptItem = (_, _, _) => false;
             return qr;
         }
 
@@ -3991,7 +3991,7 @@ namespace Oxide.Plugins
                 }
             }
             Pool.FreeUnmanaged(ref rolledResources);
-            Interface.CallHook("OnCustomSurveyThrow", player, uc.cachedSurvey.profile);
+            HarmonyModInterface.CallHook("OnCustomSurveyThrow", player, uc.cachedSurvey.profile);
             using CUI cui2 = new CUI(CuiHandler);
             StringBuilder sb2 = Pool.Get<StringBuilder>();
             UpdateRolledSurvey(player, cui2, sb2);
@@ -4166,7 +4166,7 @@ namespace Oxide.Plugins
             }
             Pool.FreeUnmanaged(ref rolledTargetBonuses);
             //Pool.FreeUnmanaged(ref rolledOtherBonuses);
-            Interface.CallHook("OnCustomSurveyBulkThrow", player, uc.cachedSurvey.profile, itemsToTake);
+            HarmonyModInterface.CallHook("OnCustomSurveyBulkThrow", player, uc.cachedSurvey.profile, itemsToTake);
             using CUI cui = new CUI(CuiHandler);
             StringBuilder sb = Pool.Get<StringBuilder>();
             UpdateRolledSurvey(player, cui, sb);
@@ -5394,9 +5394,9 @@ namespace Oxide.Plugins
                     Item single = ItemManager.Create(resource.def, amount, resource.skin);
                     if (!string.IsNullOrEmpty(resource.name))
                         single.name = resource.name;
-                    storage.inventory.canAcceptItem = (_, _) => true;
+                    storage.inventory.canAcceptItem = (_, _, _) => true;
                     bool movedItem = single.MoveToContainer(storage.inventory);
-                    storage.inventory.canAcceptItem = (_, _) => false;
+                    storage.inventory.canAcceptItem = (_, _, _) => false;
                     if (!movedItem)
                     {
                         qd.isRunning = false;
@@ -5412,9 +5412,9 @@ namespace Oxide.Plugins
                 Item item = ItemManager.Create(resource.def, amount, resource.skin);
                 if (!string.IsNullOrEmpty(resource.name))
                     item.name = resource.name;
-                box.inventory.canAcceptItem = (_, _) => true;
+                box.inventory.canAcceptItem = (_, _, _) => true;
                 bool moved = item.MoveToContainer(box.inventory);
-                box.inventory.canAcceptItem = (_, _) => false;
+                box.inventory.canAcceptItem = (_, _, _) => false;
                 if (!moved)
                     item.Remove();
                 return moved;
@@ -6422,33 +6422,33 @@ namespace Oxide.Plugins
 
         private void LoadData()
         {
-            data = Interface.Oxide.DataFileSystem.ReadObject<PluginData>($"{Name}/quarryData") ?? new PluginData();
+            data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PluginData>($"{Name}/quarryData") ?? new PluginData();
             data.quarries ??= new Dictionary<int, QuarryData>();
             foreach (var q in data.quarries.Values)
                 if (q.profile == null)
                     q.profile = string.Empty;
-            playerCache = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, string>>($"{Name}/playerCache") ?? new Dictionary<ulong, string>();
-            previousGatheredDispensers = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, Dictionary<string, int>>>($"{Name}/oldDispensers") ?? new Dictionary<ulong, Dictionary<string, int>>();
+            playerCache = HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<ulong, string>>($"{Name}/playerCache") ?? new Dictionary<ulong, string>();
+            previousGatheredDispensers = HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<ulong, Dictionary<string, int>>>($"{Name}/oldDispensers") ?? new Dictionary<ulong, Dictionary<string, int>>();
             if (config.storeContainers)
-                storageCache = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<int, StorageData>>($"{Name}/storageCache");
+                storageCache = HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<int, StorageData>>($"{Name}/storageCache");
             timer.Every(Core.Random.Range(500, 700), SaveData);
         }
 
         private void SaveData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/quarryData", data);
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/playerCache", playerCache);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/quarryData", data);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/playerCache", playerCache);
         }
 
         private void SavePrevDispensers()
         {
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/oldDispensers", previousGatheredDispensers);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/oldDispensers", previousGatheredDispensers);
         }
     }
 }
 
 // --- Inlined CUI/LUI shim (MIT, derived from github.com/ThePitereq/Oxide.Ext.CarbonAliases) ---
-// Namespace VirtualQuarriesCuiShim: Oxide.CSharp treats "using Oxide.Ext.*" as a required extension DLL reference.
+// Namespace VirtualQuarriesCuiShim: legacy host treats "using legacy Ext.*" as a required extension DLL reference.
 
 namespace VirtualQuarriesCuiShim
 {
@@ -6460,7 +6460,7 @@ namespace VirtualQuarriesCuiShim
 
 namespace VirtualQuarriesCuiShim
 {
-using Oxide.Core;
+using Harmony.Core;
 
     public class BaseModule
     {
@@ -6470,10 +6470,10 @@ using Oxide.Core;
             switch (typeof(T).Name)
             {
                 case nameof(ImageDatabaseModule):
-                    var plugin = Interface.GetMod().RootPluginManager.GetPlugin("ImageLibrary");
+                    var plugin = HarmonyModInterface.GetMod().RootModManager.GetPlugin("ImageLibrary");
                     if (plugin == null)
                     {
-                        Interface.Oxide.LogWarning("ImageLibrary plugin not found! UI building will print errors!");
+                        HarmonyModInterface.Mods.LogWarning("ImageLibrary plugin not found! UI building will print errors!");
                         return default;
                     }
 
@@ -6481,7 +6481,7 @@ using Oxide.Core;
                     break;
 
                 default:
-                    Interface.Oxide.LogWarning($"Module {nameof(T)} not supported! This may cause issues!");
+                    HarmonyModInterface.Mods.LogWarning($"Module {nameof(T)} not supported! This may cause issues!");
                     return default;
             }
 
@@ -6492,8 +6492,8 @@ using Oxide.Core;
 
 namespace VirtualQuarriesCuiShim
 {
-using Oxide.Core;
-using Oxide.Core.Plugins;
+using Harmony.Core;
+using Harmony.Core.Plugins;
 using System;
 using System.Collections.Generic;
 using Pool = Facepunch.Pool;
@@ -6579,7 +6579,7 @@ using Pool = Facepunch.Pool;
 namespace VirtualQuarriesCuiShim
 {
 using Facepunch.Extend;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -8382,8 +8382,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Network;
-using Oxide.Core;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Game.Rust.Cui;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8609,7 +8609,7 @@ public class LUI : IDisposable
 		}
 		else
 		{
-			Interface.Oxide.LogWarning($"[LUI] You're trying to image from ImageDatabase '{dbName}' which doesn't exist. Ignoring.");
+			HarmonyModInterface.Mods.LogWarning($"[LUI] You're trying to image from ImageDatabase '{dbName}' which doesn't exist. Ignoring.");
 			return null;
 		}
 		elements.Add(cont);
@@ -8630,7 +8630,7 @@ public class LUI : IDisposable
 		}
 		else
 		{
-			Interface.Oxide.LogWarning($"[LUI] You're trying to image from ImageDatabase '{dbName}' which doesn't exist. Ignoring.");
+			HarmonyModInterface.Mods.LogWarning($"[LUI] You're trying to image from ImageDatabase '{dbName}' which doesn't exist. Ignoring.");
 			return null;
 		}
 		elements.Add(cont);
@@ -8660,7 +8660,7 @@ public class LUI : IDisposable
 		ItemDefinition def = ItemManager.FindItemDefinition(shortname);
 		if (def)
 			return CreateItemIcon(parent, position, offset, def.itemid, skinId, color, name);
-		Interface.Oxide.LogWarning($"[LUI] We couldn't find '{shortname}' as valid item shortname. Ignoring.");
+		HarmonyModInterface.Mods.LogWarning($"[LUI] We couldn't find '{shortname}' as valid item shortname. Ignoring.");
 		return null;
 	}
 
@@ -9108,7 +9108,7 @@ public class LUI : IDisposable
 			}
 			else
 			{
-				Interface.Oxide.LogWarning($"[LUI] You're trying to switch state of component '{typeof(T)}' but it isn't present. Ignoring.");
+				HarmonyModInterface.Mods.LogWarning($"[LUI] You're trying to switch state of component '{typeof(T)}' but it isn't present. Ignoring.");
 			}
 		}
 
@@ -9120,7 +9120,7 @@ public class LUI : IDisposable
 			}
 			else
 			{
-				Interface.Oxide.LogWarning($"[LUI] You're trying to switch fadeIn of component '{typeof(T)}' but it isn't present. Ignoring.");
+				HarmonyModInterface.Mods.LogWarning($"[LUI] You're trying to switch fadeIn of component '{typeof(T)}' but it isn't present. Ignoring.");
 			}
 		}
 
@@ -9132,7 +9132,7 @@ public class LUI : IDisposable
 			}
 			else
 			{
-				Interface.Oxide.LogWarning($"[LUI] You're trying to switch placeholderParentId of component '{typeof(T)}' but it isn't present. Ignoring.");
+				HarmonyModInterface.Mods.LogWarning($"[LUI] You're trying to switch placeholderParentId of component '{typeof(T)}' but it isn't present. Ignoring.");
 			}
 		}
 

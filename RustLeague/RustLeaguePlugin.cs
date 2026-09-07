@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Newtonsoft.Json;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using Rust;
 using Rust.Modular;
 using UnityEngine;

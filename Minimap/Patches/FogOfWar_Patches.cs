@@ -19,7 +19,7 @@ namespace MinimapHarmony.Patches
             if (_applied) return;
             try
             {
-                var harmony = new Harmony("com.facepunch.rust_dedicated.Minimap");
+                var harmony = new global::HarmonyLib.Harmony("com.facepunch.rust_dedicated.Minimap");
                 var fog = AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.FogImageUpdate), new[] { typeof(BaseEntity.RPCMessage) });
                 if (fog != null)
                     harmony.Patch(fog, postfix: new HarmonyMethod(typeof(BasePlayer_FogImageUpdate_Patch), nameof(BasePlayer_FogImageUpdate_Patch.Postfix)));

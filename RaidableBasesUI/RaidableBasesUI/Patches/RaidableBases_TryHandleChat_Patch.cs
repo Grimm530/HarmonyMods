@@ -1,7 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 
 namespace RaidableBasesBuyableUI.Patches

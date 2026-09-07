@@ -11,9 +11,11 @@ public static class BasePlayer_OnDisconnected_Patch
     [HarmonyPostfix]
     public static void Postfix(BasePlayer __instance)
     {
-        if (__instance == null) return;
         var mod = InventoryShortcutsMod.Instance;
         if (mod != null)
+        {
             mod.DestroyUi(__instance);
+            InventoryShortcutsMod.ClearPlayerSent(__instance.userID);
+        }
     }
 }

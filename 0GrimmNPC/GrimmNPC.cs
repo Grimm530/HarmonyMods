@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -14,12 +14,12 @@ using Rust.Ai.Gen2;
 using UnityEngine;
 using UnityEngine.AI;
 using GrimmNPC.NpcSpawnExtensionMethods;
-using OxideCompat = GrimmNPC.OxideCompat;
+using HarmonyCompat = GrimmNPC.HarmonyCompat;
 
 namespace GrimmNPC
 {
     /// <summary>
-    /// Harmony port of Oxide NpcSpawn 3.3.04. Logic kept identical; only loader/config/hooks adapted for Harmony.
+    /// Harmony port of original NpcSpawn 3.3.04. Logic kept identical; only loader/config/hooks adapted for Harmony.
     /// </summary>
     public class GrimmNPC : IHarmonyModHooks
     {
@@ -56,6 +56,7 @@ namespace GrimmNPC
             public float Speed { get; set; }
             public int AreaMask { get; set; }
             public int AgentTypeID { get; set; }
+            public float BaseOffSet { get; set; } = 0f;
             public string HomePosition { get; set; }
             public float MemoryDuration { get; set; }
             public HashSet<string> States { get; set; }
@@ -130,7 +131,7 @@ namespace GrimmNPC
 
         private void LoadConfig()
         {
-            _config = OxideCompat.ReadConfig<PluginConfig>();
+            _config = HarmonyCompat.ReadConfig<PluginConfig>();
             if (_config == null)
                 _config = PluginConfig.DefaultConfig();
             bool configChanged = false;
@@ -399,7 +400,7 @@ namespace GrimmNPC
             SaveConfig();
         }
 
-        private void SaveConfig() => OxideCompat.WriteConfig(_config);
+        private void SaveConfig() => HarmonyCompat.WriteConfig(_config);
 
         internal class DefaultSettings
         {
@@ -794,13 +795,16 @@ namespace GrimmNPC
             }
         }
 
-        private static bool IsCustomScientist(BaseEntity entity) => entity != null && entity.skinID == 11162132011012;
+        private static bool IsCustomNpcSkin(ulong skin) =>
+            skin == GrimmCoreBridge.CustomEntitySkinId || skin == 11162132011012UL;
+
+        private static bool IsCustomScientist(BaseEntity entity) => entity != null && IsCustomNpcSkin(entity.skinID);
 
         /// <summary>
         /// Public API: Spawn NPC by config object. Used by other plugins (e.g. Convoy) via Call("SpawnNpc", position, config).
         /// Accepts NpcConfig or JObject (Convoy 2.9.6 style) for cross-plugin compatibility.
         /// </summary>
-        /// <remarks>Oxide plugin interop uses hook names: <c>Plugin.Call("SpawnNpc", …)</c> invokes <see cref="HookMethodAttribute"/> targets.
+        /// <remarks>Harmony mod interop uses hook names: <c>Plugin.Call("SpawnNpc", …)</c> invokes <see cref="HookMethodAttribute"/> targets.
         /// A private overload must not share the same name or it would also register as hook <c>SpawnNpc</c> and run twice.</remarks>
         public ScientistNPC SpawnNpc(Vector3 position, object configObj)
         {
@@ -817,6 +821,9 @@ namespace GrimmNPC
                     PrintWarning($" SpawnNpc: failed to parse JObject config at position {position}");
                     return null;
                 }
+                // NpcSpawn 3.4.1 CreateCustomNpc always uses the exact world position (no nav snap).
+                config.TrustSpawnPosition = true;
+                config.CustomMapAbsolutePosition = true;
                 DebugLog($"SpawnNpc API: parsed JObject -> Name='{config.Name}', AreaMask={config.AreaMask}, TrustSpawnPosition={config.TrustSpawnPosition}, Gender='{config.Gender}', SkinTone='{config.SkinTone}'");
                 return SpawnNpcFromConfig(position, config);
             }
@@ -840,10 +847,10 @@ namespace GrimmNPC
         private static void ApplyBetterNpcPresetInteropPlacementHints(NpcConfig cfg)
         {
             if (cfg == null) return;
+            // NpcSpawn 3.4.1 SpawnPreset → CreateCustomNpc(exact position). AgentTypeID 0 is valid
+            // (AnalyzeConfig only remaps values that are neither 0 nor -1372625422).
             cfg.TrustSpawnPosition = true;
             cfg.CustomMapAbsolutePosition = true;
-            if (cfg.AreaMask == 1)
-                cfg.AreaMask = 25;
         }
 
         /// <summary>
@@ -898,16 +905,24 @@ namespace GrimmNPC
             return false;
         }
 
-        /// <summary>BetterNpc compatibility: parent NPC to a cargo / moving entity transform.</summary>
-        public void SetParent(ScientistNPC npc, object parentObj, Vector3 localPos, float unusedPadding = 0f)
+        /// <summary>
+        /// NpcSpawn 3.4.1 API: <c>SetParent(npc, Transform parent, Vector3 localPos, float updateTime = 1f)</c>.
+        /// Updates <see cref="CustomScientistNpc.HomePosition"/> from the parent transform on an interval
+        /// (BetterNPC / HarborEvent pass 0.5f). Does not entity-parent the NPC.
+        /// </summary>
+        public void SetParent(ScientistNPC npc, object parentObj, Vector3 localPos, float updateTime = 1f)
         {
-            if (npc == null || parentObj == null) return;
+            if (npc is not CustomScientistNpc custom) return;
+            if (parentObj == null) return;
+
             Transform tr = parentObj as Transform;
             if (tr == null && parentObj is Component comp) tr = comp.transform;
             if (tr == null) return;
-            BaseEntity parent = tr.GetComponentInParent<BaseEntity>();
-            if (parent == null) return;
-            if (npc is CustomScientistNpc custom) SetParentEntity(custom, parent, localPos);
+
+            if (updateTime < 0f) updateTime = Mathf.Abs(updateTime);
+            if (updateTime == 0f) return;
+
+            custom.SetParent(tr, localPos, updateTime);
         }
 
         /// <summary>Optional preset usage tracking for BetterNpc (no-op if unused).</summary>
@@ -919,7 +934,7 @@ namespace GrimmNPC
         private static JObject TryLoadPresetJObject(string presetName)
         {
             if (string.IsNullOrWhiteSpace(presetName)) return null;
-            string baseDir = Path.Combine(OxideCompat.DataDirectory, "NpcSpawn", "Preset");
+            string baseDir = Path.Combine(HarmonyCompat.DataDirectory, "NpcSpawn", "Preset");
             if (!Directory.Exists(baseDir)) return null;
 
             string[] candidates =
@@ -939,7 +954,7 @@ namespace GrimmNPC
                 }
                 catch (Exception ex)
                 {
-                    OxideCompat.LogWarning($"[NpcSpawn] Preset file exists but JSON parse failed ({file}): {ex.Message}");
+                    HarmonyCompat.LogWarning($"[NpcSpawn] Preset file exists but JSON parse failed ({file}): {ex.Message}");
                     continue;
                 }
             }
@@ -1009,6 +1024,7 @@ namespace GrimmNPC
             config.Speed = jo["Speed"] != null ? (float)jo["Speed"] : 5f;
             config.AreaMask = jo["AreaMask"] != null ? (int)jo["AreaMask"] : 0;
             config.AgentTypeID = jo["AgentTypeID"] != null ? (int)jo["AgentTypeID"] : -1372625422;
+            config.BaseOffSet = jo["BaseOffSet"] != null ? (float)jo["BaseOffSet"] : 0f;
             config.HomePosition = jo["HomePosition"]?.ToString() ?? string.Empty;
             config.MemoryDuration = jo["MemoryDuration"] != null ? (float)jo["MemoryDuration"] : 5f;
             // Accept enum names ("Male", "Light") and numeric values ("1", "2").
@@ -1064,7 +1080,7 @@ namespace GrimmNPC
                 DebugLog($"SpawnNpc: CreateCustomNpc returned null for '{config.Name}' at {position} (AreaMask={config.AreaMask}, TrustSpawnPosition={config.TrustSpawnPosition}). Check console for NpcSpawn warnings above.");
                 return null;
             }
-            npc.skinID = 11162132011012;
+            npc.skinID = GrimmCoreBridge.CustomEntitySkinId;
             Scientists.Add(npc.net.ID.Value, npc);
             return npc;
         }
@@ -1084,7 +1100,7 @@ namespace GrimmNPC
             // Enhanced: Position validation is now handled in CreateCustomNpc
             CustomScientistNpc npc = CreateCustomNpc(position, config);
             if (npc == null) return null;
-            npc.skinID = 11162132011012;
+            npc.skinID = GrimmCoreBridge.CustomEntitySkinId;
             Scientists.Add(npc.net.ID.Value, npc);
             return npc;
         }
@@ -1276,6 +1292,8 @@ namespace GrimmNPC
             customScientist.Config = config;
             customScientist.Brain = customScientistBrain;
             customScientist.enableSaving = false;
+            // Tag before Spawn/ServerThink so the GrimmCore scientist cull allows this NPC from the first tick.
+            GrimmCoreBridge.TagCustomEntity(customScientist);
             
             // Set Npc reference in brain BEFORE destroying components to prevent NullReferenceException
             // AddStates() can be called during Start() before InitializeAI(), so we need this set early
@@ -1298,7 +1316,7 @@ namespace GrimmNPC
             customScientist.gameObject.AwakeFromInstantiate();
             
             // Call spawn hook before actually spawning
-            object hookResult = OxideCompat.CallHook("OnCustomNpcSpawned", customScientist);
+            object hookResult = HarmonyCompat.CallHook("OnCustomNpcSpawned", customScientist);
             if (hookResult is bool && !(bool)hookResult)
             {
                 PrintWarning($" CreateCustomNpc: OnCustomNpcSpawned hook cancelled spawn for '{config?.Name ?? "NPC"}' at {position}");
@@ -1310,8 +1328,9 @@ namespace GrimmNPC
             // FSMComponent will use CustomScientistNpc as baseEntity via GameObjectEx.ToBaseEntity()
             customScientist.Spawn();
 
-            // TrustPosition (GrimmBoss / API): ServerInit finishes before NavMeshAgent always reports isOnNavMesh; one tick helps registration on monument bakes.
-            if (config.TrustSpawnPosition)
+            // TrustPosition: one-tick PlaceOnNavMesh helps monument bakes.
+            // Skip when CustomMapAbsolutePosition (BetterNpc cargo/exact) — warp spam + wrong agent on water/deck.
+            if (config.TrustSpawnPosition && !config.CustomMapAbsolutePosition)
             {
                 CustomScientistNpc npcDeferred = customScientist;
                 timer.Once(0.08f, () =>
@@ -1369,7 +1388,11 @@ namespace GrimmNPC
             npc.AddTargetGuard(target);
         }
 
-        private void SetParentEntity(CustomScientistNpc npc, BaseEntity parent, Vector3 pos) { if (IsCustomScientist(npc) && parent != null) npc.SetParentEntity(parent, pos); }
+        private void SetParentEntity(CustomScientistNpc npc, BaseEntity parent, Vector3 pos)
+        {
+            if (!IsCustomScientist(npc) || parent == null) return;
+            npc.SetParent(parent.transform, pos, 1f);
+        }
 
         private void SetHomePosition(CustomScientistNpc npc, Vector3 pos)
         {
@@ -1489,15 +1512,10 @@ namespace GrimmNPC
                 if (NavAgent == null) NavAgent = GetComponent<RustNavMeshAgent>();
                 if (NavAgent != null)
                 {
-                    // Enhanced: Use config values if set, otherwise use defaults optimized for building navigation
-                    // AreaMask 25 = Ground (1) + Construction (8) + Buildings (16) = all building surfaces
-                    int effectiveAreaMask = Config.AreaMask > 0 ? Config.AreaMask : 25;
-                    NavAgent.areaMask = effectiveAreaMask;
-                    // Agent type 0 is invalid on Rust NavMeshAgents (Unity: "No navmesh areas matching agent type? Agent type: 0"). Humanoid matches terrain + construction (mask 25).
-                    int agentTypeId = Config.AgentTypeID;
-                    if (agentTypeId == 0)
-                        agentTypeId = -1372625422;
-                    NavAgent.agentTypeID = agentTypeId;
+                    // NpcSpawn 3.4.1: apply AreaMask / AgentTypeID literally from config (0 is allowed).
+                    NavAgent.areaMask = Config.AreaMask;
+                    NavAgent.agentTypeID = Config.AgentTypeID;
+                    NavAgent.baseOffset = Config.BaseOffSet;
                     if (NavAgent.obstacleAvoidanceType == ObstacleAvoidanceType.NoObstacleAvoidance)
                         NavAgent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
                     ulong avoidId = net != null ? net.ID.Value : 0;
@@ -1833,6 +1851,8 @@ namespace GrimmNPC
                         // Then aggressively wake up the brain - do ALL of these to be sure
                         if (Brain != null)
                         {
+                            if (NavAgent != null && !NavAgent.enabled && !IsStationary && !HasParentTransform)
+                                NavAgent.enabled = true;
                             Brain.sleeping = false; // Set directly first
                             if (Brain is IAISleepable sleepable)
                             {
@@ -1843,8 +1863,8 @@ namespace GrimmNPC
                                 Brain.Navigator.Resume(); // Resume navigation
                             }
                         }
-                        // CRITICAL: Ensure NavAgent is enabled (required for movement)
-                        if (NavAgent != null)
+                        // CRITICAL: Ensure NavAgent is enabled (required for movement) — except stationary / parented cargo.
+                        if (NavAgent != null && !IsStationary && !HasParentTransform)
                         {
                             NavAgent.enabled = true; // Always enable when players nearby
                         }
@@ -1873,6 +1893,8 @@ namespace GrimmNPC
                     {
                         // Players nearby but brain is sleeping - force wake up
                         IsDormant = false;
+                        if (NavAgent != null && !NavAgent.enabled)
+                            NavAgent.enabled = true;
                         Brain.sleeping = false;
                         if (Brain is IAISleepable sleepable)
                         {
@@ -1923,6 +1945,8 @@ namespace GrimmNPC
                         // FORCE WAKE UP - be aggressive about it (even if already awake, ensure everything is enabled)
                         if (Brain.sleeping)
                         {
+                            if (NavAgent != null && !NavAgent.enabled && !IsStationary && !HasParentTransform)
+                                NavAgent.enabled = true;
                             // Directly set sleeping to false first
                             Brain.sleeping = false;
                             // Use IAISleepable interface to properly wake (it will handle Navigator and movement tick)
@@ -1938,7 +1962,7 @@ namespace GrimmNPC
                         }
                         // CRITICAL: Ensure NavAgent is enabled (required for movement)
                         // Always check and enable, even if not sleeping, to handle edge cases
-                        if (NavAgent != null && !NavAgent.enabled)
+                        if (NavAgent != null && !NavAgent.enabled && !IsStationary && !HasParentTransform)
                         {
                             NavAgent.enabled = true;
                         }
@@ -1974,8 +1998,13 @@ namespace GrimmNPC
                 // Enhanced: Stuck detection and recovery (from BotReSpawn improvements)
                 if (Brain != null && Brain.Navigator != null && Brain.Navigator.StuckOffNavmesh)
                 {
+                    // Cargo / parented / AStar deck NPCs: PlaceOnNavMesh snaps to ocean floor under the ship.
+                    if (IsParentLockedNavigation())
+                    {
+                        RescueToParentHomeIfFallen();
+                    }
                     // Open-water swim NPCs: do NOT snap to NavMesh / home on the seabed — that reads as "running on ocean floor".
-                    if (ShouldBypassDryNavmeshPlanning())
+                    else if (ShouldBypassDryNavmeshPlanning())
                     {
                         MaybeLogSwimNavDebug("StuckOffNavmesh: skipped seabed recovery (swim bypass)");
                     }
@@ -1999,6 +2028,17 @@ namespace GrimmNPC
                 
                 try
                 {
+                    // BetterNPC cargo / HarborEvent SetParent: never re-enable terrain NavMesh —
+                    // that pulls NPCs through the deck onto the ocean mesh (shoot-through floor).
+                    if (IsParentLockedNavigation())
+                    {
+                        Brain.Navigator.CanUseNavMesh = false;
+                        Brain.Navigator.CanUseCustomNav = false;
+                        if (Brain.Navigator.AStarGraph != null)
+                            Brain.Navigator.CanUseAStar = true;
+                        return;
+                    }
+
                     // Stock NPCPlayerNavigator.IsSwimming() often stays false on deep open water (feet on seabed NavMesh).
                     // ChaosNPC fixes this with CustomScientistNavigator.IsSwimming() (modelState.waterLevel) — we are not subclassing the navigator,
                     // so align with our existing deep-water bypass used in SetDestination / ShouldBypassDryNavmeshPlanning.
@@ -2033,6 +2073,42 @@ namespace GrimmNPC
                 {
                     // Navigator component may have been destroyed
                     return;
+                }
+            }
+
+            /// <summary>
+            /// Parented (cargo/harbor) or intentionally NavMesh-off AStar deck NPCs must not use terrain PlaceOnNavMesh.
+            /// </summary>
+            internal bool IsParentLockedNavigation()
+            {
+                if (HasParentTransform || IsStationary)
+                    return true;
+                if (Brain?.Navigator == null)
+                    return false;
+                if (!Brain.Navigator.CanUseNavMesh && Brain.Navigator.CanUseAStar && Brain.Navigator.AStarGraph != null)
+                    return true;
+                return false;
+            }
+
+            /// <summary>Pull parented NPC back onto HomePosition if NavMesh/swim logic dropped them under the deck.</summary>
+            private void RescueToParentHomeIfFallen()
+            {
+                if (!HasParentTransform || HomePosition == Vector3.zero) return;
+                Vector3 world = HomePosition;
+                float dy = world.y - transform.position.y;
+                float sqr = (transform.position - world).sqrMagnitude;
+                // Under deck / seabed snap, or teleported far from parent local.
+                if (dy > 1.25f || sqr > 9f)
+                {
+                    transform.position = world;
+                    ServerPosition = world;
+                    if (Brain?.Navigator != null)
+                    {
+                        Brain.Navigator.CanUseNavMesh = false;
+                        Brain.Navigator.CanUseCustomNav = false;
+                        if (Brain.Navigator.AStarGraph != null)
+                            Brain.Navigator.CanUseAStar = true;
+                    }
                 }
             }
 
@@ -2107,7 +2183,7 @@ namespace GrimmNPC
                 {
                     BasePlayer basePlayer = target as BasePlayer;
                     if (basePlayer.IsDead()) return false;
-                    object hook = OxideCompat.CallHook("OnCustomNpcTarget", this, basePlayer);
+                    object hook = HarmonyCompat.CallHook("OnCustomNpcTarget", this, basePlayer);
                     if (hook is bool) return (bool)hook;
                     if (basePlayer.userID.IsSteamId()) return CanTargetPlayer(basePlayer);
                     if (basePlayer.skinID != 0 && _ins.SkinIDs.Contains(basePlayer.skinID)) return true;
@@ -2122,7 +2198,7 @@ namespace GrimmNPC
             internal bool CanTargetNpcPlayer(NPCPlayer target)
             {
                 if (target is FrankensteinPet) return true;
-                if (target.skinID == 11162132011012) return false;
+                if (IsCustomNpcSkin(target.skinID)) return false;
                 
                 // Teammate NPCs can always target other NPCs (except custom ones from same plugin)
                 if (Config.IsTeammateNpc) return true;
@@ -2185,28 +2261,54 @@ namespace GrimmNPC
             #endregion Targeting
 
 			#region Visible
+            // Default || Deployed || Player_Movement || Vehicle_Detailed || Vehicle_World || World || Harvestable || Construction || Terrain || Tree
 			private int VisibleLayerMaskOriginal { get; } = 1218519041;
 
+            private static Vector3 GetLosEyesPosition(BasePlayer entity)
+            {
+                if (entity.eyes == null) return entity.CenterPoint();
+                if (entity.isMounted) return entity.eyes.worldMountedPosition;
+                if (entity.IsDucked()) return entity.eyes.worldCrouchedPosition;
+                if (entity.IsCrawling()) return entity.eyes.worldCrawlingPosition;
+                return entity.eyes.worldStandingPosition;
+            }
+
+            /// <summary>
+            /// Bidirectional LOS (NpcSpawn layer mask + maxDist). Blocks under-deck cargo shoot-through:
+            /// NPC→player may clear from inside mesh, but player→NPC hits the floor.
+            /// </summary>
 			internal new bool CanSeeTarget(BaseEntity target)
             {
-                if (target == null || eyes == null) return false;
-                // Ignore built-in admin invisible (BasePlayer.isInvisible)
+                if (target == null || !target.IsExists() || eyes == null) return false;
                 BasePlayer bpCheck = target as BasePlayer;
                 if (bpCheck != null && bpCheck.isInvisible) return false;
-				int mask = VisibleLayerMaskOriginal;
-                Vector3 main = isMounted ? eyes.worldMountedPosition : IsDucked() ? eyes.worldCrouchedPosition : IsCrawling() ? eyes.worldCrawlingPosition : eyes.worldStandingPosition;
-                if (target is BasePlayer)
+
+                int mask = VisibleLayerMaskOriginal;
+                Vector3 eyesPos = GetLosEyesPosition(this);
+                Vector3 targetCenter = target.CenterPoint();
+                float maxDist = Vector3.Distance(eyesPos, targetCenter) + 1.5f;
+
+                if (target is BasePlayer targetBp)
                 {
-                    BasePlayer targetBp = target as BasePlayer;
-					if (!targetBp.IsVisibleSpecificLayers(main, targetBp.CenterPoint(), mask) && !targetBp.IsVisibleSpecificLayers(main, targetBp.transform.position, mask) && !targetBp.IsVisibleSpecificLayers(main, targetBp.eyes.position, mask)) return false;
-					if (!IsVisibleSpecificLayers(targetBp.CenterPoint(), main, mask) && !IsVisibleSpecificLayers(targetBp.transform.position, main, mask) && !IsVisibleSpecificLayers(targetBp.eyes.position, main, mask)) return false;
+                    Vector3 targetEyes = GetLosEyesPosition(targetBp);
+                    bool npcToPlayer =
+                        targetBp.IsVisibleSpecificLayers(eyesPos, targetEyes, mask, maxDist) ||
+                        targetBp.IsVisibleSpecificLayers(eyesPos, targetCenter, mask, maxDist) ||
+                        targetBp.IsVisibleSpecificLayers(eyesPos, targetBp.transform.position, mask, maxDist);
+                    if (!npcToPlayer) return false;
+
+                    bool playerToNpc =
+                        IsVisibleSpecificLayers(targetCenter, eyesPos, mask, maxDist) ||
+                        IsVisibleSpecificLayers(targetBp.transform.position, eyesPos, mask, maxDist) ||
+                        IsVisibleSpecificLayers(targetEyes, eyesPos, mask, maxDist);
+                    return playerToNpc;
                 }
-                else
-                {
-					if (!target.IsVisibleSpecificLayers(main, target.CenterPoint(), mask) && !target.IsVisibleSpecificLayers(main, target.transform.position, mask)) return false;
-					if (!IsVisibleSpecificLayers(target.CenterPoint(), main, mask) && !IsVisibleSpecificLayers(target.transform.position, main, mask)) return false;
-                }
-                return true;
+
+                bool a = target.IsVisibleSpecificLayers(eyesPos, targetCenter, mask, maxDist) ||
+                         target.IsVisibleSpecificLayers(eyesPos, target.transform.position, mask, maxDist);
+                if (!a) return false;
+                return IsVisibleSpecificLayers(targetCenter, eyesPos, mask, maxDist) ||
+                       IsVisibleSpecificLayers(target.transform.position, eyesPos, mask, maxDist);
             }
             #endregion Visible
 
@@ -2644,7 +2746,7 @@ namespace GrimmNPC
                         if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
                         {
                             if (path.status == NavMeshPathStatus.PathComplete) return main;
-                            else return GetNearEntity<BaseCombatEntity>(path.corners.Last(), 5f, 1 << 8 | 1 << 21);
+                            else return GetNearEntity<BaseCombatEntity>(path.corners[path.corners.Length - 1], 5f, 1 << 8 | 1 << 21);
                         }
                     }
 
@@ -2663,7 +2765,7 @@ namespace GrimmNPC
                         if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
                         {
                             if (path.status == NavMeshPathStatus.PathComplete) return main;
-                            else return GetNearEntity<BaseCombatEntity>(path.corners.Last(), 5f, 1 << 8 | 1 << 21);
+                            else return GetNearEntity<BaseCombatEntity>(path.corners[path.corners.Length - 1], 5f, 1 << 8 | 1 << 21);
                         }
                     }
                 }
@@ -2675,7 +2777,7 @@ namespace GrimmNPC
                         if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
                         {
                             if (path.status == NavMeshPathStatus.PathComplete && Vector3.Distance(navMeshHit.position, main.transform.position) < 6f) return main;
-                            else return GetNearEntity<BaseCombatEntity>(path.corners.Last(), 6f, 1 << 8 | 1 << 21);
+                            else return GetNearEntity<BaseCombatEntity>(path.corners[path.corners.Length - 1], 6f, 1 << 8 | 1 << 21);
                         }
                     }
                 }
@@ -2877,36 +2979,107 @@ namespace GrimmNPC
                     HomePosition = BeforeGuardHomePosition;
                     BeforeGuardHomePosition = Vector3.zero;
                     GuardTarget = null;
-                    OxideCompat.CallHook("OnCustomNpcGuardTargetEnd", this);
+                    HarmonyCompat.CallHook("OnCustomNpcGuardTargetEnd", this);
                 }
             }
             #endregion Guard
 
             #region Parent
-            private BaseEntity ParentEntity { get; set; } = null;
-            private Vector3 LocalPos { get; set; } = Vector3.zero;
+            // NpcSpawn 3.4.1: HomePosition follows a Transform on updateTime (no BaseEntity.SetParent).
+            private Transform ParentTransform { get; set; } = null;
+            private Vector3 ParentLocalPos { get; set; } = Vector3.zero;
+            private Vector3 ParentHomePositionBefore { get; set; } = Vector3.zero;
+            internal bool HasParentTransform => ParentTransform != null;
 
-            internal void SetParentEntity(BaseEntity parent, Vector3 pos)
+            /// <summary>NpcSpawn 3.4.1 CustomScientistNpc.SetParent(Transform, Vector3, float).</summary>
+            public void SetParent(Transform parent, Vector3 pos, float updateTime)
             {
-                ParentEntity = parent;
-                LocalPos = pos;
-                InvokeRepeating(UpdateHomePositionParent, 0f, 0.1f);
+                if (parent == null) return;
+                if (updateTime < 0f) updateTime = Mathf.Abs(updateTime);
+                if (updateTime == 0f) return;
+
+                ParentHomePositionBefore = HomePosition;
+                ParentTransform = parent;
+                ParentLocalPos = pos;
+
+                // Lock off terrain NavMesh immediately — UpdateNavigationMode / PlaceOnNavMesh otherwise
+                // snaps cargo NPCs through the deck onto the ocean mesh (one-way shoot-through).
+                if (Brain?.Navigator != null)
+                {
+                    Brain.Navigator.CanUseNavMesh = false;
+                    Brain.Navigator.CanUseCustomNav = false;
+                    Brain.Navigator.CanUseBaseNav = false;
+                }
+                if (IsStationary && NavAgent != null && NavAgent.enabled)
+                    NavAgent.enabled = false;
+
+                CancelInvoke(UpdateHomePositionParent);
+                InvokeRepeating(UpdateHomePositionParent, 0f, updateTime);
+                UpdateHomePositionParent();
             }
 
             private void UpdateHomePositionParent()
             {
-                if (ParentEntity != null && !ParentEntity.IsDestroyed)
+                if (ParentTransform != null)
                 {
-                    HomePosition = ParentEntity.transform.TransformPoint(LocalPos);
+                    bool isLocalZero = ParentLocalPos == Vector3.zero;
+                    HomePosition = isLocalZero
+                        ? ParentTransform.position
+                        : ParentTransform.TransformPoint(ParentLocalPos);
+
+                    Vector3 world = HomePosition;
+
+                    // Stationary / NavAgent-off: keep body on the moving deck (NpcSpawn only updates HomePosition;
+                    // without this, Idle/CombatStationary cargo NPCs stay at world spawn as the ship leaves).
+                    if (IsStationary || NavAgent == null || !NavAgent.enabled)
+                    {
+                        if ((transform.position - world).sqrMagnitude > 0.01f)
+                        {
+                            transform.position = world;
+                            ServerPosition = world;
+                        }
+                    }
+                    else
+                    {
+                        // Moving + AStar: still rescue if NavMesh/swim pulled them under the deck.
+                        RescueToParentHomeIfFallen();
+                    }
+
+                    // Keep navigator locked every parent tick (NextTick AStar setup + Think must not re-enable NavMesh).
+                    if (Brain?.Navigator != null && Brain.Navigator.CanUseNavMesh)
+                    {
+                        Brain.Navigator.CanUseNavMesh = false;
+                        Brain.Navigator.CanUseCustomNav = false;
+                    }
                     return;
                 }
 
-                LocalPos = Vector3.zero;
-                ParentEntity = null;
+                HomePosition = ParentHomePositionBefore;
+                ParentLocalPos = Vector3.zero;
+                ParentTransform = null;
                 CancelInvoke(UpdateHomePositionParent);
-                OxideCompat.CallHook("OnCustomNpcParentEnd", this);
+                HarmonyCompat.CallHook("OnCustomNpcParentEnd", this);
             }
             #endregion Parent
+
+            #region Stationary
+            public bool IsStationary { get; set; }
+
+            public void UpdateStationary()
+            {
+                if (Config?.States == null)
+                {
+                    IsStationary = Config != null && Config.Speed == 0f;
+                    return;
+                }
+
+                IsStationary = (Config.States.Contains("IdleState") && Config.States.Contains("CombatStationaryState")) ||
+                               (Config.States.Contains("IdleState") && Config.States.Count == 1) ||
+                               (Config.States.Contains("CombatStationaryState") && Config.States.Count == 1) ||
+                               Config.States.Count == 0 ||
+                               Config.Speed == 0f;
+            }
+            #endregion Stationary
 
             #region Multiple Grenade Launcher
             internal bool IsReloadGrenadeLauncher { get; set; } = false;
@@ -2989,6 +3162,10 @@ namespace GrimmNPC
                 }
                 if (!damage) return;
                 Vector3 vector31 = eyes.BodyForward();
+                float single = 0f;
+                foreach (var dt in weapon.damageTypes)
+                    single += dt.amount;
+                float meleeMul = Config.MeleeDamageScale > 0f ? Config.MeleeDamageScale : Config.DamageScale;
                 for (int i = 0; i < 2; i++)
                 {
                     List<RaycastHit> list = Pool.Get<List<RaycastHit>>();
@@ -3000,8 +3177,6 @@ namespace GrimmNPC
                         BaseEntity entity = item.GetEntity();
                         if (entity != null && entity != this && !entity.EqualNetID(this) && !entity.isClient)
                         {
-                            float single = weapon.damageTypes.Sum(x => x.amount);
-                            float meleeMul = Config.MeleeDamageScale > 0f ? Config.MeleeDamageScale : Config.DamageScale;
                             entity.OnAttacked(new HitInfo(this, entity, DamageType.Slash, single * weapon.npcDamageScale * meleeMul));
                             HitInfo hitInfo = Pool.Get<HitInfo>();
                             hitInfo.HitEntity = entity;
@@ -3035,6 +3210,8 @@ namespace GrimmNPC
             {
                 if (Config == null || !Config.CanSwim || Brain?.Navigator == null || transform == null)
                     return false;
+                if (HasParentTransform)
+                    return false;
 
                 Vector3 p = transform.position;
                 // Sunken custom monument (GrimmBoss CustomMap): feet below terrain shell — not open-ocean swim; use monument/NavMesh planning.
@@ -3063,6 +3240,9 @@ namespace GrimmNPC
             private void TrySwimColumnKickAndDebug()
             {
                 if (Config == null || !Config.CanSwim || Brain?.Navigator == null || transform == null)
+                    return;
+                // Cargo / harbor parented NPCs sit above ocean — never kick them into the water column.
+                if (HasParentTransform)
                     return;
 
                 Vector3 p = transform.position;
@@ -3137,6 +3317,45 @@ namespace GrimmNPC
                 {
                     return false; // Navigator not ready yet
                 }
+
+                // Cargo / AStar / parented (NpcSpawn 3.4.1 + BetterNPC/HarborEvent): do not Resume NavMesh
+                // or snap to terrain — that causes Agent type 0 spam and pulls NPCs off the deck.
+                bool cargoOrAStar =
+                    HasParentTransform ||
+                    IsStationary ||
+                    !Brain.Navigator.CanUseNavMesh ||
+                    (Brain.Navigator.CanUseAStar && Brain.Navigator.AStarGraph != null);
+
+                if (cargoOrAStar)
+                {
+                    if (!pos.IsEqualVector3(Brain.Navigator.Destination))
+                    {
+                        _onDestinationReachedCallback = onReached;
+                        try
+                        {
+                            return Brain.Navigator.SetDestination(pos, speed);
+                        }
+                        catch (NullReferenceException)
+                        {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+
+                // Navigator.Stop() disables the agent; always revive before pathing or SetDestination returns false forever.
+                try
+                {
+                    Brain.Navigator.Resume();
+                    if (Brain.Navigator.Agent != null)
+                    {
+                        if (!Brain.Navigator.Agent.enabled)
+                            Brain.Navigator.SetNavMeshEnabled(true);
+                        if (Brain.Navigator.Agent.isStopped)
+                            Brain.Navigator.Agent.isStopped = false;
+                    }
+                }
+                catch { }
 
                 if (ShouldBypassDryNavmeshPlanning())
                 {
@@ -3325,7 +3544,7 @@ namespace GrimmNPC
                     if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
                     {
                         if (path.status == NavMeshPathStatus.PathComplete) return navMeshHit.position;
-                        else return path.corners.Last();
+                        else return path.corners[path.corners.Length - 1];
                     }
                 }
                 
@@ -3337,7 +3556,7 @@ namespace GrimmNPC
                         if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
                         {
                             if (path.status == NavMeshPathStatus.PathComplete) return navMeshHit.position;
-                            else return path.corners.Last();
+                            else return path.corners[path.corners.Length - 1];
                         }
                     }
 
@@ -3348,7 +3567,7 @@ namespace GrimmNPC
                         if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavMesh.AllAreas, path))
                         {
                             if (path.status == NavMeshPathStatus.PathComplete) return navMeshHit.position;
-                            else return path.corners.Last();
+                            else return path.corners[path.corners.Length - 1];
                         }
                     }
                 }
@@ -3511,7 +3730,7 @@ namespace GrimmNPC
             internal void ExplosionBomber(BaseEntity target = null)
             {
                 Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", transform.position + new Vector3(0f, 1f, 0f), Vector3.up, null, true);
-                OxideCompat.CallHook("OnBomberExplosion", this, target);
+                HarmonyCompat.CallHook("OnBomberExplosion", this, target);
                 Kill();
             }
             #endregion Bomber
@@ -3522,6 +3741,7 @@ namespace GrimmNPC
                 if (transform == null || Brain == null) return; // Entity not ready
                 
                 bool shouldSleep = false;
+                float sleepRange = 0f;
                 
                 // Check global ForceRespectAiDormant setting
                 if (_config.ForceRespectAiDormant)
@@ -3533,23 +3753,23 @@ namespace GrimmNPC
                     float serverWakeupRange = AiManager.ai_to_player_distance_wakeup_range;
                     float configSleepDistance = Config.CanSleep ? Config.SleepDistance : 0f;
                     float defaultSleepDistance = _config.DefaultSleepDistance;
-                    float wakeupRange = Mathf.Max(serverWakeupRange, Mathf.Max(configSleepDistance, defaultSleepDistance));
+                    sleepRange = Mathf.Max(serverWakeupRange, Mathf.Max(configSleepDistance, defaultSleepDistance));
                     
                     // Use local array to avoid static array conflicts
                     BasePlayer[] localPlayerResults = new BasePlayer[64];
                     
                     // Try GetPlayersInSphereFast first (more reliable)
-                    int playerCount = Query.Server.GetPlayersInSphereFast(transform.position, wakeupRange, localPlayerResults, x => x != null && x.IsPlayer() && !x.IsSleeping());
+                    int playerCount = Query.Server.GetPlayersInSphereFast(transform.position, sleepRange, localPlayerResults, x => x != null && x.IsPlayer() && !x.IsSleeping());
                     
                     // Fallback to PlayerGrid.Query if needed
                     bool hasNearbyPlayers = playerCount > 0;
-                    if (!hasNearbyPlayers && wakeupRange > 0)
+                    if (!hasNearbyPlayers && sleepRange > 0)
                     {
-                        int gridCount = Query.Server.PlayerGrid.Query(transform.position.x, transform.position.z, wakeupRange, localPlayerResults, x => x != null && x.IsPlayer() && !x.IsSleeping());
+                        int gridCount = Query.Server.PlayerGrid.Query(transform.position.x, transform.position.z, sleepRange, localPlayerResults, x => x != null && x.IsPlayer() && !x.IsSleeping());
                         hasNearbyPlayers = gridCount > 0;
                     }
                     
-                    shouldSleep = !hasNearbyPlayers;
+                    shouldSleep = !hasNearbyPlayers && CurrentTarget == null;
                     }
                     else
                     {
@@ -3561,24 +3781,45 @@ namespace GrimmNPC
                 {
                     // Use individual plugin's sleep system (original behavior)
                     if (!Config.CanSleep) return;
+                    sleepRange = Config.SleepDistance;
                     
                     // Use BotReSpawn approach: GetPlayersInSphere (not Fast) with simpler filter
                     BasePlayer[] localPlayerResults = new BasePlayer[64];
-                    int playerCount = Query.Server.GetPlayersInSphere(transform.position, Config.SleepDistance, localPlayerResults, x => x != null && x.net?.connection != null && x.userID.IsSteamId() && !x.IsNpc && !x.IsSleeping());
-                    shouldSleep = playerCount == 0;
+                    int playerCount = Query.Server.GetPlayersInSphere(transform.position, sleepRange, localPlayerResults, x => x != null && x.net?.connection != null && x.userID.IsSteamId() && !x.IsNpc && !x.IsSleeping());
+                    shouldSleep = playerCount == 0 && CurrentTarget == null;
                 }
                 
-                if (Brain.sleeping == shouldSleep) return;
-                Brain.sleeping = shouldSleep;
-                
+                // Apply sleep/wake through Facepunch IAISleepable + IsDormant.
+                // Setting Brain.sleeping alone left NPCs in AIThinkManager with movement ticks still running.
+                if (shouldSleep)
                 {
-                    if (Brain.sleeping && Brain.Navigator != null)
+                    if (!IsDormant) IsDormant = true;
+                    if (!Brain.sleeping)
                     {
-                        SetDestination(HomePosition, 2f, BaseNavigator.NavigationSpeed.Fast);
+                        if (Brain is IAISleepable sleepable)
+                            sleepable.SleepAI();
+                        else
+                            Brain.sleeping = true;
+                        if (Brain.Navigator != null)
+                            Brain.Navigator.Pause();
+                        if (NavAgent != null && NavAgent.enabled)
+                            NavAgent.enabled = false;
                     }
-                    else if (NavAgent != null)
+                }
+                else
+                {
+                    if (IsDormant) IsDormant = false;
+                    if (Brain.sleeping)
                     {
-                        NavAgent.enabled = true;
+                        // Enable agent before Resume/WakeAI so Unity does not throw off-mesh spam.
+                        if (NavAgent != null && !NavAgent.enabled && !IsStationary && !HasParentTransform)
+                            NavAgent.enabled = true;
+                        if (Brain is IAISleepable sleepable)
+                            sleepable.WakeAI();
+                        else
+                            Brain.sleeping = false;
+                        if (Brain.Navigator != null)
+                            Brain.Navigator.Resume();
                     }
                 }
             }
@@ -3604,17 +3845,27 @@ namespace GrimmNPC
                 }
                 
                 states = new Dictionary<AIState, BasicAIState>();
+
+                // NpcSpawn 3.4.1: compute stationary and disable NavAgent before adding states.
+                Npc.UpdateStationary();
+                if (Npc.IsStationary && Npc.NavAgent != null && Npc.NavAgent.enabled)
+                    Npc.NavAgent.enabled = false;
+
                 if (Npc.Config.States != null)
                 {
-                    if (Npc.Config.States.Contains("RoamState")) AddState(new RoamState(Npc));
-                    if (Npc.Config.States.Contains("ChaseState")) AddState(new ChaseState(Npc));
+                    if (!Npc.IsStationary && Npc.Config.States.Contains("RoamState")) AddState(new RoamState(Npc));
+                    if (!Npc.IsStationary && Npc.Config.States.Contains("ChaseState")) AddState(new ChaseState(Npc));
                     if (Npc.Config.States.Contains("CombatState")) AddState(new CombatState(Npc));
                     if (Npc.Config.States.Contains("IdleState"))
                     {
+                        if (Npc.NavAgent != null && Npc.NavAgent.enabled)
+                            Npc.NavAgent.enabled = false;
                         AddState(new IdleState(Npc));
                     }
                     if (Npc.Config.States.Contains("CombatStationaryState"))
                     {
+                        if (Npc.NavAgent != null && Npc.NavAgent.enabled)
+                            Npc.NavAgent.enabled = false;
                         AddState(new CombatStationaryState(Npc));
                     }
                     if (Npc.Config.States.Contains("RaidState"))
@@ -3663,6 +3914,15 @@ namespace GrimmNPC
                 Navigator.CanUseBaseNav = true;
                 Navigator.CanUseAStar = true;
                 Navigator.CanUseCustomNav = false;
+                
+                // NpcSpawn 3.4.1: stationary presets keep NavAgent disabled (Idle/CombatStationary).
+                Npc.UpdateStationary();
+                if (Npc.IsStationary)
+                {
+                    if (Npc.NavAgent != null && Npc.NavAgent.enabled)
+                        Npc.NavAgent.enabled = false;
+                    Navigator.CanUseNavMesh = false;
+                }
                 
                 // Set DefaultArea for BaseNavigator (helps with building navigation)
                 // BaseNavigator will use this as fallback when NavMesh is unavailable
@@ -3758,8 +4018,8 @@ namespace GrimmNPC
                         {
                             sleeping = false;
                         }
-                        // Ensure NavAgent is enabled (WakeAI should do this, but be safe)
-                        if (Npc.NavAgent != null && !Npc.NavAgent.enabled)
+                        // Ensure NavAgent is enabled (WakeAI should do this, but be safe) — not for stationary/cargo parent.
+                        if (Npc.NavAgent != null && !Npc.NavAgent.enabled && !Npc.IsStationary && !Npc.HasParentTransform)
                         {
                             Npc.NavAgent.enabled = true;
                         }
@@ -3902,7 +4162,8 @@ namespace GrimmNPC
                         }
                         
                         // Enhanced: Stuck detection and recovery during roam
-                        if (brain.Navigator != null && brain.Navigator.StuckOffNavmesh)
+                        if (brain.Navigator != null && brain.Navigator.StuckOffNavmesh
+                            && brain.Navigator.CanUseNavMesh && !_npc.HasParentTransform && !_npc.IsStationary)
                         {
                             if (_npc.RoamPoint != Vector3.zero)
                                 _npc.transform.position = _npc.RoamPoint;
@@ -4003,7 +4264,10 @@ namespace GrimmNPC
                                         : (_npc.CurrentWeapon is BaseLauncher ? UnityEngine.Random.Range(0.5f, 1f) : UnityEngine.Random.Range(1f, 2f));
                                     _nextStrafeTime = Time.time + deltaTime;
                                     _npc.SetDucked(true);
-                                    brain.Navigator.Stop();
+                                    // Do NOT Navigator.Stop() — Stop() → SetNavMeshEnabled(false) and the agent stays
+                                    // disabled until something re-enables it. Pause movement with isStopped instead.
+                                    if (brain.Navigator?.Agent != null && brain.Navigator.Agent.enabled && brain.Navigator.Agent.isOnNavMesh)
+                                        brain.Navigator.Agent.isStopped = true;
                                 }
                                 else
                                 {
@@ -4012,6 +4276,8 @@ namespace GrimmNPC
                                         : (_npc.CurrentWeapon is BaseLauncher ? UnityEngine.Random.Range(1f, 1.5f) : UnityEngine.Random.Range(2f, 3f));
                                     _nextStrafeTime = Time.time + deltaTime;
                                     _npc.SetDucked(false);
+                                    if (brain.Navigator?.Agent != null && brain.Navigator.Agent.enabled && brain.Navigator.Agent.isOnNavMesh)
+                                        brain.Navigator.Agent.isStopped = false;
                                     // Enhanced: Use Fast when in combat with target (from BotReSpawn improvements)
                                     _npc.SetDestination(_npc.GetRandomPos(_npc.transform.position, strafeRadius), 2f, BaseNavigator.NavigationSpeed.Fast);
                                 }
@@ -4207,7 +4473,10 @@ namespace GrimmNPC
                 private void DealDamage(BaseMelee weapon)
                 {
                     float meleeMul = _npc.Config.MeleeDamageScale > 0f ? _npc.Config.MeleeDamageScale : _npc.Config.DamageScale;
-                    _npc.CurrentRaidTarget.health -= weapon.damageTypes.Sum(x => x.amount) * weapon.npcDamageScale * meleeMul;
+                    float damageSum = 0f;
+                    foreach (var dt in weapon.damageTypes)
+                        damageSum += dt.amount;
+                    _npc.CurrentRaidTarget.health -= damageSum * weapon.npcDamageScale * meleeMul;
                     _npc.CurrentRaidTarget.SendNetworkUpdate();
                     if (_npc.CurrentRaidTarget.health <= 0f && _npc.CurrentRaidTarget.IsExists()) _npc.CurrentRaidTarget.Kill(BaseNetworkable.DestroyMode.Gib);
                 }
@@ -4353,9 +4622,21 @@ namespace GrimmNPC
                 {
                     List<BasePlayer> list = Pool.Get<List<BasePlayer>>();
                     Vis.Entities(_center, _npc.Config.ChaseRange, list, 1 << 17);
-                    HashSet<BasePlayer> players = list.Where(x => x.IsPlayer());
+                    BasePlayer best = null;
+                    float bestDist = float.MaxValue;
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        BasePlayer p = list[i];
+                        if (p == null || !p.IsPlayer()) continue;
+                        float dist = DistanceToPos(p.transform.position);
+                        if (dist < bestDist)
+                        {
+                            bestDist = dist;
+                            best = p;
+                        }
+                    }
                     Pool.FreeUnmanaged(ref list);
-                    return players.Count == 0 ? null : players.Min(x => DistanceToPos(x.transform.position));
+                    return best;
                 }
 
                 private Vector3 GetNearCirclePos => _circlePositions.Min(DistanceToPos);
@@ -4706,13 +4987,14 @@ namespace GrimmNPC
         {
             Init();
             LoadConfig();
-            OxideCompat.EnsureDataFolders();
-            OxideCompat.RegisterCommands(this);
+            GrimmCoreHurtRegistration.Register();
+            HarmonyCompat.EnsureDataFolders();
+            HarmonyCompat.RegisterCommands(this);
             // Cross-mod discovery: HarmonyLoader renames assemblies, so Convoy/etc. resolve via SetData.
             AppDomain.CurrentDomain.SetData("GrimmNPC.Type", typeof(GrimmNPC));
             AppDomain.CurrentDomain.SetData("GrimmNPC.Instance", this);
             // Delay server-init work until ServerMgr exists (Harmony may load BeforeSceneLoad).
-            OxideCompat.RunWhenServerInitialized(() =>
+            HarmonyCompat.RunWhenServerInitialized(() =>
             {
                 if (Instance == null) return;
                 OnServerInitialized();
@@ -4722,8 +5004,9 @@ namespace GrimmNPC
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
-            OxideCompat.UnregisterCommands();
+            HarmonyCompat.UnregisterCommands();
             Unload();
+            GrimmCoreHurtRegistration.Unregister();
             AppDomain.CurrentDomain.SetData("GrimmNPC.Instance", null);
             AppDomain.CurrentDomain.SetData("GrimmNPC.Type", null);
             Instance = null;
@@ -4731,7 +5014,7 @@ namespace GrimmNPC
         }
 
         /// <summary>Oxide timer.Once replacement.</summary>
-        internal OxideCompat.TimerHelper timer => OxideCompat.Timer;
+        internal HarmonyCompat.TimerHelper timer => HarmonyCompat.Timer;
 
         private void Puts(string message) => UnityEngine.Debug.Log("[GrimmNPC] " + message);
         private void PrintWarning(string message) => UnityEngine.Debug.LogWarning("[GrimmNPC] " + message);
@@ -4744,26 +5027,44 @@ namespace GrimmNPC
         }
         #endregion Harmony lifecycle
 
-        #region Oxide Hooks
+        #region Harmony Hooks
         private static GrimmNPC _ins;
         
         // Throttling for ScarecrowProtection messages (per NPC, max once per 10 seconds)
         private readonly Dictionary<ulong, float> _scarecrowMessageThrottle = new Dictionary<ulong, float>();
         private const float SCARECROW_MESSAGE_THROTTLE_SECONDS = 10f;
 
+        private static void EnsureAiNavEnabled()
+        {
+            try
+            {
+                if (Rust.Ai.AiManager.nav_disable)
+                {
+                    Rust.Ai.AiManager.nav_disable = false;
+                    _ins?.Puts("Re-enabled AI NavMesh (CustomGenerator leaves nav_disable=true on live servers).");
+                }
+            }
+            catch { }
+        }
+
         private void Init()
         {
             _ins = this;
             Instance = this;
-            Kits = OxideCompat.PluginRef.Find("Kits");
-            Friends = OxideCompat.PluginRef.Find("Friends");
-            Clans = OxideCompat.PluginRef.Find("Clans");
+            Kits = HarmonyCompat.PluginRef.Find("Kits");
+            Friends = HarmonyCompat.PluginRef.Find("Friends");
+            Clans = HarmonyCompat.PluginRef.Find("Clans");
         }
 
         private void OnServerInitialized()
         {
+            EnsureAiNavEnabled();
             CreateAllFolders();
-            GeneratePositions();
+            // Soft-generate biome points across frames (RaidableBases-style) so reload doesn't tank FPS.
+            if (ServerMgr.Instance != null)
+                _generatePositionsCo = ServerMgr.Instance.StartCoroutine(GeneratePositionsSoft());
+            else
+                GeneratePositions();
             // Seed currently used NPC userIDs to prevent duplicates
             SeedUsedNpcUserIds();
             // Late-bind Kits (Harmony may load Kits after GrimmNPC; PluginRef retries via Kits_ApiType).
@@ -4776,8 +5077,15 @@ namespace GrimmNPC
             Puts($"NPCs on server -> CustomScientists: {customScientists}, Vanilla Scientists: {otherScientists}, Total Scientists: {totalScientists}, Animals: {animals}, Other NPC Players: {otherNpcPlayers}, Total NPCs: {totalNpcs}");
         }
 
+        private Coroutine _generatePositionsCo;
+
         private void Unload()
         {
+            if (_generatePositionsCo != null && ServerMgr.Instance != null)
+            {
+                ServerMgr.Instance.StopCoroutine(_generatePositionsCo);
+                _generatePositionsCo = null;
+            }
             // Oxide timers are automatically cleaned up on plugin unload
             HashSet<CustomScientistNpc> killSnapshot = new HashSet<CustomScientistNpc>();
             foreach (CustomScientistNpc n in Scientists.Values) killSnapshot.Add(n);
@@ -5004,6 +5312,9 @@ namespace GrimmNPC
                     // Then wake up the brain
                     if (victimNpc.Brain != null)
                     {
+                        if (victimNpc.NavAgent != null && !victimNpc.NavAgent.enabled
+                            && !victimNpc.IsStationary && !victimNpc.HasParentTransform)
+                            victimNpc.NavAgent.enabled = true;
                         victimNpc.Brain.sleeping = false;
                         if (victimNpc.Brain is IAISleepable sleepable)
                         {
@@ -5014,7 +5325,8 @@ namespace GrimmNPC
                             victimNpc.Brain.Navigator.Resume();
                         }
                     }
-                    if (victimNpc.NavAgent != null && !victimNpc.NavAgent.enabled)
+                    if (victimNpc.NavAgent != null && !victimNpc.NavAgent.enabled
+                        && !victimNpc.IsStationary && !victimNpc.HasParentTransform)
                     {
                         victimNpc.NavAgent.enabled = true;
                     }
@@ -5057,6 +5369,9 @@ namespace GrimmNPC
                         // Force wake up the brain aggressively
                         if (customNpc.Brain != null)
                         {
+                            if (customNpc.NavAgent != null && !customNpc.NavAgent.enabled
+                                && !customNpc.IsStationary && !customNpc.HasParentTransform)
+                                customNpc.NavAgent.enabled = true;
                             customNpc.Brain.sleeping = false;
                             if (customNpc.Brain is IAISleepable nearbySleepable)
                             {
@@ -5067,7 +5382,8 @@ namespace GrimmNPC
                                 customNpc.Brain.Navigator.Resume();
                             }
                         }
-                        if (customNpc.NavAgent != null && !customNpc.NavAgent.enabled)
+                        if (customNpc.NavAgent != null && !customNpc.NavAgent.enabled
+                            && !customNpc.IsStationary && !customNpc.HasParentTransform)
                         {
                             customNpc.NavAgent.enabled = true;
                         }
@@ -5099,7 +5415,7 @@ namespace GrimmNPC
                     }
                 }
 
-                if (attacker == null || attacker.skinID == 11162132011012) return true;
+                if (attacker == null || IsCustomNpcSkin(attacker.skinID)) return true;
 
                 // Allow turret/trap damage (with TurretDamageScale) - check config options
                 if (attacker is AutoTurret)
@@ -5198,7 +5514,7 @@ namespace GrimmNPC
 
             if (IsCustomScientist(attacker))
             {
-                if (victim.skinID == 11162132011012) return true;
+                if (IsCustomNpcSkin(victim.skinID)) return true;
 
                 if (victim is BasePlayer)
                 {
@@ -5274,7 +5590,7 @@ namespace GrimmNPC
             SetTeammateOwner(customNpc, ownerUserID);
             return true;
         }
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region True PVE
         private object CanEntityTakeDamage(BaseCombatEntity victim, HitInfo info)
@@ -5287,7 +5603,7 @@ namespace GrimmNPC
 
             if (IsCustomScientist(victim))
             {
-                if (attacker == null || attacker.skinID == 11162132011012) return false;
+                if (attacker == null || IsCustomNpcSkin(attacker.skinID)) return false;
 
                 if (attacker is AutoTurret || attacker is GunTrap || attacker is FlameTurret) return true;
 
@@ -5309,7 +5625,7 @@ namespace GrimmNPC
 
             if (IsCustomScientist(attacker))
             {
-                if (victim.skinID == 11162132011012) return false;
+                if (IsCustomNpcSkin(victim.skinID)) return false;
 
                 if (victim is BasePlayer)
                 {
@@ -5380,7 +5696,7 @@ namespace GrimmNPC
 
         internal bool IsGasStationNpc(BaseEntity entity)
         {
-            if (entity.skinID != 11162132011012 || entity.net == null) return false;
+            if (!IsCustomNpcSkin(entity.skinID) || entity.net == null) return false;
             return GasStationNpc.Contains(entity.net.ID.Value);
         }
 
@@ -5407,6 +5723,18 @@ namespace GrimmNPC
             GenerateRailPositions();
         }
 
+        private IEnumerator GeneratePositionsSoft()
+        {
+            Puts("Soft-generating biome spawn positions...");
+            yield return GenerateBiomePositionsSoft(10000);
+            yield return null;
+            GenerateRoadPositions();
+            yield return null;
+            GenerateRailPositions();
+            _generatePositionsCo = null;
+            Puts("Soft position generation complete.");
+        }
+
         private Dictionary<string, List<Vector3>> BiomePoints { get; } = new Dictionary<string, List<Vector3>>
         {
             ["Arid"] = new List<Vector3>(),
@@ -5430,29 +5758,48 @@ namespace GrimmNPC
         private void GenerateBiomePositions(int attempts)
         {
             for (int i = 0; i < attempts; i++)
+                TryAddOneBiomePosition();
+
+            BlacklistBiomes.Clear();
+            foreach (KeyValuePair<string, List<Vector3>> kvp in BiomePoints) if (kvp.Value.Count == 0) BlacklistBiomes.Add(kvp.Key);
+
+            DebugLog($"List of biome positions: Arid = {BiomePoints["Arid"].Count}, Temperate = {BiomePoints["Temperate"].Count}, Tundra = {BiomePoints["Tundra"].Count}, Arctic = {BiomePoints["Arctic"].Count}, Jungle = {BiomePoints["Jungle"].Count}");
+        }
+
+        private IEnumerator GenerateBiomePositionsSoft(int attempts)
+        {
+            const int yieldEvery = 50;
+            for (int i = 0; i < attempts; i++)
             {
-                Vector2 random = World.Size * 0.475f * UnityEngine.Random.insideUnitCircle;
-                Vector3 position = new Vector3(random.x, 500f, random.y);
-
-                if (!IsAvailableTopology(position)) continue;
-
-                if (IsRaycast(position, out RaycastHit raycastHit)) position.y = raycastHit.point.y;
-                else continue;
-
-                if (IsNavMesh(position, out NavMeshHit navMeshHit)) position = navMeshHit.position;
-                else continue;
-
-                if (IsEntities(position, 6f)) continue;
-
-                TerrainBiome.Enum majorityBiome = (TerrainBiome.Enum)TerrainMeta.BiomeMap.GetBiomeMaxType(position);
-
-                BiomePoints[majorityBiome.ToString()].Add(position);
+                TryAddOneBiomePosition();
+                if (i > 0 && (i % yieldEvery) == 0)
+                    yield return null;
             }
 
             BlacklistBiomes.Clear();
             foreach (KeyValuePair<string, List<Vector3>> kvp in BiomePoints) if (kvp.Value.Count == 0) BlacklistBiomes.Add(kvp.Key);
 
             DebugLog($"List of biome positions: Arid = {BiomePoints["Arid"].Count}, Temperate = {BiomePoints["Temperate"].Count}, Tundra = {BiomePoints["Tundra"].Count}, Arctic = {BiomePoints["Arctic"].Count}, Jungle = {BiomePoints["Jungle"].Count}");
+        }
+
+        private void TryAddOneBiomePosition()
+        {
+            Vector2 random = World.Size * 0.475f * UnityEngine.Random.insideUnitCircle;
+            Vector3 position = new Vector3(random.x, 500f, random.y);
+
+            if (!IsAvailableTopology(position)) return;
+
+            if (IsRaycast(position, out RaycastHit raycastHit)) position.y = raycastHit.point.y;
+            else return;
+
+            if (IsNavMesh(position, out NavMeshHit navMeshHit)) position = navMeshHit.position;
+            else return;
+
+            if (IsEntities(position, 6f)) return;
+
+            TerrainBiome.Enum majorityBiome = (TerrainBiome.Enum)TerrainMeta.BiomeMap.GetBiomeMaxType(position);
+
+            BiomePoints[majorityBiome.ToString()].Add(position);
         }
 
         public object GetSpawnPoint(string biome)
@@ -6936,9 +7283,9 @@ namespace GrimmNPC
         };
         #endregion Weapon and belt metadata
         #region Helpers
-        private OxideCompat.PluginRef Kits;
-        private OxideCompat.PluginRef Friends;
-        private OxideCompat.PluginRef Clans;
+        private HarmonyCompat.PluginRef Kits;
+        private HarmonyCompat.PluginRef Friends;
+        private HarmonyCompat.PluginRef Clans;
 
         private Dictionary<ulong, CustomScientistNpc> Scientists { get; } = new Dictionary<ulong, CustomScientistNpc>();
 
@@ -6967,7 +7314,7 @@ namespace GrimmNPC
 
         private static void CreateAllFolders()
         {
-            string url = OxideCompat.DataDirectory + "/NpcSpawn/";
+            string url = HarmonyCompat.DataDirectory + "/NpcSpawn/";
             if (!Directory.Exists(url)) Directory.CreateDirectory(url);
             if (!Directory.Exists(url + "Preset/")) Directory.CreateDirectory(url + "Preset/");
         }
@@ -7150,7 +7497,7 @@ namespace GrimmNPC
         /// <summary>
         /// Optional Harmony swim patches (same approach as SkillTree <see cref="AutoPatchAttribute"/>).
         /// When <c>GrimmNPC.dll</c> is present, these prefixes no-op so BaseNavigator is not double-patched.
-        /// Scope: <see cref="CustomScientistNpc"/> with <see cref="NpcConfig.CanSwim"/> only (not <c>Oxide.Ext.ChaosNPC</c> types — see <c>.cursor/Extensions/Oxide.Ext.ChaosNPC/PerformanceSuggestions.md</c>).
+        /// Scope: <see cref="CustomScientistNpc"/> with <see cref="NpcConfig.CanSwim"/> only (not <c>Grimm.ChaosNPC</c> types — see <c>.cursor/Extensions/Grimm.ChaosNPC/PerformanceSuggestions.md</c>).
         /// Prefixes check entity type before the Grimm guard so unrelated navigators skip extra work.
         /// </summary>
         private static class NpcSpawnSwimHarmonyGuard
@@ -7284,14 +7631,14 @@ namespace GrimmNPC
 
         private static class NpcSpawnSwimNavGate
         {
-            private static readonly MethodInfo CanUpdateMovementMethod =
-                AccessTools.Method(typeof(BaseNavigator), "CanUpdateMovement");
-            private static readonly FieldInfo LastSetDestinationTimeField =
-                typeof(BaseNavigator).GetField("lastSetDestinationTime", BindingFlags.NonPublic | BindingFlags.Instance);
-            private static readonly FieldInfo PausedField =
-                typeof(BaseNavigator).GetField("paused", BindingFlags.NonPublic | BindingFlags.Instance);
-            internal static readonly FieldInfo CurrentSpeedFractionField =
-                typeof(BaseNavigator).GetField("currentSpeedFraction", BindingFlags.NonPublic | BindingFlags.Instance);
+            private static readonly Func<BaseNavigator, bool> CanUpdateMovement =
+                AccessTools.MethodDelegate<Func<BaseNavigator, bool>>(AccessTools.Method(typeof(BaseNavigator), "CanUpdateMovement"));
+            private static readonly AccessTools.FieldRef<BaseNavigator, float> LastSetDestinationTime =
+                AccessTools.FieldRefAccess<BaseNavigator, float>("lastSetDestinationTime");
+            private static readonly AccessTools.FieldRef<BaseNavigator, bool> Paused =
+                AccessTools.FieldRefAccess<BaseNavigator, bool>("paused");
+            internal static readonly AccessTools.FieldRef<BaseNavigator, float> CurrentSpeedFraction =
+                AccessTools.FieldRefAccess<BaseNavigator, float>("currentSpeedFraction");
 
             internal static bool ShouldBlockNavApi(BaseNavigator nav)
             {
@@ -7304,12 +7651,11 @@ namespace GrimmNPC
 
             internal static bool StockCanUpdateMovement(BaseNavigator nav)
             {
-                if (CanUpdateMovementMethod == null || nav == null)
+                if (CanUpdateMovement == null || nav == null)
                     return true;
                 try
                 {
-                    object r = CanUpdateMovementMethod.Invoke(nav, null);
-                    return r is bool b && b;
+                    return CanUpdateMovement(nav);
                 }
                 catch
                 {
@@ -7342,12 +7688,12 @@ namespace GrimmNPC
                     return false;
                 }
 
-                if (LastSetDestinationTimeField != null)
-                    LastSetDestinationTimeField.SetValue(__instance, Time.time);
-                if (PausedField != null)
-                    PausedField.SetValue(__instance, false);
-                if (CurrentSpeedFractionField != null)
-                    CurrentSpeedFractionField.SetValue(__instance, speedFraction);
+                if (LastSetDestinationTime != null)
+                    LastSetDestinationTime(__instance) = Time.time;
+                if (Paused != null)
+                    Paused(__instance) = false;
+                if (CurrentSpeedFraction != null)
+                    CurrentSpeedFraction(__instance) = speedFraction;
 
                 Vector3 here = __instance.BaseEntity.ServerPosition;
                 if (Vector3.Distance(pos, here) <= __instance.StoppingDistance)
@@ -7365,10 +7711,11 @@ namespace GrimmNPC
 
         private static class NpcSpawnSwimMovementHelper
         {
-            private static readonly MethodInfo GetTargetSpeedMethod = typeof(BaseNavigator)
-                .GetMethod("GetTargetSpeed", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-            private static readonly MethodInfo BasePlayerUpdateModelState = typeof(BasePlayer)
-                .GetMethod("UpdateModelState", BindingFlags.NonPublic | BindingFlags.Instance);
+            private static readonly Func<BaseNavigator, float> GetTargetSpeed =
+                AccessTools.MethodDelegate<Func<BaseNavigator, float>>(AccessTools.Method(typeof(BaseNavigator), "GetTargetSpeed"));
+            private static readonly Action<BasePlayer, ModelState> BasePlayerUpdateModelState =
+                AccessTools.MethodDelegate<Action<BasePlayer, ModelState>>(
+                    AccessTools.Method(typeof(BasePlayer), "UpdateModelState", new[] { typeof(ModelState) }));
 
             private const float SwimDepthBelowSurface = 1.1f;
             private const float SwimVerticalLerp = 14f;
@@ -7398,7 +7745,7 @@ namespace GrimmNPC
                 if (npc == null) return;
                 // UpdateModelState(ModelState ms) — must pass modelState (0-arg Invoke caused TargetParameterCountException after game update).
                 if (npc.modelState != null && BasePlayerUpdateModelState != null)
-                    BasePlayerUpdateModelState.Invoke(npc, new object[] { npc.modelState });
+                    BasePlayerUpdateModelState(npc, npc.modelState);
                 npc.SendModelState(force: true);
             }
 
@@ -7438,8 +7785,8 @@ namespace GrimmNPC
                 }
 
                 Vector3 currentPos = __instance.BaseEntity.transform.position;
-                float targetSpeed = GetTargetSpeedMethod != null
-                    ? (float)GetTargetSpeedMethod.Invoke(__instance, null)
+                float targetSpeed = GetTargetSpeed != null
+                    ? GetTargetSpeed(__instance)
                     : __instance.Speed;
 
                 Vector3 flatCur = new Vector3(currentPos.x, 0f, currentPos.z);
@@ -7509,8 +7856,8 @@ namespace GrimmNPC
                                 if (!__instance.IsSwimming())
                     return true;
 
-                float currentSpeedFraction = NpcSpawnSwimNavGate.CurrentSpeedFractionField != null
-                    ? (float)NpcSpawnSwimNavGate.CurrentSpeedFractionField.GetValue(__instance)
+                float currentSpeedFraction = NpcSpawnSwimNavGate.CurrentSpeedFraction != null
+                    ? NpcSpawnSwimNavGate.CurrentSpeedFraction(__instance)
                     : 1f;
 
                 float baseSpeed = __instance.Speed * currentSpeedFraction;
@@ -7578,7 +7925,15 @@ namespace GrimmNPC
         {
             private static bool Prefix(BaseNavigator __instance)
             {
-                return !NpcSpawnSwimNavGate.ShouldBlockNavApi(__instance);
+                if (NpcSpawnSwimNavGate.ShouldBlockNavApi(__instance))
+                    return false;
+                // Skip stock Resume when the agent is off-mesh / disabled — Unity logs
+                // `"Resume" can only be called on an active agent that has been placed on a NavMesh`
+                // on every failed call (dormancy wake, cargo NPCs, etc.).
+                var agent = __instance != null ? __instance.Agent : null;
+                if (agent == null || !agent.isActiveAndEnabled || !agent.isOnNavMesh)
+                    return false;
+                return true;
             }
         }
 

@@ -4,7 +4,7 @@ using Network;
 namespace InventoryShortcuts;
 
 /// <summary>
-/// UI-only RPC helpers — same pattern as Oxide RustCui / Vanish AddUi (AddUI + DestroyUI string RPC only).
+/// UI-only RPC helpers — same pattern as RustCui / Vanish AddUi (AddUI + DestroyUI string RPC only).
 /// Does not send CL_ReceiveFilePng or touch FileStorage; png icons are not used.
 /// </summary>
 internal static class CuiHelper

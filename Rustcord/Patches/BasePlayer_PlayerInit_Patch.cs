@@ -11,7 +11,7 @@ internal class BasePlayer_PlayerInit_Patch
     static void Postfix(BasePlayer __instance)
     {
         if (RustcordMod.Instance == null) return;
-        if (__instance == null || !__instance.IsValid()) return;
+        if (!__instance.IsValid()) return;
         var cfg = RustcordConfig.Config;
         if (cfg?.PostSettings?.JoinsQuits != true) return;
 

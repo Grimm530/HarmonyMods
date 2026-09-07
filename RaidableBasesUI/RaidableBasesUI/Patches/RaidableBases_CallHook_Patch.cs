@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RaidableBasesBuyableUI.Patches
 {
     /// <summary>
-    /// Prefix for RaidableBases.Interface.CallHook - applied manually once RaidableBases is loaded.
+    /// Prefix for RaidableBases.HarmonyModInterface.CallHook - applied manually once RaidableBases is loaded.
     /// Intercepts OnPurchaseBase / OnPurchaseTakePayments / OnRaidableBasePurchased.
     /// </summary>
     public static class RaidableBases_CallHook_Patch

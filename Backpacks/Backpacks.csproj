@@ -6,12 +6,13 @@
   <PropertyGroup>
     <AssemblyName>Backpacks</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <RootNamespace>BackpacksHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: Backpacks 3.17.41 (Oxide-free). WhiteThunder Backpacks Oxide-parity port.</Description>
+    <Description>Harmony mod: Backpacks 3.17.41 (Harmony). WhiteThunder Backpacks Harmony-parity port.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -98,9 +99,15 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="RustCui.cs" />
     <Compile Remove="obj\**" />
     <Compile Remove="_minimal_archive\**" />
+    <Compile Remove="Backpacks\**" />
     <None Remove="obj\**" />
     <None Remove="_minimal_archive\**" />
+    <None Remove="Backpacks\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

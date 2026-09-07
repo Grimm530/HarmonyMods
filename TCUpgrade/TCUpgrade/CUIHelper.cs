@@ -13,13 +13,6 @@ public static class CUIHelper
 
 	private const string PanelSprite = "assets/content/ui/ui.background.tile.psd";
 
-	/// <summary>AdminMenu/TeleportGUI-style bridge: clients only forward ConsoleGen (cui.endtest).</summary>
-	private const string CuiBridgePrefix = "cui.endtest TCUPGRADE";
-
-	private const string LegacyEndtestSendCmd = "cui.endtest SENDCMD";
-
-	private const string LegacyBareSendCmd = "SENDCMD";
-
 	private static CommunityEntity GetCommunityEntity()
 	{
 		CommunityEntity serverInstance = CommunityEntity.ServerInstance;
@@ -78,6 +71,8 @@ public static class CUIHelper
 		{
 			return;
 		}
+		try { json = GrimmCuiHarmony.GrimmCui.ApplyRewrites(json); }
+		catch { }
 		CommunityEntity communityEntity = GetCommunityEntity();
 		if ((Object)(object)communityEntity != (Object)null)
 		{
@@ -179,7 +174,6 @@ public static class CUIHelper
 
 	public static List<JObject> Button(string name, string parent, string color, string text, int fontSize, string anchorMin, string anchorMax, string command, int iconItemId = 0, bool iconOnLeft = false)
 	{
-		command = NormalizeButtonCommand(command);
 		List<JObject> list = new List<JObject>();
 		JObject val = new JObject
 		{
@@ -267,7 +261,6 @@ public static class CUIHelper
 
 	public static List<JObject> ButtonWithStatusIndicator(string name, string parent, string greyBoxColor, string indicatorColor, string text, int fontSize, string boxAnchorMin, string boxAnchorMax, string labelAnchorMin, string labelAnchorMax, string command)
 	{
-		command = NormalizeButtonCommand(command);
 		List<JObject> list = new List<JObject>();
 		JObject val = new JObject
 		{
@@ -516,7 +509,6 @@ public static class CUIHelper
 
 	public static List<JObject> ButtonWithImage(string name, string parent, string color, string command, string anchorMin, string anchorMax, int? itemId = null, ulong? skinId = null)
 	{
-		command = NormalizeButtonCommand(command);
 		List<JObject> list = new List<JObject>();
 		JObject val = new JObject
 		{
@@ -565,36 +557,5 @@ public static class CUIHelper
 			list2.Add(val4);
 		}
 		return list2;
-	}
-
-	/// <summary>
-	/// Ensures button commands use the vanilla replicated <c>cui.endtest</c> bridge with a unique
-	/// TCUPGRADE marker (same pattern as AdminMenu / TeleportGUI). Bare SENDCMD is not forwarded by clients.
-	/// </summary>
-	internal static string NormalizeButtonCommand(string command)
-	{
-		if (string.IsNullOrWhiteSpace(command))
-		{
-			return command;
-		}
-		if (command.StartsWith(CuiBridgePrefix, StringComparison.OrdinalIgnoreCase))
-		{
-			return command;
-		}
-		if (command.StartsWith(LegacyEndtestSendCmd, StringComparison.OrdinalIgnoreCase))
-		{
-			string args = command.Substring(LegacyEndtestSendCmd.Length).TrimStart();
-			return string.IsNullOrEmpty(args) ? CuiBridgePrefix : CuiBridgePrefix + " " + args;
-		}
-		if (command.Equals(LegacyBareSendCmd, StringComparison.OrdinalIgnoreCase))
-		{
-			return CuiBridgePrefix;
-		}
-		if (command.StartsWith(LegacyBareSendCmd + " ", StringComparison.OrdinalIgnoreCase))
-		{
-			string args = command.Substring(LegacyBareSendCmd.Length).TrimStart();
-			return string.IsNullOrEmpty(args) ? CuiBridgePrefix : CuiBridgePrefix + " " + args;
-		}
-		return command;
 	}
 }

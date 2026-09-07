@@ -11,7 +11,7 @@
     <RootNamespace>ItemRetrieverHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: ItemRetriever 0.7.7 (Oxide-free). WhiteThunder ItemRetriever library port.</Description>
+    <Description>Harmony mod: ItemRetriever 0.7.7 (Harmony). WhiteThunder ItemRetriever library port.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

@@ -1,6 +1,6 @@
 # ZoneManager (Harmony)
 
-Oxide **Zone Manager 3.1.11** (k1lly0u / Grimm530) port as a standalone Harmony mod (no Oxide runtime).
+Legacy **Zone Manager 3.1.11** (k1lly0u / Grimm530) port as a standalone Harmony mod (Harmony-only runtime).
 
 TruePVE, SkillTree, and other mods resolve this plugin via AppDomain keys `ZoneManager_ApiType` / `ZoneManager_Plugin` and `Call(...)`.
 

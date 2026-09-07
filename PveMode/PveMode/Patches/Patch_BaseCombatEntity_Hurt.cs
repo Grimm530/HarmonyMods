@@ -13,7 +13,7 @@ namespace PveModeHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null || info == null) return true;
+            if (info == null) return true;
             object result = PveModeManager.OnEntityTakeDamage(__instance, info);
             return !(result is bool blocked && blocked);
         }

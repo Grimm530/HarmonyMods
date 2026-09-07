@@ -103,6 +103,14 @@ namespace CustomMapGen
                     _config.DeferDoneWorkSeconds = 0.2f;
                 if (_config.BlockedPrefabs == null)
                     _config.BlockedPrefabs = new List<string>();
+                if (_config.BlockedPrefabPercents == null)
+                    _config.BlockedPrefabPercents = new List<BlockedPrefabPercent>();
+                if (_config.DistanceRules == null)
+                    _config.DistanceRules = new List<MonumentDistanceRule>();
+                if (_config.NearbyPrefabRules == null)
+                    _config.NearbyPrefabRules = new List<NearbyPrefabRule>();
+                if (_config.RiverSettings == null)
+                    _config.RiverSettings = new RiverSettingsConfig();
                 if (_config.MapSettings == null) _config.MapSettings = new MapSettingsConfig();
                 if (_config.MapImage == null) _config.MapImage = new MapImageConfig();
                 if (_config.SwapMonuments == null) _config.SwapMonuments = new SwapMonumentsConfig();
@@ -111,6 +119,20 @@ namespace CustomMapGen
                 if (jo["AllowBanditCamp"] != null) _config.SwapMonuments.AllowBanditCamp = jo["AllowBanditCamp"].ToObject<bool>();
                 if (jo["FillBanditSlotWithMonument"] != null) _config.SwapMonuments.FillBanditSlotWithMonument = jo["FillBanditSlotWithMonument"].ToObject<bool>();
                 if (jo["UseBlockedOutpostSlotForRelocation"] != null) _config.SwapMonuments.UseBlockedOutpostSlotForRelocation = jo["UseBlockedOutpostSlotForRelocation"].ToObject<bool>();
+                // Newtonsoft Populate uses CLR default (false) for missing bools, which would disable snapping.
+                var swapJo = jo["SwapMonuments"] as Newtonsoft.Json.Linq.JObject;
+                if (jo["SnapCenterOutpostToDungeonGrid"] != null)
+                    _config.SwapMonuments.SnapCenterOutpostToDungeonGrid = jo["SnapCenterOutpostToDungeonGrid"].ToObject<bool>();
+                else if (swapJo == null || swapJo["SnapCenterOutpostToDungeonGrid"] == null)
+                    _config.SwapMonuments.SnapCenterOutpostToDungeonGrid = true;
+                if (jo["EnableLateEntityRecovery"] != null)
+                    _config.SwapMonuments.EnableLateEntityRecovery = jo["EnableLateEntityRecovery"].ToObject<bool>();
+                else if (swapJo == null || swapJo["EnableLateEntityRecovery"] == null)
+                    _config.SwapMonuments.EnableLateEntityRecovery = true;
+                if (jo["NormalizeDecorCategoryToMonumentWhenPastingSwapMap"] != null)
+                    _config.SwapMonuments.NormalizeDecorCategoryToMonumentWhenPastingSwapMap = jo["NormalizeDecorCategoryToMonumentWhenPastingSwapMap"].ToObject<bool>();
+                else if (swapJo == null || swapJo["NormalizeDecorCategoryToMonumentWhenPastingSwapMap"] == null)
+                    _config.SwapMonuments.NormalizeDecorCategoryToMonumentWhenPastingSwapMap = true;
                 if (string.IsNullOrEmpty(_config.Language)) _config.Language = "en";
                 UnityEngine.Debug.Log("[CustomMapGen] Config loaded from HarmonyConfig/CustomMapGen.json");
             }
@@ -181,6 +203,9 @@ namespace CustomMapGen
         /// <summary>Convenience getter: UseBlockedOutpostSlotForRelocation from SwapMonuments.</summary>
         [Newtonsoft.Json.JsonIgnore]
         public bool UseBlockedOutpostSlotForRelocation => SwapMonuments?.UseBlockedOutpostSlotForRelocation ?? true;
+        /// <summary>Convenience getter: SnapCenterOutpostToDungeonGrid from SwapMonuments.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public bool SnapCenterOutpostToDungeonGrid => SwapMonuments?.SnapCenterOutpostToDungeonGrid ?? true;
         public bool RemoveUndergroundTunnels = false;
         /// <summary>When true, add rail segments from the above-ground rail network to each train tunnel entrance so tracks connect visually. Runs after GenerateDungeonGrid.</summary>
         public bool ConnectRailsToTunnelEntrances = true;
@@ -239,6 +264,14 @@ namespace CustomMapGen
         
         // Blocked prefabs. Use "BlockedPrefabs" in CustomMapGen.json (PascalCase). Entries match prefab path substrings (e.g. coastal_rocks, rock_formation_small).
         public List<string> BlockedPrefabs = new List<string>();
+        /// <summary>Optional percent block (0-100) for a prefab substring. 100 = same as BlockedPrefabs. No UI; JSON only.</summary>
+        public List<BlockedPrefabPercent> BlockedPrefabPercents = new List<BlockedPrefabPercent>();
+        /// <summary>Pairwise min-distance rules, e.g. launch site vs outpost 2000m.</summary>
+        public List<MonumentDistanceRule> DistanceRules = new List<MonumentDistanceRule>();
+        /// <summary>Block named prefabs within a radius of a monument (rocks around outpost, etc.).</summary>
+        public List<NearbyPrefabRule> NearbyPrefabRules = new List<NearbyPrefabRule>();
+        /// <summary>River count / width / minimum length. -1 = vanilla.</summary>
+        public RiverSettingsConfig RiverSettings = new RiverSettingsConfig();
         
         // --- QoL & Map Settings (HarmonyCustomGenerator parity) ---
         /// <summary>Skip asset warmup on server start to reduce startup time.</summary>
@@ -263,6 +296,9 @@ namespace CustomMapGen
 
         /// <summary>When &gt; 0, DONE work (deferred spawn + PostSaveSwap) runs after this many seconds instead of inline. Lets LoadingScreen.Update("DONE") return immediately so the server can continue (avoids freeze after map creation). Default 0.2. Set to 0 to run inline (old behavior).</summary>
         public float DeferDoneWorkSeconds = 0.2f;
+        /// <summary>After a fresh procedural gen, quit so the next start loads the saved map. Ignored when loading an existing .map.</summary>
+        public bool QuitAfterMapCreation = false;
+        public float QuitAfterMapCreationDelaySeconds = 0f;
 
         /// <summary>
         /// When true, logs every skipped <see cref="World"/> prefab spawn where <c>Prefab.Load</c> produced a wrapper whose
@@ -437,6 +473,10 @@ namespace CustomMapGen
                 Ruins = new List<MonumentConfig>(),
                 Webhook = new WebhookConfig { Enabled = false, Url = "" },
                 BlockedPrefabs = new List<string>(),
+                BlockedPrefabPercents = new List<BlockedPrefabPercent>(),
+                DistanceRules = new List<MonumentDistanceRule>(),
+                NearbyPrefabRules = new List<NearbyPrefabRule>(),
+                RiverSettings = new RiverSettingsConfig(),
                 SkipAssetWarmup = false,
                 MapSettings = new MapSettingsConfig(),
                 MapImage = new MapImageConfig(),
@@ -445,13 +485,16 @@ namespace CustomMapGen
                     TrySpawningOutpostInCenter = true,
                     AllowBanditCamp = false,
                     FillBanditSlotWithMonument = true,
-                    UseBlockedOutpostSlotForRelocation = true
+                    UseBlockedOutpostSlotForRelocation = true,
+                    SnapCenterOutpostToDungeonGrid = true
                 },
                 Language = "en",
                 DebugLogging = true,
                 SkipDeferredCompoundSpawnAtDone = false,
                 SkipPostSaveSwapAtDone = false,
                 DeferDoneWorkSeconds = 0.2f,
+                QuitAfterMapCreation = false,
+                QuitAfterMapCreationDelaySeconds = 0f,
                 DebugLogSkippedWorldPrefabs = false,
                 DebugLogSwapMapPrefabBreakdown = false,
                 DisableShoreFlattenPatch = false,
@@ -641,6 +684,7 @@ namespace CustomMapGen
         public bool Blocked = false;
         public bool AllowedToSetBiomes = false;
         public List<BiomePreferenceItem> BiomePreferences = null;
+        public int TargetCount = -1;
     }
     
     [Serializable]
@@ -652,6 +696,7 @@ namespace CustomMapGen
         public bool Blocked = false;
         public bool AllowedToSetBiomes = true;
         public List<BiomePreferenceItem> BiomePreferences = new List<BiomePreferenceItem>();
+        public int TargetCount = -1;
     }
     
     [Serializable]
@@ -659,9 +704,12 @@ namespace CustomMapGen
     {
         public string Type = "";
         public bool Blocked = false;
+        public bool Desired = true;
         public bool AllowedToSetBiomes = true;
         public List<BiomePreferenceItem> BiomePreferences = new List<BiomePreferenceItem>();
-        public bool Desired = true; // For large monuments
+        public int TargetCount = -1;
+        public List<string> NearbyBlockedPrefabs = new List<string>();
+        public float NearbyPrefabRadius = 0f;
     }
     
     [Serializable]
@@ -694,6 +742,37 @@ namespace CustomMapGen
     }
     
     [Serializable]
+    public class BlockedPrefabPercent
+    {
+        public string Name = "";
+        /// <summary>0-100. Deterministic per position so the same seed drops the same rocks.</summary>
+        public float Percent = 100f;
+    }
+
+    public class MonumentDistanceRule
+    {
+        public string From = "";
+        public string To = "";
+        public float MinDistance = 0f;
+    }
+
+    public class NearbyPrefabRule
+    {
+        public string Monument = "";
+        public List<string> Prefabs = new List<string>();
+        public float Radius = 40f;
+    }
+
+    public class RiverSettingsConfig
+    {
+        /// <summary>Max rivers to keep. -1 = vanilla (2 on 4000, 3 on larger).</summary>
+        public int Count = -1;
+        /// <summary>River path width. -1 = vanilla 8.</summary>
+        public float Width = -1f;
+        /// <summary>Drop rivers shorter than this many meters. -1 = vanilla (~248m / 62 points).</summary>
+        public float MinLength = -1f;
+    }
+
     public class WebhookConfig
     {
         public bool Enabled = false;
@@ -725,13 +804,15 @@ namespace CustomMapGen
         public bool IncludeMonumentNames = true;
         /// <summary>When true, draw grid overlay. Default false (map + monument markers only).</summary>
         public bool IncludeGrid = false;
-        public float Scale = 0.75f;
-        /// <summary>Ocean margin in pixels (100-500). 150 matches HarmonyCustomGenerator, keeps texture under 4096.</summary>
-        public int OceanMargin = 150;
+        public float Scale = 1f;
+        /// <summary>Ocean margin in pixels (100-500). 500 matches client world.rendermap.</summary>
+        public int OceanMargin = 500;
         /// <summary>Font folder. Default maps/images/resources. Place dinprobold.otf, dinpro.otf, PermanentMarker.ttf there.</summary>
         public string FontResourcesPath = "maps/images/resources";
-        /// <summary>Monument label font: dinprobold, dinpro, or PermanentMarker. PermanentMarker = HCG-style marker/handwritten; dinprobold = clean sans-serif.</summary>
-        public string MonumentFont = "PermanentMarker";
+        /// <summary>Monument label font: dinprobold, dinpro, or PermanentMarker. dinprobold = readable sans-serif; PermanentMarker = handwritten.</summary>
+        public string MonumentFont = "dinprobold";
+        /// <summary>Draw cargo/ocean patrol path on the generated PNG.</summary>
+        public bool IncludeCargoPath = true;
     }
     
     [Serializable]
@@ -756,6 +837,11 @@ namespace CustomMapGen
         public bool FillBanditSlotWithMonument = true;
         /// <summary>When true, the blocked outpost position (when compound spawns away from center) is used to relocate monuments at center (e.g. Water Treatment Plant) so they don't overlap the center outpost.</summary>
         public bool UseBlockedOutpostSlotForRelocation = true;
+        /// <summary>
+        /// When true (default), the center outpost is shifted so its dungeon entrance sits on a 216m tunnel
+        /// station cell. Exact geographic center leaves a gap the link pieces cannot close.
+        /// </summary>
+        public bool SnapCenterOutpostToDungeonGrid = true;
         /// <summary>RustEdit often tags monument contents as category &quot;Decor&quot;. When true (default), pasted swap-map rows with category Decor are written as &quot;Monument&quot; so world spawn matches vanilla compound children.</summary>
         public bool NormalizeDecorCategoryToMonumentWhenPastingSwapMap = true;
         /// <summary>When true, after spawn tracking finalizes, attempt a late CreateEntity replay for swapped outpost rows that look like runtime entities (deployables/NPC/casino/etc) so they persist in server.save.</summary>

@@ -19,7 +19,7 @@ public static class Patch_ServerConsole_Update
     [HarmonyPrefix]
     public static void Prefix(ServerConsole __instance)
     {
-        if (__instance == null || MapVoterMod.Instance == null) return;
+        if (MapVoterMod.Instance == null) return;
 
         if (_queuedCommandsField == null)
             _queuedCommandsField = AccessTools.Field(typeof(ServerConsole), "queuedCommands");

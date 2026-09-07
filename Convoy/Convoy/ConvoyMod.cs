@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 using UnityEngine;
+using Convoy.Patches;
 using Facepunch;
 
 namespace Convoy
@@ -21,91 +22,60 @@ namespace Convoy
         private ConsoleSystem.Command _convoystopCmd;
         private readonly List<BaseEntity> _mapMarkers = new List<BaseEntity>();
         private Coroutine _autoEventCoroutine;
-        private Coroutine _initCoroutine;
-        private GameObject _runnerGo;
-        private ModRunner _runner;
         private string _configFilePath;
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
-            TryApplyFindPatch();
+            GrimmCoreHurtRegistration.Register();
             LoadConfig();
             LogDebug("OnLoaded: config loaded, Debug=" + (Config?.Debug ?? false));
-            ConvoyGrimmNpc.Bind();
-            ConvoyDamageApi.Publish();
-            PveModeManager.EnsureOwnerCallbackRegistered();
             ConvoyPathManager.ConfigProvider = () => Instance?.FullConfig;
             ConvoyPathManager.CustomRoutesBaseDir = AppDomain.CurrentDomain.BaseDirectory ?? "";
             ConvoyState.Clear();
             RegisterCommands();
-            // Harmony loads before ServerMgr exists — defer auto-event + path cache until server is ready.
-            EnsureRunner();
-            _initCoroutine = _runner.StartCoroutine(WaitForServerThenInit());
-            bool auto = Config?.MainConfig?.IsAutoEvent == true;
-            UnityEngine.Debug.Log("[Convoy] Harmony mod loaded. convoystart/convoystop (server console or admin). Auto-event=" + auto + " (starts after ServerMgr ready). Config: HarmonyConfig/Convoy.json.");
-        }
-
-        private void EnsureRunner()
-        {
-            if (_runner != null) return;
-            _runnerGo = new GameObject("Convoy_Runner");
-            UnityEngine.Object.DontDestroyOnLoad(_runnerGo);
-            _runnerGo.hideFlags = HideFlags.HideAndDontSave;
-            _runner = _runnerGo.AddComponent<ModRunner>();
-        }
-
-        private void DestroyRunner()
-        {
-            if (_runnerGo != null)
+            try
             {
-                UnityEngine.Object.Destroy(_runnerGo);
-                _runnerGo = null;
-                _runner = null;
+                var findHarmony = new HarmonyLib.Harmony("com.facepunch.rust_dedicated.Convoy.find");
+                if (!Patches.Patch_ConsoleSystem_Server_Find.TryApply(findHarmony))
+                    UnityEngine.Debug.LogWarning("[Convoy] Could not patch ConsoleSystem.Find(StringView); convoystart may fail.");
             }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[Convoy] Find patch failed: " + ex.Message);
+            }
+            StartAutoEventTimerIfEnabled();
+            if (ServerMgr.Instance != null)
+                ServerMgr.Instance.StartCoroutine(StartPathCachingDelayed());
+            UnityEngine.Debug.Log("[Convoy] Harmony mod loaded. convoystart/convoystop (server console or admin). Auto-event on timer per Main Setting. Convoy.json from legacy/config or HarmonyConfig.");
         }
 
-        private IEnumerator WaitForServerThenInit()
+        private IEnumerator StartPathCachingDelayed()
         {
-            while (ServerMgr.Instance == null)
-                yield return null;
-            if (Instance == null) yield break;
-
-            StartAutoEventTimerIfEnabled();
-            yield return new WaitForSeconds(5f);
+            yield return new WaitForSeconds(8f);
             if (Instance != null && FullConfig?.PathConfig != null)
             {
                 ConvoyPathManager.StartCachingRoutes();
                 LogDebug("Path caching started (PathType=" + FullConfig.PathConfig.PathType + ").");
             }
-            _initCoroutine = null;
         }
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
             StopAutoEventTimer();
-            if (_initCoroutine != null && _runner != null)
-            {
-                _runner.StopCoroutine(_initCoroutine);
-                _initCoroutine = null;
-            }
             UnregisterCommands();
-            EventLauncher.StopEvent();
             DeleteMapMarkers();
             ConvoyPathManager.OnPluginUnloaded();
             ConvoyPathManager.ConfigProvider = null;
-            ConvoyDamageApi.Unpublish();
             ConvoyState.Clear();
-            DestroyRunner();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             UnityEngine.Debug.Log("[Convoy] Harmony mod unloaded.");
         }
 
-        private sealed class ModRunner : MonoBehaviour { }
-
         private bool IsEventActive()
         {
-            return EventLauncher.IsEventActive();
+            lock (_mapMarkers) { return _mapMarkers.Count > 0; }
         }
 
         private Vector3 GetDefaultEventPosition()
@@ -137,23 +107,19 @@ namespace Convoy
         private void StartAutoEventTimerIfEnabled()
         {
             StopAutoEventTimer();
-            if (Config?.MainConfig == null || !Config.MainConfig.IsAutoEvent)
-            {
-                UnityEngine.Debug.Log("[Convoy] Auto-event disabled in Main Setting.");
-                return;
-            }
+            if (Config?.MainConfig == null || !Config.MainConfig.IsAutoEvent) return;
             int min = Math.Max(60, Config.MainConfig.MinTimeBetweenEvents);
             int max = Math.Max(min, Config.MainConfig.MaxTimeBetweenEvents);
-            EnsureRunner();
-            _autoEventCoroutine = _runner.StartCoroutine(AutoEventCoroutine(min, max));
-            UnityEngine.Debug.Log("[Convoy] Auto-event timer armed. Next start in " + min + "-" + max + " sec.");
+            LogDebug("StartAutoEventTimer: Min=" + min + " Max=" + max);
+            if (ServerMgr.Instance != null)
+                _autoEventCoroutine = ServerMgr.Instance.StartCoroutine(AutoEventCoroutine(min, max));
         }
 
         private void StopAutoEventTimer()
         {
-            if (_autoEventCoroutine != null && _runner != null)
+            if (_autoEventCoroutine != null && ServerMgr.Instance != null)
             {
-                _runner.StopCoroutine(_autoEventCoroutine);
+                ServerMgr.Instance.StopCoroutine(_autoEventCoroutine);
                 _autoEventCoroutine = null;
             }
         }
@@ -162,9 +128,8 @@ namespace Convoy
         {
             while (Instance != null && Config?.MainConfig?.IsAutoEvent == true)
             {
-                // Unity int Range max is exclusive; use float Range so min==max still waits that many seconds.
-                float wait = UnityEngine.Random.Range((float)minSec, (float)maxSec);
-                UnityEngine.Debug.Log("[Convoy] Auto-event: waiting " + (int)wait + " sec until next start.");
+                float wait = UnityEngine.Random.Range(minSec, maxSec);
+                LogDebug("AutoEvent: waiting " + wait + " sec until next start");
                 yield return new WaitForSeconds(wait);
                 if (Instance == null) break;
                 if (IsEventActive())
@@ -172,19 +137,19 @@ namespace Convoy
                     LogDebug("AutoEvent: event already active, skipping start");
                     continue;
                 }
-
-                bool started = EventLauncher.DelayStartEvent();
-                if (started)
-                    UnityEngine.Debug.Log("[Convoy] Auto-event: starting convoy.");
-                else
-                    UnityEngine.Debug.LogWarning("[Convoy] Auto-event: start failed (will retry after next interval).");
-
-                // Wait until the event ends before scheduling the next one.
-                while (Instance != null && EventLauncher.IsEventActive())
-                    yield return new WaitForSeconds(5f);
-
+                StartConvoyEventMinimal();
+                int duration = Config?.EventDurationAutoSec ?? 3600;
+                if (duration <= 0)
+                {
+                    LogDebug("AutoEvent: event started, duration=0 (run until convoystop)");
+                    yield break;
+                }
+                LogDebug("AutoEvent: event started, auto-stop in " + duration + " sec");
+                yield return new WaitForSeconds(duration);
                 if (Instance == null) break;
-                UnityEngine.Debug.Log("[Convoy] Auto event ended. Scheduling next.");
+                DeleteMapMarkers();
+                ConvoyState.Clear();
+                UnityEngine.Debug.Log("[Convoy] Auto event ended. Next event in " + UnityEngine.Random.Range(minSec, maxSec) + " sec.");
             }
             _autoEventCoroutine = null;
         }
@@ -253,16 +218,7 @@ namespace Convoy
                         string json = File.ReadAllText(p);
                         Config = JsonConvert.DeserializeObject<ConvoyConfig>(json);
                         if (Config == null) Config = new ConvoyConfig();
-
-                        ConvoyPluginConfig loaded = null;
-                        try { loaded = JsonConvert.DeserializeObject<ConvoyPluginConfig>(json); } catch { loaded = null; }
-
-                        // Only re-save if we parsed real content (has vehicle/NPC/event presets). Otherwise a partial
-                        // deserialize would let MergeFullConfigDefaults wipe the file with empty defaults on save.
-                        bool loadedHasContent = loaded != null
-                            && loaded.EventConfigs != null && loaded.EventConfigs.Count > 0;
-
-                        FullConfig = loaded;
+                        try { FullConfig = JsonConvert.DeserializeObject<ConvoyPluginConfig>(json); } catch { FullConfig = null; }
                         MergeFullConfigDefaults();
                         PopulateConfigFromFullConfig();
                         if (Config.LootSettings == null) Config.LootSettings = new LootSettingsOptions();
@@ -273,13 +229,8 @@ namespace Convoy
                         if (Config.MarkerConfig.Color1 == null) Config.MarkerConfig.Color1 = new ColorConfig();
                         if (Config.MarkerConfig.Color2 == null) Config.MarkerConfig.Color2 = new ColorConfig();
                         if (Config.DefaultEventPosition == null || Config.DefaultEventPosition.Length < 3) Config.DefaultEventPosition = new float[] { 0f, 100f, 0f };
-
-                        if (loadedHasContent)
-                            SaveConfig();
-                        else
-                            UnityEngine.Debug.LogWarning("[Convoy] Config at " + p + " parsed without vehicle/NPC presets; keeping file as-is (not overwriting with defaults).");
-
-                        LogDebug("LoadConfig: loaded from " + p + " Debug=" + Config.Debug + " IsAutoEvent=" + Config.MainConfig.IsAutoEvent + " hasContent=" + loadedHasContent);
+                        SaveConfig();
+                        LogDebug("LoadConfig: loaded from " + p + " Debug=" + Config.Debug + " IsAutoEvent=" + Config.MainConfig.IsAutoEvent);
                         return;
                     }
                     catch (Exception ex)
@@ -323,28 +274,6 @@ namespace Convoy
             if (FullConfig.BehaviorConfig == null) FullConfig.BehaviorConfig = def.BehaviorConfig;
             if (FullConfig.LootConfig == null) FullConfig.LootConfig = def.LootConfig;
             if (FullConfig.MarkerConfig == null) FullConfig.MarkerConfig = def.MarkerConfig;
-            if (FullConfig.NotifyConfig == null) FullConfig.NotifyConfig = def.NotifyConfig;
-            else
-            {
-                if (FullConfig.NotifyConfig.TimeNotifications == null)
-                    FullConfig.NotifyConfig.TimeNotifications = def.NotifyConfig?.TimeNotifications ?? new HashSet<int> { 300, 60, 30, 5 };
-                if (FullConfig.NotifyConfig.GameTipConfig == null)
-                    FullConfig.NotifyConfig.GameTipConfig = def.NotifyConfig?.GameTipConfig ?? new ConvoyGameTipConfig { IsEnabled = true, Style = 0 };
-            }
-            if (FullConfig.SupportedPluginsConfig == null)
-                FullConfig.SupportedPluginsConfig = def.SupportedPluginsConfig ?? new ConvoySupportedPluginsConfig();
-            if (FullConfig.SupportedPluginsConfig.PveMode == null)
-                FullConfig.SupportedPluginsConfig.PveMode = new ConvoyPveModeConfig();
-            if (FullConfig.SupportedPluginsConfig.PveMode.ScaleDamage == null)
-            {
-                FullConfig.SupportedPluginsConfig.PveMode.ScaleDamage = new Dictionary<string, float>
-                {
-                    ["Npc"] = 1f,
-                    ["Bradley"] = 2f,
-                    ["Helicopter"] = 2f,
-                    ["Turret"] = 1f
-                };
-            }
         }
 
         private void PopulateConfigFromFullConfig()
@@ -416,20 +345,6 @@ namespace Convoy
                 UnityEngine.Debug.Log("[Convoy DEBUG] " + message);
         }
 
-        private void TryApplyFindPatch()
-        {
-            try
-            {
-                var harmony = new HarmonyLib.Harmony("com.facepunch.rust_dedicated.Convoy.find");
-                if (!Patches.Patch_ConsoleSystem_Server_Find.TryApply(harmony))
-                    LogDebug("ConsoleSystem.Index.Server.Find patch skipped (method not present). Commands use Dict/GlobalDict.");
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning("[Convoy] Find patch failed (non-fatal): " + ex.Message);
-            }
-        }
-
         private void RegisterCommands()
         {
             try
@@ -499,29 +414,48 @@ namespace Convoy
 
         private void CmdConvoyStart(ConsoleSystem.Arg arg)
         {
-            LogDebug("CmdConvoyStart: invoked. Connection=" + (arg.Connection != null));
+            LogDebug("CmdConvoyStart: invoked. Connection=" + (arg.Connection != null) + " arg.FullString=" + arg.FullString.ToString());
             var player = arg.Connection?.player as BasePlayer;
-            if (player != null && !player.IsAdmin)
+            Vector3 position;
+            if (player == null)
             {
-                arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " Only admins can start the convoy.");
-                return;
+                if (FullConfig?.PathConfig != null)
+                {
+                    ConvoyPathManager.GenerateNewPath();
+                    if (ConvoyPathManager.CurrentPath != null && ConvoyPathManager.CurrentPath.StartPathPoint != null)
+                        position = ConvoyPathManager.CurrentPath.StartPathPoint.Position;
+                    else
+                        position = GetDefaultEventPosition();
+                }
+                else
+                    position = GetDefaultEventPosition();
+                LogDebug("CmdConvoyStart: no player (server console) - position " + FormatPosition(position));
+            }
+            else
+            {
+                LogDebug("CmdConvoyStart: player=" + player.displayName + " userId=" + player.userID + " IsAdmin=" + player.IsAdmin);
+                if (!player.IsAdmin)
+                {
+                    arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " Only admins can start the convoy.");
+                    return;
+                }
+                position = player.transform != null ? player.transform.position : GetDefaultEventPosition();
             }
 
-            if (EventLauncher.IsEventActive())
-            {
-                arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " A convoy event is already active.");
-                return;
-            }
+            DeleteMapMarkers();
+            ConvoyState.Clear();
 
-            // Optional preset name argument.
-            string presetName = null;
-            try { if (arg.HasArgs(1)) presetName = arg.GetString(0); } catch { }
+            LogDebug("CmdConvoyStart: creating map marker at " + position);
+            CreateMapMarker(position);
+            ConvoyState.SetConvoyState(true, false, false, false);
 
-            bool ok = EventLauncher.DelayStartEvent(player, presetName);
-            if (!ok && player == null)
-                arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " Failed to start convoy (see console).");
-            else if (ok && player == null)
-                arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " Convoy event spawning.");
+            string posStr = FormatPosition(position);
+            string pathInfo = ConvoyPathManager.CurrentPath != null ? " Pathfinding OK." : "";
+            string reply = player == null
+                ? (Config?.Prefix ?? "[Convoy]") + " Convoy started (server). Map markers at " + posStr + "." + pathInfo
+                : (Config?.Prefix ?? "[Convoy]") + " Convoy started. Map markers at " + posStr + ".";
+            LogDebug("CmdConvoyStart: replying " + reply);
+            arg.ReplyWith(reply);
         }
 
         private void CmdConvoyStop(ConsoleSystem.Arg arg)
@@ -533,9 +467,10 @@ namespace Convoy
                 arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " Only admins can stop the convoy.");
                 return;
             }
-
-            EventLauncher.StopEvent();
             DeleteMapMarkers();
+            ConvoyState.Clear();
+            if (Config?.MainConfig?.IsAutoEvent == true)
+                StartAutoEventTimerIfEnabled();
             arg.ReplyWith((Config?.Prefix ?? "[Convoy]") + " Convoy stopped." + (Config?.MainConfig?.IsAutoEvent == true ? " Next event on timer." : ""));
         }
 

@@ -28,7 +28,9 @@ internal static class RecyclerSpeedUI
 		if (mod != null)
 			mod.GetOrCreateState(player).CurrentRecycler = recycler;
 
-		string text = FormatRecyclerStatsText(recycler);
+		recycler.GetRecyclerStats(out float efficiency, out float duration);
+		int percent = Mathf.RoundToInt(efficiency * 100f);
+		string text = $"{percent}% EFFICIENCY, {duration:0.#} SEC";
 
 		GetAnchors(player, out string parent, out string anchormin, out string anchormax);
 		bool addClickToggle = (player?.IsAdmin ?? false) || (player?.IsDeveloper ?? false);
@@ -55,24 +57,15 @@ internal static class RecyclerSpeedUI
 		if (recycler == null || recycler.IsDestroyed)
 			return;
 
-		string text = FormatRecyclerStatsText(recycler);
+		recycler.GetRecyclerStats(out float efficiency, out float duration);
+		int percent = Mathf.RoundToInt(efficiency * 100f);
+		string text = $"{percent}% EFFICIENCY, {duration:0.#} SEC";
 
 		HarmonyConfig.LoadConfig();
 		string parent = HarmonyConfig.Config?.OverlayParent?.Trim();
 		if (string.IsNullOrEmpty(parent)) parent = "Hud";
 
 		SendOverlayInternal(player, text, parent, state.UiAnchorMin, state.UiAnchorMax, true);
-	}
-
-	/// <summary>
-	/// Uses GetRecyclerStats (replaces removed GetRecycleThinkDuration / hard-coded efficiencies).
-	/// Duration already reflects RecyclerSpeedMultiplier via the GetRecyclerStats postfix.
-	/// </summary>
-	private static string FormatRecyclerStatsText(Recycler recycler)
-	{
-		recycler.GetRecyclerStats(out float efficiency, out float duration);
-		int percent = Mathf.RoundToInt(efficiency * 100f);
-		return $"{percent}% EFFICIENCY, {duration:0.#} SEC";
 	}
 
 	private static void GetAnchors(BasePlayer player, out string parent, out string anchormin, out string anchormax)

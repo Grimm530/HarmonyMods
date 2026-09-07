@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using HMPlugin = Oxide.Plugins.HitMarkers;
+using HMPlugin = Harmony.Plugins.HitMarkers;
 
 namespace HitMarkersHarmony.Patches
 {

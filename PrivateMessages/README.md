@@ -1,6 +1,6 @@
 # PrivateMessages (Harmony)
 
-Oxide **PrivateMessages 1.1.12** port. Send private messages with reply and history.
+Legacy **PrivateMessages 1.1.12** port. Send private messages with reply and history.
 
 ## Load order
 

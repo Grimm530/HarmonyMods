@@ -11,7 +11,7 @@ using Facepunch;
 using Facepunch.Extend;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using ServerPanelHarmony.ServerPanelPopUpsExtensionMethods;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -29,7 +29,7 @@ using Carbon.Modules;
 namespace ServerPanelHarmony
 {
     /// <summary>
-    /// ServerPanel Pop Ups 2.0.20 ported for Harmony (no Oxide), hosted by the ServerPanel mod.
+    /// ServerPanel Pop Ups 2.0.20 ported for Harmony (Harmony-only), hosted by the ServerPanel mod.
     /// </summary>
     public class ServerPanelPopUps : ServerPanelPluginBase
     {
@@ -1213,7 +1213,7 @@ namespace ServerPanelHarmony
                     {
                         RectTransform =
                             {AnchorMin = "0 0", AnchorMax = "0 0", OffsetMin = "-100 -100", OffsetMax = "-100 -100"}
-                    }, API_GetPopUpsBackground(), Layer + ".ToOxide.Mock", Layer + ".ToOxide.Mock");
+                    }, API_GetPopUpsBackground(), Layer + ".ToCompat.Mock", Layer + ".ToCompat.Mock");
                 });
 
                 var container = new CuiElementContainer();
@@ -2930,7 +2930,7 @@ namespace ServerPanelHarmony
         {
             try
             {
-                data = Interface.Oxide.DataFileSystem.ReadObject<T>(filePath);
+                data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<T>(filePath);
             }
             catch (Exception e)
             {
@@ -2942,7 +2942,7 @@ namespace ServerPanelHarmony
 
         private void SaveDataToFile<T>(T data, string filePath)
         {
-            Interface.Oxide.DataFileSystem.WriteObject(filePath, data);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(filePath, data);
         }
 
         #endregion Data.General
@@ -3039,7 +3039,7 @@ namespace ServerPanelHarmony
                 _localizationData = null;
             }
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -9417,7 +9417,7 @@ namespace ServerPanelHarmony
 
         private IEnumerator LoadImage(string name, string path)
         {
-            var url = "file://" + Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + path;
+            var url = "file://" + HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + path;
             Puts($"Loading image from file system: {path} | url: {url}");
             using var www = UnityWebRequestTexture.GetTexture(url);
 
@@ -9618,7 +9618,7 @@ namespace ServerPanelHarmony
         private void SendNotify(BasePlayer player, string key, int type, params object[] obj)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, Msg(player, key, obj));
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, Msg(player, key, obj));
             else
                 Reply(player, key, obj);
         }

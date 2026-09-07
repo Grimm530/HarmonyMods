@@ -1,12 +1,12 @@
-// Perk hooks — Prefix/Postfix at Oxide CallHook timing.
-// This dedicated server has no Oxide CallHook strings in game IL, so transpilers never match.
+// Perk hooks — Prefix/Postfix at compat CallHook timing.
+// This dedicated server has Harmony-only CallHook strings in game IL, so transpilers never match.
 using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -50,7 +50,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseProjectile __instance, int __state)
         {
-            if (__instance == null || __instance.primaryMagazine == null) return;
+            if (__instance.primaryMagazine == null) return;
             if (__instance.primaryMagazine.contents >= __state) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
@@ -181,7 +181,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(Recycler __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return;
+            if (msg.player == null) return;
             try { STPlugin.Dispatch_OnRecyclerToggle(__instance, msg.player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnRecyclerToggle: " + ex.Message); }
         }
@@ -195,7 +195,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(BasePlayer __instance, Item item, BaseEntity.GiveItemReason reason)
         {
-            if (reason != BaseEntity.GiveItemReason.Crafted || item == null || __instance == null) return;
+            if (reason != BaseEntity.GiveItemReason.Crafted || item == null) return;
             var rod = __instance.GetHeldEntity() as BaseFishingRod;
             if (rod == null || rod.CurrentState != BaseFishingRod.CatchState.Caught) return;
             try
@@ -242,7 +242,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ItemModConsume __instance, Item item, BasePlayer player)
         {
-            if (player == null || item == null || __instance == null) return;
+            if (player == null || item == null) return;
             try { STPlugin.Dispatch_OnPlayerAddModifiers(player, item, __instance.GetConsumable()); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerAddModifiers: " + ex.Message); }
         }
@@ -273,7 +273,6 @@ namespace SkillTreeHarmony.Patches
         public static void Prefix(DudTimedExplosive __instance, out float __state)
         {
             __state = -1f;
-            if (__instance == null) return;
             if (__instance.creatorEntity != null && __instance.creatorEntity.IsNpc) return;
             try
             {
@@ -319,7 +318,7 @@ namespace SkillTreeHarmony.Patches
         public static void Postfix(Item __instance)
         {
             var player = LootContainer_DropBonusItems_Patch.BonusPlayer;
-            if (player == null || __instance == null) return;
+            if (player == null) return;
             try { STPlugin.Dispatch_OnBonusItemDropped(__instance, player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnBonusItemDropped: " + ex.Message); }
         }
@@ -334,7 +333,7 @@ namespace SkillTreeHarmony.Patches
         public static void Prefix(BaseMetalDetector __instance, BaseEntity.RPCMessage rpc)
         {
             var player = rpc.player;
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { STPlugin.Dispatch_OnMetalDetectorFlagRequest(__instance, __instance.GetDetectionPoint(), player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnMetalDetectorFlagRequest: " + ex.Message); }
         }
@@ -380,7 +379,7 @@ namespace SkillTreeHarmony.Patches
         public static bool Prefix(CardReader __instance, BaseEntity.RPCMessage msg)
         {
             var player = msg.player;
-            if (player == null || __instance == null) return true;
+            if (player == null) return true;
             var card = player.GetHeldEntity() as Keycard;
             if (card == null) return true;
             try

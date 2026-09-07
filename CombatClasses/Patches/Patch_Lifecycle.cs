@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using CCPlugin = Oxide.Plugins.CombatClasses;
+using CCPlugin = Harmony.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony.Patches
 {
@@ -43,7 +43,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || __instance.IsSleeping()) return;
+            if (__instance.IsSleeping()) return;
             try { CCPlugin.Dispatch_OnPlayerSleepEnded(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[CombatClasses] OnPlayerSleepEnded: " + ex.Message); }
         }

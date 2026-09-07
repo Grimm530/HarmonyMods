@@ -1,6 +1,6 @@
 # ItemRetriever (Harmony Mod)
 
-**No Oxide dependency.** Harmony port of WhiteThunder **ItemRetriever 0.7.7** — library that lets players craft, reload, and build using items from external suppliers (e.g. Backpacks retrieve mode).
+**Harmony-only dependency.** Harmony port of WhiteThunder **ItemRetriever 0.7.7** — library that lets players craft, reload, and build using items from external suppliers (e.g. Backpacks retrieve mode).
 
 ## Mod identity
 
@@ -8,8 +8,8 @@
 |-------|--------|
 | **Name** | ItemRetriever |
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
-| **Oxide** | None — for Oxide-free servers only |
-| **Source** | `.cursor/Oxide.Plugins.Cant-Use/ItemRetriever.cs` (v0.7.7) |
+| **Oxide** | None — for Harmony servers only |
+| **Source** | `.cursor/Harmony.Plugins.Cant-Use/ItemRetriever.cs` (v0.7.7) |
 | **Config** | None (library plugin) |
 | **Data** | None |
 
@@ -21,13 +21,13 @@
 | `ItemRetrieverCompat.cs` | Slim Oxide shims: `Plugin`, `Interface`, host, `ItemContainerHooks` |
 | `ItemRetrieverHarmonyMod.cs` | Harmony entry, AppDomain API, Plugin bridge, ready callbacks |
 | `Patches/` | Harmony patches for Oxide inventory/craft hooks |
-| `convert-from-oxide.ps1` | Regenerates `ItemRetriever.cs` from Oxide source |
+| `convert-from-legacy.ps1` | Regenerates `ItemRetriever.cs` from Oxide source |
 | `ItemRetriever.csproj` | Game refs + Krafs.Publicizer |
 | `build.ps1` | Build and copy DLL to `HarmonyMods/` |
 
-## Harmony patches (Oxide hooks)
+## Harmony patches (Harmony hooks)
 
-| Oxide hook | Game method |
+| Harmony hook | Game method |
 |------------|-------------|
 | `OnEntitySaved` | `BasePlayer.Save` (Postfix). Skipped while the player is dead so supplier items are not copied into death-bag snapshots. |
 | `OnInventoryNetworkUpdate` | `PlayerInventory.SendUpdatedInventoryInternal` (Prefix reimpl) |
@@ -55,7 +55,7 @@ Ready callbacks: **`ItemRetriever_ReadyCallbacks`** / `RegisterReadyCallback(Act
 | `API_GetApi()` | Dictionary of API delegates |
 | `API_AddContainer` / `API_RemoveContainer` / ... | Container registration |
 | `API_FindPlayerItems` / `Sum` / `Take` / `FindPlayerAmmo` | Query helpers |
-| `CallApi(method, args)` | Generic Oxide-style Call |
+| `CallApi(method, args)` | Generic compat-style Call |
 
 ## Load order
 
@@ -68,7 +68,7 @@ Manual `harmony.load` order does not matter either as long as both DLLs end up l
 ## Build and deploy
 
 ```powershell
-.\.cursor\HarmonyMods\ItemRetriever\convert-from-oxide.ps1
+.\.cursor\HarmonyMods\ItemRetriever\convert-from-legacy.ps1
 .\.cursor\HarmonyMods\ItemRetriever\build.ps1
 ```
 

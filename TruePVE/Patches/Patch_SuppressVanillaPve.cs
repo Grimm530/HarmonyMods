@@ -3,7 +3,7 @@
 using ConVar;
 using HarmonyLib;
 using UnityEngine;
-using TPVE = Oxide.Plugins.TruePVE;
+using TPVE = Harmony.Plugins.TruePVE;
 
 namespace TruePVEHarmony.Patches
 {

@@ -1,7 +1,7 @@
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public struct Offset
 {

@@ -1,8 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
-    $projectPath = Join-Path $PSScriptRoot 'NexusStaticPortals.csproj'
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 
     $managed = $null
     if ($env:RUST_MANAGED -and (Test-Path -LiteralPath $env:RUST_MANAGED)) {
@@ -11,7 +10,10 @@ try {
 
     if (-not $managed) {
         $candidates = @(
-            (Join-Path $serverRoot 'RustDedicated_Data\Managed')
+            (Join-Path $repoRoot 'RustDedicated_Data\Managed')
+            'D:\!RustServer\RustDedicated_Data\Managed'
+            'D:\!RustServer\RustDedicated_Data\Managed'
+            'D:\!Grimmzone\RustDedicated_Data\Managed'
         )
 
         foreach ($candidate in $candidates) {
@@ -36,13 +38,13 @@ Then run:
     }
 
     Write-Host "Building NexusStaticPortals (Rust Managed: $managed)..." -ForegroundColor Cyan
-    dotnet build $projectPath -c Release -p:RustManagedPath="$managed"
+    dotnet build NexusStaticPortals.csproj -c Release -p:RustManagedPath="$managed"
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Build failed.' -ForegroundColor Red
         exit 1
     }
 
-    $harmonyModsPath = Join-Path $serverRoot 'HarmonyMods'
+    $harmonyModsPath = Join-Path $repoRoot 'HarmonyMods'
     if (-not (Test-Path -LiteralPath $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath | Out-Null
     }

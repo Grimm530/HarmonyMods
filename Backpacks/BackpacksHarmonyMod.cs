@@ -1,11 +1,19 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace BackpacksHarmony
 {
@@ -18,7 +26,7 @@ namespace BackpacksHarmony
 
         public const int VersionMajor = 3;
         public const int VersionMinor = 17;
-        public const int VersionPatch = 45;
+        public const int VersionPatch = 46;
 
         public static readonly VersionNumber Version = new VersionNumber(VersionMajor, VersionMinor, VersionPatch);
 
@@ -37,6 +45,7 @@ namespace BackpacksHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             BackpacksHost.Init(root);
@@ -48,6 +57,9 @@ namespace BackpacksHarmony
             ScrubBackpacksFromReplicatedList();
             RegisterCommands();
             ScheduleServerInitialized();
+            AppDomain.CurrentDomain.SetData(
+                "Backpacks_RefreshInventoryGuiButton",
+                new Action<BasePlayer>(p => _plugin?.RefreshInventoryGuiButton(p)));
             Debug.Log($"[Backpacks Harmony] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
             Debug.Log("[Backpacks Harmony] Config: HarmonyConfig/Backpacks.json");
             Debug.Log("[Backpacks Harmony] Chat: /backpack  Console: backpack.open / viewbackpack / ...");
@@ -158,6 +170,7 @@ namespace BackpacksHarmony
             UnregisterCommands();
             _plugin?.HarmonyUnload();
             UnregisterApiType();
+            try { AppDomain.CurrentDomain.SetData("Backpacks_RefreshInventoryGuiButton", null); } catch { }
             BackpacksHost.Shutdown();
             _plugin = null;
             Instance = null;

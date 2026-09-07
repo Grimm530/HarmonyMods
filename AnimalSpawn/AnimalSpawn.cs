@@ -14,7 +14,7 @@ using AnimalSpawn.AnimalSpawnExtensionMethods;
 namespace AnimalSpawn
 {
     /// <summary>
-    /// Harmony port of Oxide AnimalSpawn 1.0.81. Custom BaseAnimalNPC + SpawnAnimal API for GrimmBoss.
+    /// Harmony port of original AnimalSpawn 1.0.81. Custom BaseAnimalNPC + SpawnAnimal API for GrimmBoss.
     /// Horse purchase/claim limits stay in Shop — this mod does not register animalspawn.horse.
     /// </summary>
     public class AnimalSpawn : IHarmonyModHooks
@@ -38,7 +38,7 @@ namespace AnimalSpawn
             new Dictionary<string, Dictionary<int, Dictionary<int, PointNavMeshFile>>>();
         private readonly Dictionary<ulong, CustomAnimalNpc> _animals = new Dictionary<ulong, CustomAnimalNpc>();
 
-        internal OxideCompat.TimerHelper timer => OxideCompat.Timer;
+        internal HarmonyCompat.TimerHelper timer => HarmonyCompat.Timer;
 
         #region Config
 
@@ -79,7 +79,7 @@ namespace AnimalSpawn
 
         private void LoadConfig()
         {
-            _config = OxideCompat.ReadConfig<PluginConfig>();
+            _config = HarmonyCompat.ReadConfig<PluginConfig>();
             if (_config == null) _config = PluginConfig.DefaultConfig();
             if (_config.PluginVersion.Major == 0 && _config.PluginVersion.Minor == 0 && _config.PluginVersion.Patch == 0)
                 _config.PluginVersion = Version;
@@ -90,7 +90,7 @@ namespace AnimalSpawn
             }
         }
 
-        private void SaveConfig() => OxideCompat.WriteConfig(_config);
+        private void SaveConfig() => HarmonyCompat.WriteConfig(_config);
 
         private class PluginConfig
         {
@@ -151,7 +151,9 @@ namespace AnimalSpawn
 
         #region Methods
 
-        public static bool IsCustomAnimal(BaseEntity entity) => entity != null && entity.skinID == CUSTOM_ANIMAL_SKIN_ID;
+        public static bool IsCustomAnimal(BaseEntity entity)
+            => entity is CustomAnimalNpc
+               || (entity != null && (entity.skinID == CUSTOM_ANIMAL_SKIN_ID || entity.skinID == GrimmCoreBridge.CustomEntitySkinId));
 
         public BaseAnimalNPC SpawnPreset(Vector3 position, string preset) =>
             !string.IsNullOrEmpty(preset) && _presets.ContainsKey(preset) ? CreateCustomAnimal(position, _presets[preset]) : null;
@@ -285,13 +287,12 @@ namespace AnimalSpawn
             customAnimal.Config = config;
             customAnimal.brain = customAnimalBrain;
             customAnimal.enableSaving = false;
+            GrimmCoreBridge.TagCustomEntity(customAnimal);
             customAnimal.gameObject.AwakeFromInstantiate();
             customAnimal.Spawn();
             timer.Once(0.1f, () => TraceSpawnedNavEntity(traceId, customAnimal, "Custom animal spawn",
                 $"prefab={config.Prefab} home={customAnimal?.HomePosition} areaMask={config.AreaMask} agentTypeID={config.AgentTypeID}",
                 4f, config.AreaMask != 0 ? config.AreaMask : NavMesh.AllAreas));
-
-            customAnimal.skinID = CUSTOM_ANIMAL_SKIN_ID;
             if (customAnimal.net != null)
                 _animals[customAnimal.net.ID.Value] = customAnimal;
 
@@ -401,7 +402,7 @@ namespace AnimalSpawn
                     }
                 }
                 Assert.IsTrue(isServer, "OnDied called on client!");
-                if (OxideCompat.CallHook("CanCustomAnimalSpawnCorpse", this) == null)
+                if (HarmonyCompat.CallHook("CanCustomAnimalSpawnCorpse", this) == null)
                 {
                     BaseCorpse baseCorpse = DropCorpse(CorpsePrefab.resourcePath);
                     if (baseCorpse)
@@ -474,7 +475,7 @@ namespace AnimalSpawn
             internal bool CanTargetEntity(BaseEntity target)
             {
                 if (target == null || target.Health() <= 0f) return false;
-                object hook = OxideCompat.CallHook("OnCustomAnimalTarget", this, target);
+                object hook = HarmonyCompat.CallHook("OnCustomAnimalTarget", this, target);
                 if (hook is bool) return (bool)hook;
                 if (target is BasePlayer)
                 {
@@ -1100,10 +1101,11 @@ namespace AnimalSpawn
         {
             Instance = this;
             _ins = this;
-            OxideCompat.EnsureDataFolders();
+            GrimmCoreHurtRegistration.Register();
+            HarmonyCompat.EnsureDataFolders();
             LoadConfig();
             PublishApi();
-            OxideCompat.RunWhenServerInitialized(() =>
+            HarmonyCompat.RunWhenServerInitialized(() =>
             {
                 if (Instance == null) return;
                 OnServerInitialized();
@@ -1113,6 +1115,7 @@ namespace AnimalSpawn
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreHurtRegistration.Unregister();
             UnloadAnimals();
             UnpublishApi();
             Instance = null;
@@ -1164,8 +1167,8 @@ namespace AnimalSpawn
 
         private void OnServerInitialized()
         {
-            OxideCompat.EnsureDataFolders();
-            OxideCompat.MigrateOxideDataIfNeeded();
+            HarmonyCompat.EnsureDataFolders();
+            HarmonyCompat.MigrateOxideDataIfNeeded();
             LoadPresets();
             LoadNavMeshes();
         }
@@ -1377,18 +1380,18 @@ namespace AnimalSpawn
         private void LoadPresets()
         {
             _presets.Clear();
-            LoadPresetDir(OxideCompat.DataDirectory);
-            LoadPresetDir(OxideCompat.PresetDirectory);
+            LoadPresetDir(HarmonyCompat.DataDirectory);
+            LoadPresetDir(HarmonyCompat.PresetDirectory);
             Puts($"Loaded {_presets.Count} animal preset(s)");
         }
 
         private void LoadPresetDir(string dir)
         {
-            foreach (string path in OxideCompat.EnumerateJsonFiles(dir))
+            foreach (string path in HarmonyCompat.EnumerateJsonFiles(dir))
             {
                 string fileName = Path.GetFileNameWithoutExtension(path);
                 if (string.IsNullOrEmpty(fileName)) continue;
-                AnimalConfig config = OxideCompat.ReadJson<AnimalConfig>(path);
+                AnimalConfig config = HarmonyCompat.ReadJson<AnimalConfig>(path);
                 if (config != null && !string.IsNullOrEmpty(config.Prefab))
                 {
                     if (!_presets.ContainsKey(fileName))
@@ -1406,11 +1409,11 @@ namespace AnimalSpawn
         {
             _allNavMeshes.Clear();
             Puts("Loading custom navigation mesh files...");
-            foreach (string path in OxideCompat.EnumerateJsonFiles(OxideCompat.NavMeshDirectory))
+            foreach (string path in HarmonyCompat.EnumerateJsonFiles(HarmonyCompat.NavMeshDirectory))
             {
                 string fileName = Path.GetFileNameWithoutExtension(path);
                 Dictionary<int, Dictionary<int, PointNavMeshFile>> navMesh =
-                    OxideCompat.ReadJson<Dictionary<int, Dictionary<int, PointNavMeshFile>>>(path);
+                    HarmonyCompat.ReadJson<Dictionary<int, Dictionary<int, PointNavMeshFile>>>(path);
                 if (navMesh == null || navMesh.Count == 0)
                     PrintError($"File {fileName} is corrupted and cannot be loaded!");
                 else

@@ -6,7 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Oxide.Core;
 using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using Oxide.Plugins.ArmoredTrainExtensionMethods;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;

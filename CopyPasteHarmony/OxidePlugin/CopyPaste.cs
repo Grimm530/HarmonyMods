@@ -1165,7 +1165,7 @@ namespace Oxide.Plugins
             }
 
             var firework = entity as PatternFirework;
-            if (firework != null && firework?.Design != null && firework?.Design?.stars != null)
+            if (firework != null && firework.Design != null && firework.Design.stars != null)
             {
                 data.Add("patternfirework", new Dictionary<string, object>
                 {

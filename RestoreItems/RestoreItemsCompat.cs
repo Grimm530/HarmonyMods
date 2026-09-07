@@ -1,5 +1,5 @@
 /*
- * Oxide-free shims for RestoreItems Harmony port.
+ * Harmony shims for RestoreItems Harmony port.
  * Config: HarmonyConfig/RestoreItems.json
  * Data:   HarmonyData/RestoreItems/
  * Lang:   HarmonyLanguage/RestoreItems.json (optional override)
@@ -13,7 +13,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
-namespace Oxide.Core
+namespace Harmony.Core
 {
     public struct VersionNumber
     {
@@ -22,9 +22,9 @@ namespace Oxide.Core
         public override string ToString() => Major + "." + Minor + "." + Patch;
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
-        public static readonly OxideMod Oxide = new OxideMod();
+        public static readonly HarmonyModRuntime Mods = new HarmonyModRuntime();
 
         public static object CallHook(string hook, params object[] args)
         {
@@ -49,7 +49,7 @@ namespace Oxide.Core
         public static void NextTick(Action action) => RestoreItemsHarmony.ModRunner.Enqueue(action);
     }
 
-    public class OxideMod
+    public class HarmonyModRuntime
     {
         private string _root;
         private DataFileSystem _dfs;
@@ -138,7 +138,7 @@ namespace Oxide.Core
     }
 }
 
-namespace Oxide.Core.Plugins
+namespace Harmony.Core.Plugins
 {
     public class Plugin
     {
@@ -161,7 +161,7 @@ namespace Oxide.Core.Plugins
         public static implicit operator bool(Plugin p) => p != null && p.IsLoaded;
     }
 
-    public class PluginManager
+    public class ModManager
     {
         public Plugin Find(string name)
         {
@@ -263,7 +263,7 @@ namespace Oxide.Core.Plugins
     }
 }
 
-namespace Oxide.Core.Libraries
+namespace Harmony.Core.Libraries
 {
     public class Lang
     {
@@ -283,7 +283,7 @@ namespace Oxide.Core.Libraries
         {
             try
             {
-                string path = Path.Combine(Interface.Oxide.LangDirectory, "RestoreItems.json");
+                string path = Path.Combine(HarmonyModInterface.Mods.LangDirectory, "RestoreItems.json");
                 if (!File.Exists(path)) return;
                 var file = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path));
                 if (file == null) return;
@@ -302,11 +302,11 @@ namespace Oxide.Core.Libraries
     }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
-    using Oxide.Core;
-    using Oxide.Core.Libraries;
-    using Oxide.Core.Plugins;
+    using Harmony.Core;
+    using Harmony.Core.Libraries;
+    using Harmony.Core.Plugins;
 
     [AttributeUsage(AttributeTargets.Class)]
     public class InfoAttribute : Attribute
@@ -470,7 +470,7 @@ namespace Oxide.Plugins
         public VersionNumber Version { get; protected set; }
 
         public readonly Lang lang = new Lang();
-        public readonly PluginManager plugins = new PluginManager();
+        public readonly ModManager plugins = new ModManager();
         public readonly PermissionLib permission = new PermissionLib();
         public readonly TimerLib timer = new TimerLib();
         public readonly CommandLib cmd = new CommandLib();
@@ -515,7 +515,7 @@ namespace Oxide.Plugins
 
         private static string ResolveConfigPath(string name)
         {
-            string root = OxideMod.ResolveServerRoot();
+            string root = HarmonyModRuntime.ResolveServerRoot();
             return Path.Combine(root, "HarmonyConfig", name + ".json");
         }
 

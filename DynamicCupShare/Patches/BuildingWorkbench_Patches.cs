@@ -28,7 +28,7 @@ namespace DynamicCupShareHarmony.Patches
             if (plugin == null) return;
             try
             {
-                DynamicCupShareHarmony.Interface.NextTick(() =>
+                DynamicCupShareHarmony.HarmonyModInterface.NextTick(() =>
                 {
                     if (player)
                         plugin.OnWorkbenchTriggerChanged(player);
@@ -45,7 +45,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(BuildingPrivlidge __instance, ulong targetPlayerId)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || !__instance.IsAuthed(targetPlayerId))
+            if (plugin == null || !__instance.IsAuthed(targetPlayerId))
                 return;
 
             BasePlayer player = BasePlayer.FindAwakeOrSleepingByID(targetPlayerId);
@@ -62,7 +62,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(BuildingPrivlidge __instance, ulong targetPlayerId)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || __instance.IsAuthed(targetPlayerId))
+            if (plugin == null || __instance.IsAuthed(targetPlayerId))
                 return;
 
             BasePlayer player = BasePlayer.FindAwakeOrSleepingByID(targetPlayerId);
@@ -79,7 +79,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(BuildingPrivlidge __instance)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             if (__instance.authorizedPlayers != null && __instance.authorizedPlayers.Count > 0)
                 return;
             try { plugin.OnBuildingWorkbenchCupboardCleared(__instance.buildingID); }

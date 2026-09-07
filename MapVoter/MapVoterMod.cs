@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -55,13 +56,13 @@ public class MapVoterMod : IHarmonyModHooks
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+        GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
         Instance = this;
         TryApplyFindPatch();
         LoadConfig();
         RegisterConsoleCommands();
-        // Leftover pending wipe (shutdown died before OnUnloaded) — apply cfg then delete identity files.
+        // Leftover pending wipe (shutdown died before OnUnloaded) — apply cfg. File deletes wait until the live seed matches.
         ServerWipe();
-        HandlePostWipePluginDataWipe();
         EnsureRunner();
         _bootstrapCoroutine = StartModCoroutine(BootstrapCoroutine());
         Info("MapVoter Harmony mod loaded. Config: HarmonyConfig/MapVoter.json");
@@ -124,6 +125,8 @@ public class MapVoterMod : IHarmonyModHooks
         while (Instance != null && ServerMgr.Instance == null)
             yield return null;
         if (Instance == null) yield break;
+
+        HandlePostWipePluginDataWipe();
 
         if (TryReadVoteSeedsFromFile(out int mapSize, out List<int> seeds) && mapSize > 0)
         {
@@ -650,7 +653,7 @@ public class MapVoterMod : IHarmonyModHooks
 
     private void HandleSteamVoteCommand(ConsoleSystem.Arg arg)
     {
-        string result = ReplyForSteamVoteArgs(arg?.Args == null ? null : System.Array.ConvertAll(arg.Args, x => x.ToString()));
+        string result = ReplyForSteamVoteArgs(arg?.Args.AsStringArray());
         arg?.ReplyWith(result);
     }
 
@@ -881,6 +884,7 @@ public class MapVoterMod : IHarmonyModHooks
 
         WriteVoteSeedsToFile(mapSize, picked);
         WriteAutoVoteCycleLock();
+        ClearVoteWinnerFile();
 
         _votes.Clear();
         _votedPlayers.Clear();
@@ -978,11 +982,13 @@ public class MapVoterMod : IHarmonyModHooks
         StartVoteFromPool();
     }
 
-    private IEnumerator VoteEndAtWipeCoroutine(TimeSpan timeUntilWipe)
+    private IEnumerator VoteEndAtWipeCoroutine(TimeSpan timeUntilClose)
     {
-        yield return new WaitForSeconds((float)timeUntilWipe.TotalSeconds);
+        float seconds = (float)Math.Max(1.0, timeUntilClose.TotalSeconds);
+        yield return new WaitForSeconds(seconds);
         _voteEndAtWipeCoroutine = null;
-        StopVote();
+        if (_voteActive)
+            StopVote();
     }
 
     /// <summary>While voting is active, refresh Discord cards hourly so "Next wipe" stays current even without new votes.</summary>
@@ -1001,6 +1007,9 @@ public class MapVoterMod : IHarmonyModHooks
 
         private void StopVote()
         {
+        string winner = GetWinnerFromTallies();
+        if (!string.IsNullOrEmpty(winner))
+            SaveVoteWinner(winner);
         _voteActive = false;
         _mapsLoading = false;
         StopModCoroutine(ref _discordVoteRefreshCoroutine);
@@ -1008,13 +1017,12 @@ public class MapVoterMod : IHarmonyModHooks
         StopModCoroutine(ref _loadMapsCoroutine);
         DeleteVoteSeedsFile();
         DeleteVoteStateFile();
-        string winner = GetWinner();
         string msg = winner != null ? $"Vote ended. Winner: {winner}" : "Vote ended.";
         Info(msg);
-        SendToDiscord("vote_ended", "Map vote ended!", winner != null ? $"Winner: **{winner}**" : "No votes were cast.");
+        SendToDiscordVoteEnded(winner);
         }
 
-    private string GetWinner()
+    private string GetWinnerFromTallies()
     {
         string best = null;
         int bestCount = 0;
@@ -1023,6 +1031,13 @@ public class MapVoterMod : IHarmonyModHooks
             if (kv.Value > bestCount) { bestCount = kv.Value; best = kv.Key; }
         }
         return best;
+    }
+
+    private string GetWinner()
+    {
+        string live = GetWinnerFromTallies();
+        if (!string.IsNullOrEmpty(live)) return live;
+        return LoadVoteWinner();
     }
 
     private void OpenUI(BasePlayer player)
@@ -1069,7 +1084,56 @@ public class MapVoterMod : IHarmonyModHooks
         private string GetVoteSeedsDirectory() => Path.Combine(GetServerRoot(), "HarmonyData", "MapVoter");
         private string GetVoteSeedsFilePath() => Path.Combine(GetVoteSeedsDirectory(), VOTE_SEEDS_FILENAME);
         private string GetVoteStateFilePath() => Path.Combine(GetVoteSeedsDirectory(), VOTE_STATE_FILENAME);
+        private string GetVoteWinnerFilePath() => Path.Combine(GetVoteSeedsDirectory(), "vote_winner.txt");
         private string GetAutoVoteCycleFilePath() => Path.Combine(GetVoteSeedsDirectory(), "auto_vote_cycle.txt");
+
+    private void SaveVoteWinner(string winner)
+    {
+        if (string.IsNullOrWhiteSpace(winner)) return;
+        try
+        {
+            var dir = GetVoteSeedsDirectory();
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(GetVoteWinnerFilePath(), winner.Trim());
+        }
+        catch (Exception ex) { Log($"MapVoter: Could not save vote winner: {ex.Message}"); }
+    }
+
+    private string LoadVoteWinner()
+    {
+        try
+        {
+            var path = GetVoteWinnerFilePath();
+            if (!File.Exists(path)) return null;
+            string s = File.ReadAllText(path)?.Trim();
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+        catch { return null; }
+    }
+
+    private void ClearVoteWinnerFile()
+    {
+        try
+        {
+            var path = GetVoteWinnerFilePath();
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { }
+    }
+
+    private int GetCloseVotingHoursBeforeWipe()
+    {
+        int hours = _config?.AutoVote?.CloseVotingHoursBeforeWipe ?? 24;
+        return Math.Max(0, Math.Min(168, hours));
+    }
+
+    private bool TryGetVoteCloseTime(out DateTime closeAt)
+    {
+        closeAt = default;
+        if (!TryGetNextWipe(out var wipe)) return false;
+        closeAt = wipe.At.AddHours(-GetCloseVotingHoursBeforeWipe());
+        return true;
+    }
 
     private void WriteAutoVoteCycleLock()
     {
@@ -1393,8 +1457,23 @@ public class MapVoterMod : IHarmonyModHooks
         }
         catch { }
 
+        // Do not delete the live map / vote while this process is still on the old seed (mod reload before wipe).
+        if (data != null && data.MapSeed != 0)
+        {
+            try
+            {
+                if (ConVar.Server.seed != 0 && ConVar.Server.seed != data.MapSeed)
+                {
+                    Log($"MapVoter: Wipe signal seed {data.MapSeed} does not match live seed {ConVar.Server.seed} - skipping file wipe until the new map loads.");
+                    return;
+                }
+            }
+            catch { }
+        }
+
         DeleteVoteSeedsFile();
         DeleteVoteStateFile();
+        ClearVoteWinnerFile();
         WipeSignal.MarkWiped(statePath);
         Log("MapVoter: Cleared leftover vote after wipe signal.");
 
@@ -1403,6 +1482,7 @@ public class MapVoterMod : IHarmonyModHooks
         var sdw = _config?.ServerDataWipe;
         var lw = _config?.LogsWipe;
         var ow = _config?.OxideWipe;
+        var hdw = _config?.HarmonyDataWipe;
 
         bool doServerForced = sdw != null && data.WasForcedWipe && sdw.EnableOnForcedWipeDay && sdw.FileNamesToDeleteOnForcedWipeDay?.Count > 0;
         bool doServerMap = sdw != null && !data.WasForcedWipe && sdw.EnableOnMapWipeDay && sdw.FileNamesToDeleteOnMapWipeDay?.Count > 0;
@@ -1410,9 +1490,11 @@ public class MapVoterMod : IHarmonyModHooks
         bool doLogsMap = lw != null && !data.WasForcedWipe && lw.EnableOnMapWipeDay;
         bool doOxideForced = ow != null && data.WasForcedWipe && ow.EnableOnForcedWipeDay;
         bool doOxideMap = ow != null && !data.WasForcedWipe && ow.EnableOnMapWipeDay;
+        bool doHarmonyForced = hdw != null && data.WasForcedWipe && hdw.EnableOnForcedWipeDay && hdw.PathsToDelete?.Count > 0;
+        bool doHarmonyMap = hdw != null && !data.WasForcedWipe && hdw.EnableOnMapWipeDay && hdw.PathsToDelete?.Count > 0;
         bool doSeasonBlueprints = ShouldWipeBlueprintsThisWipe(data);
 
-        if (!doServerForced && !doServerMap && !doLogsForced && !doLogsMap && !doOxideForced && !doOxideMap && !doSeasonBlueprints) return;
+        if (!doServerForced && !doServerMap && !doLogsForced && !doLogsMap && !doOxideForced && !doOxideMap && !doHarmonyForced && !doHarmonyMap && !doSeasonBlueprints) return;
 
         // Server data wipe (server/{identity}/ - map files, player data, etc.)
         if (doServerForced || doServerMap)
@@ -1523,7 +1605,79 @@ public class MapVoterMod : IHarmonyModHooks
             }
         }
 
+        // Harmony data wipe (HarmonyData/ - kit cooldowns, etc.)
+        if (doHarmonyForced || doHarmonyMap)
+        {
+            WipeHarmonyDataPaths(hdw.PathsToDelete);
+        }
+
         ClearWipeData();
+    }
+
+    /// <summary>Delete relative files/folders under HarmonyData/. Rejects paths that escape that root.</summary>
+    private void WipeHarmonyDataPaths(List<string> relativePaths)
+    {
+        var harmonyDataRoot = Path.GetFullPath(Path.Combine(GetServerRoot(), "HarmonyData"));
+        if (!Directory.Exists(harmonyDataRoot)) return;
+
+        foreach (var raw in relativePaths ?? new List<string>())
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var rel = raw.Trim().Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+            while (rel.StartsWith("" + Path.DirectorySeparatorChar))
+                rel = rel.Substring(1);
+            if (rel.IndexOf("..", StringComparison.Ordinal) >= 0)
+            {
+                Log($"MapVoter: Skipping unsafe Harmony data path: {raw}");
+                continue;
+            }
+
+            try
+            {
+                var full = Path.GetFullPath(Path.Combine(harmonyDataRoot, rel));
+                if (!full.StartsWith(harmonyDataRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log($"MapVoter: Skipping Harmony data path outside HarmonyData: {raw}");
+                    continue;
+                }
+
+                if (Directory.Exists(full))
+                {
+                    int deleted = 0;
+                    foreach (var file in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                            deleted++;
+                        }
+                        catch (Exception ex) { Log($"MapVoter: Harmony data file wipe skip {file}: {ex.Message}"); }
+                    }
+                    // Remove empty subfolders after files are gone; keep the target folder itself if still present.
+                    try
+                    {
+                        foreach (var dir in Directory.EnumerateDirectories(full, "*", SearchOption.AllDirectories)
+                                     .OrderByDescending(d => d.Length))
+                        {
+                            try
+                            {
+                                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                                    Directory.Delete(dir);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                    Log($"MapVoter: Wiped Harmony data folder {rel} ({deleted} files)");
+                }
+                else if (File.Exists(full))
+                {
+                    File.Delete(full);
+                    Log($"MapVoter: Deleted Harmony data file: {rel}");
+                }
+            }
+            catch (Exception ex) { Log($"MapVoter: Harmony data wipe error for {raw}: {ex.Message}"); }
+        }
     }
 
     private bool ShouldWipeBlueprintsThisWipe(AutoWipeData data)
@@ -1628,6 +1782,13 @@ public class MapVoterMod : IHarmonyModHooks
             if (_config?.AutoVote?.EnableAutoVote != true)
             {
                 yield return new WaitForSeconds(60f);
+                continue;
+            }
+            if (_voteActive && !_mapsLoading && TryGetVoteCloseTime(out var closeAt) && DateTime.Now >= closeAt)
+            {
+                Info($"MapVoter: Vote close window reached ({closeAt:yyyy-MM-dd HH:mm}). Ending vote and posting the winner to Discord.");
+                StopVote();
+                yield return new WaitForSeconds(10f);
                 continue;
             }
             if (_voteActive || _mapsLoading)
@@ -2488,13 +2649,18 @@ public class MapVoterMod : IHarmonyModHooks
         }
 
         StopModCoroutine(ref _voteEndAtWipeCoroutine);
-        if (TryGetNextWipe(out var nextWipe))
+        if (TryGetVoteCloseTime(out var closeAt) && TryGetNextWipe(out var nextWipe))
         {
-            var timeUntilWipe = nextWipe.At - DateTime.Now;
-            if (timeUntilWipe.TotalSeconds > 1)
+            var timeUntilClose = closeAt - DateTime.Now;
+            if (timeUntilClose.TotalSeconds <= 1)
             {
-                _voteEndAtWipeCoroutine = StartModCoroutine(VoteEndAtWipeCoroutine(timeUntilWipe));
-                Info($"MapVoter: Vote open until next wipe {nextWipe.At:yyyy-MM-dd HH:mm} ({timeUntilWipe.TotalDays:F1} days). Players: /vote");
+                Info($"MapVoter: Vote close time {closeAt:yyyy-MM-dd HH:mm} has passed (wipe {nextWipe.At:yyyy-MM-dd HH:mm}). Closing now and posting the winner.");
+                StopVote();
+            }
+            else
+            {
+                _voteEndAtWipeCoroutine = StartModCoroutine(VoteEndAtWipeCoroutine(timeUntilClose));
+                Info($"MapVoter: Vote open until {closeAt:yyyy-MM-dd HH:mm} ({GetCloseVotingHoursBeforeWipe()}h before wipe {nextWipe.At:yyyy-MM-dd HH:mm}). Players: /vote");
             }
         }
         else
@@ -2823,7 +2989,7 @@ public class MapVoterMod : IHarmonyModHooks
             string winner = GetWinner();
             string desc = winner != null ? $"Winner: **{winner}** (manual resend)" : "No votes were cast. (manual resend)";
             UnityEngine.Debug.Log("[MapVoter] mvotediscord: Sending vote_ended to Discord bridge...");
-            SendToDiscord("vote_ended", "Map vote ended (manual resend)", desc);
+            SendToDiscord("vote_ended", "Map vote ended (manual resend)", desc, winner);
         }
     }
 
@@ -2954,8 +3120,15 @@ public class MapVoterMod : IHarmonyModHooks
         StartModCoroutine(SendToDiscordCoroutine(GetBridgePostUrls(), json));
     }
 
+    /// <summary>POST vote_ended with winner seed so Discord can announce and close the vote thread.</summary>
+    private void SendToDiscordVoteEnded(string winner)
+    {
+        string desc = !string.IsNullOrEmpty(winner) ? $"Winner: **{winner}**" : "No votes were cast.";
+        SendToDiscord("vote_ended", "Map vote ended!", desc, winner);
+    }
+
     /// <summary>POST event to ticket-support-system mapvoterDiscordBridge. Uses coroutine to log success/failure.</summary>
-    private void SendToDiscord(string eventType, string title, string description)
+    private void SendToDiscord(string eventType, string title, string description, string winnerSeed = null)
     {
         if (_config?.Discord?.LogToDiscord != true) return;
         string url = _config.Discord.BridgeUrl?.Trim().TrimEnd('/');
@@ -2975,6 +3148,32 @@ public class MapVoterMod : IHarmonyModHooks
         // Bridge keys sessions by VoteChannelId; vote_ended posts to WinningMapChannelId — tell bridge which session to purge.
         if (eventType == "vote_ended" && !string.IsNullOrEmpty(_config.Discord.VoteChannelId))
             payload["voteChannelId"] = _config.Discord.VoteChannelId;
+        if (eventType == "vote_ended" && !string.IsNullOrEmpty(winnerSeed))
+            payload["winnerSeed"] = winnerSeed;
+
+        if (eventType == "vote_ended")
+        {
+            int mapSize = _config?.MapSize ?? 0;
+            var maps = GetVoteMaps();
+            if (maps != null && maps.Count > 0)
+            {
+                var mapsPayload = new List<Dictionary<string, object>>();
+                int i = 1;
+                foreach (var m in maps)
+                {
+                    _votes.TryGetValue(m.Id ?? "", out int voteCount);
+                    mapsPayload.Add(new Dictionary<string, object>
+                    {
+                        ["id"] = m.Id ?? "",
+                        ["seed"] = m.Id ?? "",
+                        ["size"] = mapSize > 0 ? mapSize.ToString() : "",
+                        ["index"] = i++,
+                        ["votes"] = voteCount
+                    });
+                }
+                payload["maps"] = mapsPayload;
+            }
+        }
 
         string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 

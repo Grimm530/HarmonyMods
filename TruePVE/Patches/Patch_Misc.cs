@@ -2,7 +2,7 @@
 // CanChangeGrade, OnEntityMarkHostile, supply-signal throw / cargo-plane signal.
 using HarmonyLib;
 using UnityEngine;
-using TPVE = Oxide.Plugins.TruePVE;
+using TPVE = Harmony.Plugins.TruePVE;
 
 namespace TruePVEHarmony.Patches
 {
@@ -13,7 +13,6 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(MLRS __instance, BasePlayer owner)
         {
-            if (__instance == null) return true;
             try { return TPVE.Dispatch_OnMlrsFire(__instance, owner) == null; }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnMlrsFire: " + ex.Message); return true; }
         }
@@ -26,7 +25,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BuildingPrivlidge __instance, BasePlayer granter)
         {
-            if (__instance == null || granter == null) return true;
+            if (granter == null) return true;
             try { return TPVE.Dispatch_OnCupboardAuthorize(__instance, granter) == null; }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnCupboardAuthorize: " + ex.Message); return true; }
         }
@@ -39,7 +38,6 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(TimedExplosive __instance)
         {
-            if (__instance == null) return;
             try { TPVE.Dispatch_OnTimedExplosiveExplode(__instance, __instance.transform.position); }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnTimedExplosiveExplode: " + ex.Message); }
         }
@@ -52,7 +50,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(CodeLock __instance, BaseEntity.RPCMessage rpc)
         {
-            if (__instance == null || rpc.player == null) return true;
+            if (rpc.player == null) return true;
             try
             {
                 // TruePVE OnCodeEntered does not use the code string (ally/owner check only).
@@ -69,7 +67,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BuildingBlock __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return true;
+            if (msg.player == null) return true;
             try
             {
                 object result = TPVE.Dispatch_CanChangeGrade(msg.player, __instance, __instance.grade, __instance.skinID);
@@ -87,7 +85,6 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BasePlayer __instance, float duration)
         {
-            if (__instance == null) return true;
             try { return TPVE.Dispatch_OnEntityMarkHostile(__instance, duration) == null; }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnEntityMarkHostile: " + ex.Message); return true; }
         }
@@ -100,7 +97,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BasePlayer owningPlayer, BaseEntity thrownEntity)
         {
-            if (__instance == null || owningPlayer == null || thrownEntity == null) return;
+            if (owningPlayer == null || thrownEntity == null) return;
             try
             {
                 if (thrownEntity is SupplySignal ss)
@@ -119,7 +116,6 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(SupplySignal __instance)
         {
-            if (__instance == null) return;
             try
             {
                 // Plane is spawned in Explode at signal position +/- offset; find nearest fresh CargoPlane.

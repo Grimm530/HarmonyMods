@@ -1,7 +1,7 @@
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public abstract class BaseLayoutGroup
 {

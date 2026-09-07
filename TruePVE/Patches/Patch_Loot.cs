@@ -5,7 +5,7 @@
 // OnStartBeingLooted: true = force-allow (bypass onlyOwnerLoot), false = block, null = vanilla.
 using HarmonyLib;
 using UnityEngine;
-using TPVE = Oxide.Plugins.TruePVE;
+using TPVE = Harmony.Plugins.TruePVE;
 
 namespace TruePVEHarmony.Patches
 {
@@ -15,12 +15,16 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(PlayerLoot __instance, BaseEntity targetEntity, ref bool __result)
         {
-            if (__instance == null || targetEntity == null) return true;
+            if (targetEntity == null) return true;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return true;
 
             try
             {
+                // Vanish / AdminCanLoot / bypass.loot — skip TruePVE loot locks (fixes TC chat blocks with no console log).
+                if (TPVE.Dispatch_LootCanBypass(player))
+                    return true;
+
                 if (targetEntity is BasePlayer target)
                 {
                     if (TPVE.Dispatch_CanLootPlayer(target, player) != null) { __result = false; return false; }
@@ -31,9 +35,6 @@ namespace TruePVEHarmony.Patches
                     if (targetEntity is DroppedItemContainer dic)
                     {
                         object started = TPVE.Dispatch_OnStartBeingLooted(dic, player);
-                        // true = TruePVE force-allowed (unowned bags / onlyOwnerLoot bypass).
-                        // Clear onlyOwnerLoot so vanilla DroppedItemContainer.OnStartBeingLooted
-                        // does not immediately re-block (playerSteamID==0 + onlyOwnerLoot blocks everyone).
                         if (started is true)
                         {
                             dic.onlyOwnerLoot = false;
@@ -54,7 +55,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (!__result || __instance == null || targetEntity == null) return;
+            if (!__result || targetEntity == null) return;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return;
             try

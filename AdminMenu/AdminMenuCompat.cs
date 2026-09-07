@@ -1,5 +1,5 @@
 /*
- * Oxide-free shims for AdminMenu 2.1.13 Chaos UI under Harmony.
+ * Harmony shims for AdminMenu 2.1.13 (Chaos UI port).
  */
 using System;
 using System.Collections.Generic;
@@ -10,12 +10,12 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 
 namespace AdminMenuHarmony
 {
-    /// <summary>Oxide Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
+    /// <summary>compat Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
         public new TValue this[TKey key]
@@ -218,7 +218,7 @@ namespace AdminMenuHarmony
         public double TotalHookTime { get; set; }
     }
 
-    /// <summary>Oxide Chaos PluginInterface-style helper for cross-mod Calls.</summary>
+    /// <summary>compat PluginInterface-style helper for cross-mod Calls.</summary>
     public class PluginHelper
     {
         private readonly string _name;
@@ -444,7 +444,7 @@ namespace AdminMenuHarmony
 
     #region Permission / Plugins / Covalence
 
-    /// <summary>Oxide-like permission API; Plugin owner args ignored.</summary>
+    /// <summary>Harmony-like permission API; Plugin owner args ignored.</summary>
     public class PermissionLib
     {
         public bool UserHasPermission(string playerId, string perm) =>
@@ -1066,16 +1066,16 @@ namespace AdminMenuHarmony
         }
     }
 
-    /// <summary>Oxide Interface stubs — plugin load/unload is a no-op under Harmony.</summary>
-    public static class Interface
+    /// <summary>Harmony mod load/unload registry (wraps loaded Harmony mods list).</summary>
+    public static class HarmonyModInterface
     {
-        public static OxideCompat Oxide { get; } = new OxideCompat();
+        public static HarmonyModRegistry Mods { get; } = new HarmonyModRegistry();
     }
 
-    public class OxideCompat
+    public class HarmonyModRegistry
     {
-        public PluginManager RootPluginManager { get; } = new PluginManager();
-        public string PluginDirectory =>
+        public ModManager RootModManager { get; } = new ModManager();
+        public string ModDirectory =>
             AdminMenuHost.Instance != null
                 ? Path.Combine(AdminMenuHost.Instance.ServerRoot, "HarmonyMods")
                 : "HarmonyMods";
@@ -1092,7 +1092,7 @@ namespace AdminMenuHarmony
         public IEnumerable<PluginLoader> GetPluginLoaders() => Enumerable.Empty<PluginLoader>();
     }
 
-    public class PluginManager
+    public class ModManager
     {
         public IEnumerable<Plugin> GetPlugins()
         {
@@ -1112,16 +1112,7 @@ namespace AdminMenuHarmony
     #endregion
 }
 
-namespace Oxide.Ext.Chaos
-{
-    /// <summary>Stub for [Chaos.Permission] field markers used by AdminMenu.</summary>
-    [AttributeUsage(AttributeTargets.Field)]
-    public sealed class PermissionAttribute : Attribute
-    {
-    }
-}
-
-namespace Oxide.Ext.Chaos.Discord
+namespace AdminMenuHarmony.Discord
 {
     public class DiscordColor
     {

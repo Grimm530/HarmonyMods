@@ -211,6 +211,11 @@ internal static class RiverTerrainReapply
         float corridor0 = Mathf.Max(0f, riverDist - gap - sampleLen);
         float corridor1 = Mathf.Min(river.Path.Length, riverDist + gap + sampleLen);
 
+        float beforePathBed = BridgeTerrain.SamplePoint(river, beforeMid).y + offset;
+        float afterPathBed = BridgeTerrain.SamplePoint(river, afterMid).y + offset;
+        beforeY = Mathf.Clamp(beforeY, beforePathBed - 0.4f, beforePathBed + 0.4f);
+        afterY = Mathf.Clamp(afterY, afterPathBed - 0.4f, afterPathBed + 0.4f);
+
         anchors = new BedAnchors
         {
             BeforeDist = beforeMid,
@@ -256,10 +261,13 @@ internal static class RiverTerrainReapply
             if (h > pathBed + 1.75f)
                 continue;
 
-            // Prefer the actual carved heightmap; fall back to path bed if slightly noisy.
-            float sample = h <= pathBed + 1.25f ? h : pathBed;
-            // Keep samples in a tight band around the path profile.
-            sample = Mathf.Clamp(sample, pathBed - 1.25f, pathBed + 0.75f);
+            // Ocean / over-cut holes sit well below the river bed — using them as
+            // anchors pulls the whole crossing down and floods the banks.
+            float sample;
+            if (h < pathBed - 0.5f)
+                sample = pathBed;
+            else
+                sample = Mathf.Clamp(h, pathBed - 0.4f, pathBed + 0.5f);
             heights.Add(sample);
 
             widthSum += PathList.GetRadius(d, len, baseR, river.RandomScale, scaleWidthWithLength: true);
@@ -291,22 +299,20 @@ internal static class RiverTerrainReapply
     {
         TerrainHeightMap heightMap = TerrainMeta.HeightMap;
         var cfg = RoadFixConfig.Config;
-        // Bank skirt past the channel — must reach past the ridge crests in screenshots.
-        float softPad = Mathf.Clamp(cfg.LocalRiverOuterFade, 10f, 28f);
 
-        // Full corridor: entire before-sample → after-sample stretch through the crossing.
-        float corridor0 = Mathf.Max(0f, anchors.Corridor0 - softPad);
-        float corridor1 = Mathf.Min(river.Path.Length, anchors.Corridor1 + softPad);
+        // Only cut the wet channel through road fill. A wide bank skirt drops
+        // grass below the river mesh / water map and looks like a floating plane.
+        float corridor0 = Mathf.Max(0f, anchors.Corridor0);
+        float corridor1 = Mathf.Min(river.Path.Length, anchors.Corridor1);
         float widthHalf = anchors.WidthHalf;
-        // Small core + long rim = gentle side banks instead of sharp U walls.
         float coreFrac = widthHalf < 8f ? 0.12f : 0.2f;
-        float rim = widthHalf + softPad;
+        float shoreBlend = Mathf.Clamp(cfg.LocalRiverInnerFade, 2f, 6f);
+        float rim = widthHalf + shoreBlend;
 
         float searchR = rim + (corridor1 - corridor0) * 0.5f + 10f;
         Vector3 center = crossing.Center;
         center.y = 0f;
 
-        // Track touched cells for a follow-up smooth pass.
         var touched = new HashSet<long>();
         int cells = 0;
 
@@ -316,31 +322,35 @@ internal static class RiverTerrainReapply
             float nz = heightMap.Coordinate(z);
             Vector3 world = TerrainMeta.Denormalize(new Vector3(nx, 0f, nz));
 
-            if (!TryClosestOnPath(river, corridor0, corridor1, world, out float distRiver, out _, out float riverD))
+            if (!TryClosestOnPath(river, corridor0, corridor1, world, out float distRiver, out float waterY, out float riverD))
                 return;
             if (distRiver > rim)
                 return;
 
-            // Bed grade from before → after along the river.
             float tGrade = Mathf.InverseLerp(anchors.BeforeDist, anchors.AfterDist, riverD);
             tGrade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(tGrade));
             float bedY = Mathf.Lerp(anchors.BeforeY, anchors.AfterY, tGrade);
 
-            // Outer bank target eases up from bed toward current terrain so ridges
-            // get shaved down without digging a second trench outside the river.
             float cur01 = heightMap.GetHeight01(x, z);
             float curY = TerrainMeta.DenormalizeY(cur01);
-            float bankT = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(widthHalf * coreFrac, rim, distRiver));
-            float targetY = Mathf.Lerp(bedY, Mathf.Max(bedY, curY), bankT * 0.85f);
-            float target01 = TerrainMeta.NormalizeY(targetY);
+            float shoreY = waterY + 0.15f;
 
-            // Lateral strength: full in channel, still meaningful past widthHalf to knock crests.
-            float latT = InnerSlope(distRiver, widthHalf * coreFrac, rim);
-            if (distRiver > widthHalf)
+            float targetY;
+            if (distRiver <= widthHalf)
             {
-                float skirt = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(widthHalf, rim, distRiver));
-                latT = Mathf.Max(latT, skirt * 0.7f);
+                float shoreT = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(widthHalf * coreFrac, widthHalf, distRiver));
+                targetY = Mathf.Lerp(bedY, shoreY, shoreT);
             }
+            else
+            {
+                // Abutments: never cut banks below the water surface.
+                float bankT = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(widthHalf, rim, distRiver));
+                targetY = Mathf.Lerp(shoreY, Mathf.Max(curY, shoreY + 0.1f), bankT);
+                targetY = Mathf.Max(targetY, shoreY);
+            }
+
+            float target01 = TerrainMeta.NormalizeY(targetY);
+            float latT = InnerSlope(distRiver, widthHalf * coreFrac, rim);
 
             float endT = 1f;
             if (riverD < anchors.Corridor0)
@@ -362,7 +372,7 @@ internal static class RiverTerrainReapply
         });
 
         if (touched.Count > 0)
-            SmoothTouched(heightMap, touched, passes: 4, expandRings: 3);
+            SmoothTouched(heightMap, touched, passes: 2, expandRings: 0);
 
         return cells;
     }

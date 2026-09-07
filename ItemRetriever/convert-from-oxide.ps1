@@ -1,27 +1,27 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\ItemRetriever.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\ItemRetriever.cs"
 $dst = Join-Path $PSScriptRoot "ItemRetriever.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
 # --- Usings ---
 foreach ($using in @(
-    "using Oxide.Core;",
-    "using Oxide.Core.Libraries;",
-    "using Oxide.Core.Libraries.Covalence;",
-    "using Oxide.Core.Plugins;",
-    "using Oxide.Core.Configuration;"
+    "using Harmony.Core;",
+    "using Harmony.Core.Libraries;",
+    "using Harmony.Core.Libraries.Covalence;",
+    "using Harmony.Core.Plugins;",
+    "using Harmony.Core.Configuration;"
 )) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
 # --- Namespaces ---
-$text = $text.Replace("namespace Oxide.Plugins", "namespace ItemRetrieverHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace ItemRetrieverHarmony")
 
 # --- Class declaration ---
 $newClass = @"
     /// <summary>
-    /// ItemRetriever 0.7.7 ported for Harmony (no Oxide). Library for external container item supply.
+    /// ItemRetriever 0.7.7 ported for Harmony (Harmony-only). Library for external container item supply.
     /// </summary>
     public class ItemRetriever : ItemRetrieverPluginBase
 "@
@@ -116,11 +116,11 @@ $text = [regex]::Replace($text, $unloadEnd, { param($mm) $mm.Groups[1].Value + $
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core[^.]." },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core[^.]." },
     @{ Name = "CovalencePlugin"; Pattern = "CovalencePlugin" },
     @{ Name = "[PluginReference]"; Pattern = "\[PluginReference\]" },
     @{ Name = "[HookMethod]"; Pattern = "\[HookMethod" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "ItemRetrieverPluginBase"; Pattern = "ItemRetrieverPluginBase" },
     @{ Name = "internal OnInventoryItemsCount"; Pattern = "internal object OnInventoryItemsCount" },

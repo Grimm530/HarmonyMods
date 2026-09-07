@@ -30,7 +30,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(SamSite __instance)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || !plugin.SamSitesEnabled)
+            if (plugin == null || !plugin.SamSitesEnabled)
                 return;
 
             try

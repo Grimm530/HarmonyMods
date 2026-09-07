@@ -13,8 +13,25 @@ internal static class BridgeService
     private static readonly List<BridgeCrossing> RailCrossings = new List<BridgeCrossing>();
     private static bool _roadBridgesPlaced;
 
+    private static bool _loggedCachedIdle;
+
     public static int RoadCrossingCount => RoadCrossings.Count;
     public static int RailCrossingCount => RailCrossings.Count;
+
+    public static bool IsFreshMap => !World.Cached;
+
+    public static void NoteCachedIdle()
+    {
+        if (_loggedCachedIdle)
+            return;
+        _loggedCachedIdle = true;
+        if (RoadFixConfig.Config?.DebugLogging == true)
+        {
+            Debug.Log(
+                "[RoadFix] Cached map: idle (no river carve, no bridge place, no rail snap). " +
+                "Road meshes still rebuild with snapToTerrain=false.");
+        }
+    }
 
     public static IReadOnlyList<BridgeCrossing> GetRoadCrossings() => RoadCrossings;
     public static IReadOnlyList<BridgeCrossing> GetRailCrossings() => RailCrossings;
@@ -25,6 +42,7 @@ internal static class BridgeService
         var cfg = RoadFixConfig.Config;
         RoadCrossings.Clear();
         _roadBridgesPlaced = false;
+        _loggedCachedIdle = false;
         List<PathList> roads = TerrainPathAccess.GetRoads(TerrainMeta.Path);
         if (cfg == null || roads == null)
             return;
@@ -35,6 +53,8 @@ internal static class BridgeService
 
         if (cfg.DebugLogging)
             Debug.Log($"[RoadFix] Found {crossings.Count} road bridge span(s) (paths untouched)");
+
+        MergeTouchingRoadRail();
     }
 
     /// <summary>Detect rail river spans. Path nodes untouched.</summary>
@@ -52,6 +72,8 @@ internal static class BridgeService
 
         if (cfg.DebugLogging)
             Debug.Log($"[RoadFix] Found {crossings.Count} rail bridge span(s) (paths untouched)");
+
+        MergeTouchingRoadRail();
     }
 
     public static void PlaceRoadBridgesOnly()
@@ -71,9 +93,15 @@ internal static class BridgeService
         if (RoadCrossings.Count == 0)
             PrepareRoadCrossings();
 
+        MergeTouchingRoadRail();
+
         int placed = 0;
         foreach (BridgeCrossing crossing in RoadCrossings)
-            placed += BridgeMapPlacer.PlaceCrossing(crossing, cfg.RoadBridgeMapPath, cfg.RoadPathCenterLocal);
+        {
+            if (crossing.SkipPlace)
+                continue;
+            placed += BridgeMapPlacer.PlaceCrossing(crossing, cfg.SharedBridgeMapPath, cfg.SharedPathCenterLocal);
+        }
         _roadBridgesPlaced = true;
 
         if (cfg.DebugLogging)
@@ -96,12 +124,23 @@ internal static class BridgeService
         if (RailCrossings.Count == 0)
             PrepareRailCrossings();
 
+        MergeTouchingRoadRail();
+
         int placed = 0;
         foreach (BridgeCrossing crossing in RailCrossings)
-            placed += BridgeMapPlacer.PlaceCrossing(crossing, cfg.RailBridgeMapPath, cfg.RailPathCenterLocal);
+        {
+            if (crossing.SkipPlace)
+                continue;
+            placed += BridgeMapPlacer.PlaceCrossing(crossing, cfg.SharedBridgeMapPath, cfg.SharedPathCenterLocal);
+        }
 
         if (cfg.DebugLogging)
             Debug.Log($"[RoadFix] Rail bridges queued rows: {placed}");
+    }
+
+    public static void MergeTouchingRoadRail()
+    {
+        BridgeCrossingFinder.MergeTouchingRoadRail(RoadCrossings, RailCrossings);
     }
 
     public static bool IsNearRoadCrossing(Vector3 worldPos, float pad = 8f)

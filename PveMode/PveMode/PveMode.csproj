@@ -58,4 +58,7 @@
       <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
 </Project>

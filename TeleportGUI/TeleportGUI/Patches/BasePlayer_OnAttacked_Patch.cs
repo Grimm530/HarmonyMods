@@ -7,7 +7,7 @@ namespace TeleportGUI.Patches
     {
         static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || __instance.IsNpc) return;
+            if (__instance.IsNpc) return;
             TeleportGUIMod.Instance?.OnPlayerTakeDamage(__instance);
         }
     }

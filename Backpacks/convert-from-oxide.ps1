@@ -1,28 +1,28 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\Backpacks.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\Backpacks.cs"
 $dst = Join-Path $PSScriptRoot "Backpacks.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
 # --- Usings ---
 foreach ($using in @(
-    "using Oxide.Core;",
-    "using Oxide.Core.Libraries;",
-    "using Oxide.Core.Libraries.Covalence;",
-    "using Oxide.Core.Plugins;",
-    "using Oxide.Core.Configuration;"
+    "using Harmony.Core;",
+    "using Harmony.Core.Libraries;",
+    "using Harmony.Core.Libraries.Covalence;",
+    "using Harmony.Core.Plugins;",
+    "using Harmony.Core.Configuration;"
 )) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
-# Keep Oxide.Game.Rust.Cui
+# Keep Game.Rust.Cui
 
 # --- Namespaces ---
-$text = $text.Replace("namespace Oxide.Plugins", "namespace BackpacksHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace BackpacksHarmony")
 
 # --- Class declaration ---
 $newClass = @"
     /// <summary>
-    /// Backpacks 3.17.41 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// Backpacks 3.17.41 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public class Backpacks : BackpacksPluginBase
 "@
@@ -213,12 +213,12 @@ $text = $text.Replace(
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core[^.]." },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core[^.]." },
     @{ Name = "CovalencePlugin"; Pattern = "CovalencePlugin" },
     @{ Name = "[Command]"; Pattern = "\[Command\(" },
     @{ Name = "[PluginReference]"; Pattern = "\[PluginReference\]" },
     @{ Name = "[HookMethod]"; Pattern = "\[HookMethod" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "BackpacksPluginBase"; Pattern = "BackpacksPluginBase" },
     @{ Name = ".IPlayer (property)"; Pattern = "\.IPlayer\b" },

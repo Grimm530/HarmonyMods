@@ -2,19 +2,20 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.GrimmBoss;
+using GrimmBoss.Patches;
+using HarmonyPlugin = Harmony.Plugins.GrimmBoss;
 
 namespace GrimmBoss
 {
     /// <summary>
-    /// Harmony entry for GrimmBoss. Instantiates the ported Oxide plugin body, loads
+    /// Harmony entry for GrimmBoss. Instantiates the ported Harmony mod body, loads
     /// HarmonyConfig/GrimmBoss.json + HarmonyData/GrimmBoss/, registers admin commands,
     /// and drives Init → OnServerInitialized → Unload. Requires 0GrimmNPC (NpcSpawn API).
     /// </summary>
     public class GrimmBossMod : IHarmonyModHooks
     {
         public static GrimmBossMod Instance { get; private set; }
-        public static OxidePlugin Plugin { get; private set; }
+        public static HarmonyPlugin Plugin { get; private set; }
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _commands = new List<ConsoleSystem.Command>();
@@ -27,11 +28,12 @@ namespace GrimmBoss
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
             try
             {
-                Plugin = new OxidePlugin();
+                Plugin = new HarmonyPlugin();
                 Plugin.HarmonyLoadConfig();
                 Plugin.HarmonyLoadDefaultMessages();
             }
@@ -51,19 +53,65 @@ namespace GrimmBoss
 
         private IEnumerator WaitForServerThenInit()
         {
+            int attempts = 0;
             while (ServerMgr.Instance == null)
                 yield return null;
-            yield return new WaitForSeconds(2f);
+
+            while (attempts < 360)
+            {
+                if (IsWorldReadyForBossInit())
+                    break;
+                attempts++;
+                yield return new WaitForSeconds(attempts < 24 ? 2f : 5f);
+            }
+
+            yield return new WaitForSeconds(4f);
 
             GrimmBossGrimmNpc.Bind();
 
             try { Plugin?.CallInit(); }
             catch (Exception ex) { Debug.LogWarning("[GrimmBoss] Init failed: " + ex.Message); }
 
+            yield return new WaitForSeconds(1f);
+
             try { Plugin?.CallOnServerInitialized(); }
             catch (Exception ex) { Debug.LogError("[GrimmBoss] OnServerInitialized failed: " + ex); }
 
             _initCoroutine = null;
+        }
+
+        private static bool IsWorldReadyForBossInit()
+        {
+            try
+            {
+                if (TerrainMeta.HeightMap == null || !TerrainMeta.HeightMap.isInitialized || World.Size <= 0)
+                    return false;
+                if (TerrainMeta.Path?.Monuments == null)
+                    return false;
+                if (!ConVar.AI.move || Rust.Ai.AiManager.nav_disable)
+                    return false;
+
+                if (TerrainMeta.Path.Monuments != null)
+                {
+                    int tested = 0;
+                    foreach (MonumentInfo monument in TerrainMeta.Path.Monuments)
+                    {
+                        if (monument == null) continue;
+                        Vector3 p = monument.transform.position;
+                        if (UnityEngine.AI.NavMesh.SamplePosition(p, out _, 80f, UnityEngine.AI.NavMesh.AllAreas))
+                            return true;
+                        if (++tested >= 12) break;
+                    }
+                }
+
+                Vector3 probe = Vector3.zero;
+                probe.y = TerrainMeta.HeightMap.GetHeight(probe);
+                return UnityEngine.AI.NavMesh.SamplePosition(probe, out _, 500f, UnityEngine.AI.NavMesh.AllAreas);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
@@ -80,6 +128,7 @@ namespace GrimmBoss
             UnregisterCommands();
             ModRunner.Destroy();
             Plugin = null;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[GrimmBoss] Harmony mod unloaded.");
         }
@@ -171,7 +220,7 @@ namespace GrimmBoss
             var player = PlayerOf(arg);
             if (player == null) { arg.ReplyWith("[GrimmBoss] worldpos must be run by a player."); return; }
             if (DenyIfNotAdmin(arg, player)) return;
-            OxidePlugin.CmdWorldPos(player);
+            HarmonyPlugin.CmdWorldPos(player);
         }
 
         private static void HandleSavePos(ConsoleSystem.Arg arg)
@@ -179,7 +228,7 @@ namespace GrimmBoss
             var player = PlayerOf(arg);
             if (player == null) { arg.ReplyWith("[GrimmBoss] savepos must be run by a player."); return; }
             if (DenyIfNotAdmin(arg, player)) return;
-            OxidePlugin.CmdSavePos(player, ArgsOf(arg));
+            HarmonyPlugin.CmdSavePos(player, ArgsOf(arg));
         }
 
         private static void HandleCustomPos(ConsoleSystem.Arg arg)
@@ -187,7 +236,7 @@ namespace GrimmBoss
             var player = PlayerOf(arg);
             if (player == null) { arg.ReplyWith("[GrimmBoss] custompos must be run by a player."); return; }
             if (DenyIfNotAdmin(arg, player)) return;
-            OxidePlugin.CmdCustomPos(player, ArgsOf(arg));
+            HarmonyPlugin.CmdCustomPos(player, ArgsOf(arg));
         }
 
         private static void HandleSpawnBoss(ConsoleSystem.Arg arg)
@@ -195,9 +244,9 @@ namespace GrimmBoss
             var player = PlayerOf(arg);
             if (DenyIfNotAdmin(arg, player)) return;
             if (player != null)
-                OxidePlugin.CmdSpawnBossChat(player, ArgsOf(arg));
+                HarmonyPlugin.CmdSpawnBossChat(player, ArgsOf(arg));
             else
-                OxidePlugin.CmdSpawnBossConsole(ArgsOf(arg));
+                HarmonyPlugin.CmdSpawnBossConsole(ArgsOf(arg));
         }
 
         private static void HandleKillBoss(ConsoleSystem.Arg arg)
@@ -208,7 +257,7 @@ namespace GrimmBoss
                 arg.ReplyWith("[GrimmBoss] killboss is a server-console command.");
                 return;
             }
-            OxidePlugin.CmdKillBossConsole(ArgsOf(arg));
+            HarmonyPlugin.CmdKillBossConsole(ArgsOf(arg));
         }
         #endregion
     }

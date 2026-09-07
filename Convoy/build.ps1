@@ -1,33 +1,28 @@
-# Build script for Convoy Harmony Mod
-# Output: <server root>\HarmonyMods\Convoy.dll
-# Config: HarmonyConfig/Convoy.json
+# Build script for Convoy Harmony Mod (port of Convoy Harmony mod)
+# Output: D:\!RustServer\HarmonyMods\Convoy.dll
 
-Write-Host "Building Convoy Harmony mod..." -ForegroundColor Cyan
+Write-Host "Building Convoy..." -ForegroundColor Cyan
 
 $projectPath = Join-Path $PSScriptRoot "Convoy\Convoy.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
 
-    $dllPath = Join-Path $PSScriptRoot "Convoy\bin\Release\net48\Convoy.dll"
+    $outDir = Join-Path $PSScriptRoot "Convoy\bin\Release"
+    $dllPath = Join-Path $outDir "net48\Convoy.dll"
     if (-not (Test-Path $dllPath)) {
-        $dllPath = Join-Path $PSScriptRoot "Convoy\bin\Release\Convoy.dll"
-    }
-    if (-not (Test-Path $dllPath)) {
-        Write-Host "Build output not found under Convoy\bin\Release\Convoy.dll" -ForegroundColor Red
-        exit 1
+        $dllPath = Join-Path $outDir "Convoy.dll"
     }
     $destPath = Join-Path $harmonyModsPath "Convoy.dll"
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! Convoy.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "Config: HarmonyConfig/Convoy.json" -ForegroundColor Yellow
-    Write-Host "Load: harmony.load Convoy (requires 0GrimmNPC; or automatic at startup)" -ForegroundColor Gray
+    Write-Host "Load with: harmony.load Convoy" -ForegroundColor Yellow
+    Write-Host "Commands: /convoystart, /convoystop (admin). Config: Convoy.json in oxide/config/, HarmonyConfig/, or root" -ForegroundColor Yellow
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

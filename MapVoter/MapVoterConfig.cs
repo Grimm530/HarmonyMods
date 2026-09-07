@@ -74,6 +74,9 @@ public class MapVoterConfig
     [JsonProperty("Oxide wipe")]
     public OxideWipeOptions OxideWipe { get; set; } = new();
 
+    [JsonProperty("Harmony data wipe")]
+    public HarmonyDataWipeOptions HarmonyDataWipe { get; set; } = new();
+
     [JsonProperty("UI Theme")]
     public UITheme Theme { get; set; } = new();
 
@@ -133,6 +136,10 @@ public class MapVoterConfig
 
         [JsonProperty("Start voting X days before wipe")]
         public int StartVotingDaysBeforeWipe { get; set; } = 4;
+
+        /// <summary>Close the vote and post the winner this many hours before wipe. 24 = close one day before. 0 = keep voting until wipe.</summary>
+        [JsonProperty("Close voting hours before wipe")]
+        public int CloseVotingHoursBeforeWipe { get; set; } = 24;
 
         [JsonProperty("Vote start (HH:mm) 24-hour clock")]
         public string VoteStartTime { get; set; } = "17:00";
@@ -268,6 +275,19 @@ public class MapVoterConfig
 
         [JsonProperty("Oxide data files to delete (relative to oxide/data/)")]
         public List<string> OxideDataFilesToDelete { get; set; } = new() { "oxide.covalence.data", "oxide.lang.data" };
+    }
+
+    /// <summary>Deletes files/folders under HarmonyData/ on wipe (kit cooldowns, etc.). Paths are relative to HarmonyData/.</summary>
+    public class HarmonyDataWipeOptions
+    {
+        [JsonProperty("Enable Harmony data wipe on forced wipe day")]
+        public bool EnableOnForcedWipeDay { get; set; } = true;
+
+        [JsonProperty("Enable Harmony data wipe on map wipe day")]
+        public bool EnableOnMapWipeDay { get; set; } = true;
+
+        [JsonProperty("Harmony data paths to delete (relative to HarmonyData/ - files or folders)")]
+        public List<string> PathsToDelete { get; set; } = new() { "Kits/Players" };
     }
 
     public class UITheme

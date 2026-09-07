@@ -1,6 +1,6 @@
 # HitMarkers (Harmony)
 
-Combined port of Oxide **HitMarkers 1.2.5** (Mevent/Grimm530) and **HeadshotIcon 1.0.111**.
+Combined port of Legacy **HitMarkers 1.2.5** (Mevent/Grimm530) and **HeadshotIcon 1.0.111**.
 
 ## Features
 

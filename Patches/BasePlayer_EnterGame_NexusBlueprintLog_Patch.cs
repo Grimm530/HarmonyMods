@@ -69,7 +69,6 @@ namespace NexusSelfHost.Patches
 
         private static void LogBlueprintStatus(object __instance)
         {
-            if (__instance == null) return;
 
             var isBotProp = AccessTools.Property(__instance.GetType(), "IsBot");
             if (isBotProp?.GetValue(__instance, null) is bool isBot && isBot)

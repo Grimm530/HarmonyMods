@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine;
 
 namespace CustomMapGen
 {
@@ -15,7 +16,10 @@ namespace CustomMapGen
         static readonly FieldInfo LakeObjsField = Field("LakeObjs");
         static readonly FieldInfo RailsField = Field("Rails");
         static readonly FieldInfo DungeonGridEntrancesField = Field("DungeonGridEntrances");
+        static readonly FieldInfo DungeonGridCellsField = Field("DungeonGridCells");
         static readonly FieldInfo RiversField = Field("Rivers");
+        static readonly FieldInfo OceanPatrolCloseField = Field("OceanPatrolClose");
+        static readonly FieldInfo OceanPatrolFarField = Field("OceanPatrolFar");
 
         static FieldInfo Field(string name) =>
             typeof(TerrainPath).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -35,7 +39,16 @@ namespace CustomMapGen
         public static List<DungeonGridInfo> GetDungeonGridEntrances(TerrainPath path) =>
             path == null ? null : (List<DungeonGridInfo>)DungeonGridEntrancesField?.GetValue(path);
 
+        public static List<DungeonGridCell> GetDungeonGridCells(TerrainPath path) =>
+            path == null ? null : (List<DungeonGridCell>)DungeonGridCellsField?.GetValue(path);
+
         public static List<PathList> GetRivers(TerrainPath path) =>
             path == null ? null : (List<PathList>)RiversField?.GetValue(path);
+
+        public static List<Vector3> GetOceanPatrolClose(TerrainPath path) =>
+            path == null ? null : (List<Vector3>)OceanPatrolCloseField?.GetValue(path);
+
+        public static List<Vector3> GetOceanPatrolFar(TerrainPath path) =>
+            path == null ? null : (List<Vector3>)OceanPatrolFarField?.GetValue(path);
     }
 }

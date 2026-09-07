@@ -1,0 +1,27 @@
+=== START IN (working directory) — READ THIS ===
+"Start in" is NOT how Windows finds Start-Grafana.ps1.
+It is only the initial CD for the FIRST powershell.exe. Your D:\...\Ps1&Batch\Start-Grafana.ps1 runs ONLY because the command line contains -File with that FULL path (see the complete one-liner below).
+So: either leave "Start in" BLANK, or set it to:
+  D:\!RustServer\.cursor\HarmonyMods\Rust-Server-Metrics-master
+Do NOT assume C:\Windows\System32\WindowsPowerShell\v1.0 "runs" your script — it does not.
+
+Paste into shortcut "Target" only if you insist on one field; prefer wscript + Launch-Grafana-UAC.vbs or powershell.exe + Elevate-Start-Grafana.ps1 (see RSM-Instructional.md).
+
+Your Target must be the full path to powershell.exe, NOT the ...\v1.0 folder.
+If your Target text ENDS before -File 'D:\...\Start-Grafana.ps1', the .lnk is TRUNCATED and will never run Grafana.
+
+--- Why windows vanished ---
+1) Outer powershell -Command "Start-Process ..." exits as soon as Start-Process returns — that flash is normal unless you add -NoExit to the OUTER powershell (see Start-Grafana-AsAdmin.bat).
+2) RunAs + Start-Process -ArgumentList as MULTIPLE strings sometimes drops flags so the elevated host exits immediately — Elevate-Start-Grafana.ps1 now passes ONE -ArgumentList string.
+
+--- Grafana (elevated; one-line; inner args as single string) ---
+
+C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -Verb RunAs -FilePath ($env:WINDIR + '\System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList ('-NoExit -NoLogo -NoProfile -ExecutionPolicy Bypass -File ''D:\!RustServer\.cursor\HarmonyMods\Rust-Server-Metrics-master\Ps1&Batch\Start-Grafana.ps1''')"
+
+--- InfluxDB ---
+
+C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -Verb RunAs -FilePath ($env:WINDIR + '\System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList ('-NoExit -NoLogo -NoProfile -ExecutionPolicy Bypass -File ''D:\!RustServer\.cursor\HarmonyMods\Rust-Server-Metrics-master\Ps1&Batch\Start-InfluxDB.ps1''')"
+
+--- One window (recommended) ---
+Start-Grafana-AsAdmin.bat closes the non-elevated launcher after spawning UAC so you only see the Grafana PowerShell window.
+Do NOT add -NoExit on the outer powershell unless you want two windows on purpose.

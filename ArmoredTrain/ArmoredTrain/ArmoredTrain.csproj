@@ -11,7 +11,7 @@
     <RootNamespace>ArmoredTrain</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: Armored Train event (port of the ArmoredTrain Oxide plugin). Requires GrimmNPC. Config: HarmonyConfig/ArmoredTrain.json. Data: HarmonyData/ArmoredTrain/.</Description>
+    <Description>Harmony mod: Armored Train event (port of the ArmoredTrain Harmony mod). Requires GrimmNPC. Config: HarmonyConfig/ArmoredTrain.json. Data: HarmonyData/ArmoredTrain/.</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
@@ -90,5 +90,8 @@
     <Reference Include="UnityEngine.UnityWebRequestWWWModule">
       <HintPath>$(RustManaged)\UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
   </ItemGroup>
 </Project>

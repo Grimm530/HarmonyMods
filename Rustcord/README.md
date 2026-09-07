@@ -1,13 +1,13 @@
 # Rustcord Harmony Mod
 
-Harmony mod version of Rustcord – game server monitoring through Discord. **No Oxide required.**
+Harmony mod version of Rustcord – game server monitoring through Discord. **Harmony-only required.**
 
 ## Features
 
 - **Game->Discord** via Discord bot (API Key + channel IDs) or webhooks
 - **Relay-compatible format**: `:speech_left: SVR1 PlayerName: message` for ticket-support-system-discord
 - **Auto-generates config** if missing: creates `HarmonyConfig/Rustcord.json` on first load
-- Loads from `HarmonyConfig/Rustcord.json` (then `oxide/config/Rustcord.json` as fallback)
+- Loads from `HarmonyConfig/Rustcord.json` (then `legacy/config/Rustcord.json` as fallback)
 - Uses same config structure as Oxide Rustcord (channel IDs, no webhooks required)
 
 ## Setup
@@ -20,7 +20,7 @@ Harmony mod version of Rustcord – game server monitoring through Discord. **No
 
 ## Config
 
-Loads from `HarmonyConfig/Rustcord.json` or `oxide/config/Rustcord.json`. Use your existing Oxide Rustcord config as a base and add webhooks:
+Loads from `HarmonyConfig/Rustcord.json` or `legacy/config/Rustcord.json`. Use your existing Oxide Rustcord config as a base and add webhooks:
 
 ```json
 {

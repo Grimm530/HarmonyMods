@@ -18,7 +18,44 @@ public class ConfigManager
 
 	public ConfigManager()
 	{
-		ConfigPath = "HarmonyData/FullRangeAutoturrets/Configuration.json";
+		string serverRoot = ResolveServerRoot();
+		ConfigPath = Path.Combine(serverRoot, "HarmonyData", "FullRangeAutoturrets", "Configuration.json");
+		TryMigrateLegacyConfig(serverRoot);
+	}
+
+	private static string ResolveServerRoot()
+	{
+		try
+		{
+			if (!string.IsNullOrEmpty(Application.dataPath))
+			{
+				return Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+			}
+		}
+		catch
+		{
+		}
+		return Path.GetFullPath(Environment.CurrentDirectory ?? ".");
+	}
+
+	private static void TryMigrateLegacyConfig(string serverRoot)
+	{
+		string legacyPath = Path.Combine(serverRoot, "HarmonyMods_Data", "FullRangeAutoturrets", "Configuration.json");
+		string targetPath = Path.Combine(serverRoot, "HarmonyData", "FullRangeAutoturrets", "Configuration.json");
+		try
+		{
+			if (File.Exists(targetPath) || !File.Exists(legacyPath))
+			{
+				return;
+			}
+			Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
+			File.Copy(legacyPath, targetPath);
+			LoggingManager.Log("Migrated config from HarmonyMods_Data to HarmonyData/FullRangeAutoturrets");
+		}
+		catch (Exception ex)
+		{
+			LoggingManager.Log("Failed to migrate legacy HarmonyMods_Data config: " + ex.Message);
+		}
 	}
 
 	public object Get(string propName, object src = null)

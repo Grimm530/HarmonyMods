@@ -1,6 +1,6 @@
 # ArmoredTrain (Harmony port)
 
-A near-verbatim Harmony port of the **ArmoredTrain** Oxide plugin (Adem). The original plugin body
+A near-verbatim Harmony port of the **ArmoredTrain** Harmony mod (Adem). The original plugin body
 (`EventController`, `WagonCustomizer`, `SpawnPositionFinder`, `ZoneController`, `NpcSpawnManager`,
 `GuiManager`, `NotifyManager`, etc.) is retained as-is inside `ArmoredTrainPlugin.cs`; a thin Oxide
 compatibility shim + Harmony patches drive it instead of the Oxide runtime.
@@ -41,7 +41,7 @@ Registered on the server console, F1 console, and chat (admin only):
 
 ## Config & Data paths
 
-- **Config:** `HarmonyConfig/ArmoredTrain.json` — the existing Oxide config is used verbatim; all
+- **Config:** `HarmonyConfig/ArmoredTrain.json` — the existing legacy config is used verbatim; all
   `JsonProperty` names are unchanged so it deserializes with no edits. Written back to the same path.
 - **Data:** `HarmonyData/ArmoredTrain/` — `Halloween.json`, `NewYear.json`, custom wagon profiles.
 - **Images:** `HarmonyData/ArmoredTrain/Images/` (plugin PNGs first), then `HarmonyData/Images/`,
@@ -62,11 +62,11 @@ to `HarmonyMods/ArmoredTrain.dll`. No referenced Rust/Unity assemblies are copie
 
 ## Harmony patches (what hooks map to)
 
-Oxide hooks were replaced with patches on real game methods. Each patch calls a static dispatcher on
+Harmony hooks were replaced with patches on real game methods. Each patch calls a static dispatcher on
 the ported plugin (`ArmoredTrainDispatch.cs`); a **non-null** hook result means "block", matching
 Oxide semantics (the Harmony prefix returns `false`).
 
-| Patch (game method) | Oxide hook(s) ported |
+| Patch (game method) | Harmony hook(s) ported |
 | --- | --- |
 | `BaseCombatEntity.Hurt(HitInfo)` prefix | `OnEntityTakeDamage` (TrainCar, PatrolHelicopter, BradleyAPC, AutoTurret, SamSite, ElectricSwitch, PowerCounter, BasePlayer/ScientistNPC) |
 | `BaseCombatEntity.Die(HitInfo)` postfix | `OnEntityDeath` (heli/turret/bradley rewards, driver-killed) |
@@ -106,7 +106,7 @@ Oxide semantics (the Harmony prefix returns `false`).
 - **PveMode**, **Economics** (+ ServerRewards/IQEconomic), **DiscordMessages**, **GUIAnnouncements**,
   **Notify**, **DynamicPVP**, **TrainHomes**, **AlphaLoot** — all resolved through the Oxide shim's
   `plugins.Exists(...)` which only reports GrimmNPC/NpcSpawn as present. Calls are skipped when absent.
-- `Interface.CallHook(...)` is a no-op (no Oxide hook bus); core logic never depends on it.
+- `HarmonyModInterface.CallHook(...)` is a no-op (no Harmony hook bus); core logic never depends on it.
 
 ## Remaining gaps vs Oxide
 

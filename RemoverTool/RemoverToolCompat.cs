@@ -1,6 +1,6 @@
 /*
- * Harmony shims so the ported Remover Tool 4.3.431 can run without Oxide/Carbon.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims so the ported Remover Tool 4.3.431 can run without legacy plugin host/Carbon.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -63,7 +63,7 @@ namespace RemoverToolHarmony
 
     #endregion
 
-    #region Hash (Oxide Hash<K,V> replacement)
+    #region Hash (compat Hash<K,V> replacement)
 
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
@@ -842,21 +842,21 @@ namespace RemoverToolHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public DataFileSystem DataFileSystem => Interface.DataFileSystem;
+        public DataFileSystem DataFileSystem => HarmonyModInterface.DataFileSystem;
         public string DataDirectory => RemoverToolHost.Instance?.DataDirectory ?? "";
         public void LogError(string message) => Debug.LogError("[RemoverTool] " + message);
         public object CallHook(string name, params object[] args) => null;
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         public static object CallHook(string name, params object[] args) => null;
         public static object Call(string name, params object[] args) => null;
@@ -924,7 +924,7 @@ namespace RemoverToolHarmony
                 }
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[RemoverTool] webrequest callback: " + ex.Message); }
@@ -1001,7 +1001,7 @@ namespace RemoverToolHarmony
             Directory.CreateDirectory(Path.Combine(modData, "logs"));
             Instance.DataDirectory = dataDir;
             Instance.ModDataDirectory = modData;
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
 
             var configPath = Path.Combine(configDir, "RemoverTool.json");
             JToken data = null;

@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -17,6 +23,7 @@ using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.SceneManagement;
+using Color = UnityEngine.Color;
 using static RaidableBases.RaidableBasesExtensionMethods.ExtensionMethods;
 
 namespace RaidableBases
@@ -26,16 +33,33 @@ namespace RaidableBases
 
         #region Paste
 
-        private float isSpawnerBusyTime;
+        private double isSpawnerBusyTime;
         private bool isSpawnerBusy;
 
-        private bool IsLoaderBusy => Raids.Exists(raid => raid.IsDespawning || raid.IsLoading);
+        private bool IsLoaderBusy(out string str)
+        {
+            foreach (var raid in Raids)
+            {
+                if (raid.IsDespawning)
+                {
+                    str = raid.BaseName + " is despawning";
+                    return true;
+                }
+                if (raid.IsLoading)
+                {
+                    str = raid.BaseName + " is loading";
+                    return true;
+                }
+            }
+            str = null;
+            return false;
+        }
 
         private bool IsSpawnerBusy
         {
             get
             {
-                if (Time.time > isSpawnerBusyTime)
+                if (Time.timeAsDouble > isSpawnerBusyTime)
                 {
                     isSpawnerBusy = false;
                 }
@@ -44,7 +68,7 @@ namespace RaidableBases
             }
             set
             {
-                isSpawnerBusyTime = Time.time + 180f;
+                isSpawnerBusyTime = Time.timeAsDouble + 180d;
                 isSpawnerBusy = value;
             }
         }
@@ -53,9 +77,9 @@ namespace RaidableBases
 
         private bool IsGridBroken() => GridController.gridCoroutine != null && GridController.gridCoroutine.Current == null;
 
-        private bool IsPasteAvailable() => !Raids.Exists(raid => raid.IsLoading);
+        private bool IsPasteAvailable() => !IsLoaderBusy(out _);
 
-        private bool IsBusy() => IsSpawnerBusy || IsLoaderBusy || IsGridLoading();
+        private bool IsBusy() => IsSpawnerBusy || IsLoaderBusy(out _) || IsGridLoading();
 
         private Payment TryBuyRaidServerRewards(int cost, BasePlayer buyer, BasePlayer player)
         {
@@ -65,25 +89,24 @@ namespace RaidableBases
                 return new(this, buyer, player, null, cost);
             }
 
-            Message(buyer, "ServerRewardPointsFailed", cost);
+            SendNotification(buyer, "ServerRewardPointsFailed", cost);
             return null;
         }
 
         private Payment TryBuyRaidEconomics(double cost, BasePlayer buyer, BasePlayer player)
         {
             object obj;
-            if ((obj = Economics?.Call("Balance", buyer.userid())) != null || (obj = IQEconomic?.Call("API_GET_BALANCE", buyer.userid())) != null || (obj = BankSystem?.Call("Balance", buyer.userid())) != null)
-            {
-                var balance = Convert.ToDouble(obj);
-
-                if (balance > 0 && balance - cost >= 0)
-                {
-                    return new(this, buyer, player, null, 0, cost);
-                }
-            }
-
-            Message(buyer, "EconomicsWithdrawFailed", cost);
+            if ((obj = Economics?.Call("Balance", buyer.userid())) != null && Convert.ToDouble(obj) >= cost) return Create(Payment.EconomyProvider.Economics);
+            if ((obj = IQEconomic?.Call("API_GET_BALANCE", buyer.userid())) != null && Convert.ToDouble(obj) >= cost) return Create(Payment.EconomyProvider.IQEconomic);
+            if ((obj = BankSystem?.Call("Balance", buyer.userid())) != null && Convert.ToDouble(obj) >= cost) return Create(Payment.EconomyProvider.BankSystem);
+            SendNotification(buyer, "EconomicsWithdrawFailed", cost);
             return null;
+            Payment Create(Payment.EconomyProvider provider)
+            {
+                Payment payment = new(this, buyer, player, null, 0, cost);
+                payment.provider = provider;
+                return payment;
+            }
         }
 
         private Payment TryBuyRaidCustom(List<CustomCostOptions> options, BasePlayer buyer, BasePlayer player)
@@ -93,11 +116,10 @@ namespace RaidableBases
                 if (option.isPlugin)
                 {
                     object plugin = plugins.Find(option.Plugin.PluginName);
+                    double balance = 0;
 
                     if (plugin != null)
                     {
-                        double balance = 0;
-
                         if (!string.IsNullOrWhiteSpace(option.Plugin.ShoppyStockShopName))
                         {
                             balance = Convert.ToDouble(plugin?.Call(option.Plugin.BalanceHookName, option.Plugin.ShoppyStockShopName, option.Plugin.PlayerDataType switch
@@ -113,12 +135,16 @@ namespace RaidableBases
                             1 => buyer.UserIDString,
                             0 or _ => buyer.userid()
                         }));
+                    }
+                    else
+                    {
+                        SendNotification(buyer, "PluginNotLoaded", option.Plugin.PluginName);
+                    }
 
-                        if (balance < option.Plugin.Amount)
-                        {
-                            Message(buyer, "CustomWithdrawFailed", $"{option.GetCurrencyName()} ({option.Plugin.Amount})");
-                            return null;
-                        }
+                    if (balance < option.Plugin.Amount)
+                    {
+                        SendNotification(buyer, "CustomWithdrawFailed", $"{option.GetCurrencyName()} ({option.Plugin.Amount})");
+                        return null;
                     }
                 }
 
@@ -133,7 +159,7 @@ namespace RaidableBases
 
                 foreach (var slot in slots)
                 {
-                    if (option.Skin != 0 && slot.skin != option.Skin)
+                    if (slot == null || option.Skin != 0 && slot.skin != option.Skin)
                     {
                         continue;
                     }
@@ -153,12 +179,12 @@ namespace RaidableBases
 
                 if (amount < option.Amount && config.Settings.ShoppyStock != null)
                 {
-                    amount += Convert.ToInt32(ShoppyStock?.Call("GetCurrencyAmount", config.Settings.ShoppyStock.ShopName, player.userid()));
+                    amount += Convert.ToInt32(ShoppyStock?.Call("GetCurrencyAmount", config.Settings.ShoppyStock.ShopName, buyer.userid()));
                 }
 
                 if (amount < option.Amount)
                 {
-                    Message(buyer, "CustomWithdrawFailed", $"{(string.IsNullOrWhiteSpace(option.Name) ? option.Shortname : option.Name)} ({option.Amount})");
+                    SendNotification(buyer, "CustomWithdrawFailed", $"{(string.IsNullOrWhiteSpace(option.Name) ? option.Shortname : option.Name)} ({option.Amount})");
                     return null;
                 }
             }
@@ -218,6 +244,8 @@ namespace RaidableBases
                 paid = free;
             }
 
+            internal enum EconomyProvider { None, Economics, IQEconomic, BankSystem }
+            internal EconomyProvider provider;
             public RaidableBases Instance;
             public bool paid;
             public bool free;
@@ -234,17 +262,15 @@ namespace RaidableBases
             public bool self => buyerId == userId;
             public Configuration config => Instance.config;
             public static bool IsValid(Payment payment) => payment != null && payment.owner != null && payment.buyer != null;
-            private void QueueNotification(BasePlayer player, string key, params object[] args) => Instance.Message(player, key, args);
-
-            private void Message(BasePlayer player, string key, params object[] args) => Instance.Message(player, key, args);
+            private void Notify(BasePlayer player, string key, params object[] args) => Instance.SendNotification(player, key, args);
 
             private string mx(string key, string id = null, params object[] args) => Instance.mx(key, id, args);
 
-            public void RefundItems(double percent = 100.0)
+            public string RefundItems(double percent = 100.0)
             {
-                if (!paid) return;
+                if (!paid) return null;
                 var target = buyer ?? owner;
-                if (target == null) return;
+                if (target == null) return null;
 
                 using var _sb = DisposableBuilder.Get();
                 foreach (var option in Options)
@@ -309,17 +335,18 @@ namespace RaidableBases
                 {
                     _sb.Length -= 2;
 
-                    Message(target, _sb.ToString());
+                    Notify(target, _sb.ToString());
                 }
 
                 paid = false;
+                return _sb.ToString();
             }
 
-            public void TakeItems(bool reset)
+            public bool TakeItems(bool reset, bool callOnItemUse = false)
             {
-                if (buyer == null)
+                if (free || buyer == null)
                 {
-                    return;
+                    return false;
                 }
 
                 var sb = new StringBuilder();
@@ -355,7 +382,7 @@ namespace RaidableBases
                                 {
                                     2 => buyer,
                                     1 => buyer.UserIDString,
-                                    0 or _ => buyer.userid()
+                                    0 or _ => buyerId
                                 }, option.Plugin.AmountDataType switch
                                 {
                                     2 => (object)(int)option.Plugin.Amount,
@@ -364,7 +391,7 @@ namespace RaidableBases
                                 });
 
                                 paid = true;
-                                sb.Append(mx("CustomDepositFormat", userId.ToString(), option.Amount, option.GetCurrencyName())).Append(", ");
+                                sb.Append(mx("CustomDepositFormat", userId.ToString(), option.Plugin.Amount, option.GetCurrencyName())).Append(", ");
                             }
                         }
                     }
@@ -380,7 +407,7 @@ namespace RaidableBases
 
                     foreach (var slot in slots)
                     {
-                        if (slot == null || option.Skin != 0 && slot.skin != option.Skin)
+                        if (slot == null || option.Skin != 0 && slot.skin != option.Skin || !string.IsNullOrWhiteSpace(option.Name) && option.Skin == 0 && slot.name != option.Name)
                         {
                             continue;
                         }
@@ -394,7 +421,7 @@ namespace RaidableBases
 
                         if (amountLeft <= 0)
                         {
-                            string name = string.IsNullOrWhiteSpace(option.Name) ? slot.info.displayName.english : option.Name;
+                            string name = string.IsNullOrWhiteSpace(option.Name) ? option.Definition.displayName.english : option.Name;
                             sb.Append(string.Format("{0} {1}", option.Amount, name)).Append(", ");
                             paid = true;
                             break;
@@ -403,7 +430,7 @@ namespace RaidableBases
 
                     if (amountLeft > 0 && Instance.ShoppyStock != null && config.Settings.ShoppyStock != null && config.Settings.ShoppyStock.IsItem(option))
                     {
-                        Instance.ShoppyStock?.Call("TakeCurrency", config.Settings.ShoppyStock.ShopName, buyer.userid(), amountLeft);
+                        Instance.ShoppyStock?.Call("TakeCurrency", config.Settings.ShoppyStock.ShopName, buyerId, amountLeft);
                         CuiHelper.DestroyUi(buyer, $"PopUpAPI_{config.Settings.ShoppyStock.PanelName}_Parent");
                         paid = true;
                     }
@@ -415,80 +442,98 @@ namespace RaidableBases
 
                     if (!self)
                     {
-                        Message(owner, "CustomWithdrawGift", buyerName, sb.ToString());
+                        Notify(owner, "CustomWithdrawGift", buyerName, sb.ToString());
                     }
 
-                    Message(buyer, reset ? "CustomWithdrawReset" : "CustomWithdraw", sb.ToString());
+                    Notify(buyer, reset ? "CustomWithdrawReset" : "CustomWithdraw", sb.ToString());
                 }
+
+                return paid;
             }
 
-            public void TakeMoney(bool reset)
+            public bool TakeMoney(bool reset)
             {
                 if (money > 0)
                 {
-                    if (Convert.ToBoolean(Instance.Economics?.Call("Withdraw", userId, money)))
+                    switch (provider)
                     {
-                        paid = true;
+                        case EconomyProvider.Economics:
+                            paid = Convert.ToBoolean(Instance.Economics?.Call("Withdraw", buyerId, money));
+                            break;
+
+                        case EconomyProvider.BankSystem:
+                            paid = Convert.ToBoolean(Instance.BankSystem?.Call("Withdraw", buyerId, (int)money));
+                            break;
+
+                        case EconomyProvider.IQEconomic when Instance.IQEconomic != null:
+                            Instance.IQEconomic?.Call("API_REMOVE_BALANCE", buyerId, (int)money);
+                            paid = true;
+                            break;
                     }
 
-                    if (Convert.ToBoolean(Instance.BankSystem?.Call("Withdraw", userId, (int)money)))
+                    if (!paid)
                     {
-                        paid = true;
-                    }
-
-                    if (Instance.IQEconomic != null)
-                    {
-                        Instance.IQEconomic?.Call("API_REMOVE_BALANCE", userId, (int)money);
-                        paid = true;
+                        Notify(buyer, "EconomicsWithdrawFailed", money);
+                        return false;
                     }
 
                     if (!self)
                     {
-                        Message(owner, "EconomicsWithdrawGift", buyerName, money);
+                        Notify(owner, "EconomicsWithdrawGift", buyerName, money);
                     }
 
-                    Message(buyer, reset ? "EconomicsWithdrawReset" : "EconomicsWithdraw", money);
+                    Notify(buyer, reset ? "EconomicsWithdrawReset" : "EconomicsWithdraw", money);
                 }
+
+                return paid;
             }
 
-            public void RefundMoney()
+            public double RefundMoney(double percent = 100.0)
             {
                 if (paid && money > 0)
                 {
-                    Instance.BankSystem?.Call("Deposit", userId, (int)money);
-                    Instance.Economics?.Call("Deposit", userId, money);
-                    Instance.IQEconomic?.Call("API_SET_BALANCE", userId, (int)money);
-                    QueueNotification(buyer, "Refunded Money", money);
+                    double amount = (int)Math.Ceiling(money * percent / 100.0);
+                    if (provider == EconomyProvider.BankSystem) Instance.BankSystem?.Call("Deposit", buyerId, (int)amount);
+                    if (provider == EconomyProvider.Economics) Instance.Economics?.Call("Deposit", buyerId, amount);
+                    if (provider == EconomyProvider.IQEconomic) Instance.IQEconomic?.Call("API_SET_BALANCE", buyerId, (int)amount);
+                    if (provider != EconomyProvider.None) Notify(buyer, "Refunded Money", amount);
                     money = 0;
+                    return amount;
                 }
+                return 0;
             }
 
-            public void TakePoints(bool reset)
+            public bool TakePoints(bool reset)
             {
                 if (RP > 0)
                 {
-                    if (Convert.ToBoolean(Instance.ServerRewards?.Call("TakePoints", userId, RP)))
+                    if (Convert.ToBoolean(Instance.ServerRewards?.Call("TakePoints", buyerId, RP)))
                     {
                         paid = true;
                     }
 
                     if (!self)
                     {
-                        Message(owner, "ServerRewardPointsGift", buyerName, RP);
+                        Notify(owner, "ServerRewardPointsGift", buyerName, RP);
                     }
 
-                    Message(buyer, reset ? "ServerRewardPointsTakenReset" : "ServerRewardPointsTaken", RP);
+                    Notify(buyer, reset ? "ServerRewardPointsTakenReset" : "ServerRewardPointsTaken", RP);
                 }
+
+                return paid;
             }
 
-            public void RefundPoints()
+            public int RefundPoints(double percent = 100.0)
             {
                 if (paid && RP > 0)
                 {
-                    Instance.ServerRewards?.Call("AddPoints", userId, RP);
-                    QueueNotification(buyer, "Refunded RP", RP);
+                    int amount = (int)Math.Ceiling(RP * percent / 100.0);
+                    Instance.ServerRewards?.Call("AddPoints", buyerId, amount);
+                    Notify(buyer, "Refunded RP", amount);
                     RP = 0;
+                    return amount;
                 }
+                return 0;
             }
         }
 
@@ -496,7 +541,7 @@ namespace RaidableBases
         {
             if (SpawnRandomBase(RaidableType.Purchased, mode, baseName, owner != null && owner.IsAdmin, payments, owner, null, free))
             {
-                Message(owner, "BaseQueued", Queues.queue.Count);
+                SendNotification(owner, "BaseQueued", Queues.queue.Count);
                 return true;
             }
             return false;
@@ -521,20 +566,77 @@ namespace RaidableBases
             return type == RaidableType.Manual;
         }
 
+        private void OnCopyFinished(List<object> rawData, string filename, IPlayer user, Vector3 sourcePos)
+        {
+            filename = Path.GetFileNameWithoutExtension(filename);
+
+            if (_pasteData.TryGetValue(filename, out var pasteData))
+            {
+                pasteData.valid = false;
+            }
+        }
+
+        public void InvalidatePasteData()
+        {
+            foreach (var pasteData in _pasteData.Values)
+            {
+                pasteData.valid = false;
+            }
+            Buildings.Removed.Clear();
+        }
+
         private bool PasteBuilding(RandomBase rb)
         {
             Queues.Messages.Print($"{rb.BaseName} trying to paste at {rb.Position}");
 
-            if (!IsCopyPasteLoaded(out var error))
+            if (!IsPasteEngineReady(out var error))
             {
                 Puts(error);
 
                 return false;
             }
 
-            loadCoroutines.Add(ServerMgr.Instance.StartCoroutine(LoadCopyPasteFile(rb)));
+            loadCoroutines[rb] = ServerMgr.Instance.StartCoroutine(LoadCopyPasteFile(rb));
 
             return true;
+        }
+
+        private IEnumerator PasteManualEvent(RandomBase rb, Vector3 candidate, BasePlayer player, IPlayer user)
+        {
+            bool pasteStarted = false;
+
+            try
+            {
+                if (Queues.UsesPrecisePlacement(rb))
+                {
+                    yield return Queues.TryResolvePrecisePlacement(rb, candidate);
+                }
+
+                bool precisePlacement = rb.precisePlacement;
+
+                loadCoroutines.Remove(rb);
+
+                pasteStarted = PasteBuilding(rb);
+                if (pasteStarted)
+                {
+                    if (player != null && player.IsAdmin)
+                    {
+                        DrawText(player, 10f, precisePlacement ? Color.cyan : Color.red, rb.Position, rb.BaseName);
+                    }
+
+                    if (ConVar.Server.hostname.Contains("Test Server"))
+                    {
+                        DrawSphere(player, 30f, Color.blue, rb.Position, rb.pasteData.radius);
+                    }
+                }
+            }
+            finally
+            {
+                if (!pasteStarted)
+                {
+                    loadCoroutines.Remove(rb);
+                }
+            }
         }
 
         internal void StopLoadCoroutines()
@@ -549,7 +651,9 @@ namespace RaidableBases
                 ServerMgr.Instance.StopCoroutine(checkPlayersNearEventsCo);
                 checkPlayersNearEventsCo = null;
             }
-            foreach (var co in loadCoroutines)
+            using var coroutines = loadCoroutines.Values.ToPooledList();
+            loadCoroutines.Clear();
+            foreach (var co in coroutines)
             {
                 if (co != null)
                 {
@@ -565,16 +669,326 @@ namespace RaidableBases
             GridController.StopCoroutine();
         }
 
-        private bool IsPrefabFoundation(Dictionary<string, object> entity)
-        {
-            var prefabname = entity["prefabname"].ToString();
+        private const float FoundationCornerOffset = 1.4f;
+        private const float FoundationTriangleTipOffset = 2.8f;
+        private const float FoundationContactClearance = 3f;
+        private const float FoundationSurfaceClearance = 0.2f;
+        private const float FloorContactClearance = 0.8f;
+        private const float ImportantEntityBurialAllowance = 0.2f;
+        private const float SuggestedBandAboveClearance = 1f;
+        private const float StairContactOffset = 1.4f;
+        private const float RampContactOffset = 0.85f;
+        private const float FloatingCornerMax = 0.25f;
+        private const float FloatingCornerAverageMax = 0.125f;
+        private const float FloatingCornerPercentMax = 2.5f;
+        private const int FloatingCornerGraceCount = 2;
+        private const float FloatingFoundationExemptHeight = 6f;
+        private const float FoundationLevelPrecision = 10f;
+        private const float LiftFalloff = 20f; //FP literal
+        private const float VehicleCeilingMargin = 20f; //Margin with full lift above top of base
 
-            return prefabname.Contains("/foundation.") || prefabname.EndsWith("diesel_collectable.prefab") && entity.TryGetValue("skinid", out var skinid) && skinid != null && skinid.ToString() == "1337424001";
+        // WaterBases stores InternalEntityType in Reserved15-17 and marks it with Reserved18. Reserved2 is not part of this marker.
+        private const int WaterBasesBarrelType = 0;
+        private const int WaterBasesFoundationSquareType = 2;
+        private const int WaterBasesFoundationTriangleType = 3;
+        private const string WaterBasesFoundationSquarePrefab = "assets/prefabs/building core/floor/floor.prefab";
+        private const string WaterBasesFoundationTrianglePrefab = "assets/prefabs/building core/floor.triangle/floor.triangle.prefab";
+        private const string WaterBasesDieselPrefab = "assets/content/structures/excavator/prefabs/diesel_collectable.prefab";
+
+        private readonly string[] ImportantPastePrefabs =
+        {
+            "cupboard.tool.",
+            "wall.doorway",
+            "wall.frame.garagedoor",
+            "door.double.hinged",
+            "autoturret",
+            "flameturret.deployed",
+            "refinery_small_deployed",
+            "fridge.deployed",
+            "furnace",
+            "bbq.deployed",
+            "locker.deployed",
+            "shopfront",
+            "wall.window",
+            "sam_site_turret",
+            "weaponrack",
+            "fireplace"
+        };
+
+        private readonly string[] NpcImportantPastePrefabs =
+        {
+            "rug.",
+            "sleepingbag",
+            "bed_deployed",
+            "beachtowel"
+        };
+
+        private static bool HasPasteFlag(Dictionary<string, object> flags, string name)
+        {
+            return flags.TryGetValue(name, out var obj) && obj is true;
+        }
+
+        private static int GetWaterBasesEntityType(BaseEntity entity)
+        {
+            if (entity == null || !entity.HasFlag(BaseEntity.Flags.Reserved18))
+            {
+                return -1;
+            }
+
+            int type = 0;
+            if (entity.HasFlag(BaseEntity.Flags.Reserved15)) type |= 1;
+            if (entity.HasFlag(BaseEntity.Flags.Reserved16)) type |= 2;
+            if (entity.HasFlag(BaseEntity.Flags.Reserved17)) type |= 4;
+            return type;
+        }
+
+        private static int GetWaterBasesEntityType(Dictionary<string, object> entity)
+        {
+            if (!entity.TryGetValue("flags", out var obj) || obj is not Dictionary<string, object> flags || !HasPasteFlag(flags, nameof(BaseEntity.Flags.Reserved18)))
+            {
+                return -1;
+            }
+
+            int type = 0;
+            if (HasPasteFlag(flags, nameof(BaseEntity.Flags.Reserved15))) type |= 1;
+            if (HasPasteFlag(flags, nameof(BaseEntity.Flags.Reserved16))) type |= 2;
+            if (HasPasteFlag(flags, nameof(BaseEntity.Flags.Reserved17))) type |= 4;
+            return type;
+        }
+
+        private static bool IsWaterBasesFoundation(BaseEntity entity)
+        {
+            if (entity is not BuildingBlock)
+            {
+                return false;
+            }
+
+            return entity.ShortPrefabName switch
+            {
+                "floor" => GetWaterBasesEntityType(entity) == WaterBasesFoundationSquareType,
+                "floor.triangle" => GetWaterBasesEntityType(entity) == WaterBasesFoundationTriangleType,
+                _ => false
+            };
+        }
+
+        private static bool IsWaterBasesFoundation(Dictionary<string, object> entity, string prefab)
+        {
+            return prefab switch
+            {
+                WaterBasesFoundationSquarePrefab => GetWaterBasesEntityType(entity) == WaterBasesFoundationSquareType,
+                WaterBasesFoundationTrianglePrefab => GetWaterBasesEntityType(entity) == WaterBasesFoundationTriangleType,
+                _ => false
+            };
+        }
+
+        private static bool IsWaterBasesBarrel(BaseEntity entity)
+        {
+            return entity is CollectibleEntity && entity.ShortPrefabName == "diesel_collectable" && GetWaterBasesEntityType(entity) == WaterBasesBarrelType;
+        }
+
+        private static bool IsWaterBasesBarrel(Dictionary<string, object> entity, string prefab)
+        {
+            return prefab.Equals(WaterBasesDieselPrefab, StringComparison.OrdinalIgnoreCase) && GetWaterBasesEntityType(entity) == WaterBasesBarrelType;
+        }
+
+        private static bool IsPrefabFoundation(Dictionary<string, object> entity, string prefab, out bool isWaterFoundation)
+        {
+            isWaterFoundation = IsWaterBasesFoundation(entity, prefab);
+            return isWaterFoundation || prefab.Contains("/foundation/") || prefab.Contains("/foundation.triangle");
+        }
+
+        private bool IsImportantPasteEntity(NpcSettings opt, string prefab)
+        {
+            if (opt != null && opt.Enabled && opt.SpawnAmountScientists > 0 && opt.Inside.Any)
+            {
+                for (int i = 0; i < NpcImportantPastePrefabs.Length; i++)
+                {
+                    if (prefab.IndexOf(NpcImportantPastePrefabs[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            for (int i = 0; i < ImportantPastePrefabs.Length; i++)
+            {
+                if (prefab.IndexOf(ImportantPastePrefabs[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            prefab = GetFileNameWithoutExtension(prefab);
+            return IsBox(prefab, true);
+        }
+
+        private static bool IsPrefabStair(string prefab) => prefab.EndsWith("/foundation.steps.prefab", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsPrefabRamp(string prefab) => prefab.EndsWith("ramp.prefab", StringComparison.OrdinalIgnoreCase);
+
+        private static bool TryGetPasteVector3(Dictionary<string, object> entity, string key, out Vector3 value)
+        {
+            value = default;
+
+            if (!entity.TryGetValue(key, out var obj) || obj is not Dictionary<string, object> axes || !axes.TryGetValue("x", out var x) || !axes.TryGetValue("y", out var y) || !axes.TryGetValue("z", out var z))
+            {
+                return false;
+            }
+
+            value = new Vector3(Convert.ToSingle(x), Convert.ToSingle(y), Convert.ToSingle(z));
+            return true;
+        }
+
+        private static Quaternion GetPasteRotation(Dictionary<string, object> entity)
+        {
+            return TryGetPasteVector3(entity, "rot", out var rotation) ? Quaternion.Euler(rotation * Mathf.Rad2Deg) : Quaternion.identity;
+        }
+
+        private struct FoundationCornerGroup
+        {
+            internal int Start;
+            internal int Count;
+            internal float ContactY;
+            internal float ContactClearance;
+
+            internal FoundationCornerGroup(int start, int count, float contactY, float contactClearance)
+            {
+                Start = start;
+                Count = count;
+                ContactY = contactY;
+                ContactClearance = contactClearance;
+            }
+        }
+
+        private static FoundationCornerGroup AddFoundationCorners(Dictionary<string, object> entity, string prefab, Vector3 position, Quaternion rotation, bool isWaterFoundation, List<Vector3> corners)
+        {
+            int start = corners.Count;
+            float contactClearance = isWaterFoundation ? GetWaterFoundationContactClearance(entity, rotation) : FoundationContactClearance;
+
+            if (prefab.EndsWith("triangle.prefab", StringComparison.OrdinalIgnoreCase))
+            {
+                corners.Add(position + rotation * Vector3.forward * FoundationTriangleTipOffset);
+                corners.Add(position + rotation * Vector3.left * FoundationCornerOffset);
+                corners.Add(position + rotation * Vector3.right * FoundationCornerOffset);
+            }
+            else
+            {
+                Vector3 forward = position + rotation * Vector3.forward * FoundationCornerOffset;
+                Vector3 back = position + rotation * Vector3.back * FoundationCornerOffset;
+
+                corners.Add(forward + rotation * Vector3.left * FoundationCornerOffset);
+                corners.Add(forward + rotation * Vector3.right * FoundationCornerOffset);
+                corners.Add(back + rotation * Vector3.right * FoundationCornerOffset);
+                corners.Add(back + rotation * Vector3.left * FoundationCornerOffset);
+            }
+
+            int count = corners.Count - start;
+            float contactY = corners[start].y;
+
+            for (int i = start + 1; i < corners.Count; i++)
+            {
+                if (corners[i].y < contactY)
+                {
+                    contactY = corners[i].y;
+                }
+            }
+
+            return new(start, count, contactY, contactClearance);
+        }
+
+        private static float GetWaterBasesBarrelContactClearance(Quaternion rotation)
+        {
+            // diesel_collectable prefab-local bounds: center (0.05, 0.15, -0.02), extents (0.66, 0.45, 0.51)
+            Vector3 center = new(0.05f, 0.15f, -0.02f);
+            Vector3 extents = new(0.66f, 0.45f, 0.51f);
+            Vector3 rotatedCenter = rotation * center;
+            Vector3 right = rotation * Vector3.right;
+            Vector3 up = rotation * Vector3.up;
+            Vector3 forward = rotation * Vector3.forward;
+            float verticalExtent = Mathf.Abs(right.y) * extents.x + Mathf.Abs(up.y) * extents.y + Mathf.Abs(forward.y) * extents.z;
+            return FoundationSurfaceClearance - (rotatedCenter.y - verticalExtent);
+        }
+
+        private static float GetWaterFoundationContactClearance(Dictionary<string, object> entity, Quaternion parentRotation)
+        {
+            float contactClearance = FloorContactClearance;
+
+            if (!entity.TryGetValue("children", out var obj) || obj is not List<object> children)
+            {
+                return contactClearance;
+            }
+
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] is not Dictionary<string, object> child || !child.TryGetValue("prefabname", out obj))
+                {
+                    continue;
+                }
+
+                string prefab = obj?.ToString() ?? string.Empty;
+                if (!IsWaterBasesBarrel(child, prefab) || !TryGetPasteVector3(child, "pos", out var localPosition) || !TryGetPasteVector3(child, "rot", out var localEuler))
+                {
+                    continue;
+                }
+
+                // Top-level rotations are radians; child rotations are parent-local degrees in CopyPaste data.
+                Vector3 childOffset = parentRotation * localPosition;
+                Quaternion childRotation = parentRotation * Quaternion.Euler(localEuler);
+                float childClearance = GetWaterBasesBarrelContactClearance(childRotation) - childOffset.y;
+
+                if (childClearance > contactClearance)
+                {
+                    contactClearance = childClearance;
+                }
+            }
+
+            return contactClearance;
+        }
+
+        private static float NormalizeFoundationContactClearances(List<Vector3> corners, List<FoundationCornerGroup> groups)
+        {
+            float maxClearance = 0f;
+
+            for (int i = 0; i < groups.Count; i++)
+            {
+                if (groups[i].ContactClearance > maxClearance)
+                {
+                    maxClearance = groups[i].ContactClearance;
+                }
+            }
+
+            if (maxClearance <= 0f)
+            {
+                return FoundationContactClearance;
+            }
+
+            // The resolver stores one clearance for the whole paste. Encode each group's difference into its sample Y while ContactY retains the original level used for multi-level grouping.
+            for (int i = 0; i < groups.Count; i++)
+            {
+                FoundationCornerGroup group = groups[i];
+                float offset = maxClearance - group.ContactClearance;
+
+                if (offset <= 0.0001f)
+                {
+                    continue;
+                }
+
+                int end = group.Start + group.Count;
+                for (int j = group.Start; j < end; j++)
+                {
+                    Vector3 point = corners[j];
+                    point.y += offset;
+                    corners[j] = point;
+                }
+            }
+
+            return maxClearance;
         }
 
         private bool IsPrefabExternalWall(Dictionary<string, object> entity)
         {
-            return entity["prefabname"].ToString().Contains("/wall.external.high.");
+            string prefabname = entity["prefabname"].ToString();
+            return prefabname.Contains("/wall.external.high.") || prefabname.Contains("/gates.external.high.");
         }
 
         private bool IsPrefabFloor(Dictionary<string, object> entity)
@@ -584,34 +998,39 @@ namespace RaidableBases
 
         private IEnumerator SetupCopyPasteObstructionRadius()
         {
-            foreach (var profile in Buildings.Profiles.ToPooledList())
+            using var profiles = Buildings.Profiles.ToPooledList();
+
+            foreach (var profile in profiles)
             {
                 var radius = profile.Value.Options.ProtectionRadii.Obstruction == -1 ? 0f : GetObstructionRadius(profile.Value.Options.ProtectionRadii, RaidableType.None);
                 foreach (var extra in profile.Value.Options.AdditionalBases)
                 {
                     if (!Buildings.Removed.Contains(extra.Key))
                     {
-                        yield return SetupCopyPasteObstructionRadius(extra.Key, radius);
+                        yield return SetupCopyPasteObstructionRadius(profile.Value.Options.NPC, extra.Key, radius);
                     }
                 }
                 if (!Buildings.Removed.Contains(profile.Key))
                 {
-                    yield return SetupCopyPasteObstructionRadius(profile.Key, radius);
+                    yield return SetupCopyPasteObstructionRadius(profile.Value.Options.NPC, profile.Key, radius);
                 }
             }
 
             setupCopyPasteObstructionRadius = null;
         }
 
-        private IEnumerator SetupCopyPasteObstructionRadius(string baseName, float radius)
+        private IEnumerator SetupCopyPasteObstructionRadius(NpcSettings npcSettings, string baseName, float radius)
         {
+            var pasteData = GetPasteData(baseName);
+            pasteData.valid = false;
+
             var filename = Path.Combine("copypaste", baseName);
             if (!HarmonyDataLayer.ExistsDatafile(filename))
             {
                 yield break;
             }
 
-            HarmonyDataFile data;
+            DynamicConfigFile data;
             try
             {
                 data = HarmonyDataLayer.GetDatafile(filename);
@@ -623,58 +1042,101 @@ namespace RaidableBases
                 yield break;
             }
 
-            if (data["entities"] == null)
+            if (data["entities"] is not List<object> entities)
             {
                 Queues.Messages.Log(baseName, $"{baseName} is missing entity data");
                 Buildings.Remove(baseName);
                 yield break;
             }
 
-            var entities = data["entities"] as List<object>;
-            using var foundations = DisposableList<Vector3>();
-            using var floors = DisposableList<Vector3>();
-            //using var invalid = DisposableList<string>();
-            int checks = 0;
-            float x = 0f;
-            float z = 0f;
+            using var construct = DisposableList<Vector3>();
+            using var allFoundationCorners = DisposableList<Vector3>();
+            using var foundationCornerGroups = DisposableList<FoundationCornerGroup>();
+
+            pasteData.ClearPlacementGeometry();
+
+            var floors = pasteData.floors;
+            var compound = pasteData.compound;
+            var foundations = pasteData.foundations;
+            var foundationCorners = pasteData.foundationCorners;
+            var importantEntities = pasteData.importantEntities;
+            var stairs = pasteData.stairs;
+            var ramps = pasteData.ramps;
+
+            FrameDeadline deadline = new(setupFrameBudgetMilliseconds);
+            float constructX = 0f;
+            float constructZ = 0f;
+            float minEntityY = float.MaxValue;
+            float maxEntityY = float.MinValue;
+            bool hasWaterBasesFoundation = false;
 
             foreach (var obj in entities)
             {
-                if (!(obj is Dictionary<string, object> entity))
+                if (deadline.Expired)
+                {
+                    yield return null;
+                    deadline.Reset();
+                }
+
+                if (obj is not Dictionary<string, object> entity || !entity.TryGetValue("prefabname", out var prefabObj) || !entity.TryGetValue("pos", out var posObj))
                 {
                     continue;
                 }
-                if (++checks >= 1000)
-                {
-                    checks = 0;
-                    yield return Automated.instruction0;
-                }
-                if (!entity.ContainsKey("prefabname") || !entity.ContainsKey("pos"))
-                {
-                    continue;
-                }
-                var prefab = entity["prefabname"].ToString();
+
+                string prefab = prefabObj?.ToString() ?? string.Empty;
+
                 try
                 {
-                    if (prefab.Contains("testridablehorse"))
+                    if (posObj is not Dictionary<string, object> axes)
                     {
-                        Puts($"{baseName} contains a broken prefab that must be removed: {prefab}");
-                        Queues.Messages.Log(baseName, $"Invalid entity! {prefab}");
-                        Buildings.Remove(baseName);
-                        //invalid.Add(prefab);
-                        yield break;
+                        continue;
                     }
-                    var axes = entity["pos"] as Dictionary<string, object>;
-                    var position = new Vector3(Convert.ToSingle(axes?["x"]), Convert.ToSingle(axes?["y"]), Convert.ToSingle(axes?["z"]));
-                    if (IsPrefabFoundation(entity) || IsPrefabExternalWall(entity))
+
+                    var position = new Vector3(Convert.ToSingle(axes["x"]), Convert.ToSingle(axes["y"]), Convert.ToSingle(axes["z"]));
+
+                    if (position.y < minEntityY) minEntityY = position.y;
+                    if (position.y > maxEntityY) maxEntityY = position.y;
+
+                    bool isFoundation = IsPrefabFoundation(entity, prefab, out bool isWaterFoundation);
+                    bool isFloor = IsPrefabFloor(entity);
+
+                    if (isFoundation)
                     {
+                        if (isWaterFoundation) hasWaterBasesFoundation = true;
+
                         foundations.Add(position);
-                        x += position.x;
-                        z += position.z;
+                        foundationCornerGroups.Add(AddFoundationCorners(entity, prefab, position, GetPasteRotation(entity), isWaterFoundation, allFoundationCorners));
                     }
-                    if (IsPrefabFloor(entity))
+
+                    if (isFloor)
                     {
                         floors.Add(position);
+                    }
+
+                    if (IsImportantPasteEntity(npcSettings, prefab))
+                    {
+                        importantEntities.Add(position);
+                    }
+
+                    if (IsPrefabStair(prefab))
+                    {
+                        stairs.Add(position);
+                    }
+                    else if (IsPrefabRamp(prefab))
+                    {
+                        ramps.Add(position);
+                    }
+
+                    if (isFoundation || isFloor || prefab.Contains("wall"))
+                    {
+                        compound.Add(position);
+                    }
+
+                    if (isFoundation || IsPrefabExternalWall(entity))
+                    {
+                        construct.Add(position);
+                        constructX += position.x;
+                        constructZ += position.z;
                     }
                 }
                 catch (Exception ex)
@@ -684,51 +1146,195 @@ namespace RaidableBases
                 }
             }
 
-            if (foundations.Count == 0)
+            bool floorsAreFoundations = foundations.Count == 0;
+            float foundationClearance = floorsAreFoundations ? FloorContactClearance : NormalizeFoundationContactClearances(allFoundationCorners, foundationCornerGroups);
+            float maxGroundedFoundationY = float.MaxValue;
+            float dominantFoundationY = 0f;
+
+            if (floorsAreFoundations)
             {
-                foreach (var position in floors)
+                foundations.AddRange(floors);
+                foundationCorners.Clear();
+
+                float minFloorY = float.MaxValue;
+                for (int i = 0; i < floors.Count; i++)
                 {
-                    foundations.Add(position);
-                    x += position.x;
-                    z += position.z;
+                    if (floors[i].y < minFloorY)
+                    {
+                        minFloorY = floors[i].y;
+                    }
+                }
+
+                for (int i = 0; i < floors.Count; i++)
+                {
+                    if (floors[i].y <= minFloorY + 0.1f)
+                    {
+                        foundationCorners.Add(floors[i]);
+                    }
+                }
+
+                pasteData.groundedFoundationCornerCount = foundationCorners.Count;
+            }
+            else
+            {
+                maxGroundedFoundationY = GetMaxGroundedFoundationY(foundationCornerGroups, out dominantFoundationY);
+
+                if (maxGroundedFoundationY == float.MaxValue)
+                {
+                    foundationCorners.AddRange(allFoundationCorners);
+                    pasteData.groundedFoundationCornerCount = foundationCorners.Count;
+                }
+                else
+                {
+                    CopyFoundationCornerGroups(allFoundationCorners, foundationCornerGroups, maxGroundedFoundationY, true, foundationCorners);
+                    pasteData.groundedFoundationCornerCount = foundationCorners.Count;
+                    CopyFoundationCornerGroups(allFoundationCorners, foundationCornerGroups, maxGroundedFoundationY, false, foundationCorners);
                 }
             }
 
-            if (foundations.Count == 0)
+            if (construct.Count == 0)
+            {
+                foreach (var position in floors)
+                {
+                    construct.Add(position);
+                    constructX += position.x;
+                    constructZ += position.z;
+                }
+            }
+
+            if (foundations.Count == 0 || foundationCorners.Count == 0 || construct.Count == 0)
             {
                 Queues.Messages.Log(baseName, $"{baseName} is missing foundation/floor data #1");
                 Buildings.Remove(baseName);
                 yield break;
             }
 
-            var center = new Vector3(x / foundations.Count, 0f, z / foundations.Count);
+            float centerX = 0f;
+            float centerZ = 0f;
+            float minFoundationY = float.MaxValue;
+            float maxFoundationY = float.MinValue;
+            List<Vector3> placementFoundations = floorsAreFoundations ? foundationCorners : foundations;
 
-            center.y = GetSpawnHeight(center);
+            for (int i = 0; i < placementFoundations.Count; i++)
+            {
+                Vector3 foundation = placementFoundations[i];
+                centerX += foundation.x;
+                centerZ += foundation.z;
+                if (foundation.y < minFoundationY) minFoundationY = foundation.y;
+                if (foundation.y > maxFoundationY) maxFoundationY = foundation.y;
+            }
+
+            if (DebugMode && maxGroundedFoundationY != float.MaxValue)
+            {
+                Queues.Messages.Print($"{baseName} multi-level foundation placement: min={minFoundationY:F2}, max={maxFoundationY:F2}, dominant contact={dominantFoundationY:F2}, terrain-contact max={maxGroundedFoundationY:F2}");
+            }
+
+            var constructCenter = new Vector3(constructX / construct.Count, 0f, constructZ / construct.Count);
+            constructCenter.y = GetSpawnHeight(constructCenter);
 
             if (radius == 0f)
             {
-                foundations.Sort((a, b) => (a - center).sqrMagnitude.CompareTo((b - center).sqrMagnitude));
-
-                radius = Vector3.Distance(foundations[0], foundations[^1]);
+                construct.Sort((a, b) => (a - constructCenter).sqrMagnitude.CompareTo((b - constructCenter).sqrMagnitude));
+                radius = Vector3.Distance(construct[0], construct[^1]);
             }
 
-            var pasteData = GetPasteData(baseName);
-
+            pasteData.FloorsAreFoundations = floorsAreFoundations;
+            pasteData.UsesWaterBasesFoundations = hasWaterBasesFoundation;
             pasteData.radius = Mathf.Ceil(Mathf.Max(CELL_SIZE, radius));
-            pasteData.foundations = new(foundations);
+            pasteData.foundationClearance = foundationClearance;
+            pasteData.minFoundationY = minFoundationY;
+            pasteData.maxFoundationY = maxFoundationY;
+            pasteData.minEntityY = minEntityY == float.MaxValue ? 0f : minEntityY;
+            pasteData.maxEntityY = maxEntityY == float.MinValue ? 0f : maxEntityY;
+            pasteData.centerOffset = new Vector3(centerX / placementFoundations.Count, 0f, centerZ / placementFoundations.Count);
             pasteData.valid = true;
+        }
 
-            //if (invalid.Count > 0)
-            //{
-            //    pasteData.invalid = new(invalid);
-            //}
+        private static void CopyFoundationCornerGroups(List<Vector3> source, List<FoundationCornerGroup> groups, float maxGroundedY, bool grounded, List<Vector3> destination)
+        {
+            int maxGroundedLevel = Mathf.RoundToInt(maxGroundedY * FoundationLevelPrecision);
+
+            for (int i = 0; i < groups.Count; i++)
+            {
+                FoundationCornerGroup group = groups[i];
+                bool usesTerrain = Mathf.RoundToInt(group.ContactY * FoundationLevelPrecision) <= maxGroundedLevel;
+
+                if (usesTerrain == grounded)
+                {
+                    for (int j = 0; j < group.Count; j++)
+                    {
+                        destination.Add(source[group.Start + j]);
+                    }
+                }
+            }
+        }
+
+        private static float GetMaxGroundedFoundationY(List<FoundationCornerGroup> groups, out float dominantFoundationY)
+        {
+            dominantFoundationY = 0f;
+
+            if (groups.Count < 2)
+            {
+                return float.MaxValue;
+            }
+
+            using var levels = DisposableList<int>();
+
+            for (int i = 0; i < groups.Count; i++)
+            {
+                levels.Add(Mathf.RoundToInt(groups[i].ContactY * FoundationLevelPrecision));
+            }
+
+            levels.Sort();
+            int dominantLevel = levels[0];
+            int currentLevel = dominantLevel;
+            int currentCount = 1;
+            int mostFoundations = 0;
+
+            for (int i = 1; i <= levels.Count; i++)
+            {
+                if (i < levels.Count && levels[i] == currentLevel)
+                {
+                    currentCount++;
+                    continue;
+                }
+
+                //Levels are sorted, so retaining the first equal-sized band selects the lower one.
+                if (currentCount > mostFoundations)
+                {
+                    mostFoundations = currentCount;
+                    dominantLevel = currentLevel;
+                }
+
+                if (i < levels.Count)
+                {
+                    currentLevel = levels[i];
+                    currentCount = 1;
+                }
+            }
+
+            dominantFoundationY = dominantLevel / FoundationLevelPrecision;
+            int maxGroundedLevel = dominantLevel + Mathf.RoundToInt(FloatingFoundationExemptHeight * FoundationLevelPrecision);
+            return levels[^1] > maxGroundedLevel ? maxGroundedLevel / FoundationLevelPrecision : float.MaxValue;
         }
 
         private readonly Dictionary<string, object> _emptyProtocol = new();
 
         private IEnumerator LoadCopyPasteFile(RandomBase rb)
         {
-            HarmonyDataFile data;
+            try
+            {
+                yield return LoadCopyPasteFileInternal(rb);
+            }
+            finally
+            {
+                loadCoroutines.Remove(rb);
+            }
+        }
+
+        private IEnumerator LoadCopyPasteFileInternal(RandomBase rb)
+        {
+            DynamicConfigFile data;
 
             try
             {
@@ -742,9 +1348,9 @@ namespace RaidableBases
                 yield break;
             }
 
-            yield return ApplyStartPositionAdjustment(rb, data);
+            yield return ApplyStartPositionAdjustment(rb);
 
-            if (rb.pasteData.foundations.IsNullOrEmpty())
+            if (!rb.pasteData.valid || rb.pasteData.foundations.IsNullOrEmpty())
             {
                 Queues.Messages.Log(rb.BaseName, $"{rb.BaseName} is missing foundation/floor data #2");
                 Buildings.Remove(rb.BaseName);
@@ -777,10 +1383,6 @@ namespace RaidableBases
             //    }
             //}
 
-            var preloadData = CopyPasteAPI.Call("PreLoadData", entities, rb.Position, 0f, true, rb.inventories, false, true) as ICollection<Dictionary<string, object>>;
-
-            yield return TryApplyAutoHeight(rb, preloadData);
-
             if (!IsUnloading)
             {
                 TryInvokeMethod(() => RFManager.GetListenerSet(1).RemoveWhere(obj => obj == null || !BaseEntityEx.IsValidEntityReference(obj)));
@@ -793,30 +1395,66 @@ namespace RaidableBases
                     yield break;
                 }
 
+                InitializePastePositions(raid, rb);
+
+                if (raid.Type != RaidableType.None)
+                {
+                    int limit = Mathf.Clamp(raid.Options.Setup.SpawnLimit, 1, 500);
+                    yield return raid.RemoveClutter(limit);
+                }
+
                 var protocol = data["protocol"] as Dictionary<string, object> ?? _emptyProtocol;
-                object result = null;
-                try
+
+                if (_pasteEngine == null)
                 {
-                    result = CopyPasteAPI.Call("Paste", new object[] { preloadData, protocol, false, rb.Position, _consolePlayer, rb.stability, 0f, rb.heightAdj, false, CreatePastedCallback(raid, rb), CreateSpawnCallback(raid), rb.BaseName, true, rb.Save });
-                }
-                catch (Exception ex)
-                {
-                    Puts(ex);
-                }
-                if (result == null)
-                {
-                    Queues.Messages.Print($"CopyPaste {CopyPasteAPI.Version} did not respond for {rb.BaseName}!");
-                    Puts($"\nCopyPaste {CopyPasteAPI.Version} did not respond for {rb.BaseName}! Is CopyPaste Harmony mod loaded?");
-                    Puts("\nQueue will resume in 180 seconds to prevent the server from being spammed with errors.");
+                    if (!IsUnloading)
+                    {
+                        const string error = "The internal paste engine is unavailable.";
+                        Queues.Messages.Print($"{rb.BaseName} could not be pasted: {error}");
+                        Puts("{0} could not be pasted: {1}", rb.BaseName, error);
+                        Puts("\nQueue will resume in 30 seconds to prevent the server from being spammed with errors.");
+                        isSpawnerBusyTime = Time.timeAsDouble + 30d;
+                        isSpawnerBusy = true;
+                    }
                     rb.payments.Refund();
                     raid.Despawn();
+                    yield break;
                 }
-                else
+
+                Queues.Messages.Print($"{rb.BaseName} is pasting at {rb.Position}");
+                yield return _pasteEngine.Paste(raid, rb, entities, protocol, CreatePastedCallback(raid, rb), CreateSpawnCallback(raid));
+            }
+        }
+
+        private static void InitializePastePositions(RaidableBase raid, RandomBase rb)
+        {
+            PasteData data = rb.pasteData;
+            Vector3 offset = rb.Position;
+
+            raid.FloorsAreFoundations = data.FloorsAreFoundations;
+
+            for (int i = 0; i < data.foundations.Count; i++)
+            {
+                raid.foundations.Add(data.foundations[i] + offset);
+            }
+
+            for (int i = 0; i < data.floors.Count; i++)
+            {
+                raid.floors.Add(data.floors[i] + offset);
+            }
+
+            for (int i = 0; i < data.compound.Count; i++)
+            {
+                Vector3 position = data.compound[i] + offset;
+
+                if (Mathf.Abs(position.y - raid.Location.y) < raid.ProtectionRadius)
                 {
-                    Queues.Messages.Print($"{rb.BaseName} is pasting at {rb.Position}");
+                    raid.compound.Add(position);
                 }
             }
         }
+
+        public enum PasteErrorMode { Undo = 1, Continue = 2 }
 
         private Action CreatePastedCallback(RaidableBase raid, RandomBase rb)
         {
@@ -845,6 +1483,7 @@ namespace RaidableBases
                 {
                     return;
                 }
+                raid.DestroyGroundCheck(e);
                 if (e is BaseCombatEntity b)
                 {
                     b.spawnDeployableCorpseOnDeath = false;
@@ -854,7 +1493,6 @@ namespace RaidableBases
                     e.DelayedSafeKill();
                     return;
                 }
-                Vector3 position = e.transform.position;
                 if (e is AutoTurret turret)
                 {
                     raid.PreSetupTurret(turret);
@@ -867,40 +1505,21 @@ namespace RaidableBases
                 {
                     e.skinID = RB_SKIN_ID;
                 }
-                else if (raid.IsFoundation(e))
-                {
-                    raid.foundations.Add(position);
-                }
-                else if (e.ShortPrefabName.Contains("floor"))
-                {
-                    raid.floors.Add(position);
-                }
                 if (!raid.stability && e is BuildingBlock block)
                 {
                     block.grounded = true;
-                }
-                else if (raid.Options.EmptyAll && e is StorageContainer container)
-                {
-                    raid.TryEmptyContainer(container);
-                }
-                else if (raid.Options.EmptyAll && e is IOEntity io && io is IIndustrialStorage st)
-                {
-                    raid.TryEmptyIndustrialStorage(io, st);
                 }
                 foreach (var slot in _checkSlots)
                 {
                     if (e.GetSlot(slot) is BaseEntity ent)
                     {
                         raid.AddEntity(ent);
+                        raid.RaidEntities.Add(ent);
                     }
                 }
                 if (e.net == null)
                 {
                     e.net = Net.sv.CreateNetworkable();
-                }
-                if (Mathf.Abs(position.y - raid.Location.y) < raid.ProtectionRadius && raid.IsCompound(e))
-                {
-                    raid.compound.Add(position);
                 }
                 if (e.children != null)
                 {
@@ -916,141 +1535,113 @@ namespace RaidableBases
                     raid.SetupElevator(elevator);
                 }
                 e.OwnerID = 0;
-                e.EnableSaving(false);
                 raid.AddEntity(e);
+                raid.RaidEntities.Add(e);
             });
         }
 
-        private IEnumerator ApplyStartPositionAdjustment(RandomBase rb, HarmonyDataFile data)
+        private IEnumerator ApplyStartPositionAdjustment(RandomBase rb)
         {
             ParseListedOptions(rb);
 
-            using var foundations = DisposableList<Vector3>();
-            float x = 0f, z = 0f;
+            if (rb.precisePlacement)
+            {
+                yield return CoroutineEx.waitForFixedUpdate;
+                yield break;
+            }
 
             if (!rb.pasteData.valid)
             {
-                yield return SetupCopyPasteObstructionRadius(rb.BaseName, rb.options.ProtectionRadii.Obstruction == -1 ? 0f : GetObstructionRadius(rb.options.ProtectionRadii, RaidableType.None));
+                yield return SetupCopyPasteObstructionRadius(rb.options.NPC, rb.BaseName, rb.options.ProtectionRadii.Obstruction == -1 ? 0f : GetObstructionRadius(rb.options.ProtectionRadii, RaidableType.None));
             }
 
-            if (rb.pasteData.foundations.IsNullOrEmpty())
+            if (!rb.pasteData.valid || rb.pasteData.foundations.IsNullOrEmpty())
             {
                 Queues.Messages.Log(rb.BaseName, $"{rb.BaseName} is missing foundation/floor data #3");
                 yield break;
             }
 
-            foreach (var foundation in rb.pasteData.foundations)
+            // Precise and fallback placement use the cached center
+            rb.Position.x -= rb.pasteData.centerOffset.x;
+            rb.Position.z -= rb.pasteData.centerOffset.z;
+
+            if (rb.options.Setup.ForcedHeight != -1f)
             {
-                var a = foundation + rb.Position;
-                a.y = GetSpawnHeight(a);
-                foundations.Add(a);
-                x += a.x;
-                z += a.z;
+                rb.Position.y = rb.baseHeight + rb.options.Setup.PasteHeightAdjustment + rb.options.Setup.ForcedHeight;
             }
-
-            var center = new Vector3(x / foundations.Count, 0f, z / foundations.Count);
-
-            center.y = rb.isCustomSpawn ? rb.Position.y : GetSpawnHeight(center, !rb.options.Water.IsWaterSpawn);
-            
-            rb.Position += (rb.Position - center);
-
-            if (rb.options.Setup.ForcedHeight == -1)
+            else if (rb.options.Setup.Sky && !rb.isCustomSpawn)
             {
-                if (rb.options.Water.IsWaterSpawn && rb.options.Water.Surface)
+                ApplySkyStartPositionAdjustment(rb);
+            }
+            else
+            {
+                float height = rb.baseHeight;
+
+                if (rb.IsWaterSpawn && rb.options.Water.Surface)
                 {
-                    rb.Position.y = Mathf.Max(0f, TerrainMeta.WaterMap.GetHeight(rb.Position));
+                    rb.Position.y = Mathf.Max(WaterSystem.OceanLevel, TerrainMeta.WaterMap.GetHeight(rb.Position));
+
+                    if (rb.pasteData.UsesWaterBasesFoundations)
+                    {
+                        // WaterBases floors are saved near the paste origin. Align the floor plane to the water surface; barrel depth is only used for terrain and seabed contact.
+                        height += -rb.pasteData.minFoundationY - 1f;
+                    }
                 }
-                else if (!rb.isCustomSpawn) rb.Position.y = GetSpawnHeight(rb.Position, !rb.options.Water.IsWaterSpawn);
+                else if (!rb.isCustomSpawn)
+                {
+                    rb.Position.y = GetSpawnHeight(rb.Position, !rb.IsWaterSpawn);
+                }
 
-                TryApplyCustomAutoHeight(rb);
-                TryApplyMultiFoundationSupport(rb);
-
-                rb.Position.y += rb.baseHeight + rb.options.Setup.PasteHeightAdjustment;
+                rb.Position.y += height + rb.options.Setup.PasteHeightAdjustment;
             }
-            else rb.Position.y = rb.baseHeight + rb.options.Setup.PasteHeightAdjustment + rb.options.Setup.ForcedHeight;
 
             yield return CoroutineEx.waitForFixedUpdate;
         }
 
-        private IEnumerator TryApplyAutoHeight(RandomBase rb, ICollection<Dictionary<string, object>> preloadData)
+        private void ApplySkyStartPositionAdjustment(RandomBase rb)
         {
-            if (rb.autoHeight && !config.Settings.Experimental.Contains(ExperimentalSettings.Type.AutoHeight, rb))
+            float maxGroundY = float.MinValue, terrainY = float.MinValue;
+            float raycastY = rb.Position.y;
+
+            foreach (var foundation in rb.pasteData.foundations)
             {
-                var bestHeight = Convert.ToSingle(CopyPasteAPI.Call("FindBestHeight", preloadData, rb.Position));
-                int checks = 0;
-
-                rb.heightAdj = bestHeight - rb.Position.y;
-
-                foreach (var entity in preloadData)
-                {
-                    if (++checks >= 1000)
-                    {
-                        checks = 0;
-                        yield return Automated.instruction0;
-                    }
-
-                    if (entity.TryGetValue("position", out var obj) && obj is Vector3 pos)
-                    {
-                        pos.y += rb.heightAdj;
-
-                        entity["position"] = pos;
-                    }
-                }
+                var position = foundation + rb.Position;
+                //Local foundation Y must not move the ray origin below an elevated selected surface.
+                position.y = raycastY;
+                terrainY = Mathf.Max(terrainY, TerrainMeta.HeightMap.GetHeight(position));
+                maxGroundY = Mathf.Max(maxGroundY, GetSpawnHeight(position));
             }
-        }
 
-        private void TryApplyCustomAutoHeight(RandomBase rb)
-        {
-            if (config.Settings.Experimental.Contains(ExperimentalSettings.Type.AutoHeight, rb))
-            {
-                foreach (var foundation in rb.pasteData.foundations)
-                {
-                    var a = foundation + rb.Position;
+            var desiredHeight = Mathf.Max(0f, rb.baseHeight + rb.options.Setup.PasteHeightAdjustment);
+            var clearance = Mathf.Clamp(desiredHeight, 0f, 10f);
+            var minBaseY = Mathf.Min(rb.pasteData.minFoundationY, rb.pasteData.minEntityY + desiredHeight - clearance);
+            var groundY = Mathf.Max(terrainY, WaterSystem.OceanLevel);
+            var targetY = Mathf.Max(groundY + desiredHeight, maxGroundY + clearance);
+            var baseY = targetY - rb.pasteData.minFoundationY;
+            var raisedY = targetY - minBaseY;
+            //Flying vehicles full lift power ceiling less VehicleCeilingMargin so top of base is easily reachable.
+            var powerLossY = Mathf.Max(terrainY, HotAirBalloon.minimumAltitudeTerrain) + HotAirBalloon.serviceCeiling - LiftFalloff;
+            var maxY = powerLossY - VehicleCeilingMargin - rb.pasteData.maxEntityY;
 
-                    if (a.y < rb.Position.y)
-                    {
-                        rb.Position.y += rb.Position.y - a.y;
-                        return;
-                    }
-                    else
-                    {
-                        rb.Position.y -= a.y - rb.Position.y;
-                        return;
-                    }
-                }
-            }
-        }
+            //The ceiling limits only the extra safety raise; it never lowers the main base below its configured height.
+            rb.Position.y = Mathf.Max(baseY, Mathf.Min(raisedY, maxY));
 
-        private void TryApplyMultiFoundationSupport(RandomBase rb)
-        {
-            float j = 0f, k = 0f, y = 0f;
-            for (int i = 0; i < rb.pasteData.foundations.Count; i++)
-            {
-                y = (float)Math.Round(rb.pasteData.foundations[i].y, 1);
-                j = Mathf.Max(y, j);
-                k = Mathf.Min(y, k);
-            }
-            if (j != 0f && config.Settings.Experimental.Contains(ExperimentalSettings.Type.MultiFoundation, rb))
-            {
-                rb.Position.y += j + 1f;
-            }
-            else if (k != 0f && config.Settings.Experimental.Contains(ExperimentalSettings.Type.Bunker, rb))
-            {
-                y = rb.Position.y + Mathf.Abs(k);
-                if (y < rb.Position.y)
-                {
-                    rb.Position.y = y + 1.4f;
-                }
-            }
+            var entityDrop = rb.pasteData.minFoundationY - rb.pasteData.minEntityY;
+            var wantedRaise = rb.pasteData.minFoundationY - minBaseY;
+            var raisedBy = rb.Position.y - baseY;
+            var cappedRaiseDiff = wantedRaise - raisedBy;
+
+            if (cappedRaiseDiff > 0.01f) Puts($"{rb.BaseName} has entities {entityDrop:F1}m below the main base. Base has been raised by {raisedBy:F1}m over its configured height, but some entities may still be underground.");
+            else if (raisedBy > 10f) Puts($"{rb.BaseName} has entities {entityDrop:F1}m below the main base. Base has been raised by {raisedBy:F1}m over its configured height for these to be above ground.");
+            if (DebugMode) Queues.Messages.Print($"{rb.BaseName} sky placement: terrain={terrainY:F2}, ground={maxGroundY:F2}, minEntityY={rb.pasteData.minEntityY:F2}, maxEntityY={rb.pasteData.maxEntityY:F2}, minFloorY={rb.pasteData.minFoundationY:F2}, minBaseY={minBaseY:F2}, desiredHeight={desiredHeight:F2}, baseY={baseY:F2}, raisedY={raisedY:F2}, maxY={maxY:F2}, final={rb.Position.y:F2}");
         }
 
         [HookMethod("GetSpawnHeight")]
-        public float GetSpawnHeight(Vector3 a, bool flag = true, bool shouldSkipSmallRock = false) => SpawnsController.GetSpawnHeight(a, flag, shouldSkipSmallRock);
+        public float GetSpawnHeight(Vector3 a, bool max = true, bool shouldSkipSmallRock = false, int mask = targetMask, BasePlayer player = null) =>
+            SpawnsController.GetSpawnHeight(a, max, shouldSkipSmallRock, mask, player);
 
         private void ParseListedOptions(RandomBase rb)
         {
-            rb.autoHeight = false;
-
             List<PasteOption> options = rb.options.PasteOptions;
 
             foreach (var (key, abo) in rb.options.AdditionalBases)
@@ -1068,7 +1659,6 @@ namespace RaidableBases
                 {
                     case "inventories": rb.inventories = option.Value.ToLower() == "true"; break;
                     case "stability": rb.stability = option.Value.ToLower() == "true"; break;
-                    case "autoheight": rb.autoHeight = option.Value.ToLower() == "true"; break;
                     case "height" when float.TryParse(option.Value, out var y): rb.baseHeight = y; break;
                 }
             }
@@ -1079,7 +1669,7 @@ namespace RaidableBases
             var type = (RaidableType)t;
             var mode = GetRaidableMode(m.ToString());
             var (key, profile) = GetBuilding(type, mode, b, null);
-            
+
             if (!IsProfileValid(key, profile, free, RaidableType.Manual))
             {
                 return "API_INVALID_PROFILE";
@@ -1107,7 +1697,7 @@ namespace RaidableBases
             {
                 return AddSpawnToQueue(key, profile, checkTerrain, type, spawns, payments, owner, user, Vector3.zero);
             }
-            else if (type == RaidableType.Maintained || type == RaidableType.Scheduled)
+            else if (type is RaidableType.Maintained or RaidableType.Scheduled)
             {
                 Queues.Messages.PrintAll();
             }
@@ -1119,19 +1709,28 @@ namespace RaidableBases
                 {
                     if (!string.IsNullOrWhiteSpace(baseName) && profile != null && !profile.Options.Enabled)
                     {
-                        Message(owner, "Profile Not Enabled", baseName);
+                        SendNotification(owner, "Profile Not Enabled", baseName);
                     }
                     else
                     {
-                        Message(owner, "Difficulty Not Buyable", mode);
-                        if (blockedPurchasePVP && owner != null && owner.IsAdmin) Message(owner, "'Allow Players To Buy PVP Raids' is preventing you from buying this PVP raid. Set 'Allow PVP' to 'false' in the PROFILE to fix this.");
+                        SendNotification(owner, "Difficulty Not Buyable", mode);
+
+                        if (blockedPurchasePVP && owner != null && owner.IsAdmin)
+                        {
+                            SendNotification(owner, "'Allow Players To Buy PVP Raids' is preventing you from buying this PVP raid. Set 'Allow PVP' to 'false' in the PROFILE to fix this.");
+                        }
                     }
+
                     payments.Refund();
                 }
                 else if (user != null)
                 {
-                    user.Message(Queues.Messages.GetLast());
+                    ReplyOrLog(user, Queues.Messages.GetLast());
                 }
+            }
+            else if (payments != null && spawns == null)
+            {
+                SendNotification(owner, "CannotFindPosition");
             }
 
             return false;
@@ -1150,19 +1749,20 @@ namespace RaidableBases
             rb.payments = payments ??= new();
             rb.pasteData = GetPasteData(key);
             rb.checkTerrain = checkTerrain;
-            rb.owner = owner;
             rb.user = user;
-            rb.id = owner?.UserIDString ?? "";
-            rb.userid = owner?.userID ?? 0;
-            rb.username = owner?.displayName ?? "";
             rb.typeDistance = GetDistance(rb.type);
             rb.protectionRadius = rb.options.ProtectionRadius(rb.type);
             rb.safeRadius = Mathf.Max(rb.options.ArenaWalls.Radius, rb.protectionRadius);
             rb.buildRadius = Mathf.Max(config.Settings.Management.CupboardDetectionRadius, rb.options.ArenaWalls.Radius, rb.protectionRadius) + 5f;
 
-            if (!rb.payments.admin && owner != null)
+            if (owner != null)
             {
-                rb.payments.admin = owner.IsAdmin;
+                if (owner.clanId != 0) rb.clan = GetClan(owner);
+                if (!rb.payments.admin) rb.payments.admin = owner.IsAdmin;
+                rb.owner = owner;
+                rb.id = owner.UserIDString;
+                rb.username = owner.displayName;
+                rb.userid = owner.userID;
             }
 
             if (rb.buildRadius < 105f && !rb.spawns.IsCustomSpawn)
@@ -1282,7 +1882,7 @@ namespace RaidableBases
                     }
                 }
 
-                foreach (var (extra, abo) in profile.Options.AdditionalBases)
+                foreach (var extra in profile.Options.AdditionalBases.Keys)
                 {
                     if (FileExists(extra) && (extra == baseName || data.Cycle.CanSpawn(type, mode, extra, player)))
                     {
@@ -1291,18 +1891,13 @@ namespace RaidableBases
                             continue;
                         }
 
-                        var clone = BaseProfile.Clone(profile, extra);
-
-                        clone.Options.PasteOptions = abo.Options.ToList();
-                        clone.ProfileName = extra;
-
                         if (isBaseNull)
                         {
-                            profiles.Add((extra, clone));
+                            profiles.Add((extra, profile));
                         }
                         else if (extra.Equals(baseName, StringComparison.OrdinalIgnoreCase))
                         {
-                            return (extra, clone);
+                            return (extra, profile);
                         }
                     }
                 }
@@ -1310,7 +1905,7 @@ namespace RaidableBases
 
             if (profiles.Count > 0)
             {
-                return profiles.GetRandom();
+                return profiles.GetSecureRandom();
             }
 
             if (type == RaidableType.Purchased && !AllowBuyingPVP && Buildings.Profiles.All(x => x.Value.Options.Mode == mode && x.Value.Options.AllowPVP))
@@ -1386,12 +1981,18 @@ namespace RaidableBases
             return HarmonyDataLayer.ExistsDatafile(Path.Combine("copypaste", file));
         }
 
+        protected bool BuildingNotAllowed(string message, object value)
+        {
+            Queues.Messages.Add(message, value);
+            return false;
+        }
+
         private bool IsBuildingAllowed(RaidableType type, string search, BuildingOptions options) => (search == RaidableMode.Random || search == options.Mode) && type switch
         {
-            _ when !IsDifficultyEnabledAfterWipe(options.Mode, type, string.Empty, out _) => (Queues.Messages.Add("Cannot spawn difficulty yet", options.Mode), false).Item2,
-            RaidableType.Purchased when !CanSpawnDifficultyToday(type, options.Mode) => (Queues.Messages.Add("Cannot spawn difficulty today", options.Mode), false).Item2,
-            RaidableType.Purchased when !AllowBuyingPVP && options.AllowPVP => (Queues.Messages.Add("Buyable Events is configured to block PVP purchases.", options.Mode), false).Item2,
-            RaidableType.Maintained or RaidableType.Scheduled when !CanSpawnDifficultyToday(type, options.Mode) => (Queues.Messages.Add("Cannot spawn difficulty today", options.Mode), false).Item2,
+            _ when !IsDifficultyEnabledAfterWipe(options.Mode, type, string.Empty, out _) => (BuildingNotAllowed("Cannot spawn difficulty yet", options.Mode), false).Item2,
+            RaidableType.Purchased when !CanSpawnDifficultyToday(type, options.Mode) => (BuildingNotAllowed("Cannot spawn difficulty today", options.Mode), false).Item2,
+            RaidableType.Purchased when !AllowBuyingPVP && options.AllowPVP => (BuildingNotAllowed("Buyable Events is configured to block PVP purchases.", options.Mode), false).Item2,
+            RaidableType.Maintained or RaidableType.Scheduled when !CanSpawnDifficultyToday(type, options.Mode) => (BuildingNotAllowed("Cannot spawn difficulty today", options.Mode), false).Item2,
             _ => true
         };
 

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Facepunch;
+using GrimmCuiHarmony;
 using HarmonyLib;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -15,16 +16,11 @@ namespace TCUpgrade;
 
 public class TCUpgradeMod : IHarmonyModHooks
 {
-	public const string ModVersion = "1.6.5";
-
-	/// <summary>Unique cui.endtest marker (AdminMenu/TeleportGUI pattern). Clients only forward ConsoleGen commands.</summary>
-	public const string CuiMarker = "TCUPGRADE";
-
 	private const ulong HammerWallpaperSkin = 3494416562uL;
 
 	private const int ClothItemId = -858312878;
 
-	private const string CmdPrefix = "cui.endtest TCUPGRADE ";
+	private const string CmdPrefix = "cui.endtest SENDCMD ";
 
 	private static object _replicatedList;
 
@@ -57,9 +53,9 @@ public class TCUpgradeMod : IHarmonyModHooks
 
 	private int _maxGradeTier = 4;
 
-	private static Type _cachedOxideModType;
+	private static Type _cachedHarmonyModRuntimeType;
 
-	private static object _cachedOxideModInstance;
+	private static object _cachedHarmonyModRuntimeInstance;
 
 	public static TCUpgradeMod Instance { get; private set; }
 
@@ -67,6 +63,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 
 	public void OnLoaded(OnHarmonyModLoadedArgs args)
 	{
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
 		Instance = this;
 		TCUpgradeConfig.LoadConfig();
 		_data = TCUpgradeData.Load();
@@ -76,8 +73,9 @@ public class TCUpgradeMod : IHarmonyModHooks
 			{
 				Name = "SENDCMD",
 				FullName = "global.SENDCMD",
-				Variable = true,
+				Variable = false,
 				ServerAdmin = false,
+				ServerUser = true,
 				Replicated = true,
 				Call = HandleSendCmd
 			};
@@ -92,29 +90,31 @@ public class TCUpgradeMod : IHarmonyModHooks
 				list.Add(_sendCmdCommand);
 				_replicatedList = list;
 			}
-			SendReplicatedCommandsToActivePlayers();
 			_wphammerCommand = new ConsoleSystem.Command
 			{
 				Name = "wphammer",
 				FullName = "global.wphammer",
-				Variable = true,
+				Variable = false,
 				ServerAdmin = false,
+				ServerUser = true,
 				Call = CmdWphammer
 			};
 			_addwpCommand = new ConsoleSystem.Command
 			{
 				Name = "addwp",
 				FullName = "global.addwp",
-				Variable = true,
+				Variable = false,
 				ServerAdmin = false,
+				ServerUser = true,
 				Call = CmdAddwp
 			};
 			_openBoatWallpaperCommand = new ConsoleSystem.Command
 			{
 				Name = "tcupgrade.openboatwallpaper",
 				FullName = "global.tcupgrade.openboatwallpaper",
-				Variable = true,
+				Variable = false,
 				ServerAdmin = false,
+				ServerUser = true,
 				Call = CmdOpenBoatWallpaper
 			};
 			ConsoleSystem.Index.Server.Dict["global.wphammer"] = _wphammerCommand;
@@ -145,7 +145,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		catch
 		{
 		}
-		Log($"TCUpgrade {ModVersion} loaded.", force: true);
+		Log("Mod loaded.", force: true);
 		Log($"Config path: HarmonyConfig/TCUpgrade.json (relative to server root). Debug={TCUpgradeConfig.Config?.Debug ?? false}", force: true);
 		TCUpgradeConfig.ConfigData config = TCUpgradeConfig.Config;
 		if (config != null && config.Debug)
@@ -265,16 +265,6 @@ public class TCUpgradeMod : IHarmonyModHooks
 			{
 				((MonoBehaviour)instance2).StartCoroutine(DelayedRetryLoadImagesCoroutine());
 			}
-		}
-	}
-
-	private static void SendReplicatedCommandsToActivePlayers()
-	{
-		foreach (BasePlayer player in BasePlayer.activePlayerList)
-		{
-			if ((Object)(object)player?.net?.connection == (Object)null)
-				continue;
-			ServerMgr.SendReplicatedVars(player.net.connection);
 		}
 	}
 
@@ -638,8 +628,8 @@ public class TCUpgradeMod : IHarmonyModHooks
 					text3 = "Hud";
 				}
 				list.Add(CUIHelper.Container("TCUpgrade.buttons", text3, anchorMin, anchorMax, offsetMin, offsetMax, needsCursor: true));
-				list.AddRange(CUIHelper.Button("btn_upgrade", "TCUpgrade.buttons", color, LangHelper.Lang("UPGRADE"), 12, "0 0", $"{0.32f:F3} 1", "cui.endtest SENDCMD MENU", itemId));
-				list.AddRange(CUIHelper.Button("btn_repair", "TCUpgrade.buttons", color2, LangHelper.Lang("REPAIR"), 12, $"{0.34f:F3} 0", $"{0.65999997f:F3} 1", "cui.endtest SENDCMD REPAIR", itemId2));
+				list.AddRange(CUIHelper.Button("btn_upgrade", "TCUpgrade.buttons", color, orCreateConfig.Work ? LangHelper.Lang("Upgrading") : LangHelper.Lang("UPGRADE"), 12, "0 0", $"{0.32f:F3} 1", "cui.endtest SENDCMD MENU", itemId));
+				list.AddRange(CUIHelper.Button("btn_repair", "TCUpgrade.buttons", color2, orCreateConfig.Repair ? LangHelper.Lang("Repairing") : LangHelper.Lang("Repair"), 12, $"{0.34f:F3} 0", $"{0.65999997f:F3} 1", "cui.endtest SENDCMD REPAIR", itemId2));
 				list.AddRange(CUIHelper.Button("btn_auth", "TCUpgrade.buttons", color3, LangHelper.Lang("AUTH"), 11, $"{0.68f:F3} 0", "1 1", "cui.endtest SENDCMD AUTH 0", itemId3));
 				Log($"ShowButtonTC: sending {list.Count} elements to {player?.displayName}");
 				CUIHelper.AddUi(player, list);
@@ -838,66 +828,41 @@ public class TCUpgradeMod : IHarmonyModHooks
 
 	public void HandleSendCmdFromCui(ConsoleSystem.Arg arg)
 	{
-		string[] array = GetArgStrings(arg);
+		string[] array = arg?.Args.AsStringArray();
 		if (array == null || array.Length < 1)
 		{
 			return;
 		}
-		string[] actionArgs = StripCuiMarker(array);
-		if (actionArgs != null && actionArgs.Length >= 1)
+		string[] array3;
+		if (array.Length == 1 && array[0].StartsWith("SENDCMD ", StringComparison.Ordinal))
 		{
-			HandleSendCmdWithArgs(arg.Player(), actionArgs);
-		}
-	}
-
-	/// <summary>
-	/// Strips TCUPGRADE / SENDCMD bridge markers from cui.endtest args.
-	/// Accepts: ["TCUPGRADE","MENU"], ["SENDCMD","MENU"], or a single combined token.
-	/// </summary>
-	private static string[] StripCuiMarker(string[] array)
-	{
-		if (array == null || array.Length < 1)
-		{
-			return null;
-		}
-		if (array.Length == 1)
-		{
-			string token = array[0];
-			foreach (string prefix in new[] { "TCUPGRADE ", "SENDCMD ", "cui.endtest TCUPGRADE ", "cui.endtest SENDCMD " })
+			string[] array2 = array[0].Split(new char[1] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+			array3 = ((array2.Length > 1) ? new string[array2.Length - 1] : null);
+			if (array3 != null)
 			{
-				if (token.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+				for (int i = 0; i < array3.Length; i++)
 				{
-					string rest = token.Substring(prefix.Length).TrimStart();
-					return string.IsNullOrEmpty(rest) ? null : rest.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+					array3[i] = array2[i + 1];
 				}
 			}
-			return null;
-		}
-		string marker = array[0];
-		int start = 0;
-		if (string.Equals(marker, CuiMarker, StringComparison.OrdinalIgnoreCase) || string.Equals(marker, "SENDCMD", StringComparison.OrdinalIgnoreCase))
-		{
-			start = 1;
-		}
-		else if (string.Equals(marker, "cui.endtest", StringComparison.OrdinalIgnoreCase) && array.Length >= 2
-			&& (string.Equals(array[1], CuiMarker, StringComparison.OrdinalIgnoreCase) || string.Equals(array[1], "SENDCMD", StringComparison.OrdinalIgnoreCase)))
-		{
-			start = 2;
 		}
 		else
 		{
-			return null;
+			if (array.Length < 2 || !(array[0] == "SENDCMD"))
+			{
+				return;
+			}
+			array3 = new string[array.Length - 1];
+			for (int j = 0; j < array3.Length; j++)
+			{
+				array3[j] = array[j + 1];
+			}
 		}
-		if (array.Length <= start)
+		if (array3 != null && array3.Length >= 1)
 		{
-			return null;
+			BasePlayer player = arg.Connection?.player as BasePlayer ?? arg.Player();
+			HandleSendCmdWithArgs(player, array3);
 		}
-		string[] result = new string[array.Length - start];
-		for (int i = 0; i < result.Length; i++)
-		{
-			result[i] = array[start + i];
-		}
-		return result;
 	}
 
 	private void HandleSendCmd(ConsoleSystem.Arg arg)
@@ -905,34 +870,8 @@ public class TCUpgradeMod : IHarmonyModHooks
 		BasePlayer basePlayer = arg.Player();
 		if (!((Object)(object)basePlayer == (Object)null))
 		{
-			HandleSendCmdWithArgs(basePlayer, GetArgStrings(arg));
+			HandleSendCmdWithArgs(basePlayer, arg.Args.AsStringArray());
 		}
-	}
-
-	internal static string[] GetArgStrings(ConsoleSystem.Arg arg)
-	{
-		if (arg == null) return Array.Empty<string>();
-
-		object rawArgs = typeof(ConsoleSystem.Arg).GetField("Args", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(arg);
-		if (rawArgs == null)
-		{
-			return Array.Empty<string>();
-		}
-		if (rawArgs is string singleArg)
-		{
-			return string.IsNullOrEmpty(singleArg) ? Array.Empty<string>() : new[] { singleArg };
-		}
-		if (rawArgs is Array array)
-		{
-			var result = new List<string>(array.Length);
-			foreach (object value in array)
-			{
-				if (value != null)
-					result.Add(value.ToString());
-			}
-			return result.ToArray();
-		}
-		return Array.Empty<string>();
 	}
 
 	private void HandleSendCmdWithArgs(BasePlayer player, string[] args)
@@ -1774,6 +1713,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		if (orCreateConfig.Repair)
 		{
 			orCreateConfig.WorkRepair = ((MonoBehaviour)SingletonComponent<ServerMgr>.Instance).StartCoroutine(RepairProgress(player, cup));
+			TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("Repairing"), player, "assets/prefabs/deployable/research table/effects/research-success.prefab", 4f);
 		}
 		else if (orCreateConfig.WorkRepair != null)
 		{
@@ -1948,9 +1888,9 @@ public class TCUpgradeMod : IHarmonyModHooks
 		foreach (ItemAmount item in list)
 		{
 			int num4 = (int)(item.amount * costMult);
-			if (cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false, redirectAllowed: false) < num4)
+			if (cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false) < num4)
 			{
-				TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesRepairDetail", TCUpgradeHelpers.GetMissingResources(list, cup.inventory)), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
+				TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesRepair"), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 				GetOrCreateConfig(cup).Repair = false;
 				return false;
 			}
@@ -1985,8 +1925,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 			if (!CanUpgrade(player, cup, block, grade))
 			{
 				orCreateConfig.Work = false;
-				List<ItemAmount> missingList = block.blockDefinition.GetGrade(grade, 0uL).CostToBuild();
-				TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesUpgradeDetail", TCUpgradeHelpers.GetMissingResources(missingList, cup.inventory)), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
+				TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesUpgrade"), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 				return;
 			}
 			foreach (ItemAmount item in block.blockDefinition.GetGrade(grade, 0uL).CostToBuild())
@@ -2024,7 +1963,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 	{
 		foreach (ItemAmount item in block.blockDefinition.GetGrade(grade, 0uL).CostToBuild())
 		{
-			if ((float)cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false, redirectAllowed: false) < item.amount)
+			if ((float)cup.inventory.GetAmount(item.itemid, onlyUsableAmounts: false) < item.amount)
 			{
 				return false;
 			}
@@ -2071,8 +2010,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		if (!HasPermission(player.UserIDString, "TCUpgrade.reskin.nocost") && !CanUpgrade(player, cup, block, grade))
 		{
 			orCreateConfig.Reskin = false;
-			List<ItemAmount> missingList = block.blockDefinition.GetGrade(grade, 0uL).CostToBuild();
-			TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesReskinDetail", TCUpgradeHelpers.GetMissingResources(missingList, cup.inventory)), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
+			TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesReskin"), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 			return;
 		}
 		string text = block.ShortPrefabName ?? "";
@@ -2343,7 +2281,6 @@ public class TCUpgradeMod : IHarmonyModHooks
 	private void CmdWphammer(ConsoleSystem.Arg arg)
 	{
 		BasePlayer basePlayer = arg.Player();
-		string[] array = GetArgStrings(arg);
 		if ((Object)(object)basePlayer != (Object)null)
 		{
 			if (!HasPermission(basePlayer.UserIDString, "TCUpgrade.admin"))
@@ -2355,9 +2292,9 @@ public class TCUpgradeMod : IHarmonyModHooks
 				GiveWallpaperHammer(basePlayer);
 			}
 		}
-		else if (array.Length >= 1)
+		else if (arg.Args != null && arg.Args.Length >= 1)
 		{
-			BasePlayer basePlayer2 = BasePlayer.Find(array[0]) ?? BasePlayer.FindAwakeOrSleeping(array[0]);
+			BasePlayer basePlayer2 = BasePlayer.Find(arg.GetString(0)) ?? BasePlayer.FindAwakeOrSleeping(arg.GetString(0));
 			if ((Object)(object)basePlayer2 != (Object)null)
 			{
 				GiveWallpaperHammer(basePlayer2);
@@ -2373,7 +2310,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 	private void CmdAddwp(ConsoleSystem.Arg arg)
 	{
 		BasePlayer basePlayer = arg.Player();
-		string[] array = GetArgStrings(arg);
+		string[] array = arg.Args.AsStringArray();
 		if ((Object)(object)basePlayer == (Object)null)
 		{
 			return;
@@ -2568,16 +2505,16 @@ public class TCUpgradeMod : IHarmonyModHooks
 		}
 		try
 		{
-			Type type = _cachedOxideModType;
+			Type type = _cachedHarmonyModRuntimeType;
 			if (type == null)
 			{
-				type = Type.GetType("Oxide.Core.OxideMod, Oxide.Core");
+				type = Type.GetType("Harmony.Core.HarmonyModRuntime, Harmony.Core");
 				if (type == null)
 				{
 					Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
 					for (int i = 0; i < assemblies.Length; i++)
 					{
-						type = assemblies[i].GetType("Oxide.Core.OxideMod");
+						type = assemblies[i].GetType("Harmony.Core.HarmonyModRuntime");
 						if (type != null)
 						{
 							break;
@@ -2586,20 +2523,20 @@ public class TCUpgradeMod : IHarmonyModHooks
 				}
 				if (type != null)
 				{
-					_cachedOxideModType = type;
+					_cachedHarmonyModRuntimeType = type;
 				}
 			}
 			if (type == null)
 			{
 				return false;
 			}
-			object obj = _cachedOxideModInstance;
+			object obj = _cachedHarmonyModRuntimeInstance;
 			if (obj == null)
 			{
 				obj = type.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
 				if (obj != null)
 				{
-					_cachedOxideModInstance = obj;
+					_cachedHarmonyModRuntimeInstance = obj;
 				}
 			}
 			if (obj == null)
@@ -2743,7 +2680,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 					continue;
 				}
 			}
-			if ((grade == current.grade || cfg.Wallpall) && (!(category == "Wall") || (current.ShortPrefabName.Contains("wall") && !current.ShortPrefabName.Contains("wall.frame"))) && (!(category == "Floor") || current.ShortPrefabName.Contains("floor") || current.ShortPrefabName.Contains("foundation") || current.ShortPrefabName.Contains("hull")) && (!(category == "Ceiling") || current.ShortPrefabName.Contains("floor") || current.ShortPrefabName.Contains("roof")) && ((ulong)cfg.SkinId == current.skinID || cfg.Wallpall))
+			if ((grade == current.grade || cfg.Wallpall) && (!(category == "Wall") || (current.ShortPrefabName.Contains("wall") && !current.ShortPrefabName.Contains("wall.frame"))) && (!(category == "Floor") || current.ShortPrefabName.Contains("floor") || current.ShortPrefabName.Contains("foundation")) && (!(category == "Ceiling") || current.ShortPrefabName.Contains("floor") || current.ShortPrefabName.Contains("roof")) && ((ulong)cfg.SkinId == current.skinID || cfg.Wallpall))
 			{
 				WallpaperBlock(cup, current, player, category);
 				yield return CoroutineEx.waitForSeconds(cd);
@@ -2761,12 +2698,10 @@ public class TCUpgradeMod : IHarmonyModHooks
 	private void WallpaperBlock(BuildingPrivlidge cup, BuildingBlock block, BasePlayer player, string category)
 	{
 		TCConfig orCreateConfig = GetOrCreateConfig(cup);
-		int clothCost = TCUpgradeConfig.Config?.WallResource ?? 5;
 		if (!HasPermission(player.UserIDString, "TCUpgrade.wallpaper.nocost") && !CanWallpaper(player, cup))
 		{
 			orCreateConfig.Work = false;
-			int haveCloth = cup.inventory.GetAmount(ClothItemId, onlyUsableAmounts: false, redirectAllowed: false);
-			TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesWallpaperDetail", clothCost, haveCloth), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
+			TCUpgradeHelpers.CreateGameTip(cup, LangHelper.Lang("NoResourcesWallpaper"), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 			return;
 		}
 		string text = block.ShortPrefabName ?? "";
@@ -2775,6 +2710,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 			return;
 		}
 		ulong wallpaperId = orCreateConfig.WallpaperId;
+		int amount = TCUpgradeConfig.Config?.WallResource ?? 5;
 		if (wallpaperId == 1)
 		{
 			bool flag = orCreateConfig.WpInternal;
@@ -2796,7 +2732,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		{
 			if (!HasPermission(player.UserIDString, "TCUpgrade.wallpaper.nocost"))
 			{
-				TCUpgradeHelpers.TakeResources(cup.inventory.itemList, "cloth", clothCost);
+				TCUpgradeHelpers.TakeResources(cup.inventory.itemList, "cloth", amount);
 			}
 			switch (category)
 			{
@@ -2819,7 +2755,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 				break;
 			}
 			case "Floor":
-				if (block.ShortPrefabName.Contains("foundation") || block.ShortPrefabName.Contains("hull"))
+				if (block.ShortPrefabName.Contains("foundation"))
 				{
 					block.SetWallpaper(wallpaperId);
 				}
@@ -2833,7 +2769,6 @@ public class TCUpgradeMod : IHarmonyModHooks
 				break;
 			}
 		}
-		TCUpgradeHelpers.ApplyWallpaperProtection(block, TCUpgradeConfig.Config?.WallpaperDamage ?? true);
 		if (TCUpgradeConfig.Config?.PlayFx ?? orCreateConfig.Effect)
 		{
 			Effect.server.Run("assets/prefabs/wallpaper/effects/place.prefab", ((Component)block).transform.position);
@@ -2842,7 +2777,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 
 	private bool CanWallpaper(BasePlayer player, BuildingPrivlidge cup)
 	{
-		return cup.inventory.GetAmount(-858312878, onlyUsableAmounts: false, redirectAllowed: false) >= (TCUpgradeConfig.Config?.WallResource ?? 5);
+		return cup.inventory.GetAmount(-858312878, onlyUsableAmounts: false) >= (TCUpgradeConfig.Config?.WallResource ?? 5);
 	}
 
 	private bool CanWallpaperBoat(BasePlayer player)
@@ -2923,15 +2858,14 @@ public class TCUpgradeMod : IHarmonyModHooks
 
 	private void BoatWallpaperBlock(BoatWallpaperConfig cfg, BuildingBlock block, BasePlayer player, string category)
 	{
-		int clothCost = TCUpgradeConfig.Config?.WallResource ?? 5;
 		if (!HasPermission(player.UserIDString, "TCUpgrade.wallpaper.nocost") && !CanWallpaperBoat(player))
 		{
 			cfg.Work = false;
-			int haveClothBoat = player.inventory?.GetAmount(ClothItemId) ?? 0;
-			TCUpgradeHelpers.CreateGameTip(null, LangHelper.Lang("NoResourcesWallpaperBoatDetail", clothCost, haveClothBoat), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
+			TCUpgradeHelpers.CreateGameTip(null, LangHelper.Lang("NoResourcesWallpaperBoat"), player, "assets/bundled/prefabs/fx/ore_break.prefab", 10f, "danger");
 			return;
 		}
 		ulong wallpaperId = cfg.WallpaperId;
+		int amount = TCUpgradeConfig.Config?.WallResource ?? 5;
 		if (wallpaperId == 1)
 		{
 			bool flag = cfg.WpInternal;
@@ -2953,7 +2887,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 		{
 			if (!HasPermission(player.UserIDString, "TCUpgrade.wallpaper.nocost"))
 			{
-				player.inventory.Take(null, -858312878, clothCost);
+				player.inventory.Take(null, -858312878, amount);
 			}
 			switch (category)
 			{
@@ -2976,7 +2910,7 @@ public class TCUpgradeMod : IHarmonyModHooks
 				break;
 			}
 			case "Floor":
-				if (block.ShortPrefabName.Contains("foundation") || block.ShortPrefabName.Contains("hull"))
+				if (block.ShortPrefabName.Contains("foundation"))
 				{
 					block.SetWallpaper(wallpaperId);
 				}
@@ -2990,7 +2924,6 @@ public class TCUpgradeMod : IHarmonyModHooks
 				break;
 			}
 		}
-		TCUpgradeHelpers.ApplyWallpaperProtection(block, TCUpgradeConfig.Config?.WallpaperDamage ?? true);
 		TCUpgradeConfig.ConfigData config = TCUpgradeConfig.Config;
 		if (config == null || config.PlayFx)
 		{
@@ -3015,6 +2948,18 @@ public class TCUpgradeMod : IHarmonyModHooks
 			"Ceiling" => WallpaperSettings.CeilingItemDef, 
 			_ => null, 
 		};
+		if (itemDefinition?.skins != null)
+		{
+			ItemSkinDirectory.Skin[] skins = itemDefinition.skins;
+			for (int i = 0; i < skins.Length; i++)
+			{
+				ulong item2 = (ulong)skins[i].id;
+				if (!list.Contains(item2))
+				{
+					list.Add(item2);
+				}
+			}
+		}
 		if (HasPermission(player.UserIDString, "TCUpgrade.wallpaper.custom") && _data.CustomWallpapers.TryGetValue(category, out var value))
 		{
 			foreach (ulong item3 in value)
@@ -3026,22 +2971,6 @@ public class TCUpgradeMod : IHarmonyModHooks
 			}
 		}
 		list.Add(0uL);
-		if (itemDefinition?.skins != null)
-		{
-			ItemSkinDirectory.Skin[] skins = itemDefinition.skins;
-			for (int i = 0; i < skins.Length; i++)
-			{
-				int num = skins[i].id;
-				if (TCUpgradeHelpers.IsWallpaperAllowed(player, num))
-				{
-					ulong item2 = (ulong)num;
-					if (!list.Contains(item2))
-					{
-						list.Add(item2);
-					}
-				}
-			}
-		}
 		return (itemId: item, skinIds: list);
 	}
 
@@ -3522,37 +3451,22 @@ public class TCUpgradeMod : IHarmonyModHooks
 			return;
 		}
 		HashSet<ItemDefinition> hashSet = new HashSet<ItemDefinition>(cupboard.inventory.blockedItems);
-		string itemCategoryFilter = config.ItemCategoryFilter ?? "Resources";
-		if (itemCategoryFilter == "All")
+		HashSet<ItemDefinition> hashSet2;
+		if (cupboard.inventory.onlyAllowedItems == null || cupboard.inventory.onlyAllowedItems.Length == 0)
 		{
-			cupboard.onlyAcceptCategory = ItemCategory.All;
-		}
-		else if (itemCategoryFilter == "Resources")
-		{
-			cupboard.onlyAcceptCategory = ItemCategory.Resources;
-		}
-		else if (itemCategoryFilter == "ResourcesAndComponents")
-		{
-			cupboard.onlyAcceptCategory = ItemCategory.All;
-			HashSet<string> allowedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-			{
-				"wiretool",
-				"hosetool",
-				"pipetool",
-				"hammer",
-				"wallpaper.tool",
-				"building.planner",
-				"boat.planner"
-			};
+			hashSet2 = new HashSet<ItemDefinition>();
 			for (int i = 0; i < ItemManager.itemList.Count; i++)
 			{
 				ItemDefinition itemDefinition = ItemManager.itemList[i];
-				bool isAllowed = itemDefinition.category == ItemCategory.Resources || itemDefinition.category == ItemCategory.Component || allowedTools.Contains(itemDefinition.shortname);
-				if (!isAllowed)
+				if (itemDefinition.category == ItemCategory.Resources || itemDefinition.category == ItemCategory.Construction)
 				{
-					hashSet.Add(itemDefinition);
+					hashSet2.Add(itemDefinition);
 				}
 			}
+		}
+		else
+		{
+			hashSet2 = new HashSet<ItemDefinition>(cupboard.inventory.onlyAllowedItems);
 		}
 		foreach (ItemDefinition item in ItemManager.itemList)
 		{
@@ -3561,10 +3475,12 @@ public class TCUpgradeMod : IHarmonyModHooks
 				if (value)
 				{
 					hashSet.Remove(item);
+					hashSet2.Add(item);
 				}
 				else
 				{
 					hashSet.Add(item);
+					hashSet2.Remove(item);
 				}
 			}
 		}

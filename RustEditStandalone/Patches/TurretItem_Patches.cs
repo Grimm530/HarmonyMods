@@ -4,12 +4,12 @@ using RustEditStandalone.Features;
 
 namespace RustEditStandalone.Patches;
 
-[HarmonyPatch(typeof(AutoTurret), nameof(AutoTurret.AddSelfAuthorize), new[] { typeof(BasePlayer) })]
+[HarmonyPatch(typeof(AutoTurret), "AddSelfAuthorize", new[] { typeof(BasePlayer) })]
 public static class AutoTurret_AddSelfAuthorize_Patch
 {
     static bool Prefix(AutoTurret __instance, BasePlayer player)
     {
-        if (__instance == null || !IoFeature.IsMapIo(__instance)) return true;
+        if (!IoFeature.IsMapIo(__instance)) return true;
         if (player != null && player.IsAdmin) return true;
         return false;
     }

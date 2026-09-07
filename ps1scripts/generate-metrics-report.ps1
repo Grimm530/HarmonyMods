@@ -698,7 +698,7 @@ if ($IncludePlugins -and $IncludePlugins.Count -gt 0) {
     $pluginRows = @($pluginRows | Sort-Object -Property TotalMs -Descending)
 }
 
-Write-Host "      Showing $($pluginRows.Count) Oxide plugins in report (total: $([math]::Round($totalPluginTime, 2)) ms)" -ForegroundColor DarkGray
+Write-Host "      Showing $($pluginRows.Count) Harmony mods in report (total: $([math]::Round($totalPluginTime, 2)) ms)" -ForegroundColor DarkGray
 
 $invokeTotals = Get-GroupedTotals -Measurement "invoke_execution" -Field "duration" -GroupByTags @("behaviour","method") -LookbackMinutes $LookbackMinutes -ServerTag $ServerTag -Endpoint $queryEndpoint -Database $DatabaseName -User $DatabaseUser -Password $DatabasePassword
 $invokeRows = @($invokeTotals |

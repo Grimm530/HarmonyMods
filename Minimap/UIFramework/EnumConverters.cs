@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 /// <summary>
 /// Maps UIFramework enums to the string values written into CUI JSON.

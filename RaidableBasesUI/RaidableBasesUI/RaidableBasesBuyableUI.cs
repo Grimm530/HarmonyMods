@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using RaidableBasesBuyableUI.ExtensionMethods;
 using System;
 using System.Collections;
@@ -96,7 +96,7 @@ namespace RaidableBasesBuyableUI
             UiHandler?.Unload();
         }
 
-        /// <summary>Called from RaidableBases.Interface.CallHook patch.</summary>
+        /// <summary>Called from RaidableBases.HarmonyModInterface.CallHook patch.</summary>
         public object HandleOnPurchaseBase(object[] args)
         {
             var buyer = ResolvePlayerArg(args, 0) ?? ResolvePlayerArg(args, 1);

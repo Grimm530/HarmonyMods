@@ -10,7 +10,7 @@ using UnityEngine;
 namespace PermissionsHarmony
 {
     /// <summary>
-    /// Oxide-style groups/permissions for Harmony-only servers.
+    /// compat-style groups/permissions for Harmony-only servers.
     /// Commands: perm.grant / perm.revoke / perm.usergroup / perm.group / perm.show
     /// (aliases: grant, revoke, usergroup)
     /// </summary>
@@ -343,7 +343,7 @@ namespace PermissionsHarmony
             Register("revoke", HandleRevoke, parent: "perm");
             Register("group", HandleGroup, parent: "perm");
             Register("show", HandleShow, parent: "perm");
-            // Oxide-compatible aliases (common Tebex package templates)
+            // Harmony-compatible aliases (common Tebex package templates)
             Register("usergroup", HandleUserGroup, parent: "oxide");
             Register("grant", HandleGrant, parent: "oxide");
             Register("revoke", HandleRevoke, parent: "oxide");

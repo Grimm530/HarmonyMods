@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: BradleyDrops 2.6.0 (Oxide port). Config: HarmonyConfig/BradleyDrops.json. Data: HarmonyData/BradleyDrops/</Description>
+    <Description>Harmony mod: BradleyDrops 2.6.0 (Harmony port). Config: HarmonyConfig/BradleyDrops.json. Data: HarmonyData/BradleyDrops/</Description>
     <Nullable>disable</Nullable>
     <DefineConstants>$(DefineConstants);OXIDE_PUBLICIZED</DefineConstants>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
@@ -68,4 +68,12 @@
     <Error Condition="'$(RustManaged)' == '' Or !Exists('$(RustManaged)\Assembly-CSharp.dll')"
            Text="Could not find Rust Managed folder (Assembly-CSharp.dll)." />
   </Target>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\GameHooks_Patches.cs" /></ItemGroup>
 </Project>

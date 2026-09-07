@@ -1,5 +1,5 @@
 using HarmonyLib;
-using ATPlugin = Oxide.Plugins.ArmoredTrain;
+using ATPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain.Patches
 {
@@ -13,7 +13,7 @@ namespace ArmoredTrain.Patches
         [HarmonyPrefix]
         public static bool Prefix(ElectricSwitch __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return true;
+            if (msg.player == null) return true;
             object result = ATPlugin.Dispatch_OnSwitchToggle(__instance, msg.player);
             return result == null;
         }
@@ -21,7 +21,7 @@ namespace ArmoredTrain.Patches
         [HarmonyPostfix]
         public static void Postfix(ElectricSwitch __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return;
+            if (msg.player == null) return;
             ATPlugin.Dispatch_OnSwitchToggled(__instance, msg.player);
         }
     }

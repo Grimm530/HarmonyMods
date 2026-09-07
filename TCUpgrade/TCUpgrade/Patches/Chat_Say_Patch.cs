@@ -15,8 +15,7 @@ public static class Chat_Say_Patch
 		{
 			return true;
 		}
-		string[] args = TCUpgradeMod.GetArgStrings(arg);
-		string text = args.Length > 0 ? args[0]?.Trim() : null;
+		string text = arg.GetString(0, "text")?.Trim();
 		if (string.IsNullOrEmpty(text) || (!text.StartsWith("/") && !text.StartsWith("\\")))
 		{
 			return true;

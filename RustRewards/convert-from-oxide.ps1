@@ -1,19 +1,19 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\RustRewards.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\RustRewards.cs"
 $dst = Join-Path $PSScriptRoot "RustRewards.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-# Strip Oxide runtime usings but retain Oxide.Game.Rust.Cui for the CUI types.
-foreach ($using in @("using Oxide.Core;", "using Oxide.Core.Libraries;", "using Oxide.Core.Plugins;")) {
+# Strip Oxide runtime usings but retain Game.Rust.Cui for the CUI types.
+foreach ($using in @("using Harmony.Core;", "using Harmony.Core.Libraries;", "using Harmony.Core.Plugins;")) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
-$text = $text.Replace("namespace Oxide.Plugins", "namespace RustRewardsHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace RustRewardsHarmony")
 
 $newClass = @"
     /// <summary>
-    /// RustRewards 3.2.5 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// RustRewards 3.2.5 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class RustRewards : RustRewardsPluginBase
 "@
@@ -129,13 +129,13 @@ $text = [regex]::Replace($text, $unloadEnd, { param($m) $m.Groups[1].Value + $ha
 [System.IO.File]::WriteAllText($dst, $text)
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core[^.]." },
-    @{ Name = "Oxide.Game.Rust.Cui"; Pattern = "using Oxide\.Game\.Rust\.Cui" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core[^.]." },
+    @{ Name = "Game.Rust.Cui"; Pattern = "using Oxide\.Game\.Rust\.Cui" },
     @{ Name = "RustPlugin"; Pattern = "RustPlugin" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },
     @{ Name = "[PluginReference]"; Pattern = "\[PluginReference\]" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "ResolvePluginReferences"; Pattern = "ResolvePluginReferences" },
     @{ Name = "RustRewards/RustRewards"; Pattern = "RustRewards/RustRewards" },

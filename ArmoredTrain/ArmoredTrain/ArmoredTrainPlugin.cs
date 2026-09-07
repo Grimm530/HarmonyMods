@@ -4,10 +4,10 @@ using System.IO;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
-using Oxide.Plugins.ArmoredTrainExtensionMethods;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
+using Harmony.Plugins.ArmoredTrainExtensionMethods;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -19,7 +19,7 @@ using static ProtoBuf.PatternFirework;
 using static BaseCombatEntity;
 using Random = UnityEngine.Random;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("ArmoredTrain", "Adem edited by Grimm530", "1.9.21")]
     public partial class ArmoredTrain : RustPlugin
@@ -31,7 +31,7 @@ namespace Oxide.Plugins
         private ProtectionProperties _protection;
         // Harmony port: NpcSpawn is backed by a bridge that forwards SpawnNpc(...) to GrimmNPC.
         internal Plugin NpcSpawn = new NpcSpawnBridge();
-        // Soft-disabled optional plugins (never assigned by Oxide PluginReference injection in Harmony).
+        // Soft-disabled optional plugins (never assigned by Harmony ModReference injection in Harmony).
 #pragma warning disable CS0649, CS0169
         [PluginReference] private Plugin PveMode, GUIAnnouncements, Notify, DiscordMessages, DynamicPVP, Economics, ServerRewards, IQEconomic, TrainHomes, AlphaLoot;
 #pragma warning restore CS0649, CS0169
@@ -163,15 +163,50 @@ namespace Oxide.Plugins
             if (!NpcSpawnManager.IsNpcSpawnReady())
                 return;
 
+            // Heavy pieces are started via SoftInitCoroutine so this call returns quickly.
+            if (ServerMgr.Instance != null)
+                ServerMgr.Instance.StartCoroutine(SoftInitCoroutine());
+            else
+                SoftInitSyncFallback();
+        }
+
+        private void SoftInitSyncFallback()
+        {
             LoadDefaultMessages();
             UpdateConfig();
-
-            // Rebind when 0PveMode loads after ArmoredTrain (same pattern as Convoy / 0Permissions).
             PveModeManager.EnsurePveModeBound();
-
             GuiManager.LoadImages();
             WagonCustomizer.LoadCurrentCustomizationProfile();
             EventLauncher.AutoStartEvent();
+            EnsureProtectionProperties();
+        }
+
+        private IEnumerator SoftInitCoroutine()
+        {
+            LoadDefaultMessages();
+            yield return null;
+
+            UpdateConfig();
+            yield return null;
+
+            // Rebind when 0PveMode loads after ArmoredTrain (same pattern as Convoy / 0Permissions).
+            PveModeManager.EnsurePveModeBound();
+            yield return null;
+
+            GuiManager.LoadImages();
+            yield return CoroutineEx.waitForSeconds(0.05f);
+
+            WagonCustomizer.LoadCurrentCustomizationProfile();
+            yield return null;
+
+            EventLauncher.AutoStartEvent();
+            EnsureProtectionProperties();
+        }
+
+        private void EnsureProtectionProperties()
+        {
+            if (_protection != null)
+                return;
             _protection = ScriptableObject.CreateInstance<ProtectionProperties>();
             _protection.Add(1);
         }
@@ -212,13 +247,9 @@ namespace Oxide.Plugins
         {
             if (crate == null || !crate.IsExists())
                 return;
-            GameObject lockingEnt = crate.lockingEnt;
-            if (lockingEnt != null)
-            {
-                BaseEntity fireEnt = lockingEnt.GetComponent<BaseEntity>();
-                if (fireEnt != null && fireEnt.IsExists())
-                    fireEnt.Kill();
-            }
+            BaseEntity lockingEnt = crate.lockingEnt;
+            if (lockingEnt != null && lockingEnt.IsExists())
+                lockingEnt.Kill();
         }
 
         private object OnEntityTakeDamage(TrainCar trainCar, HitInfo info)
@@ -1194,8 +1225,8 @@ namespace Oxide.Plugins
         {
             if (string.IsNullOrEmpty(imageName)) return null;
             string fileName = imageName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? imageName : imageName + ".png";
-            string root = Interface.Oxide.RootDirectory;
-            string dataRoot = Interface.Oxide.DataDirectory;
+            string root = HarmonyModInterface.Mods.RootDirectory;
+            string dataRoot = HarmonyModInterface.Mods.DataDirectory;
             string[] candidates =
             {
                 Path.Combine(dataRoot, "ArmoredTrain", "Images", fileName),
@@ -1244,7 +1275,7 @@ namespace Oxide.Plugins
                         // Migrate from ProfileName to IsHalloween/IsChristmas flags
                         try
                         {
-                            string configPath = Config?.Filename ?? Path.Combine(Interface.Oxide.ConfigDirectory, $"{Name}.json");
+                            string configPath = Config?.Filename ?? Path.Combine(HarmonyModInterface.Mods.ConfigDirectory, $"{Name}.json");
                             if (File.Exists(configPath))
                             {
                                 string json = File.ReadAllText(configPath);
@@ -1415,7 +1446,7 @@ namespace Oxide.Plugins
                 if (_ins._config.MainConfig.EnableStartStopLogs)
                     NotifyManager.PrintLogMessage("EventStart_Log", eventConfig.PresetName);
 
-                Interface.CallHook($"On{_ins.Name}EventStart");
+                HarmonyModInterface.CallHook($"On{_ins.Name}EventStart");
             }
 
             public static void StopEvent(bool isPluginUnloadingOrFailed = false)
@@ -1439,7 +1470,7 @@ namespace Oxide.Plugins
                     EventHeli.ClearData();
 
                     NotifyManager.SendMessageToAll("EndEvent", _ins._config.Prefix);
-                    Interface.CallHook($"On{_ins.Name}EventStop");
+                    HarmonyModInterface.CallHook($"On{_ins.Name}EventStop");
 
                     UnityEngine.Debug.Log("[ArmoredTrain] Event stopped.");
 
@@ -1562,22 +1593,42 @@ namespace Oxide.Plugins
 
             public bool IsTrainWagon(ulong netID)
             {
-                return _wagonDatas.Any(x => x.TrainCar.IsExists() && x.TrainCar.net != null && x.TrainCar.net.ID.Value == netID);
+                foreach (WagonData wagonData in _wagonDatas)
+                {
+                    if (wagonData.TrainCar.IsExists() && wagonData.TrainCar.net != null && wagonData.TrainCar.net.ID.Value == netID)
+                        return true;
+                }
+                return false;
             }
 
             public bool IsTrainBradley(ulong netID)
             {
-                return _bradleys.Any(x => x.IsExists() && x.net != null && x.net.ID.Value == netID);
+                foreach (BradleyAPC bradley in _bradleys)
+                {
+                    if (bradley.IsExists() && bradley.net != null && bradley.net.ID.Value == netID)
+                        return true;
+                }
+                return false;
             }
 
             public bool IsTrainTurret(ulong netID)
             {
-                return _turrets.Any(x => x.IsExists() && x.net != null && x.net.ID.Value == netID);
+                foreach (AutoTurret turret in _turrets)
+                {
+                    if (turret.IsExists() && turret.net != null && turret.net.ID.Value == netID)
+                        return true;
+                }
+                return false;
             }
 
             public bool IsTrainSamSite(ulong netID)
             {
-                return _samSites.Any(x => x.IsExists() && x.net != null && x.net.ID.Value == netID);
+                foreach (SamSite samSite in _samSites)
+                {
+                    if (samSite.IsExists() && samSite.net != null && samSite.net.ID.Value == netID)
+                        return true;
+                }
+                return false;
             }
 
             public bool IsTrainSwitch(ulong netID)
@@ -1621,7 +1672,13 @@ namespace Oxide.Plugins
             
             public void UpdateCountOfUnlootedCrates()
             {
-                _countOfUnlootedCrates = _crates.Where(x => x != null && x.IsExists() && x.net != null && !IsCrateLooted(x.net.ID.Value)).Count;
+                int count = 0;
+                foreach (var crate in _crates)
+                {
+                    if (crate != null && crate.IsExists() && crate.net != null && !IsCrateLooted(crate.net.ID.Value))
+                        count++;
+                }
+                _countOfUnlootedCrates = count;
             }
             
             public int GetCountOfUnlootedCrates()
@@ -1631,7 +1688,12 @@ namespace Oxide.Plugins
             
             public bool IsEventCrate(ulong netID)
             {
-                return _crates.Any(x => x != null && x.net != null && x.net.ID.Value == netID);
+                foreach (BaseEntity crate in _crates)
+                {
+                    if (crate != null && crate.net != null && crate.net.ID.Value == netID)
+                        return true;
+                }
+                return false;
             }
             
             public bool IsCrateLooted(ulong netID)
@@ -1692,7 +1754,7 @@ namespace Oxide.Plugins
                     return false;
                 }
 
-                if (_ins._config.MainConfig.NeedKillNpc && _npcDatas.Any(x => x.ScientistNpc.IsExists()) || _ins._config.MainConfig.NeedKillBradleys && _bradleys.Any(x => x.IsExists()) || _ins._config.MainConfig.NeedKillTurrets && _turrets.Any(x => x.IsExists() && x.totalAmmo > 0) || _ins._config.MainConfig.NeedKillHeli && EventHeli.IsEventHeliAlive())
+                if (HasRemainingGuardsToKill())
                 {
                     if (shouldSendMessages)
                         NotifyManager.SendMessageToPlayer(player, "NeedKillGuards", _ins._config.Prefix);
@@ -1720,6 +1782,41 @@ namespace Oxide.Plugins
                 }
 
                 return true;
+            }
+
+            private bool HasRemainingGuardsToKill()
+            {
+                if (_ins._config.MainConfig.NeedKillNpc)
+                {
+                    foreach (NpcData npcData in _npcDatas)
+                    {
+                        if (npcData.ScientistNpc.IsExists())
+                            return true;
+                    }
+                }
+
+                if (_ins._config.MainConfig.NeedKillBradleys)
+                {
+                    foreach (BradleyAPC bradley in _bradleys)
+                    {
+                        if (bradley.IsExists())
+                            return true;
+                    }
+                }
+
+                if (_ins._config.MainConfig.NeedKillTurrets)
+                {
+                    foreach (AutoTurret turret in _turrets)
+                    {
+                        if (turret.IsExists() && turret.totalAmmo > 0)
+                            return true;
+                    }
+                }
+
+                if (_ins._config.MainConfig.NeedKillHeli && EventHeli.IsEventHeliAlive())
+                    return true;
+
+                return false;
             }
 
             public static bool IsPlayerCanStopTrain(BasePlayer player, bool shouldSendMessages)
@@ -2326,8 +2423,11 @@ namespace Oxide.Plugins
                     return "driver destroyed";
                 if (!_driver.isMounted)
                     return "driver not mounted (engine will not run)";
-                if (_wagonDatas.Any(x => x?.TrainCar == null || !x.TrainCar.IsExists()))
-                    return "a wagon was destroyed";
+                foreach (WagonData wagonData in _wagonDatas)
+                {
+                    if (wagonData?.TrainCar == null || !wagonData.TrainCar.IsExists())
+                        return "a wagon was destroyed";
+                }
                 if (Time.realtimeSinceStartup - lastSpawnTime > SpawnClearTimeoutSeconds)
                 {
                     float moved = Vector3.Distance(_trainEngine.transform.position, _lastSpawnAnchor);
@@ -2359,9 +2459,14 @@ namespace Oxide.Plugins
             private bool IsSpawnFailed(float lastSpawnTime, bool checkWagonDistance)
             {
                 if (_trainEngine == null || !_trainEngine.IsExists() || _driver == null || !_driver.IsExists()
-                    || _wagonDatas.Any(x => x == null || x.TrainCar == null || !x.TrainCar.IsExists())
                     || Time.realtimeSinceStartup - lastSpawnTime > SpawnClearTimeoutSeconds)
                     return true;
+
+                foreach (WagonData wagonData in _wagonDatas)
+                {
+                    if (wagonData == null || wagonData.TrainCar == null || !wagonData.TrainCar.IsExists())
+                        return true;
+                }
 
                 if (!checkWagonDistance)
                     return false;
@@ -2478,7 +2583,7 @@ namespace Oxide.Plugins
                     + " cars=" + _wagonDatas.Count + ". Map markers created.");
 
                 NotifyManager.SendMessageToAll("StartTrain", _ins._config.Prefix, EventConfig.DisplayName, grid);
-                Interface.CallHook($"On{_ins.Name}StartMoving", pos);
+                HarmonyModInterface.CallHook($"On{_ins.Name}StartMoving", pos);
             }
 
             private void UpdateTrainCouples()
@@ -2847,12 +2952,22 @@ namespace Oxide.Plugins
 
             private IEnumerator EventCoroutine()
             {
+                bool wagonDestroyed = false;
                 while (_eventTime > 0 || (!_isEventLooted && _ins._config.MainConfig.DontStopEventIfPlayerInZone && ZoneController.IsAnyPlayerInEventZone()))
                 {
                     if (_ins._config.NotifyConfig.TimeNotifications.Contains(_eventTime))
                         NotifyManager.SendMessageToAll("RemainTime", _ins._config.Prefix, _eventTime);
 
-                    if (_wagonDatas.Any(x => !x.TrainCar.IsExists()))
+                    foreach (WagonData wagonData in _wagonDatas)
+                    {
+                        if (!wagonData.TrainCar.IsExists())
+                        {
+                            wagonDestroyed = true;
+                            break;
+                        }
+                    }
+
+                    if (wagonDestroyed)
                         break;
 
                     if (_stopTime > 0)
@@ -2874,7 +2989,7 @@ namespace Oxide.Plugins
                             {
                                 _isReverse = false;
                                 StartMoving();
-                                Interface.CallHook($"On{_ins.Name}StartMoving", GetEventPosition());
+                                HarmonyModInterface.CallHook($"On{_ins.Name}StartMoving", GetEventPosition());
                             }
                         }
                     }
@@ -3071,7 +3186,7 @@ namespace Oxide.Plugins
                 if (EventConfig.StopTime <= 0)
                     return;
 
-                Interface.CallHook($"On{_ins.Name}StopMoving", GetEventPosition());
+                HarmonyModInterface.CallHook($"On{_ins.Name}StopMoving", GetEventPosition());
                 _stayStoppedLogged = false;
                 _stopTime = EventConfig.StopTime;
                 ChangeSpeed(EngineSpeeds.Zero);
@@ -3321,7 +3436,7 @@ namespace Oxide.Plugins
             private static CustomizeProfile LoadProfile(string profileName)
             {
                 string filePath = $"{_ins.Name}/{profileName}";
-                return Interface.Oxide.DataFileSystem.ReadObject<CustomizeProfile>(filePath);
+                return HarmonyModInterface.Mods.DataFileSystem.ReadObject<CustomizeProfile>(filePath);
             }
 
             public static JArray GetCustomizeNpcWearSet()
@@ -3869,7 +3984,7 @@ namespace Oxide.Plugins
 
                 private static void SaveProfile(CustomizeProfile customizeData, string name)
                 {
-                    Interface.Oxide.DataFileSystem.WriteObject($"{_ins.Name}/{name}", customizeData);
+                    HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{_ins.Name}/{name}", customizeData);
                 }
 
                 private static List<CustomizeNpcConfig> GetNewNpcCustomizeConfig()
@@ -4316,6 +4431,9 @@ namespace Oxide.Plugins
         {
             private AutoTurret _autoTurret;
             private float _targetRadius;
+            private int _idleSkip;
+            private const float ActiveTickInterval = 0.05f;
+            private const int IdleSkipFrames = 5;
 
             public static void Attach(AutoTurret autoTurret, float targetRadius)
             {
@@ -4352,7 +4470,7 @@ namespace Oxide.Plugins
                     autoTurret.SetTarget(null);
                 }, 1.1f);
 
-                autoTurret.InvokeRepeating(OptimizedServerTick, Random.Range(1.2f, 2.2f), 0.015f);
+                autoTurret.InvokeRepeating(OptimizedServerTick, Random.Range(1.2f, 2.2f), ActiveTickInterval);
                 autoTurret.InvokeRepeating(ScanTargets, 3f, 1f);
             }
 
@@ -4382,7 +4500,7 @@ namespace Oxide.Plugins
                     if (player == null)
                         continue;
 
-                    if (Interface.CallHook("OnEntityEnter", _autoTurret.targetTrigger, player) != null)
+                    if (HarmonyModInterface.CallHook("OnEntityEnter", _autoTurret.targetTrigger, player) != null)
                         continue;
 
                     if (player.IsSleeping() || (player.InSafeZone() && !player.IsHostile()))
@@ -4396,6 +4514,16 @@ namespace Oxide.Plugins
             {
                 if (_autoTurret == null || _autoTurret.isClient || _autoTurret.IsDestroyed)
                     return;
+
+                bool aggressive = _ins != null && _ins._eventController != null && _ins._eventController.IsAggressive();
+                if (!aggressive && !_autoTurret.HasTarget())
+                {
+                    if (++_idleSkip < IdleSkipFrames)
+                        return;
+                    _idleSkip = 0;
+                }
+                else
+                    _idleSkip = 0;
 
                 float timeSinceLastServerTick = (float)_autoTurret.timeSinceLastServerTick;
                 _autoTurret.timeSinceLastServerTick = 0;
@@ -4799,12 +4927,30 @@ namespace Oxide.Plugins
 
             public static bool IsPlayerInZone(ulong userID)
             {
-                return _zoneController != null && _zoneController._playersInZone.Any(x => x != null && x.userID == userID);
+                if (_zoneController == null)
+                    return false;
+
+                foreach (BasePlayer player in _zoneController._playersInZone)
+                {
+                    if (player != null && player.userID == userID)
+                        return true;
+                }
+
+                return false;
             }
 
             public static bool IsAnyPlayerInEventZone()
             {
-                return _zoneController != null && _zoneController._playersInZone.Any(x => x.IsExists() && !x.IsSleeping());
+                if (_zoneController == null)
+                    return false;
+
+                foreach (BasePlayer player in _zoneController._playersInZone)
+                {
+                    if (player.IsExists() && !player.IsSleeping())
+                        return true;
+                }
+
+                return false;
             }
 
             public static void OnPlayerLeaveZone(BasePlayer player)
@@ -4812,7 +4958,7 @@ namespace Oxide.Plugins
                 if (_zoneController == null)
                     return;
 
-                Interface.CallHook($"OnPlayerExit{_ins.Name}", player);
+                HarmonyModInterface.CallHook($"OnPlayerExit{_ins.Name}", player);
                 _zoneController._playersInZone.Remove(player);
                 GuiManager.DestroyGui(player);
 
@@ -4889,7 +5035,7 @@ namespace Oxide.Plugins
                 BasePlayer player = other.GetComponentInParent<BasePlayer>();
                 if (player.IsRealPlayer())
                 {
-                    Interface.CallHook($"OnPlayerEnter{_ins.Name}", player);
+                    HarmonyModInterface.CallHook($"OnPlayerEnter{_ins.Name}", player);
                     _playersInZone.Add(player);
 
                     if (_ins._config.ZoneConfig.IsPvpZone)
@@ -4956,7 +5102,7 @@ namespace Oxide.Plugins
                 if (_ins == null || _ins._config?.SupportedPluginsConfig?.PveMode == null || !_ins._config.SupportedPluginsConfig.PveMode.Enable)
                     return false;
                 EnsurePveModePluginRef();
-                return _ins.PveMode != null && Oxide.Core.Plugins.PveModePluginBridge.IsApiLive();
+                return _ins.PveMode != null && Harmony.Core.Plugins.PveModePluginBridge.IsApiLive();
             }
 
             /// <summary>
@@ -5018,7 +5164,7 @@ namespace Oxide.Plugins
             private static void EnsurePveModePluginRef()
             {
                 if (_ins == null) return;
-                if (_ins.PveMode != null && Oxide.Core.Plugins.PveModePluginBridge.IsApiLive()) return;
+                if (_ins.PveMode != null && Harmony.Core.Plugins.PveModePluginBridge.IsApiLive()) return;
                 _ins.PveMode = _ins.plugins.Find("PveMode");
             }
 
@@ -5389,7 +5535,13 @@ namespace Oxide.Plugins
 
             public static int GetEventNpcCount()
             {
-                return EventNpcs.Where(x => x.IsExists() && !x.isMounted).Count;
+                int count = 0;
+                foreach (ScientistNPC scientistNpc in EventNpcs)
+                {
+                    if (scientistNpc.IsExists() && !scientistNpc.isMounted)
+                        count++;
+                }
+                return count;
             }
 
             public static HashSet<ulong> GetEventNpcNetIds()
@@ -5413,7 +5565,7 @@ namespace Oxide.Plugins
                 if (!_ins.plugins.Exists("NpcSpawn"))
                 {
                     _ins.PrintError("NpcSpawn plugin doesn`t exist! Please read the file ReadMe.txt. NPCs will not spawn!");
-                    _ins.NextTick(() => Interface.Oxide.UnloadPlugin(_ins.Name));
+                    _ins.NextTick(() => HarmonyModInterface.Mods.UnloadPlugin(_ins.Name));
                     return false;
                 }
                 else
@@ -6024,7 +6176,7 @@ namespace Oxide.Plugins
                     yield break;
                 }
                 TabImageInfo.ImageId = imageId;
-                yield break;
+                yield return null;
             }
 
             private static IEnumerator LoadIconsCoroutine()
@@ -6038,8 +6190,8 @@ namespace Oxide.Plugins
                         yield break;
                     }
                     imageInfo.ImageId = imageId;
+                    yield return null;
                 }
-                yield break;
             }
 
             /// <summary>
@@ -6198,7 +6350,7 @@ namespace Oxide.Plugins
                 var winnerPair = PlayersBalance.Max(x => (float)x.Value);
 
                 if (winnerPair.Value > 0)
-                    Interface.CallHook($"On{_ins.Name}EventWin", winnerPair.Key);
+                    HarmonyModInterface.CallHook($"On{_ins.Name}EventWin", winnerPair.Key);
 
                 if (winnerPair.Value >= _ins._config.SupportedPluginsConfig.EconomicsConfig.MinCommandPoint)
                     foreach (string command in _ins._config.SupportedPluginsConfig.EconomicsConfig.Commands)
@@ -8889,7 +9041,7 @@ namespace Oxide.Plugins
     }
 }
 
-namespace Oxide.Plugins.ArmoredTrainExtensionMethods
+namespace Harmony.Plugins.ArmoredTrainExtensionMethods
 {
     public static class ExtensionMethods
     {
@@ -8936,7 +9088,7 @@ namespace Oxide.Plugins.ArmoredTrainExtensionMethods
 
         public static bool IsExists(this BaseNetworkable entity) => entity != null && !entity.IsDestroyed;
 
-        // Harmony port (Framework 14): no Oxide ulong.IsSteamId() extension available; provide our own.
+        // Harmony port (Framework 14): Harmony-only ulong.IsSteamId() extension available; provide our own.
         public static bool IsSteamId(this ulong id) => id >= 76561197960265728UL;
 
         // BasePlayer.userID is EncryptedValue<ulong> on this Rust build; overload so the call sites compile unchanged.

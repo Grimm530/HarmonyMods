@@ -1,5 +1,5 @@
 using HarmonyLib;
-using ATPlugin = Oxide.Plugins.ArmoredTrain;
+using ATPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain.Patches
 {
@@ -13,7 +13,7 @@ namespace ArmoredTrain.Patches
         [HarmonyPostfix]
         public static void Postfix(BradleyAPC __instance)
         {
-            if (__instance == null || __instance.targetList == null || __instance.targetList.Count == 0)
+            if (__instance.targetList == null || __instance.targetList.Count == 0)
                 return;
 
             for (int i = __instance.targetList.Count - 1; i >= 0; i--)

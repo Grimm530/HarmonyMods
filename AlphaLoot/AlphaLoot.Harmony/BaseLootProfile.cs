@@ -68,7 +68,7 @@ public class BaseLootProfile
 			}
 			else
 			{
-				ItemManager.Create(ScrapDefinition, num, 0uL, true, 0uL).MoveToContainer(container);
+				ItemManager.Create(ScrapDefinition, num, 0uL).MoveToContainer(container);
 			}
 		}
 		else

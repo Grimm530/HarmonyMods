@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using Newtonsoft.Json;
 using Unity.Mathematics;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class RectTransformComponent : BaseCuiComponent
 {

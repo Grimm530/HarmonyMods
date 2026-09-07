@@ -1,5 +1,5 @@
 # Build script for TranslationAPI Harmony Mod
-# Output: <workspace>\HarmonyMods\TranslationAPI.dll
+# Output: D:\!RustServer\HarmonyMods\TranslationAPI.dll
 # Requires: TranslationAPI Oxide bridge plugin (oxide/plugins/TranslationAPI.cs) for ChatTranslator/Rustcord
 
 Write-Host "Building TranslationAPI Harmony mod..." -ForegroundColor Cyan
@@ -8,8 +8,7 @@ $projectPath = Join-Path $PSScriptRoot "TranslationAPI.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

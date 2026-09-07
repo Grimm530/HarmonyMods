@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using Facepunch;
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 using UnityEngine.UI;
 
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Font = Oxide.Ext.Chaos.UIFramework.Font;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using Color = Ext.Chaos.UIFramework.Color;
+using Font = Ext.Chaos.UIFramework.Font;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 
 namespace DynamicCupShareHarmony
 {

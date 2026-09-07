@@ -1,22 +1,21 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust.Ai.Gen2;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using Facepunch;
 using UnityEngine;
-using Random = Oxide.Core.Random;
+using Random = Harmony.Core.Random;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
-    [Info("KillFeed", "codeboy", "2.1.2")]
+    [Info("KillFeed", "codeboy", "2.2.2")]
     public partial class KillFeed : RustPlugin
     {
         #region Classes
@@ -128,7 +127,17 @@ namespace Oxide.Plugins
         private class EntityData
         {
             public string Name;
+            public string PrefabName;
             public ulong UserID;
+        }
+
+        public class CustomBotImage
+        {
+            [JsonProperty("Bot name pattern (substring, case-insensitive)")]
+            public string NamePattern = "";
+
+            [JsonProperty("Image (URL, Sprite or item shortname)")]
+            public string Image = "";
         }
 
         private class WeaponData
@@ -175,13 +184,39 @@ namespace Oxide.Plugins
             public AvatarData TargetAvatar;
         }
 
+        private class DiscordLine
+        {
+            public string Text;
+            public ulong KillerId;
+            public ulong TargetId;
+            public string KillerName;
+            public string TargetName;
+        }
+
         private class FeedBehaviour : FacepunchBehaviour
         {
             private Dictionary<KillData, int> _kills = new();
+            private readonly List<KeyValuePair<KillData, int>> _orderedScratch = new();
+            private readonly List<KillData> _expiredScratch = new();
+            private readonly List<(string guid, int index)> _expiringVisibleScratch = new();
 
             private void Awake()
             {
                 InvokeRepeating(CheckExpired, 0, 2f);
+                InvokeRepeating(TickDiscord, 1f, 1f);
+            }
+
+            private void TickDiscord()
+            {
+                var settings = Instance.cfg?.Discord;
+                if (settings == null || !settings.Enabled)
+                    return;
+
+                var interval = settings.BatchSeconds < 1 ? 1 : settings.BatchSeconds;
+                if (Time.realtimeSinceStartup - Instance._discordLastFlush < interval)
+                    return;
+
+                Instance.FlushDiscordQueue();
             }
 
             public void AddKill(KillData data)
@@ -220,14 +255,15 @@ namespace Oxide.Plugins
                 if (_kills.IsNullOrEmpty())
                     return;
 
-                var toRemove = new List<KillData>();
+                _expiredScratch.Clear();
+                _expiringVisibleScratch.Clear();
                 var anyVisibleIsExpired = false;
-                var expiringVisible = new List<(string guid, int index)>();
 
                 var maxPanels = Instance.cfg.uISettings.MaxPanels;
-                var index = 0;
-                foreach (var x in _kills.OrderByDescending(x => x.Value))
+                FillOrderedByExpiryDesc(_orderedScratch, _kills);
+                for (var index = 0; index < _orderedScratch.Count; index++)
                 {
+                    var x = _orderedScratch[index];
                     var isVisible = index < maxPanels;
 
                     if (x.Value - Time.realtimeSinceStartup <= 0)
@@ -235,25 +271,23 @@ namespace Oxide.Plugins
                         if (isVisible)
                         {
                             anyVisibleIsExpired = true;
-                            expiringVisible.Add((x.Key.Guid, index));
+                            _expiringVisibleScratch.Add((x.Key.Guid, index));
                         }
 
-                        toRemove.Add(x.Key);
+                        _expiredScratch.Add(x.Key);
                     }
-
-                    index++;
                 }
 
-                foreach (var key in toRemove)
-                    _kills.Remove(key);
+                for (var i = 0; i < _expiredScratch.Count; i++)
+                    _kills.Remove(_expiredScratch[i]);
 
-                if (Instance.cfg.uISettings.AnimateFeedExit && !Instance.cfg.PrivateKillsOnly && expiringVisible.Count > 0)
+                if (Instance.cfg.uISettings.AnimateFeedExit && !Instance.cfg.PrivateKillsOnly && _expiringVisibleScratch.Count > 0)
                 {
-                    Instance.AnimateFeedOut(expiringVisible);
+                    Instance.AnimateFeedOut(_expiringVisibleScratch);
                     return;
                 }
 
-                if (anyVisibleIsExpired || (Instance.cfg.PrivateKillsOnly && toRemove.Count > 0))
+                if (anyVisibleIsExpired || (Instance.cfg.PrivateKillsOnly && _expiredScratch.Count > 0))
                     UpdateUI();
             }
 
@@ -331,6 +365,8 @@ namespace Oxide.Plugins
 
         [PluginReference] private Plugin ZoneManager;
         [PluginReference] private Plugin MonumentFinder;
+        [PluginReference] private Plugin Friends;
+        [PluginReference] private Plugin Clans;
 
         internal enum UITheme : byte
         {
@@ -382,7 +418,22 @@ namespace Oxide.Plugins
 
         private readonly Dictionary<ulong, Dictionary<string, (float ax, float ay, float bx, float by)>> _platePos = new();
 
+        private readonly List<KeyValuePair<KillData, int>> _drawKillsOrderedScratch = new();
+
+        private readonly List<string> _stalePlateKeysScratch = new();
+
         private Coroutine _exitCoroutine;
+
+        private readonly List<DiscordLine> _discordQueue = new();
+
+        private float _discordLastFlush;
+
+        private string _discordStatus = "Idle";
+
+        private const int DiscordQueueCap = 200;
+        private const int DiscordLinesPerMessage = 25;
+        private const int DiscordEmbedsPerMessage = 10;
+        private const int DiscordCharsPerMessage = 3800;
 
         private const float ANIM_INTERVAL = 0.02f;
 
@@ -581,7 +632,10 @@ namespace Oxide.Plugins
                 return;
             }
 
-            data.Weapon = GetWeapon(info, target.lastAttacker, data.Killer.Name);
+            if (IsRelationKillSuppressed(data))
+                return;
+
+            data.Weapon = GetWeapon(info, target.lastAttacker, data.Killer);
 
             FillDistance(data, target, info);
 
@@ -591,7 +645,369 @@ namespace Oxide.Plugins
                 return;
 
             _feedBehaviour.AddKill(validatedData);
+            QueueDiscordKill(validatedData);
         }
+
+        private bool IsRelationKillSuppressed(KillData data)
+        {
+            if (data.IsNoKiller)
+                return false;
+
+            var killerId = data.Killer.UserID;
+            var targetId = data.Target.UserID;
+
+            if (!killerId.IsSteamId() || !targetId.IsSteamId() || killerId == targetId)
+                return false;
+
+            if (cfg.HideTeamKills)
+            {
+                var team = RelationshipManager.ServerInstance.FindPlayersTeam(killerId);
+                if (team != null && team.members.Contains(targetId))
+                    return true;
+            }
+
+            if (cfg.HideClanKills)
+            {
+                var killerPlayer = BasePlayer.FindByID(killerId);
+                var targetPlayer = BasePlayer.FindByID(targetId);
+                if (killerPlayer != null && targetPlayer != null && killerPlayer.clanId != 0 &&
+                    killerPlayer.clanId == targetPlayer.clanId)
+                    return true;
+
+                if (Clans != null)
+                {
+                    var killerClan = Clans.Call("GetClanOf", killerId.ToString()) as string;
+                    if (!string.IsNullOrEmpty(killerClan) &&
+                        string.Equals(killerClan, Clans.Call("GetClanOf", targetId.ToString()) as string, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+
+            if (cfg.HideFriendKills && Friends != null &&
+                Friends.Call("AreFriends", killerId, targetId) is bool areFriends && areFriends)
+                return true;
+
+            return false;
+        }
+
+        #region Discord live killfeed
+
+        private void QueueDiscordKill(KillData data)
+        {
+            var settings = cfg.Discord;
+            if (settings == null || !settings.Enabled)
+                return;
+
+            if (string.IsNullOrEmpty(settings.WebhookUrl))
+                return;
+
+            if (!IsDiscordKillAllowed(settings, data))
+                return;
+
+            var line = FormatDiscordLine(settings, data);
+            if (string.IsNullOrEmpty(line))
+                return;
+
+            _discordQueue.Add(new DiscordLine
+            {
+                Text = line,
+                KillerId = data.Killer.UserID,
+                TargetId = data.Target.UserID,
+                KillerName = GetDiscordName(data.Killer),
+                TargetName = GetDiscordName(data.Target)
+            });
+
+            if (_discordQueue.Count > DiscordQueueCap)
+                _discordQueue.RemoveRange(0, _discordQueue.Count - DiscordQueueCap);
+        }
+
+        private bool IsDiscordKillAllowed(ConfigData.DiscordSettings settings, KillData data)
+        {
+            if (data.IsNoKiller)
+                return settings.SendSelf;
+
+            if (data.Killer.UserID.IsSteamId() && data.Target.UserID.IsSteamId())
+                return settings.SendPvp;
+
+            return settings.SendNpc;
+        }
+
+        private string FormatDiscordLine(ConfigData.DiscordSettings settings, KillData data)
+        {
+            var format = data.IsNoKiller ? settings.DeathFormat : settings.KillFormat;
+            if (string.IsNullOrEmpty(format))
+                return null;
+
+            var killer = FormatDiscordName(settings, data.Killer);
+            var target = FormatDiscordName(settings, data.Target);
+
+            return format
+                .Replace("{killer}", killer)
+                .Replace("{target}", target)
+                .Replace("{reason}", killer)
+                .Replace("{weapon}", EscapeDiscord(GetDiscordWeaponName(data.Weapon)))
+                .Replace("{distance}", Mathf.RoundToInt(data.Distance).ToString())
+                .Replace("{headshot}", data.IsHeadshot ? settings.HeadshotMark ?? "" : "")
+                .Replace("{killerid}", data.Killer.UserID.ToString())
+                .Replace("{targetid}", data.Target.UserID.ToString())
+                .Trim();
+        }
+
+        private string FormatDiscordName(ConfigData.DiscordSettings settings, EntityData entity)
+        {
+            var name = EscapeDiscord(GetDiscordName(entity));
+
+            if (!settings.LinkNames || !settings.UseEmbed)
+                return name;
+
+            if (entity == null || !entity.UserID.IsSteamId())
+                return name;
+
+            return $"[{name}]({SteamProfileUrl(entity.UserID)})";
+        }
+
+        private static string SteamProfileUrl(ulong userId)
+        {
+            return "https://steamcommunity.com/profiles/" + userId;
+        }
+
+        private static string SteamAvatarUrl(ulong userId)
+        {
+            return "https://companion-rust.facepunch.com/api/avatar/" + userId;
+        }
+
+        private string GetDiscordName(EntityData entity)
+        {
+            if (entity == null || string.IsNullOrEmpty(entity.Name))
+                return "Unknown";
+
+            if (entity.UserID.IsSteamId())
+                return entity.Name;
+
+            return GetIdealNameForFeed(entity.Name);
+        }
+
+        private string GetDiscordWeaponName(WeaponData weapon)
+        {
+            if (weapon == null)
+                return "";
+
+            var def = weapon.ItemId != 0 ? ItemManager.FindItemDefinition(weapon.ItemId) : null;
+            if (def == null && weapon.AmmoItemId != 0)
+                def = ItemManager.FindItemDefinition(weapon.AmmoItemId);
+
+            if (def == null)
+                return "";
+
+            return string.IsNullOrEmpty(def.displayName?.english) ? def.shortname : def.displayName.english;
+        }
+
+        private static string EscapeDiscord(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return "";
+
+            var builder = new System.Text.StringBuilder(text.Length + 8);
+            foreach (var ch in text)
+            {
+                if (ch == '@')
+                {
+                    builder.Append("@\u200B");
+                    continue;
+                }
+
+                if (ch == '\\' || ch == '*' || ch == '_' || ch == '~' || ch == '`' || ch == '|' || ch == '>' ||
+                    ch == '[' || ch == ']' || ch == '(' || ch == ')')
+                    builder.Append('\\');
+
+                builder.Append(ch);
+            }
+
+            return builder.ToString();
+        }
+
+        private void FlushDiscordQueue()
+        {
+            if (_discordQueue.Count == 0)
+                return;
+
+            var settings = cfg.Discord;
+            if (settings == null || !settings.Enabled || string.IsNullOrEmpty(settings.WebhookUrl))
+            {
+                _discordQueue.Clear();
+                return;
+            }
+
+            _discordLastFlush = Time.realtimeSinceStartup;
+
+            if (settings.UseEmbed && settings.PlayerAvatars)
+            {
+                var count = Mathf.Min(_discordQueue.Count, DiscordEmbedsPerMessage);
+                var embeds = new List<object>();
+
+                for (var i = 0; i < count; i++)
+                    embeds.Add(BuildDiscordKillEmbed(settings, _discordQueue[i]));
+
+                _discordQueue.RemoveRange(0, count);
+
+                PostDiscord(settings, new Dictionary<string, object> { ["embeds"] = embeds });
+                return;
+            }
+
+            var builder = new System.Text.StringBuilder();
+            var sent = 0;
+            foreach (var line in _discordQueue)
+            {
+                if (sent >= DiscordLinesPerMessage)
+                    break;
+                if (builder.Length + line.Text.Length + 1 > DiscordCharsPerMessage)
+                    break;
+
+                if (builder.Length > 0)
+                    builder.Append('\n');
+                builder.Append(line.Text);
+                sent++;
+            }
+
+            if (sent == 0)
+                sent = 1;
+
+            _discordQueue.RemoveRange(0, sent);
+
+            var text = builder.ToString();
+            var payload = new Dictionary<string, object>();
+
+            if (settings.UseEmbed)
+                payload["embeds"] = new[] { BuildDiscordEmbed(settings, text) };
+            else
+                payload["content"] = text;
+
+            PostDiscord(settings, payload);
+        }
+
+        private void PostDiscord(ConfigData.DiscordSettings settings, Dictionary<string, object> payload)
+        {
+            var url = settings.WebhookUrl.Trim();
+            if (!IsHttpUrl(url))
+            {
+                _discordStatus = "Bad URL";
+                return;
+            }
+
+            payload["allowed_mentions"] = new Dictionary<string, object> { ["parse"] = new string[0] };
+
+            if (!string.IsNullOrEmpty(settings.Username))
+                payload["username"] = settings.Username.Trim();
+
+            if (IsHttpUrl(settings.AvatarUrl))
+                payload["avatar_url"] = settings.AvatarUrl.Trim();
+
+            webrequest.Enqueue(url, JsonConvert.SerializeObject(payload), (code, response) =>
+                {
+                    if (code == 200 || code == 204)
+                    {
+                        _discordStatus = "OK";
+                        return;
+                    }
+
+                    _discordStatus = "HTTP " + code;
+                    PrintWarning($"[KillFeed] Discord webhook failed: HTTP {code} {response}");
+                }, this, Core.Libraries.RequestMethod.POST,
+                new Dictionary<string, string> { ["Content-Type"] = "application/json" });
+        }
+
+        private Dictionary<string, object> BuildDiscordKillEmbed(ConfigData.DiscordSettings settings, DiscordLine line)
+        {
+            var embed = BuildDiscordEmbed(settings, line.Text);
+
+            var authorId = line.KillerId.IsSteamId() ? line.KillerId : line.TargetId;
+            var authorName = line.KillerId.IsSteamId() ? line.KillerName : line.TargetName;
+
+            if (authorId.IsSteamId())
+                embed["author"] = new Dictionary<string, object>
+                {
+                    ["name"] = authorName,
+                    ["icon_url"] = SteamAvatarUrl(authorId),
+                    ["url"] = SteamProfileUrl(authorId)
+                };
+
+            if (line.TargetId.IsSteamId() && line.TargetId != authorId)
+                embed["thumbnail"] = new Dictionary<string, object> { ["url"] = SteamAvatarUrl(line.TargetId) };
+
+            return embed;
+        }
+
+        private Dictionary<string, object> BuildDiscordEmbed(ConfigData.DiscordSettings settings, string text)
+        {
+            var embed = new Dictionary<string, object>
+            {
+                ["description"] = text,
+                ["color"] = ParseDiscordColor(settings.EmbedColor)
+            };
+
+            if (!string.IsNullOrEmpty(settings.EmbedTitle))
+                embed["title"] = settings.EmbedTitle;
+
+            if (IsHttpUrl(settings.EmbedUrl))
+                embed["url"] = settings.EmbedUrl.Trim();
+
+            if (!string.IsNullOrEmpty(settings.AuthorName))
+            {
+                var author = new Dictionary<string, object> { ["name"] = settings.AuthorName };
+
+                if (IsHttpUrl(settings.AuthorIcon))
+                    author["icon_url"] = settings.AuthorIcon.Trim();
+
+                embed["author"] = author;
+            }
+
+            if (!string.IsNullOrEmpty(settings.FooterText))
+            {
+                var footer = new Dictionary<string, object> { ["text"] = settings.FooterText };
+
+                if (IsHttpUrl(settings.FooterIcon))
+                    footer["icon_url"] = settings.FooterIcon.Trim();
+
+                embed["footer"] = footer;
+            }
+
+            if (IsHttpUrl(settings.ThumbnailUrl))
+                embed["thumbnail"] = new Dictionary<string, object> { ["url"] = settings.ThumbnailUrl.Trim() };
+
+            if (IsHttpUrl(settings.ImageUrl))
+                embed["image"] = new Dictionary<string, object> { ["url"] = settings.ImageUrl.Trim() };
+
+            if (settings.Timestamp)
+                embed["timestamp"] = DateTime.UtcNow.ToString("o");
+
+            return embed;
+        }
+
+        private static bool IsHttpUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+                return false;
+
+            return url.Trim().StartsWith("http", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int ParseDiscordColor(string hex)
+        {
+            hex = (hex ?? "").TrimStart('#');
+            if (hex.Length != 6)
+                return 0xD08A60;
+
+            try
+            {
+                return Convert.ToInt32(hex, 16);
+            }
+            catch
+            {
+                return 0xD08A60;
+            }
+        }
+
+        #endregion
 
         private bool IsKillSuppressed(BaseCombatEntity target, HitInfo info)
         {
@@ -677,7 +1093,16 @@ namespace Oxide.Plugins
             }
 
             if (isNpcTarget)
-                data.Target.Name = target.ShortPrefabName;
+            {
+                data.Target.Name = target is BasePlayer botPlayer ? GetBotDisplayName(botPlayer) : target.ShortPrefabName;
+                data.Target.PrefabName = target.ShortPrefabName;
+            }
+        }
+
+        private static string GetBotDisplayName(BasePlayer bot)
+        {
+            var name = bot.displayName;
+            return !string.IsNullOrEmpty(name) && !long.TryParse(name, out _) ? name : bot.ShortPrefabName;
         }
 
         private void FillKiller(KillData data, BaseCombatEntity target, HitInfo info)
@@ -722,7 +1147,8 @@ namespace Oxide.Plugins
             {
                 if (IsNpc(playerAttacker))
                 {
-                    data.Killer.Name = playerAttacker.ShortPrefabName;
+                    data.Killer.Name = GetBotDisplayName(playerAttacker);
+                    data.Killer.PrefabName = playerAttacker.ShortPrefabName;
                 }
                 else
                 {
@@ -738,7 +1164,8 @@ namespace Oxide.Plugins
         {
             if (IsNpc(info.InitiatorPlayer))
             {
-                data.Killer.Name = info.InitiatorPlayer.ShortPrefabName;
+                data.Killer.Name = GetBotDisplayName(info.InitiatorPlayer);
+                data.Killer.PrefabName = info.InitiatorPlayer.ShortPrefabName;
                 return;
             }
 
@@ -925,6 +1352,8 @@ namespace Oxide.Plugins
         {
             SaveData();
 
+            _discordQueue.Clear();
+
             foreach (var x in BasePlayer.activePlayerList)
             {
                 CuiHelper.DestroyUi(x, Layer);
@@ -943,7 +1372,7 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private WeaponData GetWeapon(HitInfo info, BaseEntity lastAttacker = null, string killerName = "")
+        private WeaponData GetWeapon(HitInfo info, BaseEntity lastAttacker = null, EntityData killer = null)
         {
             var weaponData = new WeaponData();
             try
@@ -956,13 +1385,13 @@ namespace Oxide.Plugins
                     FillWeaponFromActiveItem(weaponData, attacker);
 
                 if (weaponData.Image is { Type: ImageType.None })
-                    weaponData.Image = GetImageForEntity(killerName);
+                    weaponData.Image = GetImageForBotEntity(killer);
             }
             catch (Exception ex)
             {
                 PrintWarning($"[GetWeapon] Error: {ex.Message}");
                 if (weaponData.Image == null || weaponData.Image.Type == ImageType.None)
-                    weaponData.Image = GetImageForEntity(killerName);
+                    weaponData.Image = GetImageForBotEntity(killer);
             }
 
             return weaponData;
@@ -1022,11 +1451,13 @@ namespace Oxide.Plugins
                 Killer = new()
                 {
                     Name = data.Killer?.Name ?? "Unknown",
+                    PrefabName = data.Killer?.PrefabName,
                     UserID = data.Killer?.UserID ?? 0
                 },
                 Target = new()
                 {
                     Name = data.Target?.Name ?? "Unknown",
+                    PrefabName = data.Target?.PrefabName,
                     UserID = data.Target?.UserID ?? 0
                 },
                 Distance = data.Distance,
@@ -1045,6 +1476,13 @@ namespace Oxide.Plugins
 
             if (string.IsNullOrEmpty(validatedData.Target.Name))
                 validatedData.Target.Name = "Unknown";
+
+            if (!validatedData.IsNoKiller && validatedData.Killer.UserID.IsSteamId() &&
+                validatedData.Killer.UserID == validatedData.Target.UserID)
+            {
+                validatedData.IsNoKiller = true;
+                validatedData.Killer.Name = "Suicide";
+            }
 
             validatedData.KillerAvatar = BuildAvatar(validatedData.Killer);
             validatedData.TargetAvatar = BuildAvatar(validatedData.Target);
@@ -1203,14 +1641,13 @@ namespace Oxide.Plugins
 
                     var key = StripPng(rawName);
                     var fileName = key + ".png";
-                    var fullPath = Path.Combine(Interface.Oxide.DataDirectory, "KillFeed", ImagesFolder, fileName);
+                    var fullPath = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "KillFeed", ImagesFolder, fileName);
                     if (!File.Exists(fullPath))
                     {
-                        var hi = Path.Combine(Oxide.Core.OxideMod.ResolveServerRoot(), "HarmonyImages", "KillFeed", fileName);
+                        var hi = Path.Combine(Harmony.Core.HarmonyModRuntime.ResolveServerRoot(), "HarmonyImages", "KillFeed", fileName);
                         if (File.Exists(hi)) fullPath = hi;
                     }
-                    fullPath = fullPath
-                        .Replace('\\', '/');
+                    fullPath = fullPath.Replace('\\', '/');
 
                     if (!File.Exists(fullPath))
                     {
@@ -1265,7 +1702,7 @@ namespace Oxide.Plugins
                     return;
                 _reportedMissing.Add(imageName);
 
-                var folder = Path.Combine(Interface.Oxide.DataDirectory, "KillFeed", ImagesFolder).Replace('\\', '/');
+                var folder = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "KillFeed", ImagesFolder).Replace('\\', '/');
                 Debug.LogError(
                     $"[KillFeed] Image '{imageName}' was not loaded. Upload it to the {folder} folder.\nError - {err}");
             }
@@ -1282,7 +1719,7 @@ namespace Oxide.Plugins
         private List<string> GetMissingImageFiles()
         {
             var missing = new List<string>();
-            var folder = Path.Combine(Interface.Oxide.DataDirectory, "KillFeed", ImagesFolder).Replace('\\', '/');
+            var folder = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "KillFeed", ImagesFolder).Replace('\\', '/');
 
             foreach (var image in RequiredImages)
             {
@@ -1300,7 +1737,7 @@ namespace Oxide.Plugins
             if (missing.Count == 0)
                 return;
 
-            var folder = Path.Combine(Interface.Oxide.DataDirectory, "KillFeed", ImagesFolder).Replace('\\', '/');
+            var folder = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "KillFeed", ImagesFolder).Replace('\\', '/');
             Debug.LogWarning(
                 $"[KillFeed] Missing {missing.Count} required image(s): {string.Join(", ", missing)}. " +
                 $"Upload them to the {folder} folder.");
@@ -1345,7 +1782,7 @@ namespace Oxide.Plugins
             return new AvatarData
             {
                 UseSteamId = false,
-                Image = GetImageForEntity(entity.Name)
+                Image = GetImageForBotEntity(entity)
             };
         }
 
@@ -1363,6 +1800,8 @@ namespace Oxide.Plugins
             {
                 if (string.IsNullOrEmpty(pair.Value) || pair.Value.StartsWith("assets/"))
                     continue;
+                if (string.IsNullOrEmpty(pair.Key))
+                    continue;
                 if (entity.IndexOf(pair.Key, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
                 if (bestKey == null || pair.Key.Length > bestKey.Length)
@@ -1377,7 +1816,50 @@ namespace Oxide.Plugins
 
         private Image GetImageForEntity(string entity)
         {
-            var image = ResolveEntityImageValue(entity);
+            return BuildImageFromResolvedValue(ResolveEntityImageValue(entity), entity);
+        }
+
+        private string ResolveCustomBotImage(string name)
+        {
+            if (string.IsNullOrEmpty(name) || cfg.CustomBotImages == null)
+                return null;
+
+            string bestKey = null;
+            string bestImage = null;
+            for (var i = 0; i < cfg.CustomBotImages.Count; i++)
+            {
+                var entry = cfg.CustomBotImages[i];
+                if (entry == null || string.IsNullOrEmpty(entry.NamePattern) || string.IsNullOrEmpty(entry.Image))
+                    continue;
+                if (name.IndexOf(entry.NamePattern, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                if (bestKey == null || entry.NamePattern.Length > bestKey.Length)
+                {
+                    bestKey = entry.NamePattern;
+                    bestImage = entry.Image;
+                }
+            }
+
+            return bestImage;
+        }
+
+        private Image GetImageForBotEntity(EntityData entity)
+        {
+            if (entity == null)
+                return DefaultDeathImageOrSkull;
+
+            if (entity.PrefabName != null)
+            {
+                var forced = ResolveCustomBotImage(entity.Name);
+                if (!string.IsNullOrEmpty(forced))
+                    return BuildImageFromResolvedValue(forced, forced);
+            }
+
+            return GetImageForEntity(entity.PrefabName ?? entity.Name);
+        }
+
+        private Image BuildImageFromResolvedValue(string image, string cacheKeyFallback)
+        {
             if (string.IsNullOrEmpty(image))
                 return DefaultDeathImageOrSkull;
 
@@ -1407,7 +1889,7 @@ namespace Oxide.Plugins
 
             var cachedImage = GetImage(image);
             if (string.IsNullOrEmpty(cachedImage))
-                cachedImage = GetImage(entity);
+                cachedImage = GetImage(cacheKeyFallback);
 
             if (!string.IsNullOrEmpty(cachedImage))
             {
@@ -1424,8 +1906,18 @@ namespace Oxide.Plugins
             if (string.IsNullOrEmpty(name))
                 return "UNKNOWN";
 
-            var findedName = cfg.EntityToName.FirstOrDefault(x => name.Contains(x.Key, CompareOptions.IgnoreCase));
-            if (findedName.Value == null)
+            var findedName = default(KeyValuePair<string, Dictionary<string, string>>);
+            bool found = false;
+            foreach (var kv in cfg.EntityToName)
+            {
+                if (name.Contains(kv.Key, CompareOptions.IgnoreCase))
+                {
+                    findedName = kv;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found || findedName.Value == null)
                 return name;
 
             if (!findedName.Value.TryGetValue(language, out var text))
@@ -1440,6 +1932,43 @@ namespace Oxide.Plugins
                 return string.Empty;
 
             return string.Join(" ", args, startIndex, args.Length - startIndex);
+        }
+
+        private static string ConcatArgViews(Facepunch.StringView[] args, int startIndex = 0)
+        {
+            if (args == null || startIndex >= args.Length)
+                return string.Empty;
+
+            if (startIndex == args.Length - 1)
+                return args[startIndex].ToString();
+
+            var parts = new string[args.Length - startIndex];
+            for (var i = startIndex; i < args.Length; i++)
+                parts[i - startIndex] = args[i].ToString();
+            return string.Join(" ", parts);
+        }
+
+        private static bool ArrayContains(string[] arr, string value)
+        {
+            if (arr == null) return false;
+            for (var i = 0; i < arr.Length; i++)
+            {
+                if (arr[i] == value)
+                    return true;
+            }
+            return false;
+        }
+
+        private static void FillOrderedByExpiryDesc(List<KeyValuePair<KillData, int>> dest, Dictionary<KillData, int> source)
+        {
+            dest.Clear();
+            if (source == null || source.Count == 0)
+                return;
+
+            foreach (var pair in source)
+                dest.Add(pair);
+
+            dest.Sort(static (a, b) => b.Value.CompareTo(a.Value));
         }
 
         #endregion
@@ -1559,6 +2088,7 @@ namespace Oxide.Plugins
                 Items = new()
                 {
                     new() { Icon = "▤", LabelKey = "nav.icons", Id = "icons" },
+                    new() { Icon = "✎", LabelKey = "nav.custombot", Id = "custombot" },
                     new() { Icon = "✦", LabelKey = "nav.anim", Id = "anim" }
                 }
             },
@@ -1569,6 +2099,7 @@ namespace Oxide.Plugins
                 {
                     new() { Icon = "▣", LabelKey = "nav.elements", Id = "elements" },
                     new() { Icon = "⊘", LabelKey = "nav.filters", Id = "filters" },
+                    new() { Icon = "◈", LabelKey = "nav.discord", Id = "discord" },
                     new() { Icon = "◐", LabelKey = "nav.themes", Id = "themes" }
                 }
             }
@@ -1658,12 +2189,20 @@ namespace Oxide.Plugins
             });
 
             UI_DrawHeader(ref container, t);
-            UI_DrawNav(ref container, t, GetActiveSection(player), player);
+            UI_DrawNavShell(ref container, t);
             UI_DrawFooter(ref container, t, player);
 
             CuiHelper.AddUi(player, container);
 
             UI_DrawSectionContent(player, GetActiveSection(player));
+
+            NextTick(() =>
+            {
+                if (player == null || !player.IsConnected || !_killfeedPreforms.ContainsKey(player))
+                    return;
+
+                UI_DrawNavContent(player);
+            });
         }
 
         private void UI_DrawHeader(ref CuiElementContainer container, Theme t)
@@ -1807,7 +2346,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private void UI_DrawNav(ref CuiElementContainer container, Theme t, string activeId, BasePlayer player)
+        private void UI_DrawNavShell(ref CuiElementContainer container, Theme t)
         {
             container.Add(new CuiElement
             {
@@ -1835,6 +2374,13 @@ namespace Oxide.Plugins
                         { AnchorMin = "1 0", AnchorMax = "1 1", OffsetMin = "0 0", OffsetMax = "1 0" }
                 }
             });
+        }
+
+        private void UI_DrawNavContent(BasePlayer player)
+        {
+            var t = GetTheme(player);
+            var activeId = GetActiveSection(player);
+            var container = new CuiElementContainer();
 
             var navScroll = Layer + ".nav.scroll";
             var navContentH = 14f;
@@ -1846,6 +2392,7 @@ namespace Oxide.Plugins
             {
                 Name = navScroll,
                 Parent = Layer + ".nav",
+                DestroyUi = navScroll,
                 Components =
                 {
                     new CuiImageComponent { Color = "0 0 0 0" },
@@ -1893,64 +2440,109 @@ namespace Oxide.Plugins
 
                 foreach (var item in cat.Items)
                 {
-                    container.Add(new CuiButton
+                    container.Add(new CuiElement
                     {
-                        Button = { Command = $"kf.section {item.Id}", Color = item.Id == activeId ? t.Elev : "0 0 0 0" },
-                        Text = { Text = "" },
-                        RectTransform =
+                        Name = Layer + ".nav.item." + item.Id,
+                        Parent = navScroll,
+                        Components =
                         {
-                            AnchorMin = "0 1", AnchorMax = "1 1",
-                            OffsetMin = $"8 {cursorY - 32f}", OffsetMax = $"-8 {cursorY}"
-                        }
-                    }, navScroll, Layer + ".nav.item." + item.Id);
-
-                    if (item.Id == activeId)
-                        container.Add(new CuiElement
-                        {
-                            Parent = Layer + ".nav.item." + item.Id,
-                            Components =
+                            new CuiImageComponent { Color = "0 0 0 0" },
+                            new CuiRectTransformComponent
                             {
-                                new CuiImageComponent { Color = t.Accent },
-                                new CuiRectTransformComponent
-                                    { AnchorMin = "0 0.5", AnchorMax = "0 0.5", OffsetMin = "0 -9", OffsetMax = "3 9" }
+                                AnchorMin = "0 1", AnchorMax = "1 1",
+                                OffsetMin = $"8 {cursorY - 32f}", OffsetMax = $"-8 {cursorY}"
                             }
-                        });
-
-                    container.Add(new CuiElement
-                    {
-                        Parent = Layer + ".nav.item." + item.Id,
-                        Components =
-                        {
-                            new CuiTextComponent
-                            {
-                                Text = item.Icon, Font = FontRegular, FontSize = 13,
-                                Align = TextAnchor.MiddleCenter, Color = item.Id == activeId ? t.Accent : t.Text2
-                            },
-                            new CuiRectTransformComponent
-                                { AnchorMin = "0 0", AnchorMax = "0 1", OffsetMin = "10 0", OffsetMax = "30 0" }
                         }
                     });
 
-                    container.Add(new CuiElement
-                    {
-                        Parent = Layer + ".nav.item." + item.Id,
-                        Components =
-                        {
-                            new CuiTextComponent
-                            {
-                                Text = GetLocalizedMessage(item.LabelKey, player), Font = FontRegular, FontSize = 12,
-                                Align = TextAnchor.MiddleLeft, Color = item.Id == activeId ? t.Accent : t.Text
-                            },
-                            new CuiRectTransformComponent
-                                { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "34 0", OffsetMax = "0 0" }
-                        }
-                    });
+                    UI_NavItemFill(ref container, t, item, item.Id == activeId, player);
 
                     cursorY -= 34f;
                 }
 
                 cursorY -= 6f;
             }
+
+            CuiHelper.AddUi(player, container);
+        }
+
+        private void UI_NavItemFill(ref CuiElementContainer container, Theme t, NavItem item, bool active,
+            BasePlayer player)
+        {
+            var host = Layer + ".nav.item." + item.Id;
+            var fill = host + ".fill";
+
+            container.Add(new CuiButton
+            {
+                Button = { Command = $"kf.section {item.Id}", Color = active ? t.Elev : "0 0 0 0" },
+                Text = { Text = "" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "0 0", OffsetMax = "0 0" }
+            }, host, fill, fill);
+
+            if (active)
+                container.Add(new CuiElement
+                {
+                    Parent = fill,
+                    Components =
+                    {
+                        new CuiImageComponent { Color = t.Accent },
+                        new CuiRectTransformComponent
+                            { AnchorMin = "0 0.5", AnchorMax = "0 0.5", OffsetMin = "0 -9", OffsetMax = "3 9" }
+                    }
+                });
+
+            container.Add(new CuiElement
+            {
+                Parent = fill,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = item.Icon, Font = FontRegular, FontSize = 13,
+                        Align = TextAnchor.MiddleCenter, Color = active ? t.Accent : t.Text2
+                    },
+                    new CuiRectTransformComponent
+                        { AnchorMin = "0 0", AnchorMax = "0 1", OffsetMin = "10 0", OffsetMax = "30 0" }
+                }
+            });
+
+            container.Add(new CuiElement
+            {
+                Parent = fill,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = GetLocalizedMessage(item.LabelKey, player), Font = FontRegular, FontSize = 12,
+                        Align = TextAnchor.MiddleLeft, Color = active ? t.Accent : t.Text
+                    },
+                    new CuiRectTransformComponent
+                        { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "34 0", OffsetMax = "0 0" }
+                }
+            });
+        }
+
+        private void UI_RefreshNavItem(BasePlayer player, string id, bool active)
+        {
+            NavItem item = null;
+            for (var c = 0; c < _nav.Count; c++)
+            {
+                var cat = _nav[c];
+                if (cat?.Items == null) continue;
+                for (var i = 0; i < cat.Items.Count; i++)
+                {
+                    if (cat.Items[i].Id != id) continue;
+                    item = cat.Items[i];
+                    break;
+                }
+                if (item != null) break;
+            }
+            if (item == null)
+                return;
+
+            var container = new CuiElementContainer();
+            UI_NavItemFill(ref container, GetTheme(player), item, active, player);
+            CuiHelper.AddUi(player, container);
         }
 
         private void UI_DrawFooter(ref CuiElementContainer container, Theme t, BasePlayer player)
@@ -2082,6 +2674,9 @@ namespace Oxide.Plugins
                 case "icons":
                     UI_SectionIcons(ref container, t, preform, player);
                     break;
+                case "custombot":
+                    UI_SectionCustomBot(ref container, t, preform, player);
+                    break;
                 case "anim":
                     UI_SectionAnim(ref container, t, preform, player);
                     break;
@@ -2095,6 +2690,9 @@ namespace Oxide.Plugins
                     break;
                 case "filters":
                     UI_SectionFilters(ref container, t, preform, player);
+                    break;
+                case "discord":
+                    UI_SectionDiscord(ref container, t, preform, player);
                     break;
             }
 
@@ -2262,14 +2860,15 @@ namespace Oxide.Plugins
         }
 
         private void UI_Toggle(ref CuiElementContainer container, Theme t, string parent, string label, string desc,
-            string field, bool on, float top, float x, float width, string toggleGroup = "toggle")
+            string field, bool on, float top, float x, float width, string toggleGroup = "toggle", bool disabled = false)
         {
             var row = parent + ".tg." + field;
             const float rowH = 38f;
+            var isOn = on && !disabled;
 
             container.Add(new CuiButton
             {
-                Button = { Command = $"kf.setvalue True {toggleGroup} {field}", Color = "0 0 0 0" },
+                Button = { Command = disabled ? "" : $"kf.setvalue True {toggleGroup} {field}", Color = "0 0 0 0" },
                 Text = { Text = "" },
                 RectTransform =
                 {
@@ -2286,7 +2885,7 @@ namespace Oxide.Plugins
                     new CuiTextComponent
                     {
                         Text = label, Font = FontBold, FontSize = 12,
-                        Align = TextAnchor.UpperLeft, Color = t.Text
+                        Align = TextAnchor.UpperLeft, Color = disabled ? t.Text2 : t.Text
                     },
                     new CuiRectTransformComponent
                         { AnchorMin = "0 1", AnchorMax = "1 1", OffsetMin = "0 -16", OffsetMax = "-46 0" }
@@ -2311,7 +2910,7 @@ namespace Oxide.Plugins
             container.Add(new CuiPanel
             {
                 CursorEnabled = false,
-                Image = { Color = on ? t.Accent : t.Elev },
+                Image = { Color = isOn ? t.Accent : t.Elev },
                 RectTransform =
                     { AnchorMin = "1 1", AnchorMax = "1 1", OffsetMin = "-36 -22", OffsetMax = "0 -2" }
             }, row, row + ".track");
@@ -2319,11 +2918,11 @@ namespace Oxide.Plugins
             container.Add(new CuiPanel
             {
                 CursorEnabled = false,
-                Image = { Color = on ? t.AccentText : t.Text2 },
+                Image = { Color = isOn ? t.AccentText : t.Text2 },
                 RectTransform =
                 {
-                    AnchorMin = on ? "1 0.5" : "0 0.5", AnchorMax = on ? "1 0.5" : "0 0.5",
-                    OffsetMin = on ? "-17 -7" : "3 -7", OffsetMax = on ? "-3 7" : "17 7"
+                    AnchorMin = isOn ? "1 0.5" : "0 0.5", AnchorMax = isOn ? "1 0.5" : "0 0.5",
+                    OffsetMin = isOn ? "-17 -7" : "3 -7", OffsetMax = isOn ? "-3 7" : "17 7"
                 }
             }, row + ".track", row + ".knob");
         }
@@ -2604,9 +3203,10 @@ namespace Oxide.Plugins
                     new CuiInputFieldComponent
                     {
                         Text = value, FontSize = 11, Font = FontRegular,
-                        Align = TextAnchor.MiddleLeft, Color = t.Text, CharsLimit = 64,
+                        Align = TextAnchor.MiddleLeft, Color = t.Text, CharsLimit = 512,
                         Command = $"kf.setvalue True {key} "
                     },
+                    new CuiNeedsKeyboardComponent(),
                     new CuiRectTransformComponent
                         { AnchorMin = "0 0", AnchorMax = "1 1", OffsetMin = "6 0", OffsetMax = "-6 0" }
                 }
@@ -2668,18 +3268,84 @@ namespace Oxide.Plugins
                 preform.DefaultDeathImage.Color, -82f, 14f, 360f);
         }
 
-        private void UI_IconPreview(ref CuiElementContainer container, Theme t, string parent, string image,
-            string tint, float x, float top)
+        private void UI_SectionCustomBot(ref CuiElementContainer container, Theme t, ConfigData preform, BasePlayer player)
         {
+            var entries = preform.CustomBotImages ??= new();
+            const float headerH = 44f;
+            const float rowStep = 48f;
+            const float footerH = 40f;
+            const float minH = 460f;
+            var listH = Mathf.Max(minH, headerH + entries.Count * rowStep + footerH);
+            UI_BeginScrollBody(ref container, t, listH, 54f, 8f);
+            UI_CustomBotContent(ref container, t, player, entries, listH, headerH, rowStep);
+        }
+
+        private void UI_CustomBotContent(ref CuiElementContainer container, Theme t, BasePlayer player,
+            List<CustomBotImage> entries, float listH, float headerH, float rowStep)
+        {
+            var host = Layer + ".body" + ".scroll";
+            var g1 = UI_Group(ref container, t, host, "custombot", GetLocalizedMessage("grp.custombot", player), -2f, listH);
+
+            UI_GroupNote(ref container, t, g1, GetLocalizedMessage("lbl.custombot_hint", player));
+
+            var rowTop = -headerH;
+            for (var i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                var index = i;
+
+                UI_IconPreview(ref container, t, g1, entry.Image, "1 1 1 1", 14f, rowTop, index.ToString(), 40f);
+
+                UI_TextInput(ref container, t, g1, GetLocalizedMessage("lbl.custombot_name", player),
+                    $"custombot.name.{index}", entry.NamePattern, rowTop, 64f, 160f);
+
+                UI_TextInput(ref container, t, g1, GetLocalizedMessage("lbl.custombot_image", player),
+                    $"custombot.image.{index}", entry.Image, rowTop, 234f, 180f);
+
+                container.Add(new CuiButton
+                {
+                    Button = { Command = $"kf.setvalue True custombot.remove {index}", Color = t.Bg2 },
+                    Text = { Text = "✕", Font = FontRegular, FontSize = 13, Align = TextAnchor.MiddleCenter, Color = t.Text2 },
+                    RectTransform =
+                    {
+                        AnchorMin = "0 1", AnchorMax = "0 1",
+                        OffsetMin = $"422 {rowTop - 42}", OffsetMax = $"450 {rowTop - 16}"
+                    }
+                }, g1, g1 + ".del" + index);
+
+                rowTop -= rowStep;
+            }
+
+            container.Add(new CuiButton
+            {
+                Button = { Command = "kf.setvalue True custombot.add", Color = t.Accent },
+                Text =
+                {
+                    Text = GetLocalizedMessage("btn.custombot_add", player), Font = FontRegular, FontSize = 11,
+                    Align = TextAnchor.MiddleCenter, Color = t.AccentText
+                },
+                RectTransform =
+                {
+                    AnchorMin = "0 1", AnchorMax = "1 1",
+                    OffsetMin = $"14 {rowTop - 30}", OffsetMax = $"-14 {rowTop - 4}"
+                }
+            }, g1, g1 + ".add");
+        }
+
+        private void UI_IconPreview(ref CuiElementContainer container, Theme t, string parent, string image,
+            string tint, float x, float top, string idSuffix = "", float size = 60f)
+        {
+            var name = parent + ".prev" + idSuffix;
+
             container.Add(new CuiElement
             {
-                Name = parent + ".prev",
+                Name = name,
                 Parent = parent,
                 Components =
                 {
                     new CuiImageComponent { Color = t.Bg2 },
                     new CuiRectTransformComponent
-                        { AnchorMin = "0 1", AnchorMax = "0 1", OffsetMin = $"{x} {top - 60}", OffsetMax = $"{x + 60} {top}" }
+                        { AnchorMin = "0 1", AnchorMax = "0 1", OffsetMin = $"{x} {top - size}", OffsetMax = $"{x + size} {top}" }
                 }
             });
 
@@ -2689,7 +3355,7 @@ namespace Oxide.Plugins
             if (image.Contains("assets/"))
                 container.Add(new CuiElement
                 {
-                    Parent = parent + ".prev",
+                    Parent = name,
                     Components =
                     {
                         new CuiImageComponent { Color = NormalizeRgba(tint), Sprite = image },
@@ -2700,7 +3366,7 @@ namespace Oxide.Plugins
             else
                 container.Add(new CuiElement
                 {
-                    Parent = parent + ".prev",
+                    Parent = name,
                     Components =
                     {
                         new CuiRawImageComponent { Color = NormalizeRgba(tint), Png = GetImage(image) },
@@ -2743,11 +3409,13 @@ namespace Oxide.Plugins
                 s.AnimationDuration, 0.05f, 0.05f, 1f, -84f, 256f, 226f);
         }
 
+        private const float FiltersRelationsGroupHeight = 168f;
+
         private void UI_SectionFilters(ref CuiElementContainer container, Theme t, ConfigData preform, BasePlayer player)
         {
             var monuments = GetMonuments();
             var listH = Mathf.Max(64f, 28f + monuments.Count * 34f + 8f);
-            UI_BeginScrollBody(ref container, t, Mathf.Max(398f, 138f + listH), 54f, 8f);
+            UI_BeginScrollBody(ref container, t, Mathf.Max(398f, 322f + listH), 54f, 8f);
             UI_FiltersContent(ref container, t, preform, player, monuments, listH);
         }
 
@@ -2807,7 +3475,17 @@ namespace Oxide.Plugins
                 }
             });
 
-            var g2 = UI_Group(ref container, t, host, "mons", GetLocalizedMessage("grp.monuments", player), -114f, listH);
+            var g3 = UI_Group(ref container, t, host, "rel", GetLocalizedMessage("grp.relations", player), -114f, FiltersRelationsGroupHeight);
+            const float relRowStep = 42f;
+            UI_Toggle(ref container, t, g3, GetLocalizedMessage("tg.hideteam", player), GetLocalizedMessage("tg.hideteam.d", player),
+                "hideTeamKills", preform.HideTeamKills, -28f, 14f, 472f, "toggle.cfg");
+            UI_Toggle(ref container, t, g3, GetLocalizedMessage("tg.hideclan", player), GetLocalizedMessage("tg.hideclan.d", player),
+                "hideClanKills", preform.HideClanKills, -28f - relRowStep, 14f, 472f, "toggle.cfg");
+            UI_Toggle(ref container, t, g3, GetLocalizedMessage("tg.hidefriend", player),
+                Friends != null ? GetLocalizedMessage("tg.hidefriend.d", player) : GetLocalizedMessage("friends.missing", player),
+                "hideFriendKills", preform.HideFriendKills, -28f - relRowStep * 2, 14f, 472f, "toggle.cfg", Friends == null);
+
+            var g2 = UI_Group(ref container, t, host, "mons", GetLocalizedMessage("grp.monuments", player), -298f, listH);
 
             if (MonumentFinder == null)
             {
@@ -2824,8 +3502,17 @@ namespace Oxide.Plugins
             var rowTop = -28f;
             foreach (var mon in monuments)
             {
-                var on = preform.MonumentBlacklist != null &&
-                         preform.MonumentBlacklist.Any(b => string.Equals(b, mon.shortName, StringComparison.OrdinalIgnoreCase));
+                var on = false;
+                if (preform.MonumentBlacklist != null)
+                {
+                    for (var bi = 0; bi < preform.MonumentBlacklist.Count; bi++)
+                    {
+                        if (!string.Equals(preform.MonumentBlacklist[bi], mon.shortName, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        on = true;
+                        break;
+                    }
+                }
                 var row = g2 + ".mon." + mon.shortName;
                 var label = string.Equals(mon.display, mon.shortName, StringComparison.OrdinalIgnoreCase)
                     ? mon.shortName
@@ -2873,6 +3560,165 @@ namespace Oxide.Plugins
 
                 rowTop -= rowStep;
             }
+        }
+
+        private void UI_SectionDiscord(ref CuiElementContainer container, Theme t, ConfigData preform, BasePlayer player)
+        {
+            UI_BeginScrollBody(ref container, t, 922f, 54f, 8f);
+            UI_DiscordContent(ref container, t, preform, player);
+        }
+
+        private void UI_RefreshDiscord(BasePlayer player)
+        {
+            if (!_killfeedPreforms.TryGetValue(player, out var preform))
+                return;
+
+            var container = new CuiElementContainer();
+            UI_DiscordContent(ref container, GetTheme(player), preform, player);
+            CuiHelper.AddUi(player, container);
+        }
+
+        private void UI_RefreshCustomBot(BasePlayer player)
+        {
+            if (!_killfeedPreforms.TryGetValue(player, out var preform))
+                return;
+
+            var entries = preform.CustomBotImages ??= new();
+            const float headerH = 44f;
+            const float rowStep = 48f;
+            const float footerH = 40f;
+            const float minH = 460f;
+            var listH = Mathf.Max(minH, headerH + entries.Count * rowStep + footerH);
+
+            var container = new CuiElementContainer();
+            UI_CustomBotContent(ref container, GetTheme(player), player, entries, listH, headerH, rowStep);
+            CuiHelper.AddUi(player, container);
+        }
+
+        private void UI_DiscordContent(ref CuiElementContainer container, Theme t, ConfigData preform,
+            BasePlayer player)
+        {
+            var host = Layer + ".body" + ".scroll";
+            var d = preform.Discord ??= new ConfigData.DiscordSettings();
+
+            var g1 = UI_Group(ref container, t, host, "dc_conn", GetLocalizedMessage("grp.dc_conn", player), -2f, 176f);
+
+            UI_Toggle(ref container, t, g1, GetLocalizedMessage("tg.dc_enabled", player),
+                GetLocalizedMessage("tg.dc_enabled.d", player), "dc_enabled", d.Enabled, -28f, 14f, 468f, "toggle.dc");
+
+            UI_TextInput(ref container, t, g1, GetLocalizedMessage("lbl.dc_url", player), "dc_url",
+                d.WebhookUrl ?? "", -80f, 14f, 468f);
+
+            var missing = string.IsNullOrEmpty(d.WebhookUrl);
+            var online = !missing && _discordStatus != "Bad URL" && !_discordStatus.StartsWith("HTTP");
+            var statusText = missing
+                ? GetLocalizedMessage("dc.missing", player)
+                : string.Format(GetLocalizedMessage("dc.status", player), _discordStatus);
+
+            container.Add(new CuiElement
+            {
+                Parent = g1,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = statusText, Font = FontRegular, FontSize = 9,
+                        Align = TextAnchor.UpperLeft, Color = online ? t.Text2 : "0.9 0.45 0.4 1"
+                    },
+                    new CuiRectTransformComponent
+                        { AnchorMin = "0 1", AnchorMax = "1 1", OffsetMin = "14 -140", OffsetMax = "-14 -126" }
+                }
+            });
+
+            container.Add(new CuiElement
+            {
+                Parent = g1,
+                Components =
+                {
+                    new CuiTextComponent
+                    {
+                        Text = GetLocalizedMessage("dc.hint", player), Font = FontRegular, FontSize = 9,
+                        Align = TextAnchor.UpperLeft, Color = t.Text2
+                    },
+                    new CuiRectTransformComponent
+                        { AnchorMin = "0 1", AnchorMax = "1 1", OffsetMin = "14 -174", OffsetMax = "-14 -142" }
+                }
+            });
+
+            var g2 = UI_Group(ref container, t, host, "dc_msg", GetLocalizedMessage("grp.dc_msg", player), -190f, 238f);
+
+            UI_SelectButtons(ref container, t, g2, GetLocalizedMessage("lbl.dc_style", player), "dc_style",
+                new[]
+                {
+                    new SelectOption("embed", GetLocalizedMessage("opt.dc_embed", player)),
+                    new SelectOption("plain", GetLocalizedMessage("opt.dc_plain", player))
+                },
+                d.UseEmbed ? "embed" : "plain", -28f, 14f, 226f);
+
+            UI_Stepper(ref container, t, g2, GetLocalizedMessage("lbl.dc_batch", player), "dc_batch",
+                d.BatchSeconds, 1, 1, 60, -28f, 256f, 226f);
+
+            UI_TextInput(ref container, t, g2, GetLocalizedMessage("lbl.dc_user", player), "dc_user",
+                d.Username ?? "", -78f, 14f, 226f);
+
+            UI_TextInput(ref container, t, g2, GetLocalizedMessage("lbl.dc_avatar", player), "dc_avatar",
+                d.AvatarUrl ?? "", -78f, 256f, 226f);
+
+            UI_TextInput(ref container, t, g2, GetLocalizedMessage("lbl.dc_kill_fmt", player), "dc_kill_fmt",
+                d.KillFormat ?? "", -128f, 14f, 468f);
+
+            UI_TextInput(ref container, t, g2, GetLocalizedMessage("lbl.dc_death_fmt", player), "dc_death_fmt",
+                d.DeathFormat ?? "", -174f, 14f, 468f);
+
+            var g3 = UI_Group(ref container, t, host, "dc_embed", GetLocalizedMessage("grp.dc_embed", player), -440f,
+                336f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_title", player), "dc_title",
+                d.EmbedTitle ?? "", -28f, 14f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_color", player), "dc_color",
+                d.EmbedColor ?? "", -28f, 256f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_link", player), "dc_link",
+                d.EmbedUrl ?? "", -78f, 14f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_thumb", player), "dc_thumb",
+                d.ThumbnailUrl ?? "", -78f, 256f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_author", player), "dc_author",
+                d.AuthorName ?? "", -128f, 14f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_aicon", player), "dc_aicon",
+                d.AuthorIcon ?? "", -128f, 256f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_footer", player), "dc_footer",
+                d.FooterText ?? "", -178f, 14f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_ficon", player), "dc_ficon",
+                d.FooterIcon ?? "", -178f, 256f, 226f);
+
+            UI_TextInput(ref container, t, g3, GetLocalizedMessage("lbl.dc_image", player), "dc_image",
+                d.ImageUrl ?? "", -228f, 14f, 226f);
+
+            UI_Toggle(ref container, t, g3, GetLocalizedMessage("tg.dc_ts", player),
+                GetLocalizedMessage("tg.dc_ts.d", player), "dc_ts", d.Timestamp, -228f, 256f, 226f, "toggle.dc");
+
+            UI_Toggle(ref container, t, g3, GetLocalizedMessage("tg.dc_links", player),
+                GetLocalizedMessage("tg.dc_links.d", player), "dc_links", d.LinkNames, -278f, 14f, 226f, "toggle.dc");
+
+            UI_Toggle(ref container, t, g3, GetLocalizedMessage("tg.dc_avatars", player),
+                GetLocalizedMessage("tg.dc_avatars.d", player), "dc_avatars", d.PlayerAvatars, -278f, 256f, 226f,
+                "toggle.dc");
+
+            var g4 = UI_Group(ref container, t, host, "dc_filters", GetLocalizedMessage("grp.dc_filters", player),
+                -788f, 126f);
+
+            UI_Toggle(ref container, t, g4, GetLocalizedMessage("tg.dc_pvp", player),
+                GetLocalizedMessage("tg.dc_pvp.d", player), "dc_pvp", d.SendPvp, -28f, 14f, 226f, "toggle.dc");
+            UI_Toggle(ref container, t, g4, GetLocalizedMessage("tg.dc_npc", player),
+                GetLocalizedMessage("tg.dc_npc.d", player), "dc_npc", d.SendNpc, -28f, 256f, 226f, "toggle.dc");
+            UI_Toggle(ref container, t, g4, GetLocalizedMessage("tg.dc_self", player),
+                GetLocalizedMessage("tg.dc_self.d", player), "dc_self", d.SendSelf, -78f, 14f, 468f, "toggle.dc");
         }
 
         private void UI_GroupNote(ref CuiElementContainer container, Theme t, string parent, string text)
@@ -3380,26 +4226,32 @@ namespace Oxide.Plugins
             var killPanel = settings.Elements["kill_panel"];
             var container = new CuiElementContainer();
 
-            container.Add(new CuiPanel
+            container.Add(new CuiElement
             {
-                Image = { Color = "1 1 1 0" },
-                RectTransform =
+                Name = LayerFeed,
+                Parent = isTesting ? "Overlay" : "Hud",
+                DestroyUi = LayerFeed,
+                Components =
                 {
-                    AnchorMin = settings.AnchorSettings.AnchorMin,
-                    AnchorMax = settings.AnchorSettings.AnchorMax,
-                    OffsetMin = $"{settings.OffsetSettings.OffsetMinX} {settings.OffsetSettings.OffsetMinY}",
-                    OffsetMax = $"{settings.OffsetSettings.OffsetMaxX} {settings.OffsetSettings.OffsetMaxY}"
+                    new CuiRectTransformComponent
+                    {
+                        AnchorMin = settings.AnchorSettings.AnchorMin,
+                        AnchorMax = settings.AnchorSettings.AnchorMax,
+                        OffsetMin = $"{settings.OffsetSettings.OffsetMinX} {settings.OffsetSettings.OffsetMinY}",
+                        OffsetMax = $"{settings.OffsetSettings.OffsetMaxX} {settings.OffsetSettings.OffsetMaxY}"
+                    }
                 }
-            }, "Hud", LayerFeed, LayerFeed);
+            });
 
             var selectedElement = GetSelectedElement(player);
-            var selectedIsNoKiller = NoKillerElements.Contains(selectedElement);
+            var selectedIsNoKiller = ArrayContains(NoKillerElements, selectedElement);
             var outlineDrawn = false;
 
             var indent = settings.OffsetSettings.Indent;
             var fromUp = settings.Conditions.FromUpToDown;
 
-            var ordered = kills.OrderByDescending(x => x.Value).ToList();
+            FillOrderedByExpiryDesc(_drawKillsOrderedScratch, kills);
+            var ordered = _drawKillsOrderedScratch;
             var doAnim = animate && settings.AnimateFeed && !isTesting && !string.IsNullOrEmpty(newGuid)
                 && ordered.Count > 0 && ordered[0].Key.Guid == newGuid;
 
@@ -3416,8 +4268,9 @@ namespace Oxide.Plugins
             }
 
             var i = 0;
-            foreach (var x in ordered)
+            for (var oi = 0; oi < ordered.Count; oi++)
             {
+                var x = ordered[oi];
                 string min, max;
                 if (doAnim)
                 {
@@ -3475,8 +4328,16 @@ namespace Oxide.Plugins
             }
 
             if (doAnim)
-                foreach (var stale in live.Keys.Where(k => !drawn.Contains(k)).ToList())
-                    live.Remove(stale);
+            {
+                _stalePlateKeysScratch.Clear();
+                foreach (var k in live.Keys)
+                {
+                    if (!drawn.Contains(k))
+                        _stalePlateKeysScratch.Add(k);
+                }
+                for (var si = 0; si < _stalePlateKeysScratch.Count; si++)
+                    live.Remove(_stalePlateKeysScratch[si]);
+            }
             else
                 _platePos.Remove(player.userID);
 
@@ -4137,11 +4998,13 @@ namespace Oxide.Plugins
                 return;
 
             var sectionId = arg.GetString(0);
+            var previousId = GetActiveSection(player);
             _activeSection[player.userID] = sectionId;
 
-            var container = new CuiElementContainer();
-            UI_DrawNav(ref container, GetTheme(player), sectionId, player);
-            CuiHelper.AddUi(player, container);
+            if (previousId != sectionId)
+                UI_RefreshNavItem(player, previousId, false);
+
+            UI_RefreshNavItem(player, sectionId, true);
 
             UI_DrawSectionContent(player, sectionId);
         }
@@ -4167,6 +5030,7 @@ namespace Oxide.Plugins
             SaveData();
 
             UI_DrawMain(player);
+            _feedBehaviour.PlayerUpdate(player);
         }
 
         [ConsoleCommand("kf.reset")]
@@ -4256,7 +5120,7 @@ namespace Oxide.Plugins
                 return;
 
             var key = arg.GetString(1);
-            var value = ConcatArgs(arg.Args.Select(x => x.ToString()).ToArray(), 2);
+            var value = ConcatArgViews(arg.Args, 2);
             var needUpdate = arg.GetBool(0);
             var uiSettings = killfeedPrefab.uISettings;
 
@@ -4282,8 +5146,13 @@ namespace Oxide.Plugins
                     UI_RefreshElementEditor(player);
                 else if (key == "selection.update")
                     UI_RefreshElements(player);
-                else if (key == "monument_toggle" || key == "zm_flag")
+                else if (key == "monument_toggle" || key == "zm_flag" ||
+                         (key == "toggle.cfg" && (value == "hideTeamKills" || value == "hideClanKills" || value == "hideFriendKills")))
                     UI_RefreshFilters(player);
+                else if (key == "toggle.dc" || key.StartsWith("dc_"))
+                    UI_RefreshDiscord(player);
+                else if (key.StartsWith("custombot."))
+                    UI_RefreshCustomBot(player);
                 else
                     UI_DrawSectionContent(player, GetActiveSection(player));
 
@@ -4294,6 +5163,18 @@ namespace Oxide.Plugins
         private void HandleSettingChange(BasePlayer player, ConfigData.UISettings uiSettings, string key, string value,
             ConsoleSystem.Arg arg)
         {
+            if (key.StartsWith("dc_"))
+            {
+                HandleDiscordSetting(player, key, value);
+                return;
+            }
+
+            if (key.StartsWith("custombot."))
+            {
+                HandleCustomBotSetting(player, key, value);
+                return;
+            }
+
             switch (key)
             {
                 case "toggle":
@@ -4306,6 +5187,10 @@ namespace Oxide.Plugins
 
                 case "toggle.ui":
                     HandleUiToggle(uiSettings, value);
+                    break;
+
+                case "toggle.dc":
+                    HandleDiscordToggle(player, value);
                     break;
 
                 case "direction":
@@ -4510,6 +5395,105 @@ namespace Oxide.Plugins
                 case "showPrivate":
                     _killfeedPreforms[player].PrivateKillsOnly = !_killfeedPreforms[player].PrivateKillsOnly;
                     break;
+
+                case "hideTeamKills":
+                    _killfeedPreforms[player].HideTeamKills = !_killfeedPreforms[player].HideTeamKills;
+                    break;
+
+                case "hideClanKills":
+                    _killfeedPreforms[player].HideClanKills = !_killfeedPreforms[player].HideClanKills;
+                    break;
+
+                case "hideFriendKills":
+                    _killfeedPreforms[player].HideFriendKills = !_killfeedPreforms[player].HideFriendKills;
+                    break;
+            }
+        }
+
+        private void HandleDiscordToggle(BasePlayer player, string field)
+        {
+            var d = _killfeedPreforms[player].Discord ??= new ConfigData.DiscordSettings();
+            switch (field)
+            {
+                case "dc_enabled":
+                    d.Enabled = !d.Enabled;
+                    break;
+                case "dc_pvp":
+                    d.SendPvp = !d.SendPvp;
+                    break;
+                case "dc_npc":
+                    d.SendNpc = !d.SendNpc;
+                    break;
+                case "dc_self":
+                    d.SendSelf = !d.SendSelf;
+                    break;
+                case "dc_ts":
+                    d.Timestamp = !d.Timestamp;
+                    break;
+                case "dc_links":
+                    d.LinkNames = !d.LinkNames;
+                    break;
+                case "dc_avatars":
+                    d.PlayerAvatars = !d.PlayerAvatars;
+                    break;
+            }
+        }
+
+        private void HandleDiscordSetting(BasePlayer player, string key, string value)
+        {
+            var d = _killfeedPreforms[player].Discord ??= new ConfigData.DiscordSettings();
+            value ??= "";
+
+            switch (key)
+            {
+                case "dc_url":
+                    d.WebhookUrl = value.Trim();
+                    break;
+                case "dc_user":
+                    d.Username = value.Trim();
+                    break;
+                case "dc_avatar":
+                    d.AvatarUrl = value.Trim();
+                    break;
+                case "dc_color":
+                    d.EmbedColor = value.Trim();
+                    break;
+                case "dc_title":
+                    d.EmbedTitle = value.Trim();
+                    break;
+                case "dc_link":
+                    d.EmbedUrl = value.Trim();
+                    break;
+                case "dc_author":
+                    d.AuthorName = value.Trim();
+                    break;
+                case "dc_aicon":
+                    d.AuthorIcon = value.Trim();
+                    break;
+                case "dc_footer":
+                    d.FooterText = value.Trim();
+                    break;
+                case "dc_ficon":
+                    d.FooterIcon = value.Trim();
+                    break;
+                case "dc_thumb":
+                    d.ThumbnailUrl = value.Trim();
+                    break;
+                case "dc_image":
+                    d.ImageUrl = value.Trim();
+                    break;
+                case "dc_kill_fmt":
+                    d.KillFormat = value;
+                    break;
+                case "dc_death_fmt":
+                    d.DeathFormat = value;
+                    break;
+                case "dc_batch":
+                    d.BatchSeconds = Mathf.Clamp(ParseInt(value), 1, 60);
+                    break;
+                case "dc_style":
+                    d.UseEmbed = value == "embed";
+                    break;
             }
         }
 
@@ -4544,22 +5528,44 @@ namespace Oxide.Plugins
 
         private void HandleDeathImage(BasePlayer player, string value, bool justUpdate)
         {
+            if (justUpdate)
+                return;
+
             var killfeedPrefab = _killfeedPreforms[player];
-            var type = GetImageType(killfeedPrefab.DefaultDeathImage.Value as string);
+            killfeedPrefab.DefaultDeathImage.Value = value;
+            killfeedPrefab.DefaultDeathImage.Type = GetImageType(value);
+        }
 
-            if (!justUpdate)
+        private void HandleCustomBotSetting(BasePlayer player, string key, string value)
+        {
+            var entries = _killfeedPreforms[player].CustomBotImages ??= new();
+
+            if (key == "custombot.add")
             {
-                killfeedPrefab.DefaultDeathImage.Value = value;
-                killfeedPrefab.DefaultDeathImage.Type = type;
+                entries.Add(new CustomBotImage());
+                return;
             }
 
-            if (type == ImageType.URL)
+            if (key == "custombot.remove")
             {
-
+                if (int.TryParse(value, out var removeIndex) && removeIndex >= 0 && removeIndex < entries.Count)
+                    entries.RemoveAt(removeIndex);
+                return;
             }
-            else
-            {
 
+            if (key.StartsWith("custombot.name."))
+            {
+                if (int.TryParse(key.Substring("custombot.name.".Length), out var nameIndex) &&
+                    nameIndex >= 0 && nameIndex < entries.Count)
+                    entries[nameIndex].NamePattern = value;
+                return;
+            }
+
+            if (key.StartsWith("custombot.image."))
+            {
+                if (int.TryParse(key.Substring("custombot.image.".Length), out var imageIndex) &&
+                    imageIndex >= 0 && imageIndex < entries.Count)
+                    entries[imageIndex].Image = value;
             }
         }
 
@@ -4692,10 +5698,51 @@ namespace Oxide.Plugins
                 ["nav.target"] = "Жертва",
                 ["nav.distance"] = "Дистанция",
                 ["nav.icons"] = "Иконки",
+                ["nav.custombot"] = "Свои иконки",
                 ["nav.anim"] = "Анимация",
                 ["nav.themes"] = "Темы",
 
                 ["nav.filters"] = "Фильтры",
+                ["nav.discord"] = "Discord",
+                ["grp.dc_conn"] = "Вебхук",
+                ["grp.dc_msg"] = "Сообщение",
+                ["grp.dc_embed"] = "Embed",
+                ["grp.dc_filters"] = "Что отправлять",
+                ["tg.dc_enabled"] = "Live killfeed",
+                ["tg.dc_enabled.d"] = "Отправлять убийства в канал Discord",
+                ["lbl.dc_url"] = "URL вебхука",
+                ["lbl.dc_user"] = "Имя отправителя",
+                ["lbl.dc_avatar"] = "URL аватара отправителя",
+                ["lbl.dc_link"] = "Ссылка заголовка",
+                ["lbl.dc_thumb"] = "URL миниатюры",
+                ["lbl.dc_author"] = "Строка автора",
+                ["lbl.dc_aicon"] = "URL иконки автора",
+                ["lbl.dc_footer"] = "Текст подвала",
+                ["lbl.dc_ficon"] = "URL иконки подвала",
+                ["lbl.dc_image"] = "URL картинки",
+                ["lbl.dc_style"] = "Вид сообщения",
+                ["lbl.dc_color"] = "Цвет embed (hex)",
+                ["lbl.dc_batch"] = "Пачка, сек",
+                ["lbl.dc_title"] = "Заголовок embed",
+                ["lbl.dc_kill_fmt"] = "Формат убийства: {killer} {target} {weapon} {distance} {headshot}",
+                ["lbl.dc_death_fmt"] = "Формат смерти без убийцы: {target} {reason}",
+                ["opt.dc_embed"] = "Embed",
+                ["opt.dc_plain"] = "Текст",
+                ["tg.dc_pvp"] = "PvP",
+                ["tg.dc_pvp.d"] = "Игрок убил игрока",
+                ["tg.dc_npc"] = "NPC и животные",
+                ["tg.dc_npc.d"] = "Убийства с участием NPC",
+                ["tg.dc_self"] = "Смерти без убийцы",
+                ["tg.dc_self.d"] = "Падение, утопление, суицид",
+                ["tg.dc_ts"] = "Время",
+                ["tg.dc_ts.d"] = "Ставить время отправки в embed",
+                ["tg.dc_links"] = "Ссылки на профили",
+                ["tg.dc_links.d"] = "Ник игрока становится ссылкой на его профиль Steam",
+                ["tg.dc_avatars"] = "Аватары игроков",
+                ["tg.dc_avatars.d"] = "Отдельный embed на каждое убийство: аватар убийцы в шапке, аватар жертвы справа",
+                ["dc.status"] = "Последняя отправка: {0}",
+                ["dc.missing"] = "URL вебхука не указан - отправка не работает",
+                ["dc.hint"] = "Изменения применяются после кнопки сохранения. URL берётся в настройках канала Discord: Интеграции - Вебхуки - Создать вебхук - Копировать URL.",
                 ["grp.zonemanager"] = "ZoneManager",
                 ["lbl.zm_flag"] = "Флаг зоны (скрывать киллы)",
                 ["zm.loaded"] = "ZoneManager подключён",
@@ -4705,6 +5752,14 @@ namespace Oxide.Plugins
                 ["mon.none"] = "Монументы не найдены",
                 ["mon.hidden"] = "Скрыт",
                 ["mon.shown"] = "Показан",
+                ["grp.relations"] = "Тимкиллы, клан и друзья",
+                ["tg.hideteam"] = "Скрывать тимкиллы",
+                ["tg.hideteam.d"] = "Не показывать убийства между членами одной команды",
+                ["tg.hideclan"] = "Скрывать килы кланов",
+                ["tg.hideclan.d"] = "Не показывать убийства между членами одного клана",
+                ["tg.hidefriend"] = "Скрывать килы друзей",
+                ["tg.hidefriend.d"] = "Не показывать убийства между друзьями",
+                ["friends.missing"] = "Плагин Friends не установлен (тумблер выключен)",
 
                 ["sec.general.title"] = "ОСНОВНЫЕ НАСТРОЙКИ",
                 ["sec.general.sub"] = "Что показывать в полоске убийств",
@@ -4718,6 +5773,8 @@ namespace Oxide.Plugins
                 ["sec.distance.sub"] = "Текст с расстоянием между игроками",
                 ["sec.icons.title"] = "ИКОНКИ",
                 ["sec.icons.sub"] = "Путь к ассету или URL картинки",
+                ["sec.custombot.title"] = "СВОИ ИКОНКИ",
+                ["sec.custombot.sub"] = "Принудительная иконка по имени бота",
                 ["sec.anim.title"] = "АНИМАЦИЯ",
                 ["sec.anim.sub"] = "Плавность появления и исчезновения",
                 ["sec.themes.title"] = "ТЕМЫ ОФОРМЛЕНИЯ",
@@ -4731,6 +5788,11 @@ namespace Oxide.Plugins
                 ["grp.color"] = "Цвет и обводка",
                 ["grp.hs_icon"] = "Иконка хедшота",
                 ["grp.death_icon"] = "Иконка по умолчанию",
+                ["grp.custombot"] = "Иконки по имени бота",
+                ["lbl.custombot_hint"] = "Принудительная иконка для ботов, чьё имя содержит указанную подстроку (без учёта регистра). Проверяется раньше, чем иконка по типу NPC.",
+                ["lbl.custombot_name"] = "Имя бота (подстрока)",
+                ["lbl.custombot_image"] = "Путь / URL / shortname",
+                ["btn.custombot_add"] = "+ Добавить",
                 ["grp.timings"] = "Тайминги",
                 ["grp.presets"] = "Пресеты оформления",
 
@@ -4797,6 +5859,8 @@ namespace Oxide.Plugins
                 ["sec.elements.sub"] = "Положение и размер каждого элемента ленты",
                 ["sec.filters.title"] = "ФИЛЬТРЫ",
                 ["sec.filters.sub"] = "Где скрывать убийства: зоны и монументы",
+                ["sec.discord.title"] = "DISCORD",
+                ["sec.discord.sub"] = "Отправка убийств в канал Discord",
                 ["grp.el_list"] = "Список элементов",
                 ["grp.el_edit"] = "Редактор",
                 ["el.killer_text"] = "Ник убийцы",
@@ -4830,10 +5894,51 @@ namespace Oxide.Plugins
                 ["nav.target"] = "Victim",
                 ["nav.distance"] = "Distance",
                 ["nav.icons"] = "Icons",
+                ["nav.custombot"] = "Custom Images",
                 ["nav.anim"] = "Animation",
                 ["nav.themes"] = "Themes",
 
                 ["nav.filters"] = "Filters",
+                ["nav.discord"] = "Discord",
+                ["grp.dc_conn"] = "Webhook",
+                ["grp.dc_msg"] = "Message",
+                ["grp.dc_embed"] = "Embed",
+                ["grp.dc_filters"] = "What to send",
+                ["tg.dc_enabled"] = "Live killfeed",
+                ["tg.dc_enabled.d"] = "Send kills to a Discord channel",
+                ["lbl.dc_url"] = "Webhook URL",
+                ["lbl.dc_user"] = "Sender name",
+                ["lbl.dc_avatar"] = "Sender avatar URL",
+                ["lbl.dc_link"] = "Title link",
+                ["lbl.dc_thumb"] = "Thumbnail URL",
+                ["lbl.dc_author"] = "Author line",
+                ["lbl.dc_aicon"] = "Author icon URL",
+                ["lbl.dc_footer"] = "Footer text",
+                ["lbl.dc_ficon"] = "Footer icon URL",
+                ["lbl.dc_image"] = "Image URL",
+                ["lbl.dc_style"] = "Message style",
+                ["lbl.dc_color"] = "Embed color (hex)",
+                ["lbl.dc_batch"] = "Batch, sec",
+                ["lbl.dc_title"] = "Embed title",
+                ["lbl.dc_kill_fmt"] = "Kill format: {killer} {target} {weapon} {distance} {headshot}",
+                ["lbl.dc_death_fmt"] = "Death format, no killer: {target} {reason}",
+                ["opt.dc_embed"] = "Embed",
+                ["opt.dc_plain"] = "Plain",
+                ["tg.dc_pvp"] = "PvP",
+                ["tg.dc_pvp.d"] = "Player killed player",
+                ["tg.dc_npc"] = "NPC and animals",
+                ["tg.dc_npc.d"] = "Kills involving NPCs",
+                ["tg.dc_self"] = "Deaths without a killer",
+                ["tg.dc_self.d"] = "Fall, drown, suicide",
+                ["tg.dc_ts"] = "Timestamp",
+                ["tg.dc_ts.d"] = "Put the send time on the embed",
+                ["tg.dc_links"] = "Profile links",
+                ["tg.dc_links.d"] = "Turn a player name into a link to their Steam profile",
+                ["tg.dc_avatars"] = "Player avatars",
+                ["tg.dc_avatars.d"] = "One embed per kill: killer avatar in the header, victim avatar on the right",
+                ["dc.status"] = "Last send: {0}",
+                ["dc.missing"] = "Webhook URL is not set - nothing will be sent",
+                ["dc.hint"] = "Changes apply after you press save. Get the URL in the Discord channel settings: Integrations - Webhooks - New Webhook - Copy Webhook URL.",
                 ["grp.zonemanager"] = "ZoneManager",
                 ["lbl.zm_flag"] = "Zone flag (hide kills)",
                 ["zm.loaded"] = "ZoneManager connected",
@@ -4843,6 +5948,14 @@ namespace Oxide.Plugins
                 ["mon.none"] = "No monuments found",
                 ["mon.hidden"] = "Hidden",
                 ["mon.shown"] = "Shown",
+                ["grp.relations"] = "Teamkills, clan & friends",
+                ["tg.hideteam"] = "Hide team kills",
+                ["tg.hideteam.d"] = "Don't show kills between members of the same team",
+                ["tg.hideclan"] = "Hide clan kills",
+                ["tg.hideclan.d"] = "Don't show kills between members of the same clan",
+                ["tg.hidefriend"] = "Hide friend kills",
+                ["tg.hidefriend.d"] = "Don't show kills between friends",
+                ["friends.missing"] = "Friends plugin not installed (toggle disabled)",
 
                 ["sec.general.title"] = "GENERAL SETTINGS",
                 ["sec.general.sub"] = "What to show in the kill feed",
@@ -4856,6 +5969,8 @@ namespace Oxide.Plugins
                 ["sec.distance.sub"] = "Distance text between players",
                 ["sec.icons.title"] = "ICONS",
                 ["sec.icons.sub"] = "Asset path or image URL",
+                ["sec.custombot.title"] = "CUSTOM IMAGES",
+                ["sec.custombot.sub"] = "Forced icon by bot name",
                 ["sec.anim.title"] = "ANIMATION",
                 ["sec.anim.sub"] = "Fade in / out smoothness",
                 ["sec.themes.title"] = "THEMES",
@@ -4869,6 +5984,11 @@ namespace Oxide.Plugins
                 ["grp.color"] = "Color & outline",
                 ["grp.hs_icon"] = "Headshot icon",
                 ["grp.death_icon"] = "Default icon",
+                ["grp.custombot"] = "Bot name icons",
+                ["lbl.custombot_hint"] = "Forces an icon for bots whose name contains the given substring (case-insensitive). Checked before the icon based on NPC type.",
+                ["lbl.custombot_name"] = "Bot name (substring)",
+                ["lbl.custombot_image"] = "Path / URL / shortname",
+                ["btn.custombot_add"] = "+ Add",
                 ["grp.timings"] = "Timings",
                 ["grp.presets"] = "Theme presets",
 
@@ -4935,6 +6055,8 @@ namespace Oxide.Plugins
                 ["sec.elements.sub"] = "Position and size of each feed element",
                 ["sec.filters.title"] = "FILTERS",
                 ["sec.filters.sub"] = "Where to hide kills: zones and monuments",
+                ["sec.discord.title"] = "DISCORD",
+                ["sec.discord.sub"] = "Send kills to a Discord channel",
                 ["grp.el_list"] = "Element list",
                 ["grp.el_edit"] = "Editor",
                 ["el.killer_text"] = "Killer name",
@@ -4968,10 +6090,51 @@ namespace Oxide.Plugins
                 ["nav.target"] = "Opfer",
                 ["nav.distance"] = "Distanz",
                 ["nav.icons"] = "Symbole",
+                ["nav.custombot"] = "Eigene Symbole",
                 ["nav.anim"] = "Animation",
                 ["nav.themes"] = "Themes",
 
                 ["nav.filters"] = "Filter",
+                ["nav.discord"] = "Discord",
+                ["grp.dc_conn"] = "Webhook",
+                ["grp.dc_msg"] = "Nachricht",
+                ["grp.dc_embed"] = "Embed",
+                ["grp.dc_filters"] = "Was senden",
+                ["tg.dc_enabled"] = "Live-Killfeed",
+                ["tg.dc_enabled.d"] = "Kills in einen Discord-Kanal senden",
+                ["lbl.dc_url"] = "Webhook-URL",
+                ["lbl.dc_user"] = "Absendername",
+                ["lbl.dc_avatar"] = "Absender-Avatar-URL",
+                ["lbl.dc_link"] = "Titel-Link",
+                ["lbl.dc_thumb"] = "Thumbnail-URL",
+                ["lbl.dc_author"] = "Autorenzeile",
+                ["lbl.dc_aicon"] = "Autor-Icon-URL",
+                ["lbl.dc_footer"] = "Fußzeilentext",
+                ["lbl.dc_ficon"] = "Fußzeilen-Icon-URL",
+                ["lbl.dc_image"] = "Bild-URL",
+                ["lbl.dc_style"] = "Nachrichtenstil",
+                ["lbl.dc_color"] = "Embed-Farbe (hex)",
+                ["lbl.dc_batch"] = "Bündel, Sek",
+                ["lbl.dc_title"] = "Embed-Titel",
+                ["lbl.dc_kill_fmt"] = "Kill-Format: {killer} {target} {weapon} {distance} {headshot}",
+                ["lbl.dc_death_fmt"] = "Todesformat ohne Killer: {target} {reason}",
+                ["opt.dc_embed"] = "Embed",
+                ["opt.dc_plain"] = "Text",
+                ["tg.dc_pvp"] = "PvP",
+                ["tg.dc_pvp.d"] = "Spieler tötet Spieler",
+                ["tg.dc_npc"] = "NPCs und Tiere",
+                ["tg.dc_npc.d"] = "Kills mit NPC-Beteiligung",
+                ["tg.dc_self"] = "Tode ohne Killer",
+                ["tg.dc_self.d"] = "Sturz, Ertrinken, Suizid",
+                ["tg.dc_ts"] = "Zeitstempel",
+                ["tg.dc_ts.d"] = "Sendezeit im Embed anzeigen",
+                ["tg.dc_links"] = "Profil-Links",
+                ["tg.dc_links.d"] = "Spielername wird zum Link auf sein Steam-Profil",
+                ["tg.dc_avatars"] = "Spieler-Avatare",
+                ["tg.dc_avatars.d"] = "Ein Embed pro Kill: Töter-Avatar oben, Opfer-Avatar rechts",
+                ["dc.status"] = "Letzter Versand: {0}",
+                ["dc.missing"] = "Webhook-URL ist nicht gesetzt - es wird nichts gesendet",
+                ["dc.hint"] = "Änderungen greifen nach dem Speichern. Die URL gibt es in den Kanal-Einstellungen von Discord: Integrationen - Webhooks - Neuer Webhook - URL kopieren.",
                 ["grp.zonemanager"] = "ZoneManager",
                 ["lbl.zm_flag"] = "Zonen-Flag (Kills verbergen)",
                 ["zm.loaded"] = "ZoneManager verbunden",
@@ -4981,6 +6144,14 @@ namespace Oxide.Plugins
                 ["mon.none"] = "Keine Monumente gefunden",
                 ["mon.hidden"] = "Verborgen",
                 ["mon.shown"] = "Sichtbar",
+                ["grp.relations"] = "Teamkills, Clan & Freunde",
+                ["tg.hideteam"] = "Teamkills verbergen",
+                ["tg.hideteam.d"] = "Kills zwischen Mitgliedern desselben Teams nicht anzeigen",
+                ["tg.hideclan"] = "Clankills verbergen",
+                ["tg.hideclan.d"] = "Kills zwischen Mitgliedern desselben Clans nicht anzeigen",
+                ["tg.hidefriend"] = "Freundeskills verbergen",
+                ["tg.hidefriend.d"] = "Kills zwischen Freunden nicht anzeigen",
+                ["friends.missing"] = "Friends-Plugin nicht installiert (Schalter deaktiviert)",
 
                 ["sec.general.title"] = "ALLGEMEINE EINSTELLUNGEN",
                 ["sec.general.sub"] = "Was im Kill-Feed angezeigt wird",
@@ -4994,6 +6165,8 @@ namespace Oxide.Plugins
                 ["sec.distance.sub"] = "Distanztext zwischen Spielern",
                 ["sec.icons.title"] = "SYMBOLE",
                 ["sec.icons.sub"] = "Asset-Pfad oder Bild-URL",
+                ["sec.custombot.title"] = "EIGENE SYMBOLE",
+                ["sec.custombot.sub"] = "Erzwungenes Symbol nach Bot-Namen",
                 ["sec.anim.title"] = "ANIMATION",
                 ["sec.anim.sub"] = "Ein-/Ausblenden",
                 ["sec.themes.title"] = "THEMES",
@@ -5007,6 +6180,11 @@ namespace Oxide.Plugins
                 ["grp.color"] = "Farbe & Umriss",
                 ["grp.hs_icon"] = "Kopfschuss-Symbol",
                 ["grp.death_icon"] = "Standardsymbol",
+                ["grp.custombot"] = "Symbole nach Bot-Namen",
+                ["lbl.custombot_hint"] = "Erzwingt ein Symbol für Bots, deren Name die angegebene Teilzeichenfolge enthält (Groß-/Kleinschreibung wird ignoriert). Wird vor dem Symbol nach NPC-Typ geprüft.",
+                ["lbl.custombot_name"] = "Bot-Name (Teilzeichenfolge)",
+                ["lbl.custombot_image"] = "Pfad / URL / Shortname",
+                ["btn.custombot_add"] = "+ Hinzufügen",
                 ["grp.timings"] = "Timings",
                 ["grp.presets"] = "Theme-Vorlagen",
 
@@ -5073,6 +6251,8 @@ namespace Oxide.Plugins
                 ["sec.elements.sub"] = "Position und Größe jedes Feed-Elements",
                 ["sec.filters.title"] = "FILTER",
                 ["sec.filters.sub"] = "Wo Kills verborgen werden: Zonen und Monumente",
+                ["sec.discord.title"] = "DISCORD",
+                ["sec.discord.sub"] = "Kills an einen Discord-Kanal senden",
                 ["grp.el_list"] = "Elementliste",
                 ["grp.el_edit"] = "Editor",
                 ["el.killer_text"] = "Töter-Name",
@@ -5125,6 +6305,9 @@ namespace Oxide.Plugins
             [JsonProperty("Entity -> Image (U can enter URL, Sprite and item shortname)", Order = 5)]
             public Dictionary<string, string> EntityToImage;
 
+            [JsonProperty("Custom bot name -> Image (name pattern is matched as substring, takes priority over Entity -> Image)", Order = 5)]
+            public List<CustomBotImage> CustomBotImages = new();
+
             [JsonProperty("Entity -> Name", Order = 6)]
             public Dictionary<string, Dictionary<string, string>> EntityToName;
 
@@ -5146,7 +6329,94 @@ namespace Oxide.Plugins
             [JsonProperty("MonumentFinder: hide kills inside these monuments (short names)", Order = 8)]
             public List<string> MonumentBlacklist = new();
 
+            [JsonProperty("Hide kills between teammates (Rust teams)", Order = 8)]
+            public bool HideTeamKills;
+
+            [JsonProperty("Clans: hide kills between clanmates", Order = 8)]
+            public bool HideClanKills;
+
+            [JsonProperty("Friends: hide kills between friends", Order = 8)]
+            public bool HideFriendKills;
+
+            [JsonProperty("Live killfeed to Discord (webhook)", Order = 9)]
+            public DiscordSettings Discord = new();
+
             [JsonProperty("Version", Order = 100)] public VersionNumber Version;
+
+            internal class DiscordSettings
+            {
+                [JsonProperty("Enable live killfeed to Discord")]
+                public bool Enabled;
+
+                [JsonProperty("Webhook URL (channel settings -> Integrations -> Webhooks)")]
+                public string WebhookUrl = "";
+
+                [JsonProperty("Webhook name override (empty = the name set in Discord)")]
+                public string Username = "";
+
+                [JsonProperty("Webhook avatar URL (empty = the avatar set in Discord)")]
+                public string AvatarUrl = "";
+
+                [JsonProperty("Send as embed (false = plain message)")]
+                public bool UseEmbed = true;
+
+                [JsonProperty("Embed title (empty = no title)")]
+                public string EmbedTitle = "Killfeed";
+
+                [JsonProperty("Embed title link (empty = no link)")]
+                public string EmbedUrl = "";
+
+                [JsonProperty("Embed color (hex)")]
+                public string EmbedColor = "#D08A60";
+
+                [JsonProperty("Embed author line (empty = no author)")]
+                public string AuthorName = "";
+
+                [JsonProperty("Embed author icon URL (empty = no icon)")]
+                public string AuthorIcon = "";
+
+                [JsonProperty("Embed footer text (empty = no footer)")]
+                public string FooterText = "";
+
+                [JsonProperty("Embed footer icon URL (empty = no icon)")]
+                public string FooterIcon = "";
+
+                [JsonProperty("Embed thumbnail URL (empty = no thumbnail)")]
+                public string ThumbnailUrl = "";
+
+                [JsonProperty("Embed image URL (empty = no image)")]
+                public string ImageUrl = "";
+
+                [JsonProperty("Add a timestamp to the embed")]
+                public bool Timestamp = true;
+
+                [JsonProperty("Turn player names into links to their Steam profile (embed only)")]
+                public bool LinkNames = true;
+
+                [JsonProperty("One embed per kill with the Steam avatars of both players")]
+                public bool PlayerAvatars;
+
+                [JsonProperty("Batch interval in seconds (kills are grouped into one message)")]
+                public int BatchSeconds = 5;
+
+                [JsonProperty("Kill line format ({killer} {target} {weapon} {distance} {headshot} {killerid} {targetid})")]
+                public string KillFormat = "**{killer}** killed **{target}** with {weapon} from {distance}m {headshot}";
+
+                [JsonProperty("Death line format, no killer ({target} {reason} {targetid})")]
+                public string DeathFormat = "**{target}** died: {reason}";
+
+                [JsonProperty("Headshot marker")]
+                public string HeadshotMark = ":dart:";
+
+                [JsonProperty("Send player vs player kills")]
+                public bool SendPvp = true;
+
+                [JsonProperty("Send kills where NPC, animal or vehicle is involved")]
+                public bool SendNpc;
+
+                [JsonProperty("Send deaths without a killer (fall, drown, suicide)")]
+                public bool SendSelf;
+            }
 
             internal class ElementData
             {
@@ -5743,7 +7013,7 @@ namespace Oxide.Plugins
                         AnchorMax = "1 1"
                     }
                 },
-                Version = new(1, 0, 11),
+                Version = new(1, 0, 13),
                 AddAnimals = true
             };
             SaveConfig(config);
@@ -6240,6 +7510,19 @@ namespace Oxide.Plugins
                 needUpdateCfg = true;
             }
 
+            if (cfg.Version < new VersionNumber(1, 0, 12))
+            {
+                cfg.Version = new VersionNumber(1, 0, 12);
+                cfg.Discord ??= new ConfigData.DiscordSettings();
+                needUpdateCfg = true;
+            }
+
+            if (cfg.Version < new VersionNumber(1, 0, 13))
+            {
+                cfg.Version = new VersionNumber(1, 0, 13);
+                needUpdateCfg = true;
+            }
+
             if (needUpdateCfg)
                 PrintWarning("Config was updated!");
 
@@ -6257,19 +7540,19 @@ namespace Oxide.Plugins
 
         private void SaveData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject($"{Title}/disabledUI", _disabledFeed);
-            Interface.Oxide.DataFileSystem.WriteObject($"{Title}/storedImages", _imageList);
-            Interface.Oxide.DataFileSystem.WriteObject($"{Title}/adminThemes", _adminThemes);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Title}/disabledUI", _disabledFeed);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Title}/storedImages", _imageList);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Title}/adminThemes", _adminThemes);
         }
 
         private void LoadData()
         {
-            _disabledFeed = Interface.Oxide?.DataFileSystem?.ReadObject<List<ulong>>($"{Title}/disabledUI")
+            _disabledFeed = HarmonyModInterface.Mods?.DataFileSystem?.ReadObject<List<ulong>>($"{Title}/disabledUI")
                             ?? new();
             _imageList =
-                Interface.Oxide?.DataFileSystem?.ReadObject<Dictionary<string, string>>($"{Title}/storedImages")
+                HarmonyModInterface.Mods?.DataFileSystem?.ReadObject<Dictionary<string, string>>($"{Title}/storedImages")
                 ?? new();
-            _adminThemes = Interface.Oxide?.DataFileSystem?.ReadObject<Dictionary<ulong, UITheme>>($"{Title}/adminThemes")
+            _adminThemes = HarmonyModInterface.Mods?.DataFileSystem?.ReadObject<Dictionary<ulong, UITheme>>($"{Title}/adminThemes")
                            ?? new();
         }
 

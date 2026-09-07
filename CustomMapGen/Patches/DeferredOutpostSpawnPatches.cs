@@ -120,37 +120,45 @@ namespace CustomMapGen.Patches
             MethodInfo spawnPrefab = AccessTools.Method(typeof(World), "SpawnPrefab",
                 new[] { typeof(string), typeof(Prefab), typeof(Vector3), typeof(Quaternion), typeof(Vector3) });
 
-            for (int i = 0; i < Pending.Count; i++)
+            World_AddPrefab_Patch.SkipTerrainStampsOnSpawn = true;
+            try
             {
-                DeferredRow row = Pending[i];
-                Prefab prefab = Prefab.Load(row.Id);
-                if (prefab?.Object == null)
+                for (int i = 0; i < Pending.Count; i++)
                 {
-                    failed++;
-                    if (config.DebugLogging)
-                        UnityEngine.Debug.LogWarning($"[CustomMapGen] Deferred outpost spawn failed: id={row.Id} path={row.Path}");
-                    continue;
-                }
+                    DeferredRow row = Pending[i];
+                    Prefab prefab = Prefab.Load(row.Id);
+                    if (prefab?.Object == null)
+                    {
+                        failed++;
+                        if (config.DebugLogging)
+                            UnityEngine.Debug.LogWarning($"[CustomMapGen] Deferred outpost spawn failed: id={row.Id} path={row.Path}");
+                        continue;
+                    }
 
-                try
-                {
-                    if (spawnPrefab != null)
+                    try
                     {
-                        spawnPrefab.Invoke(null, new object[] { row.Category, prefab, row.Position, row.Rotation, row.Scale });
+                        if (spawnPrefab != null)
+                        {
+                            spawnPrefab.Invoke(null, new object[] { row.Category, prefab, row.Position, row.Rotation, row.Scale });
+                        }
+                        else
+                        {
+                            GameObject go = prefab.Spawn(row.Position, row.Rotation, row.Scale);
+                            if (go != null)
+                                World.TrackSpawnedPrefab(row.Category, go);
+                        }
+                        spawned++;
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        GameObject go = prefab.Spawn(row.Position, row.Rotation, row.Scale);
-                        if (go != null)
-                            World.TrackSpawnedPrefab(row.Category, go);
+                        failed++;
+                        UnityEngine.Debug.LogWarning($"[CustomMapGen] Deferred outpost spawn exception id={row.Id}: {ex.Message}");
                     }
-                    spawned++;
                 }
-                catch (Exception ex)
-                {
-                    failed++;
-                    UnityEngine.Debug.LogWarning($"[CustomMapGen] Deferred outpost spawn exception id={row.Id}: {ex.Message}");
-                }
+            }
+            finally
+            {
+                World_AddPrefab_Patch.SkipTerrainStampsOnSpawn = false;
             }
 
             Pending.Clear();

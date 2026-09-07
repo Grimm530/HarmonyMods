@@ -1,10 +1,10 @@
 using System;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos;
+using Grimm.Chaos;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public class MapConfig
 {

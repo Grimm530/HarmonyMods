@@ -1,9 +1,8 @@
-using System.Linq;
 using System.Reflection;
 using Facepunch.Rust;
 using HarmonyLib;
 using UnityEngine;
-using P = Oxide.Plugins.IndustrialRecycler;
+using P = Harmony.Plugins.IndustrialRecycler;
 
 namespace IndustrialRecyclerHarmony.Patches
 {
@@ -51,8 +50,11 @@ namespace IndustrialRecyclerHarmony.Patches
             return true;
         }
         [HarmonyPostfix]
-        public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity)
+        public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
+            // Oxide OnLootEntity only runs after a successful StartLootingEntity.
+            // Creating Input/Output CUI on failure leaves Overlay UI stuck with no loot session to clear it.
+            if (!__result) return;
             var player = __instance?.baseEntity;
             if (player == null || !(targetEntity is Recycler recycler)) return;
             try { P.Dispatch_OnLootEntity(player, recycler); }
@@ -63,20 +65,34 @@ namespace IndustrialRecyclerHarmony.Patches
     [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.Clear))]
     public static class PlayerLoot_Clear_Patch
     {
+        private static bool ShouldProcess(PlayerLoot loot)
+        {
+            var player = loot?.baseEntity;
+            return player != null && !player.IsDestroyed && player.IsConnected;
+        }
+
         [HarmonyPrefix]
         public static void Prefix(PlayerLoot __instance, out BaseEntity __state)
         {
             __state = __instance?.entitySource;
-            var player = __instance?.baseEntity;
-            if (player == null || player.IsDestroyed) return;
-            try { P.Dispatch_OnPlayerLootEnd(__instance); }
+            if (!ShouldProcess(__instance)) return;
+            // Oxide injects OnPlayerLootEnd only when IsLooting(); also destroy overlays when Clear is a
+            // no-op so CursorEnabled Input/Output panels cannot stick on Overlay.
+            try
+            {
+                if (__instance.IsLooting())
+                    P.Dispatch_OnPlayerLootEnd(__instance);
+                else
+                    P.GetModInstance()?.DestroyRecyclerPlayerUi(__instance.baseEntity);
+            }
             catch (System.Exception) { }
         }
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity __state)
         {
-            var player = __instance?.baseEntity;
-            if (player == null || !(__state is Recycler recycler)) return;
+            if (!ShouldProcess(__instance)) return;
+            var player = __instance.baseEntity;
+            if (!(__state is Recycler recycler)) return;
             try { P.Dispatch_OnLootEntityEnd(player, recycler); }
             catch (System.Exception ex) { Debug.LogWarning("[IndustrialRecycler] OnLootEntityEnd: " + ex.Message); }
         }
@@ -87,9 +103,15 @@ namespace IndustrialRecyclerHarmony.Patches
     {
         public static bool Prepare() => TargetMethod() != null;
 
-        public static MethodBase TargetMethod() =>
-            AccessTools.GetDeclaredMethods(typeof(Planner))
-                .FirstOrDefault(m => m.Name == "DoBuild" && m.ReturnType == typeof(BaseEntity));
+        public static MethodBase TargetMethod()
+        {
+            foreach (var m in AccessTools.GetDeclaredMethods(typeof(Planner)))
+            {
+                if (m.Name == "DoBuild" && m.ReturnType == typeof(BaseEntity))
+                    return m;
+            }
+            return null;
+        }
 
         [HarmonyPrefix]
         public static void Prefix(Planner __instance, out ulong __state)

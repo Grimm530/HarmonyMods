@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class RawImageComponent : BaseCuiComponent, ICuiColorComponent, ICuiGraphicComponent, IStyleComponent
 {
-	// Oxide default texture path used when omitting the property from CUI JSON.
+	// compat default texture path used when omitting the property from CUI JSON.
 	public const string DefaultTexture = "assets/icons/rust.png";
 
 	public Color Color { get; set; } = Color.DEFAULT;

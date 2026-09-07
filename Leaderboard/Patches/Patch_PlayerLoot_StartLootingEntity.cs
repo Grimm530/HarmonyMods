@@ -8,7 +8,7 @@ public static class Patch_PlayerLoot_StartLootingEntity
 {
     static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, ref bool __result)
     {
-        if (!__result || __instance == null || targetEntity == null) return;
+        if (!__result || targetEntity == null) return;
         var player = GetPlayerFromPlayerLoot(__instance);
         if (player == null || !SteamIdHelper.IsSteamId(player.userID)) return;
         if (targetEntity is not StorageContainer storageContainer) return;

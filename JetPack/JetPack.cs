@@ -2,15 +2,15 @@ using System;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Plugins.JetPackExtensionMethods;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Harmony.Plugins.JetPackExtensionMethods;
 using Newtonsoft.Json;
 using Rust;
 using UnityEngine;
 using Facepunch;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("JetPack", "Adem", "1.3.7")]
     public partial class JetPack : RustPlugin
@@ -558,7 +558,7 @@ namespace Oxide.Plugins
                 GetAndUpdateRigidbody();
                 BuildJetpack();
 
-                Interface.CallHook("OnJetpackWear", new object[] { player });
+                HarmonyModInterface.CallHook("OnJetpackWear", new object[] { player });
 
                 if (!_ins._config.Fuel.Fuel || _ins.permission.UserHasPermission(player.UserIDString, _ins._config.PermissionForNoFuel))
                     _infinityFuel = true;
@@ -952,7 +952,7 @@ namespace Oxide.Plugins
                 if (_seekerTargetComponent != null)
                     _seekerTargetComponent.KillComponent();
 
-                Interface.CallHook("OnJetpackRemoved", new object[] { _player });
+                HarmonyModInterface.CallHook("OnJetpackRemoved", new object[] { _player });
             }
 
             private class SamTargetComponent : FacepunchBehaviour, SamSite.ISamSiteTarget
@@ -1900,7 +1900,7 @@ namespace Oxide.Plugins
     }
 }
 
-namespace Oxide.Plugins.JetPackExtensionMethods
+namespace Harmony.Plugins.JetPackExtensionMethods
 {
     public static class ExtensionMethods
     {

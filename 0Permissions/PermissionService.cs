@@ -36,7 +36,7 @@ namespace PermissionsHarmony
         public string ParentGroup { get; set; } = "";
     }
 
-    /// <summary>Oxide-style permission store (JSON under HarmonyData/Permissions/).</summary>
+    /// <summary>compat-style permission store (JSON under HarmonyData/Permissions/).</summary>
     public class PermissionService
     {
         public static PermissionService Instance { get; private set; }
@@ -723,7 +723,7 @@ namespace PermissionsHarmony
             _users.TryGetValue(playerId, out var u) ? u : null;
 
         /// <summary>
-        /// Oxide-compatible: returns "steamid (LastSeenNickname)" entries so UI consumers
+        /// Harmony-compatible: returns "steamid (LastSeenNickname)" entries so UI consumers
         /// (e.g. AdminMenu Substring/Split parsing) match stock Oxide.Permission.
         /// </summary>
         public IEnumerable<string> GetUsersInGroup(string groupName)

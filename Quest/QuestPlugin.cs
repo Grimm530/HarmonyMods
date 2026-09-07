@@ -1,8 +1,8 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust;
 using System;
 using System.Collections;
@@ -10,13 +10,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Facepunch;
-using Oxide.Core.Libraries;
+using Harmony.Core.Libraries;
 using UnityEngine;
 using UnityEngine.Networking;
-using Random = Oxide.Core.Random;
-using Oxide.Plugins.QuestExtensionMethods;
+using Random = Harmony.Core.Random;
+using Harmony.Plugins.QuestExtensionMethods;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
 	[Info("Quest", "Grimm530", "8.6.8")]
 	[Description("An advanced quest system for your server!")]
@@ -460,7 +460,7 @@ namespace Oxide.Plugins
 							}
 						}
 
-						Interface.CallHook("OnQuestCompleted", player, parentQuest.GetDisplayName(Instance.lang.GetLanguage(player.UserIDString)));
+						HarmonyModInterface.CallHook("OnQuestCompleted", player, parentQuest.GetDisplayName(Instance.lang.GetLanguage(player.UserIDString)));
 						Instance._questStatistics.GatherTaskStatistics(TaskType.TaskExecution, ParentQuestID);
 						Instance._questStatistics.GatherTaskStatistics(TaskType.Completed);
 					}
@@ -1256,7 +1256,7 @@ namespace Oxide.Plugins
 			try
 			{
 				// Try to get the creation time of the PlayerInfo.json file
-				string playerInfoPath = Interface.Oxide.DataFileSystem.GetFile($"{Name}/PlayerInfo").Filename;
+				string playerInfoPath = HarmonyModInterface.Mods.DataFileSystem.GetFile($"{Name}/PlayerInfo").Filename;
 				if (System.IO.File.Exists(playerInfoPath))
 				{
 					DateTime fileCreationTime = System.IO.File.GetCreationTimeUtc(playerInfoPath);
@@ -1266,7 +1266,7 @@ namespace Oxide.Plugins
 				}
 
 				// Fallback to QuestStatistics.json if PlayerInfo doesn't exist
-				string questStatsPath = Interface.Oxide.DataFileSystem.GetFile($"{Name}/QuestStatistics").Filename;
+				string questStatsPath = HarmonyModInterface.Mods.DataFileSystem.GetFile($"{Name}/QuestStatistics").Filename;
 				if (System.IO.File.Exists(questStatsPath))
 				{
 					DateTime fileCreationTime = System.IO.File.GetCreationTimeUtc(questStatsPath);
@@ -1495,7 +1495,7 @@ namespace Oxide.Plugins
 			NextTick(() =>
 			{
 				PrintError(message);
-				Interface.Oxide.UnloadPlugin(Name);
+				HarmonyModInterface.Mods.UnloadPlugin(Name);
 			});
 		}
 
@@ -1775,7 +1775,7 @@ namespace Oxide.Plugins
 			{
 				// Persist back to data file preserving current list content
 				List<QuestDefinition> toSave = new List<QuestDefinition>(_questList.Values);
-				Interface.Oxide.DataFileSystem.WriteObject($"{Name}/{_config.settings.questListDataName}", toSave);
+				HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/{_config.settings.questListDataName}", toSave);
 			}
 		}
 
@@ -1816,7 +1816,7 @@ namespace Oxide.Plugins
 						ordered.Add(q);
 				}
 
-				Interface.Oxide.DataFileSystem.WriteObject($"{Name}/{_config.settings.questListDataName}", ordered);
+				HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/{_config.settings.questListDataName}", ordered);
 			}
 			catch { }
 		}
@@ -4948,7 +4948,7 @@ namespace Oxide.Plugins
 				}
 			}
 			
-			Interface.CallHook("OnQuestProgress", playerUserID, (int)questType, entName, skinId, items, count);
+			HarmonyModInterface.CallHook("OnQuestProgress", playerUserID, (int)questType, entName, skinId, items, count);
 		}
 
 		#endregion
@@ -4978,7 +4978,7 @@ namespace Oxide.Plugins
 
 			public ImageUI()
 			{
-				string root = Oxide.Core.OxideMod.ResolveServerRoot();
+				string root = Harmony.Core.HarmonyModRuntime.ResolveServerRoot();
 				string harmonyImages = Path.Combine(root, "HarmonyImages", Instance.Name);
 				if (Directory.Exists(harmonyImages))
 				{
@@ -5002,7 +5002,7 @@ namespace Oxide.Plugins
 				// Only load images from quest prize CommandImageName - no UI background images
 				try
 				{
-					var questData = Interface.Oxide.DataFileSystem.ReadObject<List<QuestDefinition>>($"{Instance.Name}/Quest");
+					var questData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<List<QuestDefinition>>($"{Instance.Name}/Quest");
 					if (questData != null)
 					{
 						foreach (var quest in questData)
@@ -5131,7 +5131,7 @@ namespace Oxide.Plugins
 				string filename = image.Key.EndsWith(".png") ? image.Key : image.Key + ".png";
 				string url = _paths.IndexOf(':') >= 0 || _paths.StartsWith("/") || _paths.StartsWith("\\")
 					? "file://" + _paths + filename
-					: "file://" + Interface.Oxide.DataDirectory + "/" + _paths + filename;
+					: "file://" + HarmonyModInterface.Mods.DataDirectory + "/" + _paths + filename;
 
 				using UnityWebRequest www = UnityWebRequestTexture.GetTexture(url);
 				yield return www.SendWebRequest();
@@ -5615,8 +5615,8 @@ namespace Oxide.Plugins
 		#region Data
 		private List<QuestDefinition> LoadQuestList()
 		{
-			return Interface.Oxide.DataFileSystem.ExistsDatafile($"{Name}/{_config.settings.questListDataName}")
-				? Interface.Oxide.DataFileSystem.ReadObject<List<QuestDefinition>>($"{Name}/{_config.settings.questListDataName}")
+			return HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile($"{Name}/{_config.settings.questListDataName}")
+				? HarmonyModInterface.Mods.DataFileSystem.ReadObject<List<QuestDefinition>>($"{Name}/{_config.settings.questListDataName}")
 				: null;
 		}
 
@@ -5782,7 +5782,7 @@ namespace Oxide.Plugins
 
 		private void LoadQuestStatisticsData()
 		{
-			_questStatistics = Interface.Oxide.DataFileSystem.ReadObject<QuestStatistics>(this.Name + $"/QuestStatistics");
+			_questStatistics = HarmonyModInterface.Mods.DataFileSystem.ReadObject<QuestStatistics>(this.Name + $"/QuestStatistics");
 			if (_questStatistics == null)
 			{
 				_questStatistics = new QuestStatistics();
@@ -5790,7 +5790,7 @@ namespace Oxide.Plugins
 		}
 		private void LoadPlayerData()
 		{
-			_playersInfo = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, PlayerData>>(this.Name + $"/PlayerInfo");
+			_playersInfo = HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<ulong, PlayerData>>(this.Name + $"/PlayerInfo");
 			if (_playersInfo == null)
 			{
 				_playersInfo = new Dictionary<ulong, PlayerData>();
@@ -5799,19 +5799,19 @@ namespace Oxide.Plugins
 
 		private void SaveData()
 		{
-			Interface.Oxide.DataFileSystem.WriteObject(this.Name + $"/PlayerInfo", _playersInfo);
-			Interface.Oxide.DataFileSystem.WriteObject(this.Name + $"/QuestStatistics", _questStatistics);
+			HarmonyModInterface.Mods.DataFileSystem.WriteObject(this.Name + $"/PlayerInfo", _playersInfo);
+			HarmonyModInterface.Mods.DataFileSystem.WriteObject(this.Name + $"/QuestStatistics", _questStatistics);
 		}
 
 		#endregion
 	}
 }
 
-namespace Oxide.Plugins.QuestExtensionMethods
+namespace Harmony.Plugins.QuestExtensionMethods
 {
 	public static class ExtensionMethods
 	{
-		private static readonly Lang Lang = Interface.Oxide.GetLibrary<Lang>();
+		private static readonly Lang Lang = HarmonyModInterface.Mods.GetLibrary<Lang>();
 
 		#region GetLang
 		

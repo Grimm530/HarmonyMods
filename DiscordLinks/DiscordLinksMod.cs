@@ -162,9 +162,9 @@ public class DiscordLinksMod : IHarmonyModHooks
             arg?.ReplyWith("USAGE: discordlink_claim <code> <discordId>");
             return;
         }
-        string code = arg.Args.ArgAt(0).Trim().ToUpperInvariant();
-        string discordId = arg.Args.ArgAt(1).Trim();
-        string discordName = arg.Args.Length > 2 ? arg.Args.ArgAt(2).Trim() : "";
+        string code = arg.Args[0].ToString().Trim().ToUpperInvariant();
+        string discordId = arg.Args[1].ToString().Trim();
+        string discordName = arg.Args.Length > 2 ? arg.Args[2].ToString().Trim() : "";
 
         if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(discordId))
         {

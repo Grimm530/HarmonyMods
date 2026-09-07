@@ -8,7 +8,7 @@ using UnityEngine;
 namespace InventoryCleaner
 {
     /// <summary>
-    /// Inventory Cleaner 2.1.2 logic (Oxide port). Config / lang / clear / chat helpers.
+    /// Inventory Cleaner 2.1.2 logic (Harmony port). Config / lang / clear / chat helpers.
     /// </summary>
     public sealed class InventoryCleanerService
     {
@@ -322,7 +322,7 @@ namespace InventoryCleaner
 
         #region Lifecycle hooks
 
-        /// <summary>Oxide OnPlayerDeath — call from BasePlayer.Die prefix (before base.Die / loot).</summary>
+        /// <summary>Harmony OnPlayerDeath — call from BasePlayer.Die prefix (before base.Die / loot).</summary>
         public void OnPlayerDeath(BasePlayer player, HitInfo info)
         {
             if (player == null) return;
@@ -333,7 +333,7 @@ namespace InventoryCleaner
             SendChatMessage(player, msg);
         }
 
-        /// <summary>Oxide OnPlayerDisconnected.</summary>
+        /// <summary>Harmony OnPlayerDisconnected.</summary>
         public void OnPlayerDisconnected(BasePlayer player)
         {
             if (player == null) return;

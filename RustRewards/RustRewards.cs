@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic; 
 using System.Linq;
 using UnityEngine;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using Rust.Ai.Gen2;
 using Newtonsoft.Json;
 
@@ -39,7 +39,7 @@ namespace RustRewardsHarmony
 
 
     /// <summary>
-    /// RustRewards 3.2.5 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// RustRewards 3.2.5 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class RustRewards : RustRewardsPluginBase
 	{
@@ -535,7 +535,9 @@ namespace RustRewardsHarmony
 			var result = new Dictionary<string, double>();
 			if (allowedKeys != null)
 			{
-				foreach (var key in allowedKeys.OrderBy(k => k))
+				var sortedKeys = new List<string>(allowedKeys);
+				sortedKeys.Sort(StringComparer.Ordinal);
+				foreach (var key in sortedKeys)
 				{
 					double val = 0;
 					if (fromConfig != null && fromConfig.TryGetValue(key, out var cfg))
@@ -548,7 +550,9 @@ namespace RustRewardsHarmony
 			// Keep config-only keys that were not in the scan (custom entries)
 			if (fromConfig != null)
 			{
-				foreach (var kv in fromConfig.OrderBy(x => x.Key))
+				var configOnly = new List<KeyValuePair<string, double>>(fromConfig);
+				configOnly.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
+				foreach (var kv in configOnly)
 				{
 					if (!result.ContainsKey(kv.Key))
 						result[kv.Key] = kv.Value;
@@ -560,13 +564,53 @@ namespace RustRewardsHarmony
 		Dictionary<string, double> MergeSortedTree(Dictionary<string, double> fromConfig, Dictionary<string, double> scanned, List<string> allowedKeys)
 		{
 			var merged = MergeSorted(fromConfig, scanned, allowedKeys);
-			return merged.OrderBy(x => x.Key).OrderBy(x => OddWood.Contains(x.Key)).ToDictionary(val => val.Key, val => val.Value);
+			var result = new Dictionary<string, double>();
+			foreach (var kv in merged)
+			{
+				if (!OddWood.Contains(kv.Key))
+					result[kv.Key] = kv.Value;
+			}
+			foreach (var kv in merged)
+			{
+				if (OddWood.Contains(kv.Key))
+					result[kv.Key] = kv.Value;
+			}
+			return result;
 		}
 
 		static Dictionary<string, double> MergeSortedPickup(Dictionary<string, double> fromConfig, Dictionary<string, double> scanned, List<string> allowedKeys)
 		{
 			var merged = MergeSorted(fromConfig, scanned, allowedKeys);
-			return merged.OrderBy(x => x.Key).OrderByDescending(x => x.Key.Contains("entity")).ToDictionary(val => val.Key, val => val.Value);
+			var result = new Dictionary<string, double>();
+			foreach (var kv in merged)
+			{
+				if (kv.Key.Contains("entity"))
+					result[kv.Key] = kv.Value;
+			}
+			foreach (var kv in merged)
+			{
+				if (!kv.Key.Contains("entity"))
+					result[kv.Key] = kv.Value;
+			}
+			return result;
+		}
+
+		static double SumCategoryTotals(Dictionary<RewardType, double> categoryTotals)
+		{
+			double sum = 0;
+			foreach (var total in categoryTotals.Values)
+				sum += total;
+			return sum;
+		}
+
+		static bool HasPositiveCategoryTotal(Dictionary<RewardType, double> categoryTotals)
+		{
+			foreach (var total in categoryTotals.Values)
+			{
+				if (total > 0)
+					return true;
+			}
+			return false;
 		}
 
 		void DictAdd(string name)
@@ -619,7 +663,7 @@ namespace RustRewardsHarmony
 			if (_dataDirty)
 				SaveData();
 		}
-		// ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+		// ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
 		public override void HarmonyInit()
 		{
 			rr = this;
@@ -948,7 +992,7 @@ namespace RustRewardsHarmony
 				MarkDataDirty();
 			}
 
-            if (Interface.CallHook("OnRustReward", player, type.ToString()) != null) 
+            if (HarmonyModInterface.CallHook("OnRustReward", player, type.ToString()) != null) 
 				return;
 
             if (name == null)
@@ -1140,7 +1184,7 @@ namespace RustRewardsHarmony
 		{
 			try
 			{
-				var dataFile = Interface.Oxide.DataFileSystem.GetFile("PlaytimeTracker/user_data");
+				var dataFile = HarmonyModInterface.Mods.DataFileSystem.GetFile("PlaytimeTracker/user_data");
 				if (dataFile == null) return;
 				var json = dataFile.ReadObject<Newtonsoft.Json.Linq.JObject>();
 				if (json == null) return;
@@ -1174,11 +1218,17 @@ namespace RustRewardsHarmony
             double ZoneMulti = 1;
 			if (ZoneManager)
 			{
-				List<string> playerzones = ((string[])ZoneManager?.Call("GetPlayerZoneIDs", player)).ToList();
-				foreach (var zone in playerzones)
-					if (zone != null && storedData.ZoneMultipliers.ContainsKey(zone))
-						if (storedData.ZoneMultipliers[zone] > ZoneMulti)
-							ZoneMulti = storedData.ZoneMultipliers[zone];
+				string[] playerzones = (string[])ZoneManager?.Call("GetPlayerZoneIDs", player);
+				if (playerzones != null)
+				{
+					for (int i = 0; i < playerzones.Length; i++)
+					{
+						string zone = playerzones[i];
+						if (zone != null && storedData.ZoneMultipliers.ContainsKey(zone))
+							if (storedData.ZoneMultipliers[zone] > ZoneMulti)
+								ZoneMulti = storedData.ZoneMultipliers[zone];
+					}
+				}
             }
 
             double PermMulti = 1;
@@ -1218,12 +1268,22 @@ namespace RustRewardsHarmony
 
 		private ulong GetMajorityAttacker(ulong id)
 		{
-			if (VehicleAttackers.ContainsKey(id))
-				return VehicleAttackers[id].OrderByDescending(pair => pair.Value).First().Key;
-			return 0U;
+			if (!VehicleAttackers.TryGetValue(id, out var attackers) || attackers == null || attackers.Count == 0)
+				return 0U;
+			ulong bestId = 0U;
+			int bestHits = int.MinValue;
+			foreach (var pair in attackers)
+			{
+				if (pair.Value > bestHits)
+				{
+					bestHits = pair.Value;
+					bestId = pair.Key;
+				}
+			}
+			return bestId;
 		}
 
-		#region OxideHooks
+		#region HarmonyHooks
 		internal void OnPlayerConnected(BasePlayer player)
 		{
 			if (conf == null || player == null)
@@ -1901,14 +1961,14 @@ namespace RustRewardsHarmony
 
 		internal void Loaded()
 		{ 
-			storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>("RustRewards/RustRewards"); 
+			storedData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<StoredData>("RustRewards/RustRewards"); 
 		}
 
 		void MarkDataDirty() => _dataDirty = true;
 
 		void SaveData()
 		{
-			Interface.Oxide.DataFileSystem.WriteObject("RustRewards/RustRewards", storedData);
+			HarmonyModInterface.Mods.DataFileSystem.WriteObject("RustRewards/RustRewards", storedData);
 			_dataDirty = false;
 		} 
 
@@ -1931,7 +1991,7 @@ namespace RustRewardsHarmony
 		{
 			try
 			{
-				return Interface.Call("GetReferrals", playerId.ToString());
+				return HarmonyModInterface.Call("GetReferrals", playerId.ToString());
 			}
 			catch
 			{
@@ -1967,7 +2027,7 @@ namespace RustRewardsHarmony
 				// Resolve under data directory when given a relative path
 				if (!System.IO.Path.IsPathRooted(path))
 				{
-					var dataDir = Interface.Oxide?.DataDirectory ?? "oxide/data";
+					var dataDir = HarmonyModInterface.Mods?.DataDirectory ?? "oxide/data";
 					path = System.IO.Path.Combine(dataDir, path.Replace("/", System.IO.Path.DirectorySeparatorChar.ToString()));
 				}
 				if (!System.IO.File.Exists(path))
@@ -1978,7 +2038,18 @@ namespace RustRewardsHarmony
 				var bytes = System.IO.File.ReadAllBytes(path);
 				if (bytes == null || bytes.Length == 0)
 					return;
-				var entity = CommunityEntity.ServerInstance ?? BaseNetworkable.serverEntities.OfType<CommunityEntity>().FirstOrDefault();
+				var entity = CommunityEntity.ServerInstance;
+				if (entity == null)
+				{
+					foreach (var netEntity in BaseNetworkable.serverEntities)
+					{
+						if (netEntity is CommunityEntity communityEntity)
+						{
+							entity = communityEntity;
+							break;
+						}
+					}
+				}
 				if (entity == null)
 					return;
 				_uiBackgroundPngId = FileStorage.server.Store(bytes, FileStorage.Type.png, entity.net.ID);
@@ -2088,7 +2159,7 @@ namespace RustRewardsHarmony
 					// Calculate earning rate if we have playtime data
 					if (usePlaytimeTracker && actualPlayTime > 0)
 					{
-						var totalEarnings = stats.CategoryTotals.Values.Sum();
+						var totalEarnings = SumCategoryTotals(stats.CategoryTotals);
 						earningRate = totalEarnings / (actualPlayTime / 3600); // per hour
 					}
 
@@ -2104,8 +2175,8 @@ namespace RustRewardsHarmony
 			// Sort by total earnings (sum of all categories)
 			playersWithStats.Sort((a, b) => 
 			{
-				var totalA = a.stats.CategoryTotals.Values.Sum();
-				var totalB = b.stats.CategoryTotals.Values.Sum();
+				var totalA = SumCategoryTotals(a.stats.CategoryTotals);
+				var totalB = SumCategoryTotals(b.stats.CategoryTotals);
 				return totalB.CompareTo(totalA); // Descending order
 			});
 
@@ -2405,7 +2476,7 @@ namespace RustRewardsHarmony
 						// Calculate earning rate if we have playtime data
 						if (usePlaytimeTracker && actualPlayTime > 0)
 						{
-							var totalEarnings = playerStat.Value.CategoryTotals.Values.Sum();
+							var totalEarnings = SumCategoryTotals(playerStat.Value.CategoryTotals);
 							earningRate = totalEarnings / (actualPlayTime / 3600); // per hour
 						}
 
@@ -2422,15 +2493,15 @@ namespace RustRewardsHarmony
 			// Sort by total rewards earned (sum of all categories)
 			playersWithStats.Sort((a, b) => 
 			{
-				double totalA = a.stats.CategoryTotals.Values.Sum();
-				double totalB = b.stats.CategoryTotals.Values.Sum();
+				double totalA = SumCategoryTotals(a.stats.CategoryTotals);
+				double totalB = SumCategoryTotals(b.stats.CategoryTotals);
 				return totalB.CompareTo(totalA);
 			});
 
 			foreach (var (playerName, steamId, stats, playTime, afkTime, actualPlayTime, earningRate) in playersWithStats)
 			{
 				// Check if player has any rewards
-				bool hasRewards = stats.CategoryTotals.Values.Any(total => total > 0);
+				bool hasRewards = HasPositiveCategoryTotal(stats.CategoryTotals);
 				if (!hasRewards && actualPlayTime < 360) continue; // Less than 6 minutes
 
 				report.AppendLine($"**{playerName}** ({steamId})");

@@ -17,6 +17,8 @@ namespace Convoy
             if (entity == null) return null;
             entity.enableSaving = enableSaving;
             entity.skinID = skinId;
+            if (skinId == 0)
+                GrimmCoreBridge.TagCustomEntity(entity);
             return entity;
         }
 

@@ -134,8 +134,13 @@ namespace ArmoredTrain
         /// <summary>Forwards to GrimmNPC.SpawnNpc(Vector3, object). Returns the spawned ScientistNPC (as object) or null.</summary>
         public static object SpawnNpc(Vector3 position, object jObjectConfig)
         {
-            if (_spawnNpc == null)
+            object live = null;
+            try { live = AppDomain.CurrentDomain.GetData(DataInstanceKey); } catch { }
+            if (_spawnNpc == null || _grimmType == null || live == null || !_grimmType.IsInstanceOfType(live))
+            {
+                _bound = false;
                 Bind();
+            }
             if (_spawnNpc == null || !TryResolveInstance())
             {
                 Debug.LogWarning("[ArmoredTrain] GrimmNPC not available - cannot spawn NPC.");
@@ -144,7 +149,10 @@ namespace ArmoredTrain
 
             try
             {
-                return _spawnNpc.Invoke(_grimmInstance, new[] { position, jObjectConfig });
+                object spawned = _spawnNpc.Invoke(_grimmInstance, new[] { position, jObjectConfig });
+                if (spawned is BaseEntity entity)
+                    GrimmCoreBridge.TagCustomEntity(entity);
+                return spawned;
             }
             catch (Exception ex)
             {
@@ -155,13 +163,13 @@ namespace ArmoredTrain
     }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
     /// NpcSpawn plugin stand-in. The ported NpcSpawnManager resolves SpawnNpc via reflection on this
     /// object's type and/or Call("SpawnNpc", pos, cfg); both route to the GrimmNPC bridge.
     /// </summary>
-    public class NpcSpawnBridge : Oxide.Core.Plugins.Plugin
+    public class NpcSpawnBridge : Harmony.Core.Plugins.Plugin
     {
         public NpcSpawnBridge() { Name = "NpcSpawn"; }
 

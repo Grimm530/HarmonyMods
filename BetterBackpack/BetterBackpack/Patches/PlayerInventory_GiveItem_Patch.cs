@@ -23,7 +23,7 @@ internal class PlayerInventory_GiveItem_Patch
     {
         __state = default;
         if (!LootDebug.IsActive) return;
-        var player = __instance.baseEntity;
+        var player = __instance.GetComponent<BasePlayer>();
         if (!LootDebug.ShouldLog(player)) return;
         if (item == null) return;
 
@@ -40,7 +40,7 @@ internal class PlayerInventory_GiveItem_Patch
     private static void Postfix(PlayerInventory __instance, Item item, bool __result, ref Trace __state)
     {
         if (!__state.Track) return;
-        var player = __instance.baseEntity;
+        var player = __instance.GetComponent<BasePlayer>();
         if (player == null) return;
 
         string after;

@@ -1,5 +1,5 @@
 using HarmonyLib;
-using ATPlugin = Oxide.Plugins.ArmoredTrain;
+using ATPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain.Patches
 {
@@ -12,7 +12,7 @@ namespace ArmoredTrain.Patches
         [HarmonyPostfix]
         public static void Postfix(PatrolHelicopterAI __instance)
         {
-            if (__instance == null || __instance._targetList == null || __instance._targetList.Count == 0)
+            if (__instance._targetList == null || __instance._targetList.Count == 0)
                 return;
 
             for (int i = __instance._targetList.Count - 1; i >= 0; i--)

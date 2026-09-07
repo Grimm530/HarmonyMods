@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Plugins;
+using Harmony.Plugins;
 using ProtoBuf;
 using Unity.Collections;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public abstract class BaseMapUser
 {

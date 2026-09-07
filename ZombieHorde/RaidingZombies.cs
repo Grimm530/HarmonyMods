@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Facepunch;
 using Rust;
 using UnityEngine;
@@ -8,7 +7,7 @@ using Random = UnityEngine.Random;
 namespace ZombieHorde
 {
     /// <summary>
-    /// Port of Oxide RaidingZombies 3.2.1 — picks raid-capable hordes and feeds TC targets into GrimmNPC.
+    /// Port of original RaidingZombies 3.2.1 — picks raid-capable hordes and feeds TC targets into GrimmNPC.
     /// Raid AI (C4/rockets/melee) is GrimmNPC RaidState / RaidStateMelee (AIState.Cooldown).
     /// Do not AddState(Cooldown) — that duplicates GrimmNPC and spams "Trying to add duplicate state: Cooldown".
     /// Config: HarmonyConfig/ZombieHorde.json → "Raiding Zombies Options".
@@ -38,7 +37,7 @@ namespace ZombieHorde
 
             SanitizeConfig();
 
-            Compat.Timer.Once(60f, () =>
+            Compat.Timer.Once(90f, () =>
             {
                 for (int i = Horde.AllHordes.Count - 1; i >= 0; i--)
                 {
@@ -65,7 +64,7 @@ namespace ZombieHorde
             TurretRetaliatedZombies.Clear();
         }
 
-        /// <summary>Called after a zombie is spawned/attached (replaces Oxide OnEntitySpawned).</summary>
+        /// <summary>Called after a zombie is spawned/attached (replaces legacy OnEntitySpawned).</summary>
         public static void OnZombieSpawned(ZombieNPC npc)
         {
             if (!IsInit || npc == null || npc.IsDestroyed || !npc.IsGroupLeader) return;
@@ -129,18 +128,26 @@ namespace ZombieHorde
             InitializeRocketTypes();
             if (s.RocketPrefabTypes != null)
             {
-                s.RocketPrefabTypes = s.RocketPrefabTypes
-                    .Where(k => RocketTypes.ContainsKey(k))
-                    .Distinct()
-                    .ToList();
+                var filtered = new List<string>();
+                var seen = new HashSet<string>();
+                foreach (var k in s.RocketPrefabTypes)
+                {
+                    if (k != null && RocketTypes.ContainsKey(k) && seen.Add(k))
+                        filtered.Add(k);
+                }
+                s.RocketPrefabTypes = filtered;
             }
 
             if (s.ThrowExplosiveItemTypes != null)
             {
-                s.ThrowExplosiveItemTypes = s.ThrowExplosiveItemTypes
-                    .Where(shortName => ItemManager.FindItemDefinition(shortName) != null)
-                    .Distinct()
-                    .ToList();
+                var filtered = new List<string>();
+                var seen = new HashSet<string>();
+                foreach (var shortName in s.ThrowExplosiveItemTypes)
+                {
+                    if (shortName != null && ItemManager.FindItemDefinition(shortName) != null && seen.Add(shortName))
+                        filtered.Add(shortName);
+                }
+                s.ThrowExplosiveItemTypes = filtered;
             }
         }
 
@@ -253,7 +260,7 @@ namespace ZombieHorde
 
                     if (zombieNpc.Horde?.members != null)
                     {
-                        foreach (ZombieNPC member in zombieNpc.Horde.members.ToList())
+                        foreach (ZombieNPC member in zombieNpc.Horde.members)
                         {
                             if (member == null || member.IsDestroyed || member.IsGroupLeader) continue;
                             if (raiders.Contains(member)) continue;
@@ -268,7 +275,7 @@ namespace ZombieHorde
                 else
                 {
                     if (DebugLog) Compat.PrintWarning("Setting new leader of Zombies already spawned");
-                    foreach (ZombieNPC member in raiders.ToList())
+                    foreach (ZombieNPC member in raiders)
                     {
                         if (member != null && !member.IsDestroyed && member != zombieNpc)
                         {
@@ -386,8 +393,9 @@ namespace ZombieHorde
 
             private void AssignRaidTarget(BuildingPrivlidge priv)
             {
-                foreach (ZombieNPC raider in raiders.ToList())
+                for (int i = raiders.Count - 1; i >= 0; i--)
                 {
+                    var raider = raiders[i];
                     if (raider == null || raider.IsDestroyed || raider.Npc == null)
                     {
                         raiders.Remove(raider);

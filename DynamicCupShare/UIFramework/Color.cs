@@ -1,9 +1,9 @@
 using System.Globalization;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos.Json;
+using Ext.Chaos.Json;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 [JsonConverter(typeof(UIColorConverter))]
 public struct Color

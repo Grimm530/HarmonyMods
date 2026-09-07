@@ -8,7 +8,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {

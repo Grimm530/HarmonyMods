@@ -10,7 +10,7 @@ namespace DoorFramesHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = DoorFramesMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             ulong uid = (ulong)__instance.userID;
             if (!plugin.IsHoldingDoorItem(uid)) return;
 
@@ -35,7 +35,7 @@ namespace DoorFramesHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = DoorFramesMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try
             {
                 Item current = __instance.GetActiveItem();
@@ -55,7 +55,7 @@ namespace DoorFramesHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = DoorFramesMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[DoorFrames] OnDisconnected: " + ex.Message); }
         }

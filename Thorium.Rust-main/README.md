@@ -1,6 +1,6 @@
 # Thorium Rust Mod
 
-Harmony mod for Rust dedicated servers that captures anti-cheat telemetry (player snapshots, RPCs, damage, entity events) and streams it to the Thorium backend over WebSocket. No Oxide dependency.
+Harmony mod for Rust dedicated servers that captures anti-cheat telemetry (player snapshots, RPCs, damage, entity events) and streams it to the Thorium backend over WebSocket. Harmony-only dependency.
 
 ---
 

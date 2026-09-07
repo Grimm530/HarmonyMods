@@ -1,13 +1,11 @@
-using System;
-using System.Reflection;
 using Facepunch;
 using HarmonyLib;
 
 namespace Convoy.Patches
 {
     /// <summary>
-    /// When Server.Find returns null, inject convoystart/convoystop commands.
-    /// Applied manually — Find(string) was replaced with Find(StringView) in current Rust builds.
+    /// When the game's Server.Find(strName) returns null, inject convoystart/convoystop.
+    /// Applied manually from ConvoyMod — current Rust uses Find(StringView), not Find(string).
     /// </summary>
     public static class Patch_ConsoleSystem_Server_Find
     {
@@ -17,8 +15,7 @@ namespace Convoy.Patches
             if (target == null)
                 return false;
 
-            var postfix = new HarmonyMethod(typeof(Patch_ConsoleSystem_Server_Find), nameof(Postfix));
-            harmony.Patch(target, postfix: postfix);
+            harmony.Patch(target, postfix: new HarmonyMethod(typeof(Patch_ConsoleSystem_Server_Find), nameof(Postfix)));
             return true;
         }
 

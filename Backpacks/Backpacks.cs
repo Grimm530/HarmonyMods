@@ -4,7 +4,7 @@
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -23,7 +23,7 @@ using Time = UnityEngine.Time;
 namespace BackpacksHarmony
 {
     /// <summary>
-    /// Backpacks 3.17.41 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// Backpacks 3.17.41 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public class Backpacks : BackpacksPluginBase
     {
@@ -76,6 +76,7 @@ namespace BackpacksHarmony
         private ProtectionProperties _immortalProtection;
         private Effect _reusableEffect = new();
         private string _cachedButtonUi;
+        private uint _guiButtonPngId;
         private Vector3 _backpackContainerPosition = new Vector3(0f, BackpackContainerHeight, 0f);
 
         public readonly ApiInstance Api;
@@ -83,6 +84,11 @@ namespace BackpacksHarmony
         private PreferencesData _preferencesData;
         private CapacityData _capacityData;
         private readonly HashSet<ulong> _uiViewers = new();
+        /// <summary>
+        /// Inventory-parent button was sent after the client could receive it.
+        /// Prevents AddUI (image reload + CUI button re-select eating hotbar 1-6) on every item move.
+        /// </summary>
+        private readonly HashSet<ulong> _inventoryGuiAttached = new();
         private readonly DynamicHookSubscriber<BasePlayer> _readonlyBackpackViewers;
         private Coroutine _saveRoutine;
         private bool _coreInitialized;
@@ -93,7 +99,7 @@ namespace BackpacksHarmony
 
         public Backpacks()
         {
-            Version = new VersionNumber(3, 17, 42);
+            Version = new VersionNumber(3, 17, 46);
             _backpackManager = new BackpackManager(this);
             _capacityManager = new CapacityManager(this, _backpackManager);
             _readonlyBackpackViewers = new DynamicHookSubscriber<BasePlayer>(this, nameof(CanMoveItem), nameof(OnItemAction));
@@ -106,7 +112,7 @@ namespace BackpacksHarmony
 
         /// <summary>
         /// When set to an absolute directory path, player backpacks, preferences, and capacity data are stored as JSON
-        /// under that folder (bypassing <see cref="Oxide.Core.Interface.Oxide.DataFileSystem"/>, which cannot write outside
+        /// under that folder (bypassing <see cref="Harmony.Core.HarmonyModInterface.Mods.DataFileSystem"/>, which cannot write outside
         /// the oxide instance directory). Empty string keeps default <c>oxide/data</c> behavior.
         /// </summary>
         internal bool UsesCustomBackpackDataDirectory =>
@@ -124,7 +130,7 @@ namespace BackpacksHarmony
                 Directory.CreateDirectory(root);
         }
 
-        /// <summary>Maps Oxide-style logical names: <c>Backpacks</c>, <c>BackpacksCapacity</c>, <c>Backpacks/&lt;steamid&gt;</c>.</summary>
+        /// <summary>Maps compat-style logical names: <c>Backpacks</c>, <c>BackpacksCapacity</c>, <c>Backpacks/&lt;steamid&gt;</c>.</summary>
         internal string GetCustomAbsolutePathForDataName(string logicalName)
         {
             var root = CustomBackpackDataDirectoryFull;
@@ -181,7 +187,7 @@ namespace BackpacksHarmony
 
         private void LogPersistenceStartupSummary()
         {
-            var oxideData = Interface.Oxide.DataDirectory;
+            var oxideData = HarmonyModInterface.Mods.DataDirectory;
             LogPersistenceDebug("=== persistence startup (Enable Data Persistence Debug) ===");
             LogPersistenceDebug($"Oxide.DataDirectory: {oxideData}");
             LogPersistenceDebug($"Config \"Custom backpack data directory\": \"{_config.CustomBackpackDataDirectory}\"");
@@ -366,6 +372,7 @@ namespace BackpacksHarmony
 
             CheckBackpackButtonPlugin();
             MaybeRegisterItemRetriever();
+            LoadGuiButtonImage();
 
             if (_config.EnableDataPersistenceDebug)
             {
@@ -417,7 +424,7 @@ namespace BackpacksHarmony
 
             PoolUtils.ResizePools(empty: true);
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             // Load config/messages only. Init() calls ItemManager.FindItemDefinition via
@@ -449,7 +456,7 @@ namespace BackpacksHarmony
 
         private void TryWipeFromMapVoterSignal()
         {
-            var statePath = Path.Combine(Interface.Oxide.DataDirectory, Name, "last_wipe_signal.txt");
+            var statePath = Path.Combine(HarmonyModInterface.Mods.DataDirectory, Name, "last_wipe_signal.txt");
             if (UsesCustomBackpackDataDirectory && !string.IsNullOrEmpty(CustomBackpackDataDirectoryFull))
                 statePath = Path.Combine(CustomBackpackDataDirectoryFull, "last_wipe_signal.txt");
             if (!WipeSignal.ShouldWipe(statePath)) return;
@@ -485,7 +492,7 @@ namespace BackpacksHarmony
             {
                 backpackFileNameList = UsesCustomBackpackDataDirectory
                     ? EnumerateCustomBackpackPlayerIdFileStems()
-                    : Interface.Oxide.DataFileSystem.GetFiles(Name)
+                    : HarmonyModInterface.Mods.DataFileSystem.GetFiles(Name)
                         .Select(fn => fn.Split(Path.DirectorySeparatorChar).Last()
                             .Replace(".json", string.Empty));
             }
@@ -705,8 +712,10 @@ namespace BackpacksHarmony
             else if (_config.GUI.Enabled && perm.Equals(GUIPermission))
             {
                 var groupName2 = groupName;
-                foreach (var player in BasePlayer.activePlayerList.Where(p => permission.UserHasGroup(p.UserIDString, groupName2)))
+                foreach (var player in BasePlayer.activePlayerList)
                 {
+                    if (player == null || !permission.UserHasGroup(player.UserIDString, groupName2))
+                        continue;
                     CreateOrDestroyButtonUi(player);
                 }
             }
@@ -1329,37 +1338,37 @@ namespace BackpacksHarmony
         {
             public static object CanOpenBackpack(BasePlayer looter, ulong ownerId)
             {
-                return Interface.CallHook("CanOpenBackpack", looter, ObjectCache.Get(ownerId));
+                return HarmonyModInterface.CallHook("CanOpenBackpack", looter, ObjectCache.Get(ownerId));
             }
 
             public static void OnBackpackClosed(BasePlayer looter, ulong ownerId, ItemContainer container)
             {
-                Interface.CallHook("OnBackpackClosed", looter, ObjectCache.Get(ownerId), container);
+                HarmonyModInterface.CallHook("OnBackpackClosed", looter, ObjectCache.Get(ownerId), container);
             }
 
             public static void OnBackpackOpened(BasePlayer looter, ulong ownerId, ItemContainer container)
             {
-                Interface.CallHook("OnBackpackOpened", looter, ObjectCache.Get(ownerId), container);
+                HarmonyModInterface.CallHook("OnBackpackOpened", looter, ObjectCache.Get(ownerId), container);
             }
 
             public static object CanDropBackpack(ulong ownerId, Vector3 position)
             {
-                return Interface.CallHook("CanDropBackpack", ObjectCache.Get(ownerId), position);
+                return HarmonyModInterface.CallHook("CanDropBackpack", ObjectCache.Get(ownerId), position);
             }
 
             public static void OnBackpackDropped(ulong ownerId, List<DroppedItemContainer> droppedBackpackList)
             {
-                Interface.CallHook("OnBackpackDropped", ownerId, droppedBackpackList);
+                HarmonyModInterface.CallHook("OnBackpackDropped", ownerId, droppedBackpackList);
             }
 
             public static object CanEraseBackpack(ulong ownerId)
             {
-                return Interface.CallHook("CanEraseBackpack", ObjectCache.Get(ownerId));
+                return HarmonyModInterface.CallHook("CanEraseBackpack", ObjectCache.Get(ownerId));
             }
 
             public static object CanBackpackAcceptItem(ulong ownerId, ItemContainer container, Item item)
             {
-                return Interface.CallHook("CanBackpackAcceptItem", ObjectCache.Get(ownerId), container, item);
+                return HarmonyModInterface.CallHook("CanBackpackAcceptItem", ObjectCache.Get(ownerId), container, item);
             }
         }
 
@@ -1600,6 +1609,7 @@ namespace BackpacksHarmony
             SaveConfig();
 
             _uiViewers.Clear();
+            _inventoryGuiAttached.Clear();
             foreach (var p in BasePlayer.activePlayerList)
                 ButtonUi.DestroyUi(p);
 
@@ -1659,7 +1669,8 @@ namespace BackpacksHarmony
             if (!VerifyPlayer(player, out var basePlayer))
                 return;
 
-            var lootingContainer = basePlayer.inventory.loot.containers.FirstOrDefault();
+            var lootContainers = basePlayer.inventory.loot.containers;
+            var lootingContainer = lootContainers != null && lootContainers.Count > 0 ? lootContainers[0] : null;
             if (lootingContainer == null)
                 return;
 
@@ -1676,7 +1687,8 @@ namespace BackpacksHarmony
             if (!VerifyPlayer(player, out var basePlayer))
                 return;
 
-            var lootingContainer = basePlayer.inventory.loot.containers.FirstOrDefault();
+            var lootContainers = basePlayer.inventory.loot.containers;
+            var lootingContainer = lootContainers != null && lootContainers.Count > 0 ? lootContainers[0] : null;
             if (lootingContainer == null)
                 return;
 
@@ -1811,10 +1823,10 @@ namespace BackpacksHarmony
 
         #region Helper Methods
 
-        public static void LogDebug(string message) => Interface.Oxide.LogDebug($"[Backpacks] {message}");
-        public static void LogInfo(string message) => Interface.Oxide.LogInfo($"[Backpacks] {message}");
-        public static void LogWarning(string message) => Interface.Oxide.LogWarning($"[Backpacks] {message}");
-        public static void LogError(string message) => Interface.Oxide.LogError($"[Backpacks] {message}");
+        public static void LogDebug(string message) => HarmonyModInterface.Mods.LogDebug($"[Backpacks] {message}");
+        public static void LogInfo(string message) => HarmonyModInterface.Mods.LogInfo($"[Backpacks] {message}");
+        public static void LogWarning(string message) => HarmonyModInterface.Mods.LogWarning($"[Backpacks] {message}");
+        public static void LogError(string message) => HarmonyModInterface.Mods.LogError($"[Backpacks] {message}");
 
         private static T[] ParseEnumList<T>(string[] list, string errorFormat) where T : struct
         {
@@ -1904,7 +1916,7 @@ namespace BackpacksHarmony
         private static void StartLooting(BasePlayer player, ItemContainer container, StorageContainer entitySource)
         {
             if (player.CanInteract()
-                && Interface.CallHook("CanLootEntity", player, entitySource) == null
+                && HarmonyModInterface.CallHook("CanLootEntity", player, entitySource) == null
                 && player.inventory.loot.StartLootingEntity(entitySource, doPositionChecks: false))
             {
                 player.inventory.loot.AddContainer(container);
@@ -2154,7 +2166,8 @@ namespace BackpacksHarmony
             backpack = null;
             pageIndex = 0;
 
-            var lootingContainer = player.inventory.loot.containers.FirstOrDefault();
+            var lootContainers = player.inventory.loot.containers;
+            var lootingContainer = lootContainers != null && lootContainers.Count > 0 ? lootContainers[0] : null;
             return lootingContainer != null
                 && _backpackManager.IsBackpack(lootingContainer, out backpack, out pageIndex);
         }
@@ -2164,7 +2177,8 @@ namespace BackpacksHarmony
             backpack = null;
             pageIndex = 0;
 
-            var lootingContainer = player.inventory.loot.containers.FirstOrDefault();
+            var lootContainers = player.inventory.loot.containers;
+            var lootingContainer = lootContainers != null && lootContainers.Count > 0 ? lootContainers[0] : null;
             return lootingContainer != null
                 && _backpackManager.IsBackpack(GetRootContainer(lootingContainer), out backpack, out pageIndex);
         }
@@ -2196,7 +2210,8 @@ namespace BackpacksHarmony
         private void OpenBackpack(BasePlayer looter, bool isKeyBind, int desiredPageIndex = -1, bool forward = true, bool wrapAround = true, ulong desiredOwnerId = 0)
         {
             var playerLoot = looter.inventory.loot;
-            var lootingContainer = playerLoot.containers.FirstOrDefault();
+            var lootContainers = playerLoot.containers;
+            var lootingContainer = lootContainers != null && lootContainers.Count > 0 ? lootContainers[0] : null;
 
             if (lootingContainer != null)
             {
@@ -2228,7 +2243,7 @@ namespace BackpacksHarmony
                     }
 
                     // Call the OnLootEntityEnd hook on current container before switching pages.
-                    Interface.CallHook("OnLootEntityEnd", looter, lootingContainer.entityOwner);
+                    HarmonyModInterface.CallHook("OnLootEntityEnd", looter, lootingContainer.entityOwner);
 
                     currentBackpack.SwitchToPage(looter, nextPageIndex);
                     return;
@@ -2427,7 +2442,7 @@ namespace BackpacksHarmony
         private bool IsPlayingEvent(BasePlayer player)
         {
             // Multiple event/arena plugins define the isEventPlayer method as a standard.
-            if (Interface.CallHook("isEventPlayer", player) is true)
+            if (HarmonyModInterface.CallHook("isEventPlayer", player) is true)
                 return true;
 
             // EventManager 3.x
@@ -2449,6 +2464,54 @@ namespace BackpacksHarmony
             return false;
         }
 
+        /// <summary>Load HarmonyImages/Backpack/backpackgz.png (or config path) into FileStorage for inventory CUI icon.</summary>
+        private void LoadGuiButtonImage()
+        {
+            _guiButtonPngId = 0;
+            _cachedButtonUi = null;
+
+            if (!_config.GUI.Enabled)
+                return;
+
+            var relative = (_config.GUI.LocalImagePath ?? "").Trim();
+            if (string.IsNullOrEmpty(relative))
+                relative = "HarmonyImages/Backpack/backpackgz.png";
+
+            var serverRoot = Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, ".."));
+            var path = Path.IsPathRooted(relative) ? relative : Path.Combine(serverRoot, relative);
+            if (!File.Exists(path))
+            {
+                LogWarning($"GUI button local image not found: {path}");
+                return;
+            }
+
+            var ce = CommunityEntity.ServerInstance;
+            if (ce == null || ce.IsDestroyed)
+            {
+                foreach (var e in BaseNetworkable.serverEntities)
+                {
+                    if (e is CommunityEntity c && c != null && !c.IsDestroyed)
+                    {
+                        ce = c;
+                        break;
+                    }
+                }
+            }
+
+            if (ce == null || ce.IsDestroyed)
+            {
+                LogWarning("GUI button image: CommunityEntity not ready; will use Image URL fallback if set.");
+                return;
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            if (bytes == null || bytes.Length == 0)
+                return;
+
+            _guiButtonPngId = FileStorage.server.Store(bytes, FileStorage.Type.png, ce.net.ID);
+            Puts($"GUI button image loaded from {path} (FileStorage id {_guiButtonPngId}).");
+        }
+
         private void MaybeCreateButtonUi(BasePlayer player, bool retryIfClientNotReady = false)
         {
             if (!_config.GUI.Enabled)
@@ -2463,25 +2526,37 @@ namespace BackpacksHarmony
             if (!ShouldDisplayGuiButton(player))
                 return;
 
+            // Already attached after the Inventory parent existed — do not destroy/recreate
+            // (URL/png reload flash + Unity Button re-select eats hotbar keys 1-6).
+            if (_inventoryGuiAttached.Contains(player.userID))
+                return;
+
             _uiViewers.Add(player.userID);
-            _cachedButtonUi ??= ButtonUi.CreateButtonUi(_config);
+            _cachedButtonUi ??= ButtonUi.CreateButtonUi(_config, _guiButtonPngId);
             CuiHelper.AddUi(player, _cachedButtonUi);
 
             // Client CUI Inventory panel may not exist yet during snapshot / first wake.
             if (retryIfClientNotReady && player.net?.connection != null)
             {
                 var userId = player.userID;
-                timer.Once(1f, () =>
+                foreach (var delay in new[] { 1f, 3f, 8f, 15f, 30f })
                 {
-                    var retryPlayer = BasePlayer.FindByID(userId);
-                    if (retryPlayer != null)
-                        MaybeCreateButtonUi(retryPlayer);
-                });
+                    timer.Once(delay, () =>
+                    {
+                        var retryPlayer = BasePlayer.FindByID(userId);
+                        if (retryPlayer != null)
+                            MaybeCreateButtonUi(retryPlayer, retryIfClientNotReady: false);
+                    });
+                }
             }
         }
 
         private void DestroyButtonUi(BasePlayer player)
         {
+            if (player == null)
+                return;
+
+            _inventoryGuiAttached.Remove(player.userID);
             if (!_uiViewers.Remove(player.userID))
                 return;
 
@@ -2501,12 +2576,27 @@ namespace BackpacksHarmony
         }
 
         /// <summary>
-        /// Called when the Permissions Harmony mod (re)binds. Recreates or removes the
-        /// inventory GUI button for every online player based on current grants.
+        /// Called from Hud when the client inventory layer is available, and when
+        /// Permissions rebinds. Must not AddUI on every item move — that reloads the
+        /// backpack image and steals hotbar keys 1-6 via CUI Button re-select.
         /// </summary>
+        internal void RefreshInventoryGuiButton(BasePlayer player)
+        {
+            if (player == null || player.IsNpc || !player.IsConnected)
+                return;
+            if (player.IsReceivingSnapshot)
+                return;
+            if (_inventoryGuiAttached.Contains(player.userID))
+                return;
+
+            MaybeCreateButtonUi(player, retryIfClientNotReady: false);
+            if (_uiViewers.Contains(player.userID))
+                _inventoryGuiAttached.Add(player.userID);
+        }
+
         internal void RefreshGuiButtonsAfterPermissionsReady()
         {
-            if (!_config.GUI.Enabled)
+            if (_config == null || !_config.GUI.Enabled)
                 return;
 
             foreach (var player in BasePlayer.activePlayerList)
@@ -3742,7 +3832,7 @@ namespace BackpacksHarmony
 
                 if (Command != DefaultCommand)
                 {
-                    // Clients only forward ConsoleGen commands. Oxide-style backpack.* CUI
+                    // Clients only forward ConsoleGen commands. compat-style backpack.* CUI
                     // callbacks must go through cui.endtest BP (see CuiHelper.RewriteHarmonyButtonCommands).
                     var command = Command;
                     if (command != null && command.StartsWith("backpack", StringComparison.Ordinal))
@@ -4467,7 +4557,7 @@ namespace BackpacksHarmony
                     $"{(minX + w).ToString(CultureInfo.InvariantCulture)} {(minY + h).ToString(CultureInfo.InvariantCulture)}");
             }
 
-            public static string CreateButtonUi(Configuration config)
+            public static string CreateButtonUi(Configuration config, uint localPngId = 0)
             {
                 var uiBuilder = UiBuilder.Default;
 
@@ -4525,7 +4615,22 @@ namespace BackpacksHarmony
                         },
                     });
                 }
-                else
+                else if (localPngId != 0)
+                {
+                    uiBuilder.AddSerializable(new UiElement<UiComponents<UiRawImageComponent, UiRectTransformComponent>>
+                    {
+                        Parent = Name,
+                        Components =
+                        {
+                            new UiRawImageComponent
+                            {
+                                Png = localPngId.ToString(CultureInfo.InvariantCulture),
+                            },
+                            iconRect,
+                        },
+                    });
+                }
+                else if (!string.IsNullOrWhiteSpace(config.GUI.Image))
                 {
                     uiBuilder.AddSerializable(new UiElement<UiComponents<UiRawImageComponent, UiRectTransformComponent>>
                     {
@@ -4535,6 +4640,21 @@ namespace BackpacksHarmony
                             new UiRawImageComponent
                             {
                                 Url = config.GUI.Image,
+                            },
+                            iconRect,
+                        },
+                    });
+                }
+                else
+                {
+                    uiBuilder.AddSerializable(new UiElement<UiComponents<UiImageComponent, UiRectTransformComponent>>
+                    {
+                        Parent = Name,
+                        Components =
+                        {
+                            new UiImageComponent
+                            {
+                                ItemId = SaddleBagItemId,
                             },
                             iconRect,
                         },
@@ -5143,7 +5263,7 @@ namespace BackpacksHarmony
                 }
                 else
                 {
-                    Interface.Oxide.DataFileSystem.DeleteDataFile(logical);
+                    HarmonyModInterface.Mods.DataFileSystem.DeleteDataFile(logical);
                 }
             }
 
@@ -5267,7 +5387,7 @@ namespace BackpacksHarmony
                     return abs != null && File.Exists(abs);
                 }
 
-                return Interface.Oxide.DataFileSystem.ExistsDatafile(logical);
+                return HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(logical);
             }
 
             private Backpack Load(ulong userId)
@@ -5296,7 +5416,7 @@ namespace BackpacksHarmony
                     }
                     else
                     {
-                        var df = Interface.Oxide.DataFileSystem.GetFile(filePath);
+                        var df = HarmonyModInterface.Mods.DataFileSystem.GetFile(filePath);
                         _plugin.LogPersistenceDebug(
                             $"  mode=default DataFile.Filename={df.Filename} Exists={df.Exists()}");
                     }
@@ -5321,7 +5441,7 @@ namespace BackpacksHarmony
                 }
                 else
                 {
-                    dataFile = Interface.Oxide.DataFileSystem.GetFile(filePath);
+                    dataFile = HarmonyModInterface.Mods.DataFileSystem.GetFile(filePath);
                     if (dataFile.Exists())
                     {
                         hadPersistenceFile = true;
@@ -5536,7 +5656,9 @@ namespace BackpacksHarmony
             {
                 _plugin.TrackStart();
                 _backpack.OnClosed(looter);
-                ExposedHooks.OnBackpackClosed(looter, _backpack.OwnerId, looter.inventory.loot.containers.FirstOrDefault());
+                var closedLootContainers = looter.inventory.loot.containers;
+                var closedLootContainer = closedLootContainers != null && closedLootContainers.Count > 0 ? closedLootContainers[0] : null;
+                ExposedHooks.OnBackpackClosed(looter, _backpack.OwnerId, closedLootContainer);
                 _plugin.TrackEnd();
             }
         }
@@ -6155,7 +6277,7 @@ namespace BackpacksHarmony
             private Backpack _backpack;
 
             private Action _onDirty;
-            private Func<Item, int, bool> _canAcceptItem;
+            private Func<BasePlayer, Item, int, bool> _canAcceptItem;
             private Action<Item, bool> _onItemAddedRemoved;
 
             private Backpacks _plugin => _backpack.Plugin;
@@ -6164,7 +6286,7 @@ namespace BackpacksHarmony
             public ItemContainerAdapter()
             {
                 _onDirty = () => _backpack.MarkDirty();
-                _canAcceptItem = (item, amount) =>
+                _canAcceptItem = (_, item, __) =>
                 {
                     // Explicitly track hook time so server owners can be informed of the cost.
                     var result = _backpack.ShouldAcceptItem(item, ItemContainer);
@@ -6611,7 +6733,8 @@ namespace BackpacksHarmony
 
             private bool ShouldIgnoreContainer()
             {
-                var lootingContainer = _player.inventory.loot.containers.FirstOrDefault();
+                var lootContainers = _player.inventory.loot.containers;
+                var lootingContainer = lootContainers != null && lootContainers.Count > 0 ? lootContainers[0] : null;
                 if (lootingContainer == null)
                     return false;
 
@@ -7773,7 +7896,7 @@ namespace BackpacksHarmony
                 playerLoot.containers.Clear();
                 // 3.17.6: required for loot UI after game loot-source changes.
                 playerLoot.entitySource = itemContainer.entityOwner;
-                Interface.CallHook("OnLootEntity", looter, itemContainer.entityOwner);
+                HarmonyModInterface.CallHook("OnLootEntity", looter, itemContainer.entityOwner);
                 playerLoot.AddContainer(itemContainer);
                 playerLoot.SendImmediate();
                 ExposedHooks.OnBackpackOpened(looter, OwnerId, itemContainer);
@@ -9352,7 +9475,7 @@ namespace BackpacksHarmony
                 }
                 else
                 {
-                    Interface.Oxide.DataFileSystem.WriteObject(LogicalDataFileName, this);
+                    HarmonyModInterface.Mods.DataFileSystem.WriteObject(LogicalDataFileName, this);
                 }
 
                 _dirty = false;
@@ -9401,7 +9524,7 @@ namespace BackpacksHarmony
                 }
                 else
                 {
-                    data = Interface.Oxide.DataFileSystem.ReadObject<PreferencesData>(FileName);
+                    data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PreferencesData>(FileName);
                     data.DataHost = host;
                 }
 
@@ -9467,7 +9590,7 @@ namespace BackpacksHarmony
                     return path != null && File.Exists(path);
                 }
 
-                return Interface.Oxide.DataFileSystem.ExistsDatafile(FileName);
+                return HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(FileName);
             }
 
             public static CapacityData Load(Backpacks host)
@@ -9506,7 +9629,7 @@ namespace BackpacksHarmony
                 }
                 else
                 {
-                    data = Interface.Oxide.DataFileSystem.ReadObject<CapacityData>(FileName);
+                    data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<CapacityData>(FileName);
                     data.DataHost = host;
                 }
 
@@ -10150,6 +10273,9 @@ namespace BackpacksHarmony
 
                 [JsonProperty("Image")]
                 public string Image = "";
+
+                [JsonProperty("Local image path (relative to server root; preferred over Image URL when file exists)")]
+                public string LocalImagePath = "HarmonyImages/Backpack/backpackgz.png";
 
                 [JsonProperty("Background Color")]
                 public string Color = "0.969 0.922 0.882 0.035";

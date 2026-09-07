@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using ZM = Oxide.Plugins.ZoneManager;
+using ZM = Harmony.Plugins.ZoneManager;
 
 namespace ZoneManagerHarmony.Patches
 {
@@ -27,7 +27,7 @@ namespace ZoneManagerHarmony.Patches
             {
                 // Grade is read from the RPC stream by the original; we only cancel when NoUpgrade is set.
                 // OnStructureUpgrade uses the player's current target grade via the hook args after the original
-                // would parse them — cancel using the player's zone flag through the 3-arg Oxide signature
+                // would parse them — cancel using the player's zone flag through the 3-arg compat signature
                 // by probing with the block's current grade (plugin ignores the grade value besides identity).
                 object result = ZM.Dispatch_OnStructureUpgrade(__instance, msg.player, __instance.grade);
                 if (result != null) return false;

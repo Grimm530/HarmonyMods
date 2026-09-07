@@ -673,6 +673,7 @@ namespace ZombieHorde
             }
 
             private static readonly Queue<SpawnOrder> _spawnOrders = new Queue<SpawnOrder>();
+            public static int PendingCount => _spawnOrders.Count;
             private static Coroutine _spawnRoutine;
             private static Coroutine _despawnRoutine;
             private static bool _isSpawning;

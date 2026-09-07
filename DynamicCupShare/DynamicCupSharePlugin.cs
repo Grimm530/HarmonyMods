@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 using UnityEngine.UI;
 
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Font = Oxide.Ext.Chaos.UIFramework.Font;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using Color = Ext.Chaos.UIFramework.Color;
+using Font = Ext.Chaos.UIFramework.Font;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 
 namespace DynamicCupShareHarmony
 {
@@ -353,7 +353,7 @@ namespace DynamicCupShareHarmony
         public void OnEntitySpawned(BuildingPrivlidge buildingPrivlidge)
         {
             if (!_entitiesReady) return;
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (buildingPrivlidge)
                     PlayerEntities.GetOrCreate(buildingPrivlidge.OwnerID)?.AddEntity(buildingPrivlidge, true);
@@ -363,7 +363,7 @@ namespace DynamicCupShareHarmony
         public void OnEntitySpawned(AutoTurret autoTurret)
         {
             if (!_entitiesReady) return;
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (autoTurret)
                     PlayerEntities.GetOrCreate(autoTurret.OwnerID)?.AddEntity(autoTurret, true);
@@ -373,7 +373,7 @@ namespace DynamicCupShareHarmony
         public void OnEntitySpawned(CodeLock codeLock)
         {
             if (!_entitiesReady) return;
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (!codeLock)
                     return;
@@ -433,7 +433,7 @@ namespace DynamicCupShareHarmony
 
         public void RebuildCodeLockShares(CodeLock codeLock)
         {
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (!codeLock)
                     return;

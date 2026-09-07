@@ -35,6 +35,11 @@ namespace CustomMapGen.Patches
             CustomMapGen.SetIsLoadingExistingMap(exists);
             if (exists)
             {
+                if (config?.MapImage != null && config.MapImage.Enabled)
+                {
+                    UnityEngine.Debug.Log("[CustomMapGen] Existing map detected — keeping mod loaded to write map image (world.rendermap + cargo).");
+                    return;
+                }
                 bool keepLoadedForDiagnostics =
                     config?.DebugLogging == true &&
                     (config.DebugLogSkippedWorldPrefabs || config.DebugLogSwapMapPrefabBreakdown);

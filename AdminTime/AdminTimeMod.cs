@@ -613,7 +613,7 @@ namespace AdminTime
 
         private static bool IsSteamId(ulong id) => id >= 76561197960265728UL;
 
-        #region Public API (for Oxide plugins via reflection)
+        #region Public API (for Harmony mods via reflection)
 
         public static bool SetPlayerTime(BasePlayer player, float time)
         {

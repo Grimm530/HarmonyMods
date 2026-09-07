@@ -33,7 +33,7 @@ namespace ShopHarmony.Patches
                 var limiter = ShopHarmonyMod.Instance?.Plugin?.HorseLimiter;
                 if (limiter == null || !limiter.Enabled) return;
                 BasePlayer player = msg.player;
-                if (player == null || __instance == null || __instance.IsDestroyed) return;
+                if (player == null || __instance.IsDestroyed) return;
                 // Successful claim clears IsForSale (Reserved2).
                 if (!__instance.IsForSale)
                     limiter.OnClaimed(__instance, player);
@@ -88,7 +88,6 @@ namespace ShopHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null) return;
             try
             {
                 var horse = __instance.GetComponentInParent<RidableHorse>();

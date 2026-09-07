@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using WipeScheduleHarmony.WipeScheduleEx;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -19,13 +19,13 @@ using UnityEngine.UI;
 namespace WipeScheduleHarmony
 {
     /// <summary>
-    /// Wipe Schedule 2.0.21 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// Wipe Schedule 2.0.21 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class WipeSchedule : WipeSchedulePluginBase
     {
         #region Fields
 
-        // Optional Oxide plugin stubs (ImageLibrary replaced by built-in FileStorage loader).
+        // Optional Harmony mod stubs (ImageLibrary replaced by built-in FileStorage loader).
 #pragma warning disable CS0414
         private Plugin ImageLibrary = null, ServerPanel = null, Notify = null, UINotify = null;
 #pragma warning restore CS0414
@@ -477,7 +477,7 @@ namespace WipeScheduleHarmony
         private void SendNotify(BasePlayer player, string key, int type, params object[] obj)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, Msg(player.UserIDString, key, obj));
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, Msg(player.UserIDString, key, obj));
             else
                 Reply(player, key, obj);
         }
@@ -515,7 +515,7 @@ namespace WipeScheduleHarmony
             Instance = null;
             FullScreenTransform = null;
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -613,7 +613,7 @@ namespace WipeScheduleHarmony
 
         private static void SaveDateFile<T>(string name, T value) where T : class
         {
-            Interface.Oxide.DataFileSystem.WriteObject(name, value);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(name, value);
         }
 
         private static T LoadDateFile<T>(string name, GetDef<T> callbackDefault) where T : class
@@ -621,7 +621,7 @@ namespace WipeScheduleHarmony
             T obj = null;
             try
             {
-                obj = !Interface.Oxide.DataFileSystem.ExistsDatafile(name) ? callbackDefault.Invoke() : Interface.Oxide.DataFileSystem.ReadObject<T>(name);
+                obj = !HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(name) ? callbackDefault.Invoke() : HarmonyModInterface.Mods.DataFileSystem.ReadObject<T>(name);
             }
             finally
             {

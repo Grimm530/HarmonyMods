@@ -6,7 +6,7 @@
 
 This folder is kept as a standalone reference only.
 
-Oxide **SortButton 2.7.0** port. Adds a sort button on supported storage loot panels.
+Legacy **SortButton 2.7.0** port. Adds a sort button on supported storage loot panels.
 
 ## Load order
 

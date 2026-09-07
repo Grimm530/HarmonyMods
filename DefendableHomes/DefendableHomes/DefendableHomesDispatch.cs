@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
-using Oxide.Core.Plugins;
-using Oxide.Plugins.DefendableHomesExtensionMethods;
+using Harmony.Core.Plugins;
+using Harmony.Plugins.DefendableHomesExtensionMethods;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
-    /// Harmony glue for the ported plugin: Oxide-style lifecycle + hook methods (private instance
+    /// Harmony glue for the ported plugin: compat-style lifecycle + hook methods (private instance
     /// members of DefendableHomes) for Harmony patches and console commands. Dispatchers early-out
-    /// when no event is active, replacing Oxide Subscribe/Unsubscribe.
+    /// when no event is active, replacing compat Subscribe/Unsubscribe.
     /// </summary>
     public partial class DefendableHomes
     {

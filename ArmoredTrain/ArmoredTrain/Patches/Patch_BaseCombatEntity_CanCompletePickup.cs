@@ -1,5 +1,5 @@
 using HarmonyLib;
-using ATPlugin = Oxide.Plugins.ArmoredTrain;
+using ATPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain.Patches
 {

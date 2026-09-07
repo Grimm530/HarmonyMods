@@ -141,7 +141,13 @@ namespace DefendableHomes
 
         public static object SpawnNpc(Vector3 position, object jObjectConfig)
         {
-            if (_spawnNpc == null) Bind();
+            object live = null;
+            try { live = AppDomain.CurrentDomain.GetData(DataInstanceKey); } catch { }
+            if (_spawnNpc == null || _grimmType == null || live == null || !_grimmType.IsInstanceOfType(live))
+            {
+                _bound = false;
+                Bind();
+            }
             if (_spawnNpc == null || !TryResolveInstance())
             {
                 Debug.LogWarning("[DefendableHomes] GrimmNPC not available - cannot spawn NPC.");
@@ -195,12 +201,12 @@ namespace DefendableHomes
     }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
     /// NpcSpawn plugin stand-in. The ported plugin's NpcSpawn.Call(...) routes here, then to GrimmNPC.
     /// </summary>
-    public class NpcSpawnBridge : Oxide.Core.Plugins.Plugin
+    public class NpcSpawnBridge : Harmony.Core.Plugins.Plugin
     {
         public NpcSpawnBridge() { Name = "NpcSpawn"; IsLoaded = true; }
 

@@ -1,6 +1,6 @@
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 
-namespace Oxide.Game.Rust.Cui;
+namespace Game.Rust.Cui;
 
 public static class CuiHelper
 {

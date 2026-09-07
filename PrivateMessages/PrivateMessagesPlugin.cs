@@ -171,7 +171,7 @@ namespace PrivateMessagesHarmony
                 return;
             }
 
-            // CallCanChat / CallOnPMProcessed Oxide hooks are no-ops under Harmony.
+            // CallCanChat / CallOnPMProcessed Harmony hooks are no-ops under Harmony.
 
             if (CheckMuteStatus(sender, target))
                 return;

@@ -9,7 +9,7 @@ namespace RustLeagueHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = RustLeagueMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             plugin.OnPlayerDisconnected(__instance);
         }
     }

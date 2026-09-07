@@ -4,7 +4,7 @@ using System.IO;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
@@ -16,7 +16,7 @@ namespace Oxide.Plugins
     }
 }
 
-namespace Oxide.Ext.Chaos.Data
+namespace Grimm.Chaos.Data
 {
     public class Datafile<T> where T : class, new()
     {
@@ -262,7 +262,7 @@ namespace MinimapHarmony
     }
 }
 
-namespace Oxide.Ext.Chaos
+namespace Grimm.Chaos
 {
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class PermissionAttribute : Attribute

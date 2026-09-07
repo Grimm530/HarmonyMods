@@ -32,37 +32,35 @@ namespace IndustrialTransferSpeed
                     _config = JsonConvert.DeserializeObject<IndustrialTransferSpeedConfig>(json);
                     if (_config == null)
                         _config = new IndustrialTransferSpeedConfig();
+                    _config.MaxStackSizePerMove = Math.Max(1, Math.Min(100000, _config.MaxStackSizePerMove));
                 }
                 else
                 {
                     _config = new IndustrialTransferSpeedConfig();
                     Save();
                 }
-
-                _config.MaxStackSizePerMove = Math.Max(1, Math.Min(100000, _config.MaxStackSizePerMove));
-                return _config;
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError($"[IndustrialTransferSpeed] Failed to load config: {ex.Message}");
+                UnityEngine.Debug.LogError($"[IndustrialTransferSpeed] Config load error: {ex.Message}");
                 _config = new IndustrialTransferSpeedConfig();
-                return _config;
             }
+
+            return _config;
         }
 
         public static void Save()
         {
             try
             {
+                if (_config == null) return;
                 if (!Directory.Exists("HarmonyConfig"))
                     Directory.CreateDirectory("HarmonyConfig");
-
-                var json = JsonConvert.SerializeObject(_config ?? new IndustrialTransferSpeedConfig(), Formatting.Indented);
-                File.WriteAllText(ConfigPath, json);
+                File.WriteAllText(ConfigPath, JsonConvert.SerializeObject(_config, Formatting.Indented));
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError($"[IndustrialTransferSpeed] Failed to save config: {ex.Message}");
+                UnityEngine.Debug.LogError($"[IndustrialTransferSpeed] Config save error: {ex.Message}");
             }
         }
     }

@@ -1,7 +1,7 @@
 // Player lifecycle patches: Connected, Disconnected, Respawned.
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -51,7 +51,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || __instance.IsSleeping()) return;
+            if (__instance.IsSleeping()) return;
             try { STPlugin.Dispatch_OnPlayerSleepEnded(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerSleepEnded: " + ex.Message); }
         }

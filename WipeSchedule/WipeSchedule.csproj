@@ -11,7 +11,7 @@
     <RootNamespace>WipeScheduleHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: WipeSchedule 2.0.21 (Oxide-free). Mevent Wipe Schedule port.</Description>
+    <Description>Harmony mod: WipeSchedule 2.0.21 (Harmony). Mevent Wipe Schedule port.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -98,7 +98,11 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="RustCui.cs" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

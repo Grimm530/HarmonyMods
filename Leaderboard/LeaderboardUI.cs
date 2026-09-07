@@ -11,9 +11,9 @@ namespace Leaderboard;
 public static class LeaderboardUI
 {
     public const string PanelName = "Leaderboard_Main";
-    public const string ServerPanelRoot = "UI.Server.Panel.Content.Plugin";
-    private const string OverlayParent = "Overlay";
-    private const string ServerPanelParent = "UI.Server.Panel.Content";
+    public const string ServerPanelContentParent = "UI.Server.Panel.Content";
+    public const string ServerPanelPluginParent = "UI.Server.Panel.Content.Plugin";
+    private const string Parent = "Overlay";
     private const string BgSprite = "assets/content/ui/UI.Background.TileTex.psd";
     private const string BlurMat = "assets/content/ui/uibackgroundblur.mat";
     private const string BlurBgMat = "assets/content/ui/uibackgroundblur-ingamemenu.mat";
@@ -27,6 +27,14 @@ public static class LeaderboardUI
     public static void Show(BasePlayer player)
     {
         if (player?.net?.connection == null) return;
+
+        // Embedded in ServerPanel: ask ServerPanel to redraw so API_OpenPlugin remounts under Content.Plugin.
+        if (LeaderboardMod.Instance != null && LeaderboardMod.Instance.IsServerPanelMode(player))
+        {
+            LeaderboardMod.Instance.RequestServerPanelRefresh(player);
+            return;
+        }
+
         var ce = CommunityEntity.ServerInstance;
         if (ce == null || ce.IsDestroyed) return;
 
@@ -34,15 +42,15 @@ public static class LeaderboardUI
         var subTab = category == 0
             ? (LeaderboardMod.Instance?.GetLeaderboardProfileTab(player.userID) ?? 0)
             : (LeaderboardMod.Instance?.GetLeaderboardTop10Tab(player.userID) ?? 0);
-        var elements = BuildFullPanel(player, category, subTab, inServerPanel: false);
+        var elements = BuildFullPanel(player, category, subTab, forServerPanel: false);
         var json = elements.ToString();
         try { ce.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json); }
         catch (System.Exception) { }
     }
 
     /// <summary>
-    /// Build CUI JSON for ServerPanel embedding (parent UI.Server.Panel.Content).
-    /// Returns bracket-stripped element list for ShowContentUISerialized merge.
+    /// ServerPanel Plugin-page entry: JSON element list (no outer brackets) parented under
+    /// UI.Server.Panel.Content → UI.Server.Panel.Content.Plugin. ServerPanel AddUi's the result.
     /// </summary>
     public static string BuildForServerPanel(BasePlayer player)
     {
@@ -51,19 +59,7 @@ public static class LeaderboardUI
         var subTab = category == 0
             ? (LeaderboardMod.Instance?.GetLeaderboardProfileTab(player.userID) ?? 0)
             : (LeaderboardMod.Instance?.GetLeaderboardTop10Tab(player.userID) ?? 0);
-        return StripArrayBrackets(BuildFullPanel(player, category, subTab, inServerPanel: true).ToString());
-    }
-
-    /// <summary>Rebuild and AddUI while already embedded under ServerPanel content.</summary>
-    public static void RefreshInServerPanel(BasePlayer player)
-    {
-        if (player?.net?.connection == null) return;
-        var ce = CommunityEntity.ServerInstance;
-        if (ce == null || ce.IsDestroyed) return;
-        var body = BuildForServerPanel(player);
-        if (string.IsNullOrWhiteSpace(body)) return;
-        try { ce.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), "[" + body + "]"); }
-        catch (System.Exception) { }
+        return StripArrayBrackets(BuildFullPanel(player, category, subTab, forServerPanel: true).ToString());
     }
 
     public static void Destroy(BasePlayer player)
@@ -71,16 +67,11 @@ public static class LeaderboardUI
         if (player?.net?.connection == null) return;
         var ce = CommunityEntity.ServerInstance;
         if (ce == null || ce.IsDestroyed) return;
-        try { ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), PanelName); }
-        catch (System.Exception) { }
-    }
-
-    public static void DestroyServerPanel(BasePlayer player)
-    {
-        if (player?.net?.connection == null) return;
-        var ce = CommunityEntity.ServerInstance;
-        if (ce == null || ce.IsDestroyed) return;
-        try { ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), ServerPanelRoot); }
+        try
+        {
+            ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), PanelName);
+            ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), ServerPanelPluginParent);
+        }
         catch (System.Exception) { }
     }
 
@@ -93,36 +84,35 @@ public static class LeaderboardUI
         return string.IsNullOrWhiteSpace(json) ? null : json;
     }
 
-    private static JArray BuildFullPanel(BasePlayer player, int categoryIndex, int subTab, bool inServerPanel = false)
+    private static JArray BuildFullPanel(BasePlayer player, int categoryIndex, int subTab, bool forServerPanel)
     {
         var list = new JArray();
 
-        if (inServerPanel)
+        if (forServerPanel)
         {
-            // --- Root fills ServerPanel content area ---
+            // Mount under ServerPanel content (same parent path as Kits / Shop / WipeSchedule).
             list.Add(new JObject
             {
-                ["name"] = ServerPanelRoot,
-                ["parent"] = ServerPanelParent,
-                ["destroyUi"] = ServerPanelRoot,
+                ["name"] = ServerPanelPluginParent,
+                ["parent"] = ServerPanelContentParent,
+                ["destroyUi"] = ServerPanelPluginParent,
                 ["components"] = new JArray
                 {
                     new JObject { ["type"] = "UnityEngine.UI.Image", ["color"] = "0 0 0 0" },
-                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1" },
-                    new JObject { ["type"] = "NeedsCursor" },
-                    new JObject { ["type"] = "NeedsKeyboard" }
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1" }
                 }
             });
 
-            // --- Main panel fills content (no separate Overlay fullscreen) ---
+            // Same centered main panel as standalone so category/tab offsets stay correct.
             list.Add(new JObject
             {
                 ["name"] = PanelName + "_Main",
-                ["parent"] = ServerPanelRoot,
+                ["parent"] = ServerPanelPluginParent,
+                ["destroyUi"] = PanelName + "_Main",
                 ["components"] = new JArray
                 {
                     new JObject { ["type"] = "UnityEngine.UI.Image", ["color"] = "0.098 0.098 0.098 0.5", ["material"] = BlurMat },
-                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 0", ["anchormax"] = "1 1", ["offsetmin"] = "0 0", ["offsetmax"] = "0 0" }
+                    new JObject { ["type"] = "RectTransform", ["anchormin"] = "0.5 0.5", ["anchormax"] = "0.5 0.5", ["offsetmin"] = "-600 -300", ["offsetmax"] = "600 300" }
                 }
             });
         }
@@ -132,7 +122,7 @@ public static class LeaderboardUI
             list.Add(new JObject
             {
                 ["name"] = PanelName,
-                ["parent"] = OverlayParent,
+                ["parent"] = Parent,
                 ["destroyUi"] = PanelName,
                 ["components"] = new JArray
                 {
@@ -158,7 +148,7 @@ public static class LeaderboardUI
 
         var main = PanelName + "_Main";
 
-        // --- Header bar (50px top); fullscreen leaves room for close button ---
+        // --- Header bar (50px top); leave room for close only in standalone mode ---
         list.Add(new JObject
         {
             ["name"] = PanelName + "_Header",
@@ -166,7 +156,7 @@ public static class LeaderboardUI
             ["components"] = new JArray
             {
                 new JObject { ["type"] = "UnityEngine.UI.Image", ["sprite"] = HeaderSprite, ["color"] = "0.286 0.286 0.286 1" },
-                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 1", ["anchormax"] = "1 1", ["offsetmin"] = "0 -50", ["offsetmax"] = inServerPanel ? "0 0" : "-50 0" }
+                new JObject { ["type"] = "RectTransform", ["anchormin"] = "0 1", ["anchormax"] = "1 1", ["offsetmin"] = "0 -50", ["offsetmax"] = forServerPanel ? "0 0" : "-50 0" }
             }
         });
 
@@ -183,7 +173,7 @@ public static class LeaderboardUI
             }
         });
 
-        if (!inServerPanel)
+        if (!forServerPanel)
         {
             list.Add(new JObject
             {
@@ -576,20 +566,7 @@ public static class LeaderboardUI
                 (LootType.ShotFired, "ammo.rifle.explosive", "Explosive 5.56 Rifle Ammo"),
                 (LootType.ExplosiveUsed, "ammo.grenadelauncher.he", "GL HE"),
                 (LootType.ExplosiveUsed, "explosive.timed", "C4"),
-                (LootType.ShotFired, "ammo.rocket.mlrs", "MLRS Rocket"),
-                (LootType.RaidableBases, "easy", "Raidable Easy"),
-                (LootType.RaidableBases, "medium", "Raidable Medium"),
-                (LootType.RaidableBases, "hard", "Raidable Hard"),
-                (LootType.RaidableBases, "expert", "Raidable Expert"),
-                (LootType.RaidableBases, "nightmare", "Raidable Nightmare")
-            }),
-            new ResourceSection("EVENTS", new[]
-            {
-                (LootType.Event, "Convoy", "Convoy"),
-                (LootType.Event, "ArmoredTrainEvent", "Armored Train"),
-                (LootType.Event, "CHT", "Custom Helicopter (CHT)"),
-                (LootType.Kill, "bradleyapc", "Bradley"),
-                (LootType.Kill, "helicopter", "Patrol Helicopter")
+                (LootType.ShotFired, "ammo.rocket.mlrs", "MLRS Rocket")
             }),
             new ResourceSection("RECYCLED", new[]
             {
@@ -1011,34 +988,25 @@ public static class LeaderboardUI
         return v;
     }
 
-    /// <summary>Total events: LootType.Event (Convoy/AT/CHT) + Bradley/heli kills.</summary>
+    /// <summary>Total events completed: Bradley + Patrol Helicopter (from LootType.Kill).</summary>
     private static float GetEventCount(PlayerStats stats)
     {
         if (stats == null) return 0f;
-        float events = stats.GetTotal(LootType.Event);
         stats.TryGetItem(LootType.Kill, "helicopter", out var heli);
         stats.TryGetItem(LootType.Kill, "bradleyapc", out var bradley);
-        return events + heli + bradley;
+        return heli + bradley;
     }
 
-    /// <summary>Favorite among Event keys and Bradley/Patrol Helicopter.</summary>
+    /// <summary>Favorite event: whichever of Bradley or Patrol Helicopter the player has completed more.</summary>
     private static string GetFavoriteEvent(PlayerStats stats)
     {
         if (stats == null) return "—";
-        string top = null;
-        float topVal = 0f;
-        foreach (var kv in stats.GetAll(LootType.Event))
-        {
-            if (kv.Value > topVal) { topVal = kv.Value; top = kv.Key; }
-        }
         stats.TryGetItem(LootType.Kill, "helicopter", out var heli);
         stats.TryGetItem(LootType.Kill, "bradleyapc", out var bradley);
-        if (bradley > topVal) { topVal = bradley; top = "Bradley"; }
-        if (heli > topVal) { topVal = heli; top = "Patrol Helicopter"; }
-        if (topVal <= 0 || string.IsNullOrEmpty(top)) return "—";
-        if (top == "ArmoredTrainEvent") return "Armored Train";
-        if (top == "CHT") return "Custom Helicopter";
-        return FormatEventName(top);
+        if (heli <= 0 && bradley <= 0) return "—";
+        if (bradley > heli) return "Bradley";
+        if (heli > bradley) return "Patrol Helicopter";
+        return "Bradley"; // tie: either is fine
     }
 
     private static string GetTopKey(PlayerStats stats, LootType type, out float value)

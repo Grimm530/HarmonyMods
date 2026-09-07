@@ -9,7 +9,7 @@ namespace TranslationAPI;
 
 /// <summary>
 /// Harmony mod: Translation API - web translation via Google/Microsoft/Yandex.
-/// Used by ChatTranslator, Rustcord via Oxide bridge plugin (TranslationAPI.cs).
+/// Used by ChatTranslator, Rustcord via compat bridge plugin (TranslationAPI.cs).
 /// Config: HarmonyConfig/TranslationAPI.json (created on first load if missing)
 /// </summary>
 public class TranslationAPIMod : IHarmonyModHooks

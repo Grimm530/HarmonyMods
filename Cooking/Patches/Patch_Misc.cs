@@ -1,7 +1,7 @@
 using HarmonyLib;
 using Network;
 using UnityEngine;
-using CookingPlugin = Oxide.Plugins.Cooking;
+using CookingPlugin = Harmony.Plugins.Cooking;
 
 namespace CookingHarmony.Patches
 {
@@ -22,7 +22,7 @@ namespace CookingHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { CookingPlugin.Dispatch_OnEntityMounted(__instance, player); }
             catch (System.Exception ex) { Debug.LogWarning("[Cooking] OnEntityMounted: " + ex.Message); }
         }
@@ -34,7 +34,7 @@ namespace CookingHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { CookingPlugin.Dispatch_OnEntityDismounted(__instance, player); }
             catch (System.Exception ex) { Debug.LogWarning("[Cooking] OnEntityDismounted: " + ex.Message); }
         }
@@ -92,7 +92,6 @@ namespace CookingHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
-            if (__instance == null) return;
             try { CookingPlugin.Dispatch_OnEntityKill(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[Cooking] OnEntityKill: " + ex.Message); }
         }

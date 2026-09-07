@@ -1,7 +1,7 @@
 // Targeting hooks: OnTurretTarget, OnTrapTrigger, OnEntityEnter, OnNpcTarget, OnSamSiteTarget.
 using HarmonyLib;
 using UnityEngine;
-using TPVE = Oxide.Plugins.TruePVE;
+using TPVE = Harmony.Plugins.TruePVE;
 
 namespace TruePVEHarmony.Patches
 {
@@ -12,7 +12,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(AutoTurret __instance, ref BaseCombatEntity targ)
         {
-            if (__instance == null || targ == null) return;
+            if (targ == null) return;
             try
             {
                 if (TPVE.Dispatch_OnTurretTarget(__instance, targ) != null)
@@ -29,7 +29,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(SamSite __instance, ref SamSite.ISamSiteTarget target)
         {
-            if (__instance == null || target == null || target.IsUnityNull()) return;
+            if (target == null || target.IsUnityNull()) return;
             if (!(target is BaseEntity be)) return;
             try
             {
@@ -47,7 +47,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BaseTrap __instance, GameObject obj)
         {
-            if (__instance == null || obj == null) return true;
+            if (obj == null) return true;
             try { return TPVE.Dispatch_OnTrapTrigger(__instance, obj) == null; }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnTrapTrigger: " + ex.Message); return true; }
         }
@@ -60,7 +60,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(TriggerBase __instance, BaseEntity ent)
         {
-            if (__instance == null || ent == null) return true;
+            if (ent == null) return true;
             if (!(__instance is TargetTrigger || __instance is TriggerEnterTimer)) return true;
             try { return TPVE.Dispatch_OnEntityEnter(__instance, ent) == null; }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnEntityEnter: " + ex.Message); return true; }
@@ -74,7 +74,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BaseNpc __instance, BaseEntity target, ref float __result)
         {
-            if (__instance == null || !(target is BasePlayer bp)) return true;
+            if (!(target is BasePlayer bp)) return true;
             try
             {
                 if (TPVE.Dispatch_OnNpcTarget(__instance, bp) != null) { __result = 0f; return false; }

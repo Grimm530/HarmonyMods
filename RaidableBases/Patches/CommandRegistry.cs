@@ -9,7 +9,7 @@ using static RaidableBases.RaidableBasesExtensionMethods.ExtensionMethods;
 namespace RaidableBases
 {
     /// <summary>
-    /// Chat command routing (Oxide AddCovalenceCommand → /rb /buyraid /rbe etc.).
+    /// Chat command routing (compat AddCovalenceCommand → /rb /buyraid /rbe etc.).
     /// </summary>
     [HarmonyPatch(typeof(ConVar.Chat), nameof(ConVar.Chat.say))]
     internal static class Chat_Say_Patch
@@ -27,7 +27,7 @@ namespace RaidableBases
     }
 
     /// <summary>
-    /// Registers Oxide-style covalence + [ConsoleCommand] handlers on ConsoleSystem,
+    /// Registers compat-style covalence + [ConsoleCommand] handlers on ConsoleSystem,
     /// and routes chat prefixes to the same methods.
     /// </summary>
     internal static class CommandRegistry

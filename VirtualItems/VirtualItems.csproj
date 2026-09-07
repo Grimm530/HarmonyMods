@@ -148,4 +148,9 @@
            Text="Could not find Rust Managed folder (Assembly-CSharp.dll). Build with: dotnet build -p:RustManaged=&quot;D:\your\RustDedicated_Data\Managed&quot;" />
   </Target>
   <!-- SDK auto-includes all *.cs files; no explicit Compile items needed. -->
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
 </Project>

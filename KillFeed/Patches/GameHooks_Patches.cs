@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using P = Oxide.Plugins.KillFeed;
+using P = Harmony.Plugins.KillFeed;
 
 namespace KillFeedHarmony.Patches
 {

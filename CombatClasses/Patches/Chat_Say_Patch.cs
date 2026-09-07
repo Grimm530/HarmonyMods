@@ -2,7 +2,7 @@ using System;
 using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
-using CCPlugin = Oxide.Plugins.CombatClasses;
+using CCPlugin = Harmony.Plugins.CombatClasses;
 using ChatChannel = ConVar.Chat.ChatChannel;
 
 namespace CombatClassesHarmony.Patches

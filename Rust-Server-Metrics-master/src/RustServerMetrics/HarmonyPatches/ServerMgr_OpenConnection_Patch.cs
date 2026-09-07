@@ -1,15 +1,14 @@
 ﻿using HarmonyLib;
 
-// ReSharper disable InconsistentNaming
-
-namespace RustServerMetrics.HarmonyPatches;
-
-[HarmonyPatch(typeof(ServerMgr), nameof(ServerMgr.OpenConnection))]
-public class ServerMgr_OpenConnection_Patch
+namespace RustServerMetrics.HarmonyPatches
 {
-    [HarmonyPostfix]
-    public static void Postfix()
+    [HarmonyPatch(typeof(ServerMgr), nameof(ServerMgr.OpenConnection))]
+    public class ServerMgr_OpenConnection_Patch
     {
-        SingletonComponent<MetricsLogger>.Instance?.OnServerStarted();
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            SingletonComponent<MetricsLogger>.Instance?.OnServerStarted();
+        }
     }
 }

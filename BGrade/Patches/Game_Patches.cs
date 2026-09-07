@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace BGrade.Patches
 {
-    /// <summary>Oxide OnEntityBuilt — Planner.DoBuild(Construction.Target, Construction) returns BaseEntity.</summary>
+    /// <summary>compat OnEntityBuilt — Planner.DoBuild(Construction.Target, Construction) returns BaseEntity.</summary>
     [HarmonyPatch(typeof(Planner), nameof(Planner.DoBuild), typeof(Construction.Target), typeof(Construction))]
     internal static class Planner_DoBuild_Patch
     {
@@ -11,7 +11,7 @@ namespace BGrade.Patches
         private static void Postfix(Planner __instance, BaseEntity __result)
         {
             var plugin = BGradeMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || __result == null) return;
+            if (plugin == null || __result == null) return;
             try { plugin.OnEntityBuilt(__instance, __result.gameObject); }
             catch (System.Exception ex) { Debug.LogWarning("[BGrade] OnEntityBuilt: " + ex.Message); }
         }
@@ -25,7 +25,7 @@ namespace BGrade.Patches
         private static bool Prefix(Planner __instance, BasePlayer player, Construction component)
         {
             var plugin = BGradeMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || player == null) return true;
+            if (plugin == null || player == null) return true;
             try
             {
                 if (plugin.OnPayForPlacement(player, __instance, component) != null)
@@ -43,7 +43,7 @@ namespace BGrade.Patches
         private static void Postfix(BaseCombatEntity __instance, HitInfo info)
         {
             var plugin = BGradeMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             var block = __instance as BuildingBlock;
             if (block == null) return;
             try { plugin.OnEntityDeath(block, info); }
@@ -58,7 +58,7 @@ namespace BGrade.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = BGradeMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[BGrade] OnPlayerDisconnected: " + ex.Message); }
         }

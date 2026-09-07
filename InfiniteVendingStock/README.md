@@ -1,6 +1,6 @@
 # InfiniteVendingStock (Harmony)
 
-Oxide **Infinite Vending Stock 1.0.2** port (no Oxide runtime). NPC vending machines restock to 10,000,000 so remaining stock does not cap the buy amount.
+Legacy **Infinite Vending Stock 1.0.2** port (Harmony-only runtime). NPC vending machines restock to 10,000,000 so remaining stock does not cap the buy amount.
 
 ## Deploy
 
@@ -10,7 +10,7 @@ Oxide **Infinite Vending Stock 1.0.2** port (no Oxide runtime). NPC vending mach
 
 Copies **only** `InfiniteVendingStock.dll` to `HarmonyMods\InfiniteVendingStock.dll`.
 
-Unload the Oxide plugin (`InfiniteVendingStock.cs`) before loading this mod so they do not double-apply.
+Unload the Harmony mod (`InfiniteVendingStock.cs`) before loading this mod so they do not double-apply.
 
 ## Paths
 

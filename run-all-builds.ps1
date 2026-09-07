@@ -4,7 +4,7 @@ $base = $PSScriptRoot
 $dirs = @(
   'AdminTools','AlphaLoot','AlwaysBonus','BagCooldowns','BetterAirDrop','BetterBackpack','ChatIcons','ChatTranslator','CommandHistory',
   'CommunityTab','CraftingSpeed','CustomMapGen','DiscordLinks','FakePopulation','FullRangeTurrets','FurnaceSplitter','GatherManager','0GrimmNPC','GrimmNPCOrigional',
-  'HarmonyCustomGenerator-0.2.2','HideAdminActions','IndustrialTransferSpeed','InstantBarrel','Leaderboard','MapVoter','MixingSpeed','NoGibs','Radar','RecyclerSpeed',
+  'HarmonyCustomGenerator-0.2.2','BetterChat','IndustrialTransferSpeed','InstantBarrel','Leaderboard','MapVoter','MixingSpeed','NoGibs','Radar','RecyclerSpeed',
   'Rust-Server-Metrics-master','Rustcord','RustEditStandalone','ShorterNights','SmeltingSpeed','StackManager','TCUpgrade','TranslationAPI','UnlockTier1','Vanish'
 )
 $failed = @()

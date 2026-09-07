@@ -3,24 +3,6 @@ using UnityEngine;
 
 namespace CHT.Patches
 {
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    public static class HurtPatch
-    {
-        [HarmonyPrefix]
-        static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            var plugin = CHTMod.Plugin;
-            if (plugin == null || info == null) return true;
-
-            if (__instance is PatrolHelicopter heli)
-                plugin.OnPatrolHelicopterTakeDamage(heli, info);
-
-            // Handler clears damageTypes when blocked; always continue so 0-damage Hurt is cheap.
-            plugin.OnEntityTakeDamage(__instance, info);
-            return true;
-        }
-    }
-
     [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Die), new[] { typeof(HitInfo) })]
     public static class DiePatch
     {

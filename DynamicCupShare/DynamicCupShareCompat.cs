@@ -1,5 +1,5 @@
 /*
- * Oxide-free shims for DynamicCupShare 3.1.23 Chaos UI under Harmony.
+ * Harmony shims for DynamicCupShare 3.1.23 Chaos UI under Harmony.
  */
 using System;
 using System.Collections;
@@ -201,7 +201,7 @@ namespace DynamicCupShareHarmony
         public static void Shutdown() => Instance = null;
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static void NextTick(Action action)
         {

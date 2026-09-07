@@ -1,6 +1,6 @@
 # CHT (Custom Helicopter Tiers)
 
-Oxide-free Harmony port of **Custom Helicopter Tiers 2**. DLL / load name: **`CHT`**.
+Harmony Harmony port of **Custom Helicopter Tiers 2**. DLL / load name: **`CHT`**.
 
 ## Paths
 
@@ -56,4 +56,4 @@ Admin permission: `customhelicoptertiers2.admin` (plus per-profile permissions f
 - ServerRewards / `point` costs
 - XPerience XP Rewarded
 - Clans / Friends ally expansion
-- Oxide hooks / PluginReference / Interface.CallHook bus
+- Harmony hooks / PluginReference / HarmonyModInterface.CallHook bus

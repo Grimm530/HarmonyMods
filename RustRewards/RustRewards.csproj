@@ -11,7 +11,7 @@
     <RootNamespace>RustRewardsHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: RustRewards 3.2.5 (Oxide-free). Steenamaroo/Grimm530 port.</Description>
+    <Description>Harmony mod: RustRewards 3.2.5 (Harmony). Steenamaroo/Grimm530 port.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -95,7 +95,14 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="RustCui.cs" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

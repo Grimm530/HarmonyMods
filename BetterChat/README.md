@@ -1,6 +1,6 @@
 # BetterChat Harmony Mod
 
-Oxide **BetterChat** (groups, titles, formats) and **ColouredChat** (per-player name/message colours) ported into one Harmony mod. **No Oxide required.**
+Legacy **BetterChat** (groups, titles, formats) and **ColouredChat** (per-player name/message colours) ported into one Harmony mod. **Harmony-only required.**
 
 They share one chat pipeline: ColouredChat already mutated BetterChat’s `OnBetterChat` dictionary. Combining them avoids two `Chat.sayImpl` blockers and keeps titles + colours on the same formatted line.
 
@@ -28,7 +28,7 @@ They share one chat pipeline: ColouredChat already mutated BetterChat’s `OnBet
 }
 ```
 
-Oxide `oxide/config/BetterChat.json` and `oxide/config/ColouredChat.json` are merged once if present. Unload the Oxide plugins after this mod is loaded so they do not double-send chat.
+Oxide `legacy/config/BetterChat.json` and `legacy/config/ColouredChat.json` are merged once if present. Unload the Harmony mods after this mod is loaded so they do not double-send chat.
 
 ## Commands
 
@@ -54,8 +54,8 @@ Debug: `betterchat who 76561197967147516` prints the link status, 0Permissions g
 |-------|-----|-----------|------|
 | 1 | ChatFilter | Prefix `Priority.First` | Filter words, return true |
 | 2 | **BetterChat** | Prefix `Priority.High` | Titles + colours, `chat.add`, skip original |
-| 3 | ChatTranslator | Prefix Normal | **Skipped** while BetterChat is loaded (avoids double chat) |
-| 4 | Rustcord | Postfix | Discord relay still runs |
+| 3 | ChatTranslator | Prefix Normal | Does not send (avoids double chat). **BetterChat calls `ChatTranslator.Translate` per recipient** when TranslationAPI is loaded |
+| 4 | Rustcord | Postfix | Discord relay (RCON/`Chat.Record` may also carry translated text) |
 
 `Chat.say` commands go through shared `HarmonyChat.ChatSayBridge` (same as Shop / SkillTree).
 
@@ -63,12 +63,26 @@ Debug: `betterchat who 76561197967147516` prints the link status, 0Permissions g
 
 SkillTree registers an `OnBetterChat` modifier and appends `[Lv.N]` / prestige titles. Grant `skilltree.notitles` to hide them per player.
 
+## Give notices (NoGiveNotices)
+
+F1 / `inventory.give*` notices go through `Chat.BroadcastPlayerAction` (not player `sayImpl`). BetterChat suppresses them at Priority.First so they never hit chat, F1 history, or RCon:
+
+| Patch | Target |
+|-------|--------|
+| `Chat_Broadcast_GiveNotices_Patch` | `Chat.Broadcast` (legacy SERVER + "gave") |
+| `Chat_BroadcastPlayerAction_GiveNotices_Patch` | `BroadcastPlayerAction(player, action)` |
+| `Chat_BroadcastPlayerAction_TwoSubjects_GiveNotices_Patch` | `BroadcastPlayerAction` two-subject (giveto) |
+| `Chat_Record_GiveNotices_Patch` | `Chat.Record` (history / RCon belt-and-suspenders) |
+
+**Do not** load `HideAdminActions` alongside this — that mod also forced `GetNameColor` to `#5af` and fought ColouredChat. Unload/delete `HideAdminActions.dll`.
+
 ## Harmony patches
 
 | Patch | Target | Type |
 |-------|--------|------|
 | `Chat_Say_Patch` | `Chat.say` | Prefix — `ChatSayBridge.Dispatch` |
 | `Chat_sayImpl_Patch` | `Chat.sayImpl(ChatChannel, Arg)` | Prefix High — format and send |
+| `Chat_*_GiveNotices_Patch` | `Broadcast` / `BroadcastPlayerAction` / `Record` | Prefix First — hide admin give notices |
 
 ## API (other Harmony mods)
 

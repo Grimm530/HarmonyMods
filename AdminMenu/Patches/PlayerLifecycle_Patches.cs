@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AdminMenuHarmony.Patches
 {
-    /// <summary>Oxide OnPlayerConnected → BasePlayer.PlayerInit postfix.</summary>
+    /// <summary>Harmony OnPlayerConnected → BasePlayer.PlayerInit postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PlayerInit))]
     public static class BasePlayer_PlayerInit_Patch
     {
@@ -22,7 +22,7 @@ namespace AdminMenuHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
+    /// <summary>Harmony OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {

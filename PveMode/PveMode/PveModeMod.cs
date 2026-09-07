@@ -27,6 +27,7 @@ namespace PveModeHarmony
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
 
             PveModeConfig config = PveModeConfig.Load(ConfigPath);
             PveModeLang.Load(LangPath);
@@ -43,6 +44,7 @@ namespace PveModeHarmony
             UnregisterCommands();
             PveModeApi.Deactivate();
             PveModeManager.Shutdown();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[PveMode] 0PveMode unloaded.");
         }

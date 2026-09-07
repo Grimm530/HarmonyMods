@@ -1,5 +1,5 @@
 using System;
-using OxidePlugin = Oxide.Plugins.DefendableHomes;
+using HarmonyPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes
 {
@@ -37,13 +37,13 @@ namespace DefendableHomes
 
         public static object CanEntityTakeDamage(BaseEntity entity, HitInfo info)
         {
-            return OxidePlugin.Dispatch_CanEntityTakeDamage(entity, info);
+            return HarmonyPlugin.Dispatch_CanEntityTakeDamage(entity, info);
         }
 
-        /// <summary>Args match Interface.CallHook order: [target, attacker/turret].</summary>
+        /// <summary>Args match HarmonyModInterface.CallHook order: [target, attacker/turret].</summary>
         public static object CanEntityBeTargeted(BaseEntity target, BaseEntity attacker)
         {
-            return OxidePlugin.Dispatch_CanEntityBeTargeted(target, attacker);
+            return HarmonyPlugin.Dispatch_CanEntityBeTargeted(target, attacker);
         }
     }
 }

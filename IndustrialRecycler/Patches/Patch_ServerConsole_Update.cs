@@ -19,7 +19,7 @@ namespace IndustrialRecyclerHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(ServerConsole __instance)
         {
-            if (__instance == null || IndustrialRecyclerMod.Instance == null) return;
+            if (IndustrialRecyclerMod.Instance == null) return;
 
             if (_queuedCommandsField == null)
                 _queuedCommandsField = AccessTools.Field(typeof(ServerConsole), "queuedCommands");

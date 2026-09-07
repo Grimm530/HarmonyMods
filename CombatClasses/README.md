@@ -1,4 +1,4 @@
-# CombatClasses (Harmony OxideCompat port)
+# CombatClasses (Harmony HarmonyCompat port)
 
 Port of Oxide `CombatClasses` v1.0.0131 to a SkillTree-style Harmony mod. Coexists with **SkillTree** by disabling overlapping abilities.
 
@@ -48,11 +48,11 @@ Copies **only** `CombatClasses.dll` to root `HarmonyMods/`.
 
 - Auto-loads with other Harmony mods on server start.
 - Requires **Permissions** Harmony mod (`0Permissions.dll` / Permissions).
-- Do **not** run the Oxide plugin at the same time — unload/disable `oxide/plugins/CombatClasses.cs` (file left in place; not deleted by this port).
+- Do **not** run the Harmony mod at the same time — unload/disable `oxide/plugins/CombatClasses.cs` (file left in place; not deleted by this port).
 - Chat: `/class`, `/gearbox`, `/givexp`, `/movecombat`, `/resetcombat` (aliases from config).
 - CUI buttons bridge via `cui.endtest CC …`.
 
 ## Notes
 
-- Nested `Oxide.Plugins.CombatClassesEx` helpers are included at the end of `CombatClassesPlugin.cs`.
+- Nested `Harmony.Plugins.CombatClassesEx` helpers are included at the end of `CombatClassesPlugin.cs`.
 - Images/avatars resolve under `CustomDataDirectory` (or HarmonyData/CombatClasses).

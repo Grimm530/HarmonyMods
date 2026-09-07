@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 using UnityEngine.UI;
 

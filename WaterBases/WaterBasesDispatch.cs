@@ -1,4 +1,4 @@
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class WaterBases
     {

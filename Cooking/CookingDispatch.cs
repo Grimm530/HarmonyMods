@@ -1,11 +1,11 @@
-// CookingDispatch.cs — partial class Oxide.Plugins.Cooking
+// CookingDispatch.cs — partial class Harmony.Plugins.Cooking
 // Instance management, lifecycle wrappers, Dispatch_* for Harmony patches.
 
 using System;
 using UnityEngine;
-using Oxide.Core.Plugins;
+using Harmony.Core.Plugins;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class Cooking
     {

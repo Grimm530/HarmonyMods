@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos.Pooling;
+using Ext.Chaos.Pooling;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class UpdateComponent<T> : UpdateComponent where T : BaseCuiComponent
 {

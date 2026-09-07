@@ -6,9 +6,9 @@ Harmony mod that keeps only the static, fixed-world Nexus portal part of the old
 
 | Item | Value |
 |------|-------|
-| **Purpose** | Spawn fixed-world Halloween portal entrances that transfer players to another Nexus zone |
+| **Purpose** | Spawn fixed-world or monument-relative Halloween portal entrances that transfer players to another Nexus zone |
 | **Entry point** | `NexusStaticPortalsMod` implements `IHarmonyModHooks` |
-| **Primary use case** | Hub/Nexus server with hand-placed one-way portals to `svr2`, `svr3`, etc. |
+| **Primary use case** | Hub/Nexus server with hand-placed one-way portals to `svr2`, `svr3`, etc., including portals anchored inside the center outpost/compound |
 | **Config / data / images** | Config: `HarmonyConfig/NexusStaticPortals.json`; unlock data: **`nexus_unlocks.json`** (same as Oxide `Portals.cs`) under **Custom portals data directory**, or `HarmonyData/nexus_unlocks.json` if unset; legacy `NexusStaticPortals_unlocks.json` in that folder is merged once on load |
 
 ## Project Structure
@@ -28,7 +28,7 @@ Config file:
 
 `HarmonyConfig/NexusStaticPortals.json`
 
-On first load, if that file does not exist but `oxide/config/Portals.json` does, the mod imports the old plugin config into the Harmony config path.
+On first load, if that file does not exist but `legacy/config/Portals.json` does, the mod imports the old plugin config into the Harmony config path.
 
 ### Supported config shape
 
@@ -46,8 +46,12 @@ This mod intentionally supports only the Nexus/static subset:
   - `NexusPrerequisitePortalName`
   - `EntranceAnchors[]`
     - `UseFixedWorldTransform`
+    - `UseMonumentRelativeTransform`
+    - `MonumentNameContains`
     - `WorldPosition`
     - `WorldEulerAngles`
+    - `LocalPosition`
+    - `LocalEulerAngles`
     - `WorldScale`
     - `WorldPositionOffset`
     - `FixedWorldLocalOffset`
@@ -56,7 +60,8 @@ This mod intentionally supports only the Nexus/static subset:
 
 ## Behavior
 
-- Spawns only **fixed-world entrance portals** with `UseFixedWorldTransform = true`
+- Spawns **fixed-world entrance portals** with `UseFixedWorldTransform = true`
+- Spawns **monument-relative entrance portals** with `UseMonumentRelativeTransform = true`, resolving `LocalPosition` and `LocalEulerAngles` against the nearest matching `MonumentInfo` whose name/display contains `MonumentNameContains` (for the center outpost, use `compound`)
 - Uses the portal prefab from `Default Exit Door Prefab`
 - Intercepts `BasePortal.UsePortal` only for the entities this mod spawned
 - Runs `NexusServer.TransferEntity(player, zoneKey, "console", false)` so it matches your existing Nexus flow
@@ -70,7 +75,7 @@ This mod intentionally supports only the Nexus/static subset:
 
 ## What NOT to Touch
 
-- This mod does **not** port local teleports, dungeon spawning, wall-frame anchors, or Oxide hooks
+- This mod does **not** port local teleports, dungeon spawning, wall-frame anchors, or Harmony hooks
 - It is meant to replace only the static Nexus transfer doorway part of `Portals.cs`
 - It should be used with your existing Nexus setup (`NexusSelfHost`, `NexusApi`, zone keys, etc.)
 

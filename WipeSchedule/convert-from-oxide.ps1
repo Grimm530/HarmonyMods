@@ -1,11 +1,11 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\WipeSchedule.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\WipeSchedule.cs"
 $dst = Join-Path $PSScriptRoot "WipeSchedule.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-# Strip Oxide runtime usings but retain Oxide.Game.Rust.Cui for the CUI types.
-foreach ($using in @("using Oxide.Core;", "using Oxide.Core.Libraries;", "using Oxide.Core.Libraries.Covalence;", "using Oxide.Core.Plugins;")) {
+# Strip Oxide runtime usings but retain Game.Rust.Cui for the CUI types.
+foreach ($using in @("using Harmony.Core;", "using Harmony.Core.Libraries;", "using Harmony.Core.Libraries.Covalence;", "using Harmony.Core.Plugins;")) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
@@ -13,13 +13,13 @@ foreach ($using in @("using Oxide.Core;", "using Oxide.Core.Libraries;", "using 
 $text = [regex]::Replace($text, '(?ms)^#\s*if\s+CARBON\s*\r?\n(?:\s*using Carbon\.[^\r\n]*\r?\n)+#\s*endif\s*\r?\n', "")
 
 # Longer nested namespace before parent.
-$text = $text.Replace("using Oxide.Plugins.WipeScheduleEx;", "using WipeScheduleHarmony.WipeScheduleEx;")
-$text = $text.Replace("namespace Oxide.Plugins.WipeScheduleEx", "namespace WipeScheduleHarmony.WipeScheduleEx")
-$text = $text.Replace("namespace Oxide.Plugins", "namespace WipeScheduleHarmony")
+$text = $text.Replace("using Harmony.Plugins.WipeScheduleEx;", "using WipeScheduleHarmony.WipeScheduleEx;")
+$text = $text.Replace("namespace Harmony.Plugins.WipeScheduleEx", "namespace WipeScheduleHarmony.WipeScheduleEx")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace WipeScheduleHarmony")
 
 $newClass = @"
     /// <summary>
-    /// Wipe Schedule 2.0.21 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// Wipe Schedule 2.0.21 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class WipeSchedule : WipeSchedulePluginBase
 "@
@@ -82,11 +82,11 @@ $text = [regex]::Replace($text, $unloadEnd, { param($m) $m.Groups[1].Value + $ha
 [System.IO.File]::WriteAllText($dst, $text)
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core" },
     @{ Name = "RustPlugin"; Pattern = "RustPlugin" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "WipeSchedulePluginBase"; Pattern = "WipeSchedulePluginBase" },
     @{ Name = "Carbon using"; Pattern = "using Carbon\." }

@@ -16,7 +16,7 @@ namespace HitMarkersHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseCombatEntity __instance, HitInfo info, float __state)
         {
-            if (__instance == null || info == null) return;
+            if (info == null) return;
             try { HMPlugin.GetModInstance()?.OnHurtObserved(__instance, info, __state); }
             catch (System.Exception ex) { Debug.LogWarning("[HitMarkers] Hurt postfix: " + ex.Message); }
         }

@@ -1,13 +1,16 @@
 # LootQoL (Harmony)
 
-Combined Oxide **Fast Loot 1.1.0** + **Loot Bouncer 1.0.11** + **Sort Button 2.8.0** port (no Oxide runtime).
+Combined Legacy **Fast Loot 1.1.0** + **Loot Bouncer 1.0.11** + **Sort Button 2.8.0** port (Harmony-only runtime).
 
 Do **not** also load `SortButton.dll`. Sort lives in this mod. If `HarmonyMods/SortButton.dll` is present, both mods create `UISortButton` on Overlay; `DestroyUI` only removes the second copy, so the sort button (especially on the tool cupboard) stays on screen after closing loot. Delete that DLL and `harmony.unload SortButton` or restart.
 
 ## Load order
 
 1. **0Permissions** (`0Permissions.dll`)
-2. **LootQoL** (`LootQoL.dll`)
+2. **0GrimmCUI** (`0GrimmCUI.dll`) — shared CUI / `cui.endtest` router
+3. **LootQoL** (`LootQoL.dll`)
+
+After `harmony.reload 0GrimmCUI`, also `harmony.reload LootQoL` (or restart). Ready callbacks re-register endtest handlers, but LootQoL still binds `CuiHelper` types from the GrimmCUI assembly that was loaded when LootQoL started.
 
 ## Deploy
 

@@ -1,6 +1,6 @@
 # VirtualItems (Harmony)
 
-Oxide **VirtualItems 0.5.1** port as a standalone Harmony mod (no Oxide runtime).
+Legacy **VirtualItems 0.5.1** port as a standalone Harmony mod (Harmony-only runtime).
 
 VirtualItems 0.5.1 Harmony port. Free craft/build ingredients via ItemRetriever.
 

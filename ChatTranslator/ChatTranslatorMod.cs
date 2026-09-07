@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using ChatTranslator.Patches;
+using HarmonyChat;
 using Newtonsoft.Json;
 using UnityEngine;
 
@@ -9,7 +11,8 @@ namespace ChatTranslator;
 
 /// <summary>
 /// Harmony mod: ChatTranslator - translates chat messages to each player's language preference.
-/// No Oxide. Requires TranslationAPI Harmony mod. Config: HarmonyConfig/ChatTranslator.json (created on first load if missing)
+/// Harmony-only. Requires TranslationAPI Harmony mod. Config: HarmonyConfig/ChatTranslator.json (created on first load if missing)
+/// When BetterChat is loaded it owns delivery and calls <see cref="Translate"/> per recipient.
 /// </summary>
 public class ChatTranslatorMod : IHarmonyModHooks
 {
@@ -20,19 +23,44 @@ public class ChatTranslatorMod : IHarmonyModHooks
     private static Dictionary<string, string> _playerLanguages = new();
 
     private const string LangFile = "HarmonyConfig/ChatTranslator_languages.json";
+    private const string BetterChatSkipKey = "BetterChat_SkipTranslator";
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
         Instance = this;
         ChatTranslatorConfig.LoadConfig();
         LoadLanguages();
-        Log("ChatTranslator Harmony mod loaded.", force: true);
+        ChatSayBridge.Register("ChatTranslator", OnChatCommand);
+        var betterChat = IsBetterChatOwningChat();
+        Log(betterChat
+            ? "ChatTranslator Harmony mod loaded (BetterChat owns chat delivery; translating via API)."
+            : "ChatTranslator Harmony mod loaded.", force: true);
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
     {
+        ChatSayBridge.Unregister("ChatTranslator");
         SaveLanguages();
         Instance = null;
+    }
+
+    /// <summary>True when BetterChat has claimed chat formatting (AppDomain flag).</summary>
+    public static bool IsBetterChatOwningChat()
+    {
+        try
+        {
+            return AppDomain.CurrentDomain.GetData(BetterChatSkipKey) is true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool OnChatCommand(BasePlayer player, string message)
+    {
+        if (player == null || string.IsNullOrWhiteSpace(message)) return false;
+        return Chat_sayImpl_Patch.TryHandleLangCommand(player, message, null);
     }
 
     internal static void Log(string message, bool force = false)
@@ -57,7 +85,7 @@ public class ChatTranslatorMod : IHarmonyModHooks
         if (!string.IsNullOrEmpty(configured))
             return configured;
 
-        // Oxide parity: when no explicit /lang override exists, fall back to the player's client language.
+        // original parity: when no explicit /lang override exists, fall back to the player's client language.
         return GetClientLanguage(playerId);
     }
 

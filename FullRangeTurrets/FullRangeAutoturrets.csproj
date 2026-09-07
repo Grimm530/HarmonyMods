@@ -3,7 +3,7 @@
     <AssemblyName>FullRangeAutoturrets</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
-    <ManagedPath>C:\!2XRUST\RustDedicated_Data\Managed</ManagedPath>
+    <ManagedPath>D:\!RustServer\RustDedicated_Data\Managed</ManagedPath>
   </PropertyGroup>
   <PropertyGroup>
     <LangVersion>12.0</LangVersion>

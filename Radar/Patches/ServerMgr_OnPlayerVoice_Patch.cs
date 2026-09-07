@@ -6,7 +6,7 @@ namespace Radar.Patches;
 
 /// <summary>
 /// AdminRadar 5.4.312: Oxide <c>OnPlayerVoice(BasePlayer, ArraySegment&lt;byte&gt;)</c> (was <c>byte[]</c>).
-/// Harmony observes the same game method Oxide hooks. Postfix only — Radio / ZoneManager / Cooking
+/// Harmony observes the same game method Harmony hooks. Postfix only — Radio / ZoneManager / Cooking
 /// already prefix <c>ServerMgr.OnPlayerVoice</c>; do not skip original or consume <c>packet.read</c>.
 /// Voice bytes are unused (AdminRadar ignores <c>data</c> except for the hook signature).
 /// </summary>

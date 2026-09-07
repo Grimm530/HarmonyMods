@@ -1,6 +1,6 @@
 # AdminMenu Harmony Mod (2.1.13)
 
-Oxide-free Harmony port of **AdminMenu 2.1.13** (Chaos UI). Uses Permissions for all access checks.
+Harmony Harmony port of **AdminMenu 2.1.13** (Chaos UI). Uses Permissions for all access checks.
 
 ## Load order
 

@@ -10,9 +10,9 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Game.Rust.Cui
+namespace Game.Rust.Cui
 {
-    // Simplified: no Oxide pooling. JsonTextWriter works without ArrayPool.
+    // Simplified: Harmony-only pooling. JsonTextWriter works without ArrayPool.
 
     public static class CuiHelper
     {
@@ -92,7 +92,7 @@ namespace Oxide.Game.Rust.Cui
         }
 
         /// <summary>
-        /// Oxide plugins use custom console commands on CUI buttons. Under Harmony those
+        /// Harmony mods use custom console commands on CUI buttons. Under Harmony those
         /// never leave the client. Bridge BradleyDrops commands through cui.endtest ST.
         /// </summary>
         private static string RewriteHarmonyButtonCommands(string json)

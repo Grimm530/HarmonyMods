@@ -10,7 +10,7 @@ namespace KaruzaVehicles.Patches
         private static void Postfix(BaseNetworkable __instance)
         {
             var mod = KaruzaVehiclesMod.Instance;
-            if (mod == null || __instance == null) return;
+            if (mod == null) return;
 
             try
             {
@@ -45,7 +45,7 @@ namespace KaruzaVehicles.Patches
         private static void Prefix(BaseNetworkable __instance)
         {
             var mod = KaruzaVehiclesMod.Instance;
-            if (mod == null || __instance == null) return;
+            if (mod == null) return;
 
             try
             {

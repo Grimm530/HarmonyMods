@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using P = Oxide.Plugins.JetPack;
+using P = Harmony.Plugins.JetPack;
 
 namespace JetPackHarmony.Patches
 {

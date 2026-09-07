@@ -1,6 +1,6 @@
 # DynamicCupShare Harmony Mod (3.1.24)
 
-Oxide-free Harmony port of **DynamicCupShare 3.1.23** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AdminMenu / AutoCodeLock).
+Harmony Harmony port of **DynamicCupShare 3.1.23** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AdminMenu / AutoCodeLock).
 
 ## Load order
 
@@ -12,7 +12,7 @@ harmony.load 0Permissions
 harmony.load DynamicCupShare
 ```
 
-Unload or disable the Oxide plugins `DynamicCupShare.cs`, `BlueprintShare.cs`, and `BuildingWorkbench.cs` before loading this mod.
+Unload or disable the Harmony mods `DynamicCupShare.cs`, `BlueprintShare.cs`, and `BuildingWorkbench.cs` before loading this mod.
 
 After `harmony.reload 0Permissions`, DynamicCupShare auto-rebinds and re-registers `dynamiccupshare.*` (generation + ready callback). You do **not** need to reload DynamicCupShare.
 
@@ -43,7 +43,7 @@ On load, player-facing perms are granted to group **`default`** (share, blueprin
 | Temp shares | `HarmonyData/DynamicCupShare/temporary_shares.json` |
 | Lang | `HarmonyLanguage/DynamicCupShare.json` (file wins over embedded defaults) |
 
-On first load, missing Harmony files are copied from `oxide/config/DynamicCupShare.json` and `oxide/data/DynamicCupShare/` when those exist. Oxide `oxide/data/BlueprintShare.json` is imported once into `user_data.json`.
+On first load, missing Harmony files are copied from `legacy/config/DynamicCupShare.json` and `oxide/data/DynamicCupShare/` when those exist. Oxide `oxide/data/BlueprintShare.json` is imported once into `user_data.json`.
 
 ## Commands
 
@@ -60,9 +60,9 @@ Button commands are sent as `cui.endtest DYNAMICCUPSHARE <id>` (clients only for
 
 ## Soft dependencies
 
-- **Clans** (optional Harmony or Oxide plugin): `GetClan` / `IsClanMember` / `IsMemberOrAlly`. Falls back to vanilla `ClanManager` when no plugin is loaded.
-- **Friends** (optional Harmony or Oxide plugin): `HasFriend` / `GetFriends`.
-- Membership-change rebuilds: Oxide Clans/Friends hooks are observed when Oxide is present. Harmony Clans/Friends can call `DynamicCupShareMod.NotifyFriendChanged` / `NotifyClanMembersChanged`.
+- **Clans** (optional Harmony or Harmony mod): `GetClan` / `IsClanMember` / `IsMemberOrAlly`. Falls back to vanilla `ClanManager` when no plugin is loaded.
+- **Friends** (optional Harmony or Harmony mod): `HasFriend` / `GetFriends`.
+- Membership-change rebuilds: legacy Clans/Friends hooks are observed when Oxide is present. Harmony Clans/Friends can call `DynamicCupShareMod.NotifyFriendChanged` / `NotifyClanMembersChanged`.
 
 ## Build
 

@@ -11,14 +11,14 @@ using UnityEngine;
 
 namespace StackManagerHarmony
 {
-    /// <summary>Oxide-compatible user permission data.</summary>
+    /// <summary>Harmony-compatible user permission data.</summary>
     public class UserData
     {
         public HashSet<string> Perms { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> Groups { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Oxide-compatible group permission data.</summary>
+    /// <summary>Harmony-compatible group permission data.</summary>
     public class GroupData
     {
         public HashSet<string> Perms { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -27,7 +27,7 @@ namespace StackManagerHarmony
         public int Rank { get; set; }
     }
 
-    /// <summary>Oxide permission.* parity via Permissions Harmony mod.</summary>
+    /// <summary>Harmony permission.* parity via Permissions Harmony mod.</summary>
     public static class PermissionsBridge
     {
         private static Type _permType;

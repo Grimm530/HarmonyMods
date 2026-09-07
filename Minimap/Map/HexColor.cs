@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos;
+namespace Grimm.Chaos;
 
 public abstract class HexColor
 {
@@ -31,9 +31,9 @@ public abstract class HexColor
 			return new float3(color.r, color.g, color.b);
 		}
 
-		public static implicit operator Oxide.Ext.Chaos.UIFramework.Color(Rgb hexColor)
+		public static implicit operator global::Ext.Chaos.UIFramework.Color(Rgb hexColor)
 		{
-			return new Oxide.Ext.Chaos.UIFramework.Color(hexColor.Hex);
+			return new global::Ext.Chaos.UIFramework.Color(hexColor.Hex);
 		}
 
 		public static implicit operator UnityEngine.Color(Rgb hexColor)
@@ -87,9 +87,9 @@ public abstract class HexColor
 			return new float4(color.r, color.g, color.b, color.a);
 		}
 
-		public static implicit operator Oxide.Ext.Chaos.UIFramework.Color(Rgba hexColor)
+		public static implicit operator global::Ext.Chaos.UIFramework.Color(Rgba hexColor)
 		{
-			return new Oxide.Ext.Chaos.UIFramework.Color(hexColor.Hex, hexColor.Opacity);
+			return new global::Ext.Chaos.UIFramework.Color(hexColor.Hex, hexColor.Opacity);
 		}
 
 		public static implicit operator UnityEngine.Color(Rgba hexColor)

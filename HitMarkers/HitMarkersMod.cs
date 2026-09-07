@@ -1,13 +1,23 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Plugins;
-using OxidePlugin = Oxide.Plugins.HitMarkers;
+using GrimmCuiHarmony;
+using Harmony.Core.Libraries.Covalence;
+using GrimmCuiHarmony;
+using Harmony.Plugins;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.HitMarkers;
+using GrimmCuiHarmony;
 
 namespace HitMarkersHarmony
 {
@@ -34,7 +44,7 @@ namespace HitMarkersHarmony
     public class HitMarkersMod : IHarmonyModHooks
     {
         public static HitMarkersMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         public const string AppDomainApiKey = "HitMarkers_ApiType";
         public const string CuiMarker = "HITMARKERS";
@@ -50,14 +60,16 @@ namespace HitMarkersHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -99,15 +111,16 @@ namespace HitMarkersHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
             UnregisterConsoleCommands();
 
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[HitMarkers] Harmony mod unloaded.");
         }
@@ -157,10 +170,10 @@ namespace HitMarkersHarmony
             return InvokeAttributedChat(plugin, commandName, player, args);
         }
 
-        private bool InvokeAttributedChat(OxidePlugin plugin, string commandName, BasePlayer player, string[] args)
+        private bool InvokeAttributedChat(HarmonyPlugin plugin, string commandName, BasePlayer player, string[] args)
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
                 foreach (ChatCommandAttribute attr in mi.GetCustomAttributes(typeof(ChatCommandAttribute), false))
                 {
@@ -168,7 +181,7 @@ namespace HitMarkersHarmony
                     InvokeMethod(plugin, mi, player, commandName, args);
                     return true;
                 }
-                foreach (Oxide.Plugins.CommandAttribute attr in mi.GetCustomAttributes(typeof(Oxide.Plugins.CommandAttribute), false))
+                foreach (Harmony.Plugins.CommandAttribute attr in mi.GetCustomAttributes(typeof(Harmony.Plugins.CommandAttribute), false))
                 {
                     if (!string.Equals(attr.Command, commandName, StringComparison.OrdinalIgnoreCase)) continue;
                     InvokeMethod(plugin, mi, player, commandName, args);
@@ -178,16 +191,16 @@ namespace HitMarkersHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null) return;
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            var mi = typeof(OxidePlugin).GetMethod(methodName, bf);
+            var mi = typeof(HarmonyPlugin).GetMethod(methodName, bf);
             if (mi == null) return;
             InvokeMethod(plugin, mi, player, command, args);
         }
 
-        private static void InvokeMethod(OxidePlugin plugin, MethodInfo mi, BasePlayer player, string command, string[] args)
+        private static void InvokeMethod(HarmonyPlugin plugin, MethodInfo mi, BasePlayer player, string command, string[] args)
         {
             try
             {
@@ -225,7 +238,7 @@ namespace HitMarkersHarmony
         private void RegisterAttributedChatCommands()
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
                 foreach (ChatCommandAttribute attr in mi.GetCustomAttributes(typeof(ChatCommandAttribute), false))
                 {
@@ -233,7 +246,7 @@ namespace HitMarkersHarmony
                     _chatCommandNames.Add(attr.Command);
                     RegisterChatAliasConsole(attr.Command);
                 }
-                foreach (Oxide.Plugins.CommandAttribute attr in mi.GetCustomAttributes(typeof(Oxide.Plugins.CommandAttribute), false))
+                foreach (Harmony.Plugins.CommandAttribute attr in mi.GetCustomAttributes(typeof(Harmony.Plugins.CommandAttribute), false))
                 {
                     if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                     _chatCommandNames.Add(attr.Command);
@@ -249,11 +262,11 @@ namespace HitMarkersHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -423,7 +436,7 @@ namespace HitMarkersHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 mi?.Invoke(plugin, new object[] { arg });
             }
             catch (Exception ex)

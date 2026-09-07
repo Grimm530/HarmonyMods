@@ -1,6 +1,6 @@
 # RustVehiclesGUI (Harmony port of Oxide RustVehiclesGUI 1.0.5)
 
-Harmony-first, Oxide-free port of **RustVehiclesGUI** (Grimm530). This mod is the *interface only*:
+Harmony-first, Harmony port of **RustVehiclesGUI** (Grimm530). This mod is the *interface only*:
 vehicle licences, purchases and spawns are owned by the **RustVehicles** Harmony mod, which this mod
 reaches through the `RustVehicles_Plugin` AppDomain bridge.
 
@@ -43,9 +43,10 @@ harmony.load RustVehiclesGUI
 - `OnServerPanelCategoryPage(BasePlayer, object, int)` drops the pending image queue when the panel
   switches category or page. It returns void on purpose: ServerPanel cancels the switch on any
   non-null hook result.
-- `RefreshServerPanelContent` redraws the panel by invoking the registered `UI_ServerPanel` console
-  command server-side. The Oxide version used `SendConsoleCommand`, which the client will not forward
-  under Harmony.
+- `RefreshServerPanelContent` redraws the open plugin page with
+  `ServerPanel.Call("API_OnServerPanelRefreshContent", player)`. The Oxide version used
+  `SendConsoleCommand("UI_ServerPanel", ...)`, which Harmony clients never forward and which is not
+  registered in `ConsoleSystem.Index` (CUI buttons go through `cui.endtest`).
 
 ## API for other mods
 
@@ -76,18 +77,18 @@ CUI buttons carry `vgui.*` commands that the client will not forward, so `RustCu
 own `RustCui.cs` carries the same `vgui.` marker so embedded panel pages work the same way.
 
 Buy / spawn / recall / pickup / kill still go out as `chat.say /<command>` to the player, which the
-RustVehicles chat patch picks up server-side - the same flow as the Oxide plugin.
+RustVehicles chat patch picks up server-side - the same flow as the Harmony mod.
 
 ## Build
 
 ```powershell
-.\convert-from-oxide.ps1   # regenerate RustVehiclesGUI.cs from the Oxide source
+.\convert-from-legacy.ps1   # regenerate RustVehiclesGUI.cs from the Oxide source
 .\build.ps1
 ```
 
 `build.ps1` builds Release and copies only `RustVehiclesGUI.dll` to `<server root>\HarmonyMods\`.
 
-`convert-from-oxide.ps1` rewrites the Oxide source: strips the Oxide usings and namespace, rebases the
+`convert-from-legacy.ps1` rewrites the Oxide source: strips the Oxide usings and namespace, rebases the
 class on `RustVehiclesGUIPluginBase`, turns the `[PluginReference]` fields into live `PluginBridges`
 properties, repoints the core config/data paths at `HarmonyConfig` / `HarmonyData`, unwraps
 `player.userID` at bridge call sites, and appends the Harmony lifecycle plus the ServerPanel hooks.

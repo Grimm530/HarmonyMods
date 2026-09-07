@@ -103,7 +103,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(CodeLock __instance, BaseEntity.RPCMessage rpc)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.CanChangeCode(rpc.player, __instance); }
             catch (System.Exception ex) { Debug.LogWarning("[DynamicCupShare] CanChangeCode: " + ex.Message); }
         }

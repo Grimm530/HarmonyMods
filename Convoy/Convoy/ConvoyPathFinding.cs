@@ -8,28 +8,19 @@ using UnityEngine.AI;
 
 namespace Convoy
 {
-    /// <summary>
-    /// TerrainPath.Roads / Monuments are internal fields on the game type — property lookup always fails.
-    /// Mirror CustomMapGen: FieldInfo with NonPublic.
-    /// </summary>
+    /// <summary>Access TerrainMeta.Path.Roads and .Monuments via reflection (TerrainPath API may vary by game version).</summary>
     public static class TerrainPathAccessor
     {
-        private static FieldInfo _roadsField;
-        private static FieldInfo _monumentsField;
         private static IList _roads;
         private static IEnumerable _monuments;
-
-        private static FieldInfo GetField(string name)
-        {
-            return typeof(TerrainPath).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        }
 
         public static IList GetRoads()
         {
             if (TerrainMeta.Path == null) return null;
             if (_roads != null) return _roads;
-            if (_roadsField == null) _roadsField = GetField("Roads");
-            _roads = _roadsField?.GetValue(TerrainMeta.Path) as IList;
+            var path = TerrainMeta.Path;
+            var prop = path.GetType().GetProperty("Roads", BindingFlags.Public | BindingFlags.Instance);
+            _roads = prop?.GetValue(path) as IList;
             return _roads;
         }
 
@@ -37,16 +28,10 @@ namespace Convoy
         {
             if (TerrainMeta.Path == null) return null;
             if (_monuments != null) return _monuments;
-            if (_monumentsField == null) _monumentsField = GetField("Monuments");
-            _monuments = _monumentsField?.GetValue(TerrainMeta.Path) as IEnumerable;
+            var path = TerrainMeta.Path;
+            var prop = path.GetType().GetProperty("Monuments", BindingFlags.Public | BindingFlags.Instance);
+            _monuments = prop?.GetValue(path) as IEnumerable;
             return _monuments;
-        }
-
-        /// <summary>Clear cached lists (call when unloading or after map change).</summary>
-        public static void ClearCache()
-        {
-            _roads = null;
-            _monuments = null;
         }
 
         public static PathList GetRoadAt(int index)
@@ -170,15 +155,6 @@ namespace Convoy
         public static void GenerateNewPath()
         {
             CurrentPath = null;
-            var roads = TerrainPathAccessor.GetRoads();
-            int roadCount = roads?.Count ?? 0;
-            if (roadCount == 0)
-            {
-                UnityEngine.Debug.LogWarning("[Convoy] RouteNotFound: TerrainMeta.Path.Roads is empty or inaccessible (need a map with roads).");
-                ConvoyNotifyStub.PrintError(null, "RouteNotFound_Exeption");
-                return;
-            }
-
             if (Cfg?.PathConfig == null)
             {
                 CurrentPath = ConvoyRegularPathGenerator.GetRegularPath();
@@ -188,11 +164,7 @@ namespace Convoy
                     CurrentPath.SpawnRotation = DefineSpawnRotation(CurrentPath);
                 }
                 if (CurrentPath == null || CurrentPath.StartPathPoint == null)
-                {
-                    CurrentPath = null;
-                    UnityEngine.Debug.LogWarning("[Convoy] RouteNotFound: no suitable road (roads=" + roadCount + ", no PathConfig).");
                     ConvoyNotifyStub.PrintError(null, "RouteNotFound_Exeption");
-                }
                 return;
             }
 
@@ -213,16 +185,7 @@ namespace Convoy
             if (CurrentPath == null || CurrentPath.StartPathPoint == null)
             {
                 CurrentPath = null;
-                UnityEngine.Debug.LogWarning("[Convoy] RouteNotFound: PathType=" + Cfg.PathConfig.PathType
-                    + " MinRoadLength=" + Cfg.PathConfig.MinRoadLength
-                    + " roads=" + roadCount
-                    + " (complex cache may still be building — try PathType 0).");
                 ConvoyNotifyStub.PrintError(null, "RouteNotFound_Exeption");
-            }
-            else
-            {
-                UnityEngine.Debug.Log("[Convoy] Route ready: " + CurrentPath.Points.Count + " points, ring=" + CurrentPath.IsRoundRoad
-                    + ", start=" + CurrentPath.StartPathPoint.Position);
             }
         }
 
@@ -245,9 +208,8 @@ namespace Convoy
 
             if (path.IsRoundRoad)
             {
-                // Prefer navmesh-snapped points, but road points often sit off humanoid navmesh — do not fail the route.
-                var candidates = path.Points.Where(x => PositionDefiner.GetNavmeshInPoint(x.Position, 8, out navMeshHit)).ToList();
-                newStartPoint = candidates.Count > 0 ? candidates.GetRandom() : path.Points.GetRandom();
+                var candidates = path.Points.Where(x => PositionDefiner.GetNavmeshInPoint(x.Position, 2, out navMeshHit)).ToList();
+                newStartPoint = candidates.Count > 0 ? candidates.GetRandom() : path.Points[0];
             }
             else
             {
@@ -256,16 +218,10 @@ namespace Convoy
             }
 
             if (newStartPoint == null) newStartPoint = path.Points[0];
-
-            // Snap to navmesh when available (NPC dismount); otherwise keep road point and fix Y from heightmap.
-            if (PositionDefiner.GetNavmeshInPoint(newStartPoint.Position, 12, out navMeshHit))
+            if (PositionDefiner.GetNavmeshInPoint(newStartPoint.Position, 2, out navMeshHit))
                 newStartPoint.Position = navMeshHit.position;
-            else if (TerrainMeta.HeightMap != null)
-            {
-                Vector3 p = newStartPoint.Position;
-                p.y = TerrainMeta.HeightMap.GetHeight(p);
-                newStartPoint.Position = p;
-            }
+            else
+                return null;
             return newStartPoint;
         }
 
@@ -303,8 +259,6 @@ namespace Convoy
         public static void OnPluginUnloaded()
         {
             ConvoyComplexPathGenerator.StopPathGenerating();
-            TerrainPathAccessor.ClearCache();
-            CurrentPath = null;
         }
 
         public static MonumentInfo GetRoadMonumentInPosition(Vector3 position)
@@ -475,7 +429,7 @@ namespace Convoy
 
         private static IEnumerator CachingCoroutine()
         {
-            ConvoyNotifyStub.PrintLogMessage("RouteCachingStart_Log");
+            ConvoyNotifyStub.PrintLogMessage("RouteСachingStart_Log");
             _complexPaths.Clear();
             var cfg = ConvoyPathManager.ConfigProvider?.Invoke()?.PathConfig;
             int minLen = cfg?.MinRoadLength ?? 200;
@@ -496,7 +450,7 @@ namespace Convoy
             EndPoints.Clear();
             _complexPaths.RemoveAll(p => p == null || (p.IncludedRoadIndexes != null && p.IncludedRoadIndexes.Count < minRoadCount));
             _isGenerationFinished = true;
-            ConvoyNotifyStub.PrintWarningMessage("RouteCachingStop_Log", _complexPaths.Count);
+            ConvoyNotifyStub.PrintWarningMessage("RouteСachingStop_Log", _complexPaths.Count);
         }
 
         private static IEnumerator CachingRoad(int roadIndex, int startPointIndex, int pathPointForConnectionIndex, HashSet<int> blockRoads, int minRoadLength, IList roadsList)

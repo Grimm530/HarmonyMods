@@ -1,6 +1,6 @@
 using System;
+using System.Collections;
 using System.IO;
-using System.Reflection;
 using CustomMapGen.Utility;
 using HarmonyLib;
 using UnityEngine;
@@ -8,54 +8,73 @@ using UnityEngine;
 namespace CustomMapGen.Patches
 {
     /// <summary>
-    /// Map image: Run at LoadingScreen.Update("DONE") - AFTER Finalizing World, matching HarmonyCustomGenerator.
-    /// Terrain data is still in memory at DONE; rendering here produces the same quality as HCG.
-    /// LoadingScreen may not exist on dedicated server builds; TargetMethod returns a no-op then so Harmony does not throw.
+    /// Dedicated servers call <see cref="UI_LoadingScreen.Update(string)"/> (the method body is empty).
+    /// HarmonyCustomGenerator patched the client-only <c>LoadingScreen</c> type, which never runs here.
     /// </summary>
-    [HarmonyPatch]
-    public static class LoadingScreen_Update_MapImage_Patch
+    [HarmonyPatch(typeof(UI_LoadingScreen), nameof(UI_LoadingScreen.Update), new Type[] { typeof(string) })]
+    public static class UI_LoadingScreen_Update_MapImage_Patch
     {
-        static MethodBase TargetMethod()
-        {
-            Type loadingScreenType = AccessTools.TypeByName("LoadingScreen");
-            if (loadingScreenType == null)
-                return AccessTools.Method(typeof(LoadingScreen_Update_MapImage_Patch), nameof(NoOp), new Type[] { typeof(string) });
-            MethodBase target = AccessTools.Method(loadingScreenType, "Update", new Type[] { typeof(string) });
-            return target ?? AccessTools.Method(typeof(LoadingScreen_Update_MapImage_Patch), nameof(NoOp), new Type[] { typeof(string) });
-        }
+        internal static bool RanThisGen;
 
-        static void NoOp(string strType) { }
-
-        static void Prefix(string strType, MethodBase __originalMethod)
+        static void Prefix(string strType)
         {
-            if (__originalMethod?.DeclaringType == typeof(LoadingScreen_Update_MapImage_Patch))
-                return;
             if (strType != "DONE")
                 return;
-            if (!CustomMapGen.IsCustomMapGenEnabled() || !World.Procedural || World.Cached)
+            if (RanThisGen)
+                return;
+            if (!CustomMapGen.IsCustomMapGenEnabled())
                 return;
             if (TerrainTexturing.Instance == null)
+            {
+                UnityEngine.Debug.LogWarning("[CustomMapGen] Map image skipped: TerrainTexturing.Instance is null at DONE.");
                 return;
+            }
 
             var config = CustomMapGen.Instance?.GetConfig();
             if (config?.MapImage == null || !config.MapImage.Enabled)
             {
-                QuitIfNeeded(config);
+                MaybeQuit(config);
                 return;
             }
 
-            UnityEngine.Debug.Log($"[CustomMapGen] SIZE: {World.Size} | SEED: {World.Seed}");
+            RanThisGen = true;
+            UnityEngine.Debug.Log($"[CustomMapGen] SIZE: {World.Size} | SEED: {World.Seed} | Cached={World.Cached}");
             GenerateMapImageSync(config);
-            QuitIfNeeded(config);
+            MaybeQuit(config);
         }
 
-        private static void QuitIfNeeded(MapGenConfig config)
+        internal static string GetPngPath(MapGenConfig config)
         {
-            UnityEngine.Debug.Log("[CustomMapGen] Map generation complete. Quitting to avoid freeze. Restart server to load the map.");
-            Application.Quit();
+            string dir = string.IsNullOrEmpty(config.MapImage.OutputFolder)
+                ? Environment.CurrentDirectory
+                : Path.Combine(Environment.CurrentDirectory, config.MapImage.OutputFolder);
+            string fileName = config.MapImage.MapVoterFormat
+                ? $"{World.Size}_{World.Seed}.png"
+                : $"map_{World.Size}_{World.Seed}.png";
+            return Path.Combine(dir, fileName);
         }
 
-        private static void GenerateMapImageSync(MapGenConfig config)
+        static void MaybeQuit(MapGenConfig config)
+        {
+            if (config == null || !config.QuitAfterMapCreation)
+                return;
+            if (World.Cached || CustomMapGen.IsLoadingExistingMap)
+                return;
+
+            float delay = Mathf.Max(0f, config.QuitAfterMapCreationDelaySeconds);
+            UnityEngine.Debug.Log($"[CustomMapGen] Map generation complete. Quitting in {delay:0.#}s so the next start loads the saved map.");
+            if (delay <= 0f)
+            {
+                Application.Quit();
+                return;
+            }
+
+            var host = new GameObject("CustomMapGen_QuitAfterMapCreation");
+            UnityEngine.Object.DontDestroyOnLoad(host);
+            host.AddComponent<QuitAfterDelay>().Begin(delay);
+        }
+
+        static void GenerateMapImageSync(MapGenConfig config)
         {
             string fontResourcesPath = string.IsNullOrWhiteSpace(config.MapImage.FontResourcesPath)
                 ? "maps/images/resources"
@@ -63,31 +82,42 @@ namespace CustomMapGen.Patches
             MapImageRenderFull.EnsureFontDirs(fontResourcesPath);
 
             float scale = Mathf.Clamp(config.MapImage.Scale, 0.1f, 4f);
-            bool includeMonuments = config.MapImage.IncludeMonumentNames;
-            bool includeGrid = config.MapImage.IncludeGrid;
             int oceanMargin = Mathf.Clamp(config.MapImage.OceanMargin, 100, 500);
             string preferredFont = string.IsNullOrWhiteSpace(config.MapImage.MonumentFont) ? null : config.MapImage.MonumentFont.Trim();
 
-            byte[] png = MapImageRenderFull.Render(out int imageWidth, out int imageHeight, out UnityEngine.Color background,
-                scale, includeMonuments, includeGrid, oceanMargin, fontResourcesPath, preferredFont);
-
+            UnityEngine.Debug.Log($"[CustomMapGen] Map image: MapImageRenderer (world.rendermap) scale={scale} margin={oceanMargin}");
+            byte[] png = MapImageRenderer.Render(out int imageWidth, out int imageHeight, out _,
+                scale, false, false, oceanMargin);
             if (png == null || png.Length == 0)
             {
-                UnityEngine.Debug.LogWarning("[CustomMapGen] Map image render returned null.");
+                UnityEngine.Debug.LogWarning("[CustomMapGen] MapImageRenderer.Render returned null.");
                 return;
             }
 
-            string dir = string.IsNullOrEmpty(config.MapImage.OutputFolder)
-                ? Environment.CurrentDirectory
-                : Path.Combine(Environment.CurrentDirectory, config.MapImage.OutputFolder);
-            if (!Directory.Exists(dir))
+            png = MapImageOverlay.ApplyOverlays(png, oceanMargin,
+                config.MapImage.IncludeMonumentNames, config.MapImage.IncludeGrid, config.MapImage.IncludeCargoPath,
+                fontResourcesPath, preferredFont);
+
+            string fullPath = GetPngPath(config);
+            string dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
-            string fileName = config.MapImage.MapVoterFormat
-                ? $"{World.Size}_{World.Seed}.png"
-                : $"map_{World.Size}_{World.Seed}.png";
-            string fullPath = Path.Combine(dir, fileName);
             File.WriteAllBytes(fullPath, png);
-            UnityEngine.Debug.Log($"[CustomMapGen] Map image saved: {fullPath}");
+            UnityEngine.Debug.Log($"[CustomMapGen] Map image saved: {fullPath} ({imageWidth}x{imageHeight})");
+        }
+
+        private sealed class QuitAfterDelay : MonoBehaviour
+        {
+            public void Begin(float seconds)
+            {
+                StartCoroutine(Run(seconds));
+            }
+
+            IEnumerator Run(float seconds)
+            {
+                yield return new WaitForSecondsRealtime(seconds);
+                Application.Quit();
+            }
         }
     }
 }

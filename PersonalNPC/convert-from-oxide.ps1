@@ -1,14 +1,14 @@
 # Converts the three Oxide sources (PersonalNPC, PersonalNPCHelper, PNPCAddonBuilder)
-# into Oxide-free Harmony sources under this folder.
+# into Harmony Harmony sources under this folder.
 #
-#   .cursor/Oxide.Plugins.Cant-Use/PersonalNPC.cs            -> PersonalNPC.cs
-#   .cursor/Oxide.Plugins.Cant-Use/PersonalNPCHelper.cs      -> PersonalNPCHelper.cs
-#   .cursor/Oxide.Plugins.Cant-Use/PersonalNPCAddonBuilder.cs-> PNPCAddonBuilder.cs
+#   .cursor/Harmony.Plugins.Cant-Use/PersonalNPC.cs            -> PersonalNPC.cs
+#   .cursor/Harmony.Plugins.Cant-Use/PersonalNPCHelper.cs      -> PersonalNPCHelper.cs
+#   .cursor/Harmony.Plugins.Cant-Use/PersonalNPCAddonBuilder.cs-> PNPCAddonBuilder.cs
 #
 # Re-running this script overwrites the generated files, so never hand-edit them.
 
 $ErrorActionPreference = "Stop"
-$srcDir = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use"
+$srcDir = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use"
 
 function Assert-Replaced([string]$before, [string]$after, [string]$what) {
     if ($before -eq $after) { throw "Conversion step did not match: $what" }
@@ -51,18 +51,18 @@ $src = Join-Path $srcDir "PersonalNPC.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-$text = Strip-Usings $text @("Oxide.Core.Plugins", "Oxide.Core")
+$text = Strip-Usings $text @("Harmony.Core.Plugins", "Harmony.Core")
 $text = Add-Linq $text
-# Keep Oxide.Game.Rust.Cui - RustCui.cs provides that namespace locally.
-$text = $text.Replace("using Oxide.Plugins.PersonalNPCex;", "using PersonalNPCHarmony.PersonalNPCex;")
-$text = $text.Replace("namespace Oxide.Plugins.PersonalNPCex", "namespace PersonalNPCHarmony.PersonalNPCex")
-$text = $text.Replace("namespace Oxide.Plugins", "namespace PersonalNPCHarmony")
+# Keep Game.Rust.Cui - RustCui.cs provides that namespace locally.
+$text = $text.Replace("using Harmony.Plugins.PersonalNPCex;", "using PersonalNPCHarmony.PersonalNPCex;")
+$text = $text.Replace("namespace Harmony.Plugins.PersonalNPCex", "namespace PersonalNPCHarmony.PersonalNPCex")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace PersonalNPCHarmony")
 
 # Class declaration
 $before = $text
 $newClass = @"
     /// <summary>
-    /// PersonalNPC 2.0.7 ported for Harmony (no Oxide). Logic matches the Oxide plugin;
+    /// PersonalNPC 2.0.7 ported for Harmony (Harmony-only). Logic matches the Harmony mod;
     /// only hosting, config/data I/O and cross-plugin calls differ.
     /// </summary>
     public class PersonalNPC : PersonalNPCPluginBase
@@ -161,9 +161,9 @@ $src = Join-Path $srcDir "PersonalNPCHelper.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-$text = Strip-Usings $text @("Oxide.Core.Plugins", "Oxide.Core")
+$text = Strip-Usings $text @("Harmony.Core.Plugins", "Harmony.Core")
 $text = Add-Linq $text
-$text = $text.Replace("namespace Oxide.Plugins", "namespace PersonalNPCHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace PersonalNPCHarmony")
 
 $before = $text
 $newClass = @"
@@ -256,9 +256,9 @@ $src = Join-Path $srcDir "PersonalNPCAddonBuilder.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-$text = Strip-Usings $text @("Oxide.Core.Plugins", "Oxide.Core")
+$text = Strip-Usings $text @("Harmony.Core.Plugins", "Harmony.Core")
 $text = Add-Linq $text
-$text = $text.Replace("namespace Oxide.Plugins", "namespace PersonalNPCHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace PersonalNPCHarmony")
 $text = $text.Replace("Core.Configuration.DynamicConfigFile", "DynamicConfigFile")
 
 $before = $text
@@ -326,11 +326,11 @@ Write-Host ("  wrote PNPCAddonBuilder.cs ({0} lines)" -f ([regex]::Split($text, 
 # Sanity checks
 # ---------------------------------------------------------------------------
 Write-Host ""
-Write-Host "Residual Oxide references (all counts should be 0 except Oxide.Game.Rust.Cui):" -ForegroundColor Cyan
+Write-Host "Residual Oxide references (all counts should be 0 except Game.Rust.Cui):" -ForegroundColor Cyan
 foreach ($f in @("PersonalNPC.cs", "PersonalNPCHelper.cs", "PNPCAddonBuilder.cs")) {
     $t = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot $f))
     $checks = @(
-        @{ Name = "using Oxide.Core"; Pattern = "using Oxide\.Core" },
+        @{ Name = "using Harmony.Core"; Pattern = "using Oxide\.Core" },
         @{ Name = "namespace Oxide"; Pattern = "namespace Oxide\." },
         @{ Name = "RustPlugin"; Pattern = ": RustPlugin" },
         @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },

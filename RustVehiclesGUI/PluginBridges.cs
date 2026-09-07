@@ -5,7 +5,7 @@ using UnityEngine;
 namespace RustVehiclesGUIHarmony
 {
     /// <summary>
-    /// Resolves the Oxide PluginReference targets (RustVehicles, VehicleLicence, Economics,
+    /// Resolves the Harmony ModReference targets (RustVehicles, VehicleLicence, Economics,
     /// ServerRewards, ServerPanel) against Harmony ports published on the AppDomain.
     /// Bridges are cached per wrapper instance because the GUI compares plugin references
     /// (CorePlugin == RustVehicles) rather than names.

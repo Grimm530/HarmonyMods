@@ -1,6 +1,6 @@
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class RawImageContainer : BaseContainer
 {

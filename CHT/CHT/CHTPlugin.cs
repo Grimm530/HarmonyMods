@@ -10,9 +10,9 @@ using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust;
 using System;
 using System.Collections;
@@ -27,7 +27,7 @@ using Pool = Facepunch.Pool;
 using Random = UnityEngine.Random;
 using Time = UnityEngine.Time;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("CHT", "VisEntities", "1.5.12")]
     [Description("Replaces Rust patrol helicopters with smarter, stronger, and fully customizable tiered helicopters.")]
@@ -955,7 +955,7 @@ namespace Oxide.Plugins
 
         #endregion Data Migration
 
-        #region Oxide Hooks
+        #region Harmony Hooks
 
         private void Init()
         {
@@ -1280,6 +1280,16 @@ namespace Oxide.Plugins
             return null;
         }
 
+        private static void SetHelicopterDebrisHotTime(HelicopterDebris debris, float hotSeconds)
+        {
+            if (debris == null) return;
+            debris.CancelInvoke(nameof(HelicopterDebris.OnCooledDown));
+            if (hotSeconds <= 0f)
+                debris.OnCooledDown();
+            else
+                debris.Invoke(debris.OnCooledDown, hotSeconds);
+        }
+
         public object CanLootEntity(BasePlayer player, LootContainer lootContainer)
         {
             if (lootContainer == null)
@@ -1299,7 +1309,7 @@ namespace Oxide.Plugins
             return true;
         }
 
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region Helicopter Wreckage
 
@@ -1374,7 +1384,7 @@ namespace Oxide.Plugins
                         else
                         {
                             debris.InitializeHealth(tierData.Debris.HitPoints, tierData.Debris.HitPoints);
-                            debris.tooHotUntil = Time.realtimeSinceStartup + tierData.Debris.CoolingPeriodSeconds;
+                            SetHelicopterDebrisHotTime(debris, tierData.Debris.CoolingPeriodSeconds);
                         }
                     }
 
@@ -4326,7 +4336,7 @@ namespace Oxide.Plugins
 
             public static void EnsureFolderCreated()
             {
-                string path = Path.Combine(Interface.Oxide.DataDirectory, FOLDER);
+                string path = Path.Combine(HarmonyModInterface.Mods.DataDirectory, FOLDER);
 
                 if (!Directory.Exists(path))
                     Directory.CreateDirectory(path);
@@ -4345,7 +4355,7 @@ namespace Oxide.Plugins
 
             public static string[] GetAllFilePaths(bool filenameOnly = false)
             {
-                string[] filePaths = Interface.Oxide.DataFileSystem.GetFiles(FOLDER);
+                string[] filePaths = HarmonyModInterface.Mods.DataFileSystem.GetFiles(FOLDER);
 
                 for (int i = 0; i < filePaths.Length; i++)
                 {
@@ -4361,12 +4371,12 @@ namespace Oxide.Plugins
 
             public static bool Exists(string filePath)
             {
-                return Interface.Oxide.DataFileSystem.ExistsDatafile(filePath);
+                return HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(filePath);
             }
 
             public static T Load<T>(string filePath) where T : class, new()
             {
-                T data = Interface.Oxide.DataFileSystem.ReadObject<T>(filePath);
+                T data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<T>(filePath);
                 if (data == null)
                     data = new T();
 
@@ -4420,12 +4430,12 @@ namespace Oxide.Plugins
 
             public static void Save<T>(string filePath, T data)
             {
-                Interface.Oxide.DataFileSystem.WriteObject<T>(filePath, data);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject<T>(filePath, data);
             }
 
             public static void Delete(string filePath)
             {
-                Interface.Oxide.DataFileSystem.DeleteDataFile(filePath);
+                HarmonyModInterface.Mods.DataFileSystem.DeleteDataFile(filePath);
             }
         }
 

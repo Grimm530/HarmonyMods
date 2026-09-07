@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 
 namespace TeleportGUI
@@ -44,7 +44,7 @@ namespace TeleportGUI
             _pendingWarpPosition.Remove(id);
         }
 
-        /// <summary>Oxide OnServerSave — persist userdata / warpdata.</summary>
+        /// <summary>Harmony OnServerSave — persist userdata / warpdata.</summary>
         public void OnServerSave()
         {
             SaveData();
@@ -184,7 +184,7 @@ namespace TeleportGUI
             if (string.IsNullOrEmpty(homeName) || homePoint == null)
                 return;
 
-            // Defer one tick so Rename's network update / filter settle (Oxide CanRenameBed NextTick).
+            // Defer one tick so Rename's network update / filter settle (original CanRenameBed NextTick).
             NextTick(() =>
             {
                 if (sleepingBag == null || sleepingBag.IsDestroyed || userData?.Homes == null)
@@ -263,7 +263,7 @@ namespace TeleportGUI
                 return 0;
 
             int max = GetMaxHomes(player);
-            // Default 0 in config disables limits entirely (Oxide GetMaxHomesForPlayer).
+            // Default 0 in config disables limits entirely (original GetMaxHomesForPlayer).
             if ((_config?.Home?.MaxHomes?.Default ?? 5) <= 0)
                 return 0;
             return max;

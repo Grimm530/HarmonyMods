@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using ZM = Oxide.Plugins.ZoneManager;
+using ZM = Harmony.Plugins.ZoneManager;
 
 namespace ZoneManagerHarmony.Patches
 {
@@ -10,7 +10,7 @@ namespace ZoneManagerHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(PlayerLoot __instance, BaseEntity targetEntity, ref bool __result)
         {
-            if (__instance == null || targetEntity == null) return true;
+            if (targetEntity == null) return true;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return true;
             try
@@ -32,7 +32,7 @@ namespace ZoneManagerHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (!__result || __instance == null || targetEntity == null) return;
+            if (!__result || targetEntity == null) return;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return;
             try

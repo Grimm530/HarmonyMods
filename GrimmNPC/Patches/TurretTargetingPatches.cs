@@ -53,6 +53,6 @@ namespace GrimmNPC.Patches
         }
     }
     
-    // Note: GunTrap and FlameTurret use CheckTrigger() and Oxide hooks
+    // Note: GunTrap and FlameTurret use CheckTrigger() and Harmony hooks
     // These can be patched later if needed by patching CheckTrigger method
 }

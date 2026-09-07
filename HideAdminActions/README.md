@@ -29,7 +29,7 @@ Harmony mod that hides admin-specific chat indicators from players. Suppresses a
 
 **State flow:** No state. Patches are pure prefix logic; no config, data files, or caches.
 
-**Dependencies:** `0Harmony`, `Assembly-CSharp`, `Facepunch.Console` – no Oxide dependencies.
+**Dependencies:** `0Harmony`, `Assembly-CSharp`, `Facepunch.Console` – Harmony-only dependencies.
 
 ---
 
@@ -96,13 +96,13 @@ Not applicable. Mod only modifies chat behavior; no entities, inventory, or worl
 
 ## NoGiveNotices Replacement
 
-This mod fully replaces the Oxide plugin [NoGiveNotices](https://umod.org/plugins/no-give-notices) (by Wulf). That plugin blocks F1 item-giving notices via `OnServerMessage`; HideAdminActions achieves the same via a Harmony prefix on `Chat.Broadcast`, plus name-color hiding.
+This mod fully replaces the Harmony mod [NoGiveNotices](https://umod.org/plugins/no-give-notices) (by Wulf). That plugin blocks F1 item-giving notices via `OnServerMessage`; HideAdminActions achieves the same via a Harmony prefix on `Chat.Broadcast`, plus name-color hiding.
 
 | NoGiveNotices | HideAdminActions |
 |---------------|------------------|
 | Blocks `message.Contains("gave")` from SERVER | Same (Chat.Broadcast prefix) |
 | No name color change | All names cyan `#5af` (hides admin green) |
-| Oxide plugin | Harmony mod (no Oxide dependency) |
+| Harmony mod | Harmony mod (Harmony-only dependency) |
 
 You can unload NoGiveNotices and use HideAdminActions instead.
 

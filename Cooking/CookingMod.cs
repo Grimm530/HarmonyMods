@@ -1,15 +1,24 @@
 // CookingMod.cs — Harmony entry point for Cooking 2.0.35
-// Hosts Oxide.Plugins.Cooking, lifecycle, chat + console commands, SkillTree API.
+// Hosts Harmony.Plugins.Cooking, lifecycle, chat + console commands, SkillTree API.
 
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
+using GrimmCuiHarmony;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.Cooking;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.Cooking;
+using GrimmCuiHarmony;
 
 namespace CookingHarmony
 {
@@ -55,7 +64,7 @@ namespace CookingHarmony
     public class CookingMod : IHarmonyModHooks
     {
         public static CookingMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -71,14 +80,16 @@ namespace CookingHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -113,7 +124,7 @@ namespace CookingHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 plugin?.HarmonyReregisterPermissions();
             }
             catch (Exception ex)
@@ -138,8 +149,8 @@ namespace CookingHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
 
             UnregisterConsoleCommands();
 
@@ -147,7 +158,8 @@ namespace CookingHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[Cooking] Harmony mod unloaded.");
         }
@@ -209,13 +221,13 @@ namespace CookingHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
 
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player, command, args }); return; }
@@ -246,11 +258,11 @@ namespace CookingHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -280,11 +292,11 @@ namespace CookingHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var chatName = attr.Command.Trim().ToLowerInvariant();
@@ -490,7 +502,7 @@ namespace CookingHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName,
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 mi?.Invoke(plugin, new object[] { arg });
             }
@@ -564,8 +576,8 @@ namespace CookingHarmony
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
                 var types = args?.Select(a => a?.GetType() ?? typeof(object)).ToArray() ?? Type.EmptyTypes;
-                var mi = typeof(OxidePlugin).GetMethod(method, bf, null, types, null)
-                    ?? typeof(OxidePlugin).GetMethods(bf).FirstOrDefault(m =>
+                var mi = typeof(HarmonyPlugin).GetMethod(method, bf, null, types, null)
+                    ?? typeof(HarmonyPlugin).GetMethods(bf).FirstOrDefault(m =>
                         m.Name == method && m.GetParameters().Length == (args?.Length ?? 0));
                 return mi?.Invoke(plugin, args);
             }

@@ -29,7 +29,7 @@ Harmony-based loot table mod. Patches loot spawn methods directly for low-overhe
 | Component | Stores | Invariants |
 |-----------|--------|------------|
 | `AlphaLootMod.Instance` | Singleton; `_config`, `_storedData`, `_heliData`, `_bradleyData` | Set on `OnLoaded`, nulled on `OnUnloaded` |
-| `AlphaLootContext` | Static: `Config`, `WeightedSkinIds`, `ImportedSkinIds`, `BlockedWorkshopSkinIds` | Must be set before any populate; cleared on unload |
+| `AlphaLootContext` | Static: `Config`, `WeightedSkinIds`, `ImportedSkinIds` | Must be set before any populate; cleared on unload |
 | `_storedData` | Main loot profiles (containers, NPCs, unwraps) | Loaded from `ProfileName.json` |
 | `_heliData` | Heli crate profiles | Loaded from `HeliProfileName.json` |
 | `_bradleyData` | Bradley crate profiles | Loaded from `BradleyProfileName.json` |
@@ -80,7 +80,7 @@ Harmony-based loot table mod. Patches loot spawn methods directly for low-overhe
 | `MultiplyUnstackable` | bool | false | Apply multipliers to unstackable items |
 | `ContainerOverrides` | Dict<string,string> | {} | Map container shortname → override profile |
 | `IgnoreSkinsFor` | HashSet<string> | {} | Item shortnames that skip random skins |
-| `UseApprovedSkins` | bool | false | When true, allow paid DLC skins and log the upstream Aug 7 2025 TOS warning. When false, block paid skins from loot tables. |
+| `UseApprovedSkins` | bool | false | When true, allow paid DLC skins (TOS warning). When false, block paid skins from loot tables. |
 | `OverrideFancyDrop` | bool | false | Supply drops use `supply_drop` profile |
 | `AutoUpdate` | bool | false | Merge new items into loot tables on load |
 | `DebugSupplyDrops` | bool | false | Log supply drop contents to console |
@@ -97,7 +97,7 @@ Harmony-based loot table mod. Patches loot spawn methods directly for low-overhe
 | `al.repopulateall` | Admin only | Same |
 | `al.skins` | Admin only | Same (`al.skins clear` clears random/per-item skins in loot data) |
 
-Admin status required for console commands. Player chat commands need optional `AlphaLootCommands.cs` Oxide plugin.
+Admin status required for console commands. Player chat commands need optional `AlphaLootCommands.cs` Harmony mod.
 
 ---
 
@@ -114,11 +114,10 @@ Admin status required for console commands. Player chat commands need optional `
 | `State_Dead_StartRagdoll_Patch` | Gen2 `State_Dead.StartRagdoll` | Postfix: populate animal corpse from NPC profile | Corpse container modify |
 | `State_Dead_StartRagdoll_ScientistNPC2_Patch` | Gen2 scientist `State_Dead.StartRagdoll` | Same population path for ScientistNPC2 ragdolls | Corpse container modify |
 | `BaseEntity_DropCorpse_Patch` | `BaseEntity.DropCorpse` | Postfix: capture corpse for Gen2 `State_Dead` path (stack trace check) | Sets `_lastGen2Corpse` |
-| `Interface_CallHook_OnCorpsePopulate_Patch` | `Interface.CallHook("OnCorpsePopulate", entity, corpse)` | Postfix: if no Oxide plugin handled the corpse and an NPC profile exists, populate via AlphaLoot and return corpse | Mirrors Oxide AlphaLoot corpse hook behavior |
 | `LootFill_DelayFill_Patch` | `LootFill.DelayFill` | Prefix: if profile matches, clear storage and populate (non–`LootContainer` delayed fills) | Inventory modify |
 | `LootableCorpse_TakeFrom_ScientistNPC2_Patch` | `LootableCorpse.TakeFrom` | Postfix: when looting ScientistNPC2 corpse, apply NPC loot profile | Corpse container modify |
 
-**Design:** AlphaLoot runs first. Oxide plugins can overwrite loot after AlphaLoot if they hook `OnLootSpawn` / `OnCorpsePopulate`.
+**Design:** AlphaLoot runs first. Harmony mods can overwrite loot after AlphaLoot if they hook `OnLootSpawn` / `OnCorpsePopulate`.
 
 ---
 
@@ -137,7 +136,7 @@ All commands require admin. Console or F1; no chat binding in mod.
 
 ## 8) Lifecycle & State Machine
 
-- **OnLoaded:** Set `Instance`, resolve `_baseDataPath` to `HarmonyData/AlphaLoot` and `_configPath` to `HarmonyConfig/AlphaLoot.json`, load config and data, set `AlphaLootContext`, defer DLC skin block-list creation until `ItemSkinDirectory` and Steam inventory definitions are ready, optionally run `AlphaLootVanillaGenerator` when profiles empty or AutoUpdate enabled, register console commands.
+- **OnLoaded:** Set `Instance`, resolve `_baseDataPath` to `HarmonyData/AlphaLoot` and `_configPath` to `HarmonyConfig/AlphaLoot.json`, load config and data, set `AlphaLootContext`, optionally run `AlphaLootVanillaGenerator` when profiles empty or AutoUpdate enabled, register console commands.
 - **OnUnloaded:** Unregister commands, clear `AlphaLootContext`, null `Instance` and data.
 - **Save:** Explicit via `AlphaLootTools.SaveData()` (AddItems, AutoUpdate); no periodic auto-save.
 - **Invariants:** `AlphaLootContext` must be valid during any populate; patches check `mod != null` before use.
@@ -146,7 +145,7 @@ All commands require admin. Console or F1; no chat binding in mod.
 
 ## 9) External API Surface
 
-No public API for other mods. Compatible with Oxide plugins (they run after Harmony patches).
+No public API for other mods. Compatible with Harmony mods (they run after Harmony patches).
 
 ---
 
@@ -171,7 +170,6 @@ Not applicable.
 - **Paths:** Config in `HarmonyConfig/AlphaLoot.json`; data under `HarmonyData/AlphaLoot` (directories created automatically if missing).
 - **Supply drop:** Requires `supply_drop` in `loot_advanced` (or `loot_simple`) of main profile; if missing, supply drops fall through to vanilla unless `OverrideFancyDrop` is false (then always vanilla).
 - **Gen2 corpses:** Uses `BaseEntity.DropCorpse` postfix + stack trace to detect Gen2 `State_Dead.StartRagdoll`; captures corpse, then `State_Dead_StartRagdoll_Patch` postfix populates it.
-- **Skin directory readiness:** `ItemSkinDirectory.Instance` can throw while `assets/skins.asset` is not mounted; startup treats that as "not ready" and waits in `DeferredSkinBlockInitializer` instead of failing `OnLoaded`.
 - **Era filtering:** `LootSpawn` filters by `Server.Era`; `RestrictedEras` on slots/entries skip non-matching eras.
 - **Profile lookup:** Container overrides applied first; `heli_crate`/`bradley_crate` use `_heliData`/`_bradleyData` with `GetRandomLootProfile`; others use `_storedData`.
 
@@ -198,7 +196,7 @@ Not applicable.
 ## Installation
 
 1. **Console commands** (admin): `al.additems`, `al.search`, `al.repopulateall`, `al.skins` (see `al.skins clear` above).
-2. **(Optional)** Load `AlphaLootCommands.cs` Oxide plugin for chat commands and LootCycler: `/aloot`, `al.repopulateall`, hammer a container to preview cycling loot.
+2. **(Optional)** Load `AlphaLootCommands.cs` Harmony mod for chat commands and LootCycler: `/aloot`, `al.repopulateall`, hammer a container to preview cycling loot.
 3. Build and deploy:
    ```powershell
    .\build.ps1
@@ -247,7 +245,7 @@ Config is in the config folder; data is under `HarmonyData/AlphaLoot`. Directori
 | FancyDrop override (OverrideFancyDrop config) | ✅ |
 | CustomLootSpawns/EventLoot (plugins can overwrite after) | ⚠️ |
 | CanPopulateLoot hook | ❌ (plugins can block via their hooks) |
-| Admin commands + LootCycler | ✅ (optional Oxide plugin for chat) |
+| Admin commands + LootCycler | ✅ (optional Harmony mod for chat) |
 | Auto-updater, al.additems, al.search, al.skins clear | ✅ (Harmony mod, admin console) |
 | `LootFill` storage entities, ScientistNPC2 corpse paths | ✅ |
 
@@ -265,14 +263,6 @@ When loot profile files are missing or empty (e.g. after deleting `HarmonyData/A
 1. **Reduce crate count** – Lower `HelicopterCrates` or `BradleyCrates` in `HarmonyConfig/AlphaLoot.json` to limit total chances (e.g. 2 crates instead of 4).
 2. **Further reduce weight** – Lower the SubSpawn `Weight` for the rare item to make it even rarer per crate.
 3. **Remove from heli/bradley** – Remove the item from `default_heli_loottable.json` or `default_bradley_loottable.json` if you want zero chance per crate.
-
-## Troubleshooting: Startup Skin Directory Wait
-
-**Symptom:** Startup logs `Waiting for item skin and Steam inventory definitions before building DLC skin block list...`.
-
-**Expected behavior:** The mod remains loaded and waits for Rust's `ItemSkinDirectory` / Steam inventory definitions before building `BlockedWorkshopSkinIds`. This avoids the `ItemSkinDirectory.Instance` `NullReferenceException` seen when `assets/skins.asset` is not available during early Harmony `OnLoaded`.
-
-**Action:** No action is needed unless the wait repeats indefinitely. If it does, confirm the server content and Steam inventory definitions are loading correctly before running `al.skins clear`.
 
 ## Requirements
 

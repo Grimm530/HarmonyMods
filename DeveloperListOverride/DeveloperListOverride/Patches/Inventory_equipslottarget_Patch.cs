@@ -1,5 +1,6 @@
 using HarmonyLib;
 using ConVar;
+using Arg = ConsoleSystem.Arg;
 
 namespace DeveloperListOverride.Patches
 {
@@ -11,9 +12,9 @@ namespace DeveloperListOverride.Patches
     [HarmonyPatch(typeof(Inventory), nameof(Inventory.equipslottarget))]
     public static class Inventory_equipslottarget_Patch
     {
-        static bool Prefix(ConsoleSystem.Arg arg)
+        static bool Prefix(Arg arg)
         {
-            var basePlayer = arg.Connection?.player as BasePlayer;
+            BasePlayer basePlayer = arg.Connection?.player as BasePlayer;
             if (basePlayer == null) return true;
             string first = arg.GetString(0, "").Trim().ToLowerInvariant();
             if (first != "loot") return true;

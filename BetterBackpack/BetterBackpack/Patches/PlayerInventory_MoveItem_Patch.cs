@@ -27,7 +27,7 @@ internal class PlayerInventory_MoveItem_Patch
     {
         __state = default;
         if (!LootDebug.IsActive) return;
-        var player = __instance.baseEntity;
+        var player = __instance.GetComponent<BasePlayer>();
         if (!LootDebug.ShouldLog(player)) return;
 
         var read = msg.read;
@@ -71,7 +71,7 @@ internal class PlayerInventory_MoveItem_Patch
     private static void Postfix(PlayerInventory __instance, ref Trace __state)
     {
         if (!__state.Track) return;
-        var player = __instance.baseEntity;
+        var player = __instance.GetComponent<BasePlayer>();
         if (player == null) return;
 
         if (__state.ItemMissing)

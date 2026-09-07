@@ -7,38 +7,27 @@
   <PropertyGroup>
     <LangVersion>12</LangVersion>
   </PropertyGroup>
-  <ItemDefinitionGroup>
-    <Reference>
-      <Private>false</Private>
-    </Reference>
-  </ItemDefinitionGroup>
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Harmony">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-    <Reference Include="Facepunch.System">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
-      <Private>false</Private>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
-      <Private>false</Private>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
     </Reference>
-    <Reference Include="Facepunch.Steamworks.Win64">
-      <HintPath>C:\!2XRUST\RustDedicated_Data\Managed\Facepunch.Steamworks.Win64.dll</HintPath>
-      <Private>false</Private>
+    <Reference Include="Facepunch.System">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

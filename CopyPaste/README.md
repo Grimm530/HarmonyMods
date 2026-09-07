@@ -1,6 +1,6 @@
 # CopyPaste (Harmony Mod)
 
-**No Oxide dependency.** Harmony port of Oxide **CopyPaste 4.2.81** — same copy/paste logic, adapted only for Harmony hosting (config/data paths, chat commands, timers, RaidableBases API). Local fixes: DLC detection no longer uses `ItemBlueprint.NeedsSteamDLC` (boot NRE), and paste applies default-skin wallpaper when `wallpaperHealth > 0`.
+**Harmony-only dependency.** Harmony port of Legacy **CopyPaste 4.2.81** — same copy/paste logic, adapted only for Harmony hosting (config/data paths, chat commands, timers, RaidableBases API). Local fixes: DLC detection no longer uses `ItemBlueprint.NeedsSteamDLC` (boot NRE), and paste applies default-skin wallpaper when `wallpaperHealth > 0`.
 
 ## Mod identity
 
@@ -8,7 +8,7 @@
 |-------|--------|
 | **Name** | CopyPaste |
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
-| **Oxide** | None — for Oxide-free servers only |
+| **Oxide** | None — for Harmony servers only |
 | **API version** | **4.2.81** (`VersionNumber` for RaidableBases; requires ≥ 4.2.7) |
 | **Config** | `HarmonyConfig/CopyPaste.json` |
 | **Data** | `HarmonyData/copypaste/*.json` |
@@ -21,7 +21,7 @@
 | `CopyPasteCompat.cs` | Oxide shims: `IPlayer`, data/config files, timers, lang, permissions |
 | `CopyPasteHarmonyMod.cs` | Harmony entry, AppDomain API handshake, static API, command registration |
 | `Patches/Chat_Say_Patch.cs` | Prefix on `ConVar.Chat.say` for `/copy`, `/paste`, etc. |
-| `convert-from-oxide.ps1` | Regenerates `CopyPaste.cs` from `Oxide.Plugins.Cant-Use/CopyPaste4.2.81.cs` |
+| `convert-from-legacy.ps1` | Regenerates `CopyPaste.cs` from `Harmony.Plugins.Cant-Use/CopyPaste4.2.81.cs` |
 | `CopyPaste.csproj` | Game refs + **Krafs.Publicizer** (private game fields, same as RaidableBases) |
 | `build.ps1` | Build and copy DLL to `HarmonyMods/` |
 
@@ -30,14 +30,14 @@
 | Oxide | Harmony |
 |-------|---------|
 | `oxide/data/copypaste/` | `HarmonyData/copypaste/` |
-| `oxide/config/CopyPaste.json` | `HarmonyConfig/CopyPaste.json` |
+| `legacy/config/CopyPaste.json` | `HarmonyConfig/CopyPaste.json` |
 | Covalence `[Command]` + permissions | ConsoleSystem + `/` chat patch; **admins** (or granted perms via host) |
-| `Interface.CallHook` | No-op (no Oxide plugins) |
+| `HarmonyModInterface.CallHook` | No-op (no Harmony mods) |
 | Plugin discovery | `AppDomain` key `CopyPaste_ApiType` → `CopyPasteHarmony.CopyPasteHarmonyMod` |
 
 Paste JSON format and entity handling match Oxide 4.2.81 (IO, inventories, signs, boats, farming, elevators, trackers, etc.).
 
-## API for RaidableBases and other mods (no Oxide)
+## API for RaidableBases and other mods (Harmony-only)
 
 Target type: **`CopyPasteHarmony.CopyPasteHarmonyMod`** (static methods).
 
@@ -60,7 +60,7 @@ Target type: **`CopyPasteHarmony.CopyPasteHarmonyMod`** (static methods).
 | **/pasteback** | Paste at original saved position (**autoheight forced false**) |
 | **/undo** | Undo last paste (batched) |
 
-Access: admin **or** Oxide-style permission names (`copypaste.copy`, etc.) if granted via the host permission helper. By default only admins pass `HasAccess`.
+Access: admin **or** compat-style permission names (`copypaste.copy`, etc.) if granted via the host permission helper. By default only admins pass `HasAccess`.
 
 ## Build and deploy
 
@@ -73,12 +73,12 @@ DLL → **`HarmonyMods/CopyPaste.dll`**. Load: `harmony.load CopyPaste`.
 To refresh from a newer Oxide source:
 
 ```powershell
-.\.cursor\HarmonyMods\CopyPaste\convert-from-oxide.ps1
+.\.cursor\HarmonyMods\CopyPaste\convert-from-legacy.ps1
 # then build again
 ```
 
 ## Reference
 
-- **Oxide source of truth:** `.cursor/Oxide.Plugins.Cant-Use/CopyPaste4.2.81.cs`
+- **Oxide source of truth:** `.cursor/Harmony.Plugins.Cant-Use/CopyPaste4.2.81.cs`
 - **Harmony mod guide:** `.cursor/!Harmony-Assembly/HARMONY_MODS_GUIDE.md`
 - **RaidableBases:** `.cursor/HarmonyMods/RaidableBases/README.md`

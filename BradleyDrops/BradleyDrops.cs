@@ -2,10 +2,10 @@ using Facepunch;
 using HarmonyLib;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Libraries;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
+using Harmony.Core;
+using Harmony.Core.Libraries;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
 using Rust;
 using Rust.Ai;
 using Rust.Ai.Gen2;
@@ -124,7 +124,7 @@ using Random = UnityEngine.Random;
 
  #endregion Changelog
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("Bradley Drops", "ZEODE", "1.3.46")]
     [Description("Call a Bradley APC to your location with custom supply signals.")]
@@ -142,7 +142,7 @@ namespace Oxide.Plugins
 
         private static BradleyDrops Instance;
 
-        private Harmony harmony;
+        private global::HarmonyLib.Harmony harmony;
         private MethodInfo _doWeaponAimingMethod;
         private MethodInfo _doWeaponsMethod;
         private MethodInfo _calculateDesiredAltitudeMethod;
@@ -648,7 +648,7 @@ namespace Oxide.Plugins
 
         #endregion Plugin Load/Unload
 
-        #region Oxide Hooks
+        #region Harmony Hooks
 
         private void OnItemAddedToContainer(ItemContainer container, Item item)
         {
@@ -1425,7 +1425,7 @@ namespace Oxide.Plugins
             return null;
         }
 
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region Core
 
@@ -1827,6 +1827,16 @@ namespace Oxide.Plugins
             }
         }
 
+        private static void SetHelicopterDebrisHotTime(HelicopterDebris debris, float hotSeconds)
+        {
+            if (debris == null) return;
+            debris.CancelInvoke(nameof(HelicopterDebris.OnCooledDown));
+            if (hotSeconds <= 0f)
+                debris.OnCooledDown();
+            else
+                debris.Invoke(debris.OnCooledDown, hotSeconds);
+        }
+
         private void ProcessBradleyEnt(BaseEntity entity)
         {
             if (entity != null)
@@ -1835,30 +1845,22 @@ namespace Oxide.Plugins
                     return;
 
                 var _apcProfile = config.bradley.apcConfig[apcProfile];
-                if (entity is HelicopterDebris)
+                if (entity is HelicopterDebris debris)
                 {
-                    HelicopterDebris debris = entity as HelicopterDebris;
-                    if (debris != null)
-                    {
-                        debris.InitializeHealth(_apcProfile.Gibs.GibsHealth, _apcProfile.Gibs.GibsHealth);
+                    debris.InitializeHealth(_apcProfile.Gibs.GibsHealth, _apcProfile.Gibs.GibsHealth);
 
-                        if (_apcProfile.Gibs.KillGibs)
-                            debris.Kill();
-                        else if (_apcProfile.Fireball.DisableFire)
-                            debris.tooHotUntil = Time.realtimeSinceStartup;
-                        else if (_apcProfile.Gibs.GibsHotTime >= 0)
-                            debris.tooHotUntil = Time.realtimeSinceStartup + _apcProfile.Gibs.GibsHotTime;
+                    if (_apcProfile.Gibs.KillGibs)
+                        debris.Kill();
+                    else if (_apcProfile.Fireball.DisableFire)
+                        SetHelicopterDebrisHotTime(debris, 0f);
+                    else if (_apcProfile.Gibs.GibsHotTime >= 0)
+                        SetHelicopterDebrisHotTime(debris, _apcProfile.Gibs.GibsHotTime);
 
-                        if (_apcProfile.Gibs.ProtectGibs && _apcProfile.Gibs.UnlockGibs > 0)
-                            RemoveBradleyOwner(debris, _apcProfile.Gibs.UnlockGibs);
-                    }
+                    if (_apcProfile.Gibs.ProtectGibs && _apcProfile.Gibs.UnlockGibs > 0)
+                        RemoveBradleyOwner(debris, _apcProfile.Gibs.UnlockGibs);
                 }
-                else if (entity is FireBall)
+                else if (entity is FireBall fireball)
                 {
-                    FireBall fireball = entity as FireBall;
-                    if (fireball == null)
-                    	return;
-                    
                     fireball.tickRate = _apcProfile.Fireball.DamageRate;
                     fireball.lifeTimeMin = _apcProfile.Fireball.MinimumLifeTime;
                     fireball.lifeTimeMax = _apcProfile.Fireball.MaximumLifeTime;
@@ -1880,51 +1882,47 @@ namespace Oxide.Plugins
                         fireball.Invoke(() => fireball.TryToSpread(), spreadDelay);
                     }	
                 }
-                else if (entity is LockedByEntCrate)
+                else if (entity is LockedByEntCrate crate)
                 {
-                    LockedByEntCrate crate = entity as LockedByEntCrate;
-                    if (crate != null)
+                    FireBall fireball = crate.lockingEnt.GetComponent<FireBall>();
+                    if (fireball != null)
                     {
-						FireBall fireball = crate.lockingEnt.GetComponent<FireBall>();
-                        if (fireball != null)
+                        fireball.tickRate = _apcProfile.Fireball.DamageRate;
+                        fireball.lifeTimeMin = _apcProfile.Fireball.MinimumLifeTime;
+                        fireball.lifeTimeMax = _apcProfile.Fireball.MaximumLifeTime;
+                        fireball.damagePerSecond = _apcProfile.Fireball.DamagePerSecond;
+                        fireball.waterToExtinguish = _apcProfile.Fireball.WaterAmountToExtinguish;
+                        fireball.generation = (_apcProfile.Fireball.SpreadChance == 0) ? 9f : (1f - _apcProfile.Fireball.SpreadChance) / 0.1f;
+                    }
+
+                    if (_apcProfile.Crates.FireDuration >= 0 && !_apcProfile.Crates.DisableFire)
+                    {
+                        timer.Once(_apcProfile.Crates.FireDuration, () =>
                         {
-                            fireball.tickRate = _apcProfile.Fireball.DamageRate;
-                            fireball.lifeTimeMin = _apcProfile.Fireball.MinimumLifeTime;
-                            fireball.lifeTimeMax = _apcProfile.Fireball.MaximumLifeTime;
-                            fireball.damagePerSecond = _apcProfile.Fireball.DamagePerSecond;
-                            fireball.waterToExtinguish = _apcProfile.Fireball.WaterAmountToExtinguish;
-                            fireball.generation = (_apcProfile.Fireball.SpreadChance == 0) ? 9f : (1f - _apcProfile.Fireball.SpreadChance) / 0.1f;
-                        }
-                    
-                        if (_apcProfile.Crates.FireDuration >= 0 && !_apcProfile.Crates.DisableFire)
-                        {
-                            timer.Once(_apcProfile.Crates.FireDuration, () =>
-                            {
-                                if (crate != null)
-                                	crate.SetLocked(false);
-                                
-                                if (fireball != null)
-                                    fireball.Extinguish();
-                            });
-                        }
-                        else
-                        {
-                            crate.SetLocked(false);
-                        
+                            if (crate != null)
+                                crate.SetLocked(false);
+
                             if (fireball != null)
                                 fireball.Extinguish();
-                        }
+                        });
+                    }
+                    else
+                    {
+                        crate.SetLocked(false);
 
-                        crate.CancelInvoke(crate.RemoveMe);
-                        crate.Invoke(new Action(crate.RemoveMe), _apcProfile.Crates.BradleyCrateDespawn);
-                        
-                        if (_apcProfile.Crates.ProtectCrates && _apcProfile.Crates.UnlockCrates > 0)
-                        {
-                            float unlockTime = _apcProfile.Crates.DisableFire ? _apcProfile.Crates.UnlockCrates :
-                                              (_apcProfile.Crates.FireDuration + _apcProfile.Crates.UnlockCrates);
-                            
-                            RemoveBradleyOwner(entity, unlockTime);
-                        }
+                        if (fireball != null)
+                            fireball.Extinguish();
+                    }
+
+                    crate.CancelInvoke(crate.RemoveMe);
+                    crate.Invoke(new Action(crate.RemoveMe), _apcProfile.Crates.BradleyCrateDespawn);
+
+                    if (_apcProfile.Crates.ProtectCrates && _apcProfile.Crates.UnlockCrates > 0)
+                    {
+                        float unlockTime = _apcProfile.Crates.DisableFire ? _apcProfile.Crates.UnlockCrates :
+                                          (_apcProfile.Crates.FireDuration + _apcProfile.Crates.UnlockCrates);
+
+                        RemoveBradleyOwner(entity, unlockTime);
                     }
                 }
             }
@@ -4100,7 +4098,7 @@ namespace Oxide.Plugins
             {
                if (DEBUG) PrintWarning($"====== Harmony Patching Begin ======");
 
-                harmony = new Harmony(HarmonyId);
+                harmony = new global::HarmonyLib.Harmony(HarmonyId);
 
                 _doWeaponAimingMethod = AccessTools.Method(typeof(BradleyAPC), "DoWeaponAiming");
                 _doWeaponsMethod = AccessTools.Method(typeof(BradleyAPC), "DoWeapons");
@@ -7210,7 +7208,7 @@ namespace Oxide.Plugins
                     }
                 }
 
-                object obj = Interface.CallHook("CanBradleyApcTarget", bradley, ent);
+                object obj = Harmony.Core.Interface.CallHook("CanBradleyApcTarget", bradley, ent);
                 if (obj is bool result)
                 {
                     return result;
@@ -11185,7 +11183,7 @@ namespace Oxide.Plugins
             if (config.Version < new VersionNumber(1, 3, 0))
             {
                 // Read the raw config file so we can detect the old flat structure
-                string cfgPath = Config?.Filename ?? Path.Combine(Interface.Oxide.ConfigDirectory, $"{Name}.json");
+                string cfgPath = Config?.Filename ?? Path.Combine(Harmony.Core.Interface.Mods.ConfigDirectory, $"{Name}.json");
                 var migrated = MigrateApcProfiles_FromRawJson(cfgPath, defaultConfig?.bradley?.apcConfig);
 
                 if (migrated != null && migrated.Count > 0)

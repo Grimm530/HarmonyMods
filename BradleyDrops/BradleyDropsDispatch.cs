@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class BradleyDrops
     {

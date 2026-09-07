@@ -1,11 +1,11 @@
 using System;
 using HarmonyLib;
 using UnityEngine;
-using CookingPlugin = Oxide.Plugins.Cooking;
+using CookingPlugin = Harmony.Plugins.Cooking;
 
 namespace CookingHarmony.Patches
 {
-    /// <summary>Oxide OnItemAction → Item.ServerCommand. Non-null return skips the original (unwrap bag / consume cooldown).</summary>
+    /// <summary>compat OnItemAction → Item.ServerCommand. Non-null return skips the original (unwrap bag / consume cooldown).</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.ServerCommand))]
     public static class Item_ServerCommand_Patch
     {
@@ -25,7 +25,7 @@ namespace CookingHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnItemSplit → Item.SplitItem. Returning an Item replaces vanilla split (keeps name/skin/spoil).</summary>
+    /// <summary>compat OnItemSplit → Item.SplitItem. Returning an Item replaces vanilla split (keeps name/skin/spoil).</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.SplitItem))]
     public static class Item_SplitItem_Patch
     {
@@ -49,7 +49,7 @@ namespace CookingHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerAddModifiers → ItemModConsume.DoAction postfix (reset vanilla calories on cooking meals/ingredients, apply buffs).</summary>
+    /// <summary>Harmony OnPlayerAddModifiers → ItemModConsume.DoAction postfix (reset vanilla calories on cooking meals/ingredients, apply buffs).</summary>
     [HarmonyPatch(typeof(ItemModConsume), nameof(ItemModConsume.DoAction))]
     public static class ItemModConsume_DoAction_Patch
     {

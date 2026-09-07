@@ -1,14 +1,14 @@
 # Build script for FurnaceSplitter Harmony Mod
-# Output: <workspace>\HarmonyMods\FurnaceSplitter.dll
+# Output: <workspace>/HarmonyMods/FurnaceSplitter.dll (entry DLL only)
 
 Write-Host "Building FurnaceSplitter..." -ForegroundColor Cyan
 
+$workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $projectPath = Join-Path $PSScriptRoot "FurnaceSplitter\FurnaceSplitter.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = Join-Path $workspaceRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
@@ -21,7 +21,7 @@ if ($LASTEXITCODE -eq 0) {
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! FurnaceSplitter.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "Standalone mod: split + auto fuel. Config: HarmonyConfig/FurnaceSplitter.json" -ForegroundColor Yellow
+    Write-Host "Standalone mod: split + auto fuel (furnaces + composters). Config: HarmonyConfig/FurnaceSplitter.json" -ForegroundColor Yellow
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

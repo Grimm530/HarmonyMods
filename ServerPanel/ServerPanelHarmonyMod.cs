@@ -1,10 +1,17 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace ServerPanelHarmony
 {
@@ -62,6 +69,7 @@ namespace ServerPanelHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             ServerPanelHost.Init(root);
@@ -704,7 +712,7 @@ namespace ServerPanelHarmony
         #region API wrappers exposed through AppDomain
 
         /// <summary>
-        /// Consumer-facing wrapper (AppDomain key ServerPanel_Plugin). Mirrors the Oxide Plugin surface
+        /// Consumer-facing wrapper (AppDomain key ServerPanel_Plugin). Mirrors the Harmony Mod surface
         /// that Shop / Kits / WipeSchedule call: IsLoaded plus Call(string, object[]).
         /// </summary>
         public sealed class ServerPanelPluginWrapper
@@ -724,6 +732,9 @@ namespace ServerPanelHarmony
 
             public void API_OnServerPanelOpenCategoryByID(BasePlayer player, int categoryId) =>
                 _mod?.Call("API_OnServerPanelOpenCategoryByID", player, categoryId);
+
+            public void API_OnServerPanelRefreshContent(BasePlayer player) =>
+                _mod?.Call("API_OnServerPanelRefreshContent", player);
 
             public void API_OnServerPanelCallClose(BasePlayer player) =>
                 _mod?.Call("API_OnServerPanelCallClose", player);

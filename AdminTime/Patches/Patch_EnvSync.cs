@@ -26,7 +26,6 @@ namespace AdminTime.Patches
         public static bool Prefix(BasePlayer __instance, BaseNetworkable ent)
         {
             if (!(ent is EnvSync)) return true;
-            if (__instance == null) return true;
             return !AdminTimeMod.HasTimeOverride(__instance);
         }
     }

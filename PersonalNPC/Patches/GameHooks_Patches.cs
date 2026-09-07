@@ -31,31 +31,6 @@ namespace PersonalNPCHarmony.Patches
 
     // ---------------------------------------------------------------- damage / targeting
 
-    /// <summary>Oxide OnEntityTakeDamage. Core and the builder addon both veto damage.</summary>
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    public static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            if (__instance == null || info == null) return true;
-
-            try
-            {
-                if (Hooks.Core?.OnEntityTakeDamage(__instance, info) != null) return false;
-            }
-            catch (Exception ex) { Hooks.Warn("OnEntityTakeDamage", ex); }
-
-            try
-            {
-                if (Hooks.Builder?.OnEntityTakeDamage(__instance, info) != null) return false;
-            }
-            catch (Exception ex) { Hooks.Warn("Builder OnEntityTakeDamage", ex); }
-
-            return true;
-        }
-    }
-
     /// <summary>Oxide CanBeTargeted for auto turrets.</summary>
     [HarmonyPatch(typeof(AutoTurret), nameof(AutoTurret.ShouldTarget))]
     public static class AutoTurret_ShouldTarget_Patch
@@ -63,7 +38,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(AutoTurret __instance, BaseCombatEntity targ, ref bool __result)
         {
-            if (__instance == null || targ == null) return true;
+            if (targ == null) return true;
             try
             {
                 if (Hooks.Core?.CanBeTargeted(targ, __instance) is bool allowed && !allowed)
@@ -85,7 +60,7 @@ namespace PersonalNPCHarmony.Patches
         public static bool Prefix(Rust.Ai.Gen2.SenseComponent __instance, BaseEntity entity, ref bool __result)
         {
             var combat = entity as BaseCombatEntity;
-            if (__instance == null || combat == null) return true;
+            if (combat == null) return true;
             try
             {
                 if (Hooks.Core?.CanBeTargeted(combat, __instance) is bool allowed && !allowed)
@@ -106,7 +81,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BradleyAPC __instance, BaseEntity ent, ref bool __result)
         {
-            if (__instance == null || ent == null) return true;
+            if (ent == null) return true;
             try
             {
                 if (Hooks.Core?.CanBradleyApcTarget(__instance, ent) is bool allowed && !allowed)
@@ -129,20 +104,19 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(Item __instance, float amount)
         {
-            if (__instance == null) return;
             try { Hooks.Core?.OnLoseCondition(__instance, amount); }
             catch (Exception ex) { Hooks.Warn("OnLoseCondition", ex); }
         }
     }
 
-    /// <summary>Oxide OnItemAction (unload_ammo, drop, ...).</summary>
+    /// <summary>compat OnItemAction (unload_ammo, drop, ...).</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.ServerCommand))]
     public static class Item_ServerCommand_Patch
     {
         [HarmonyPrefix]
         public static bool Prefix(Item __instance, string command, BasePlayer player)
         {
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             try
             {
                 if (Hooks.Core?.OnItemAction(__instance, command, player) != null) return false;
@@ -159,7 +133,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(ItemContainer __instance, Item item, int targetPos, ref ItemContainer.CanAcceptResult __result)
         {
-            if (__instance == null || item == null) return true;
+            if (item == null) return true;
             try
             {
                 if (Hooks.Core?.CanAcceptItem(__instance, item, targetPos) is ItemContainer.CanAcceptResult result)
@@ -174,7 +148,7 @@ namespace PersonalNPCHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide CanMoveItem. Oxide injects this inside PlayerInventory.MoveItem's RPC body, which is
+    /// compat CanMoveItem. compat injects this inside PlayerInventory.MoveItem's RPC body, which is
     /// not patchable without a transpiler, so we hook the move itself and rebuild the arguments.
     /// Internal moves have no source player, and the plugin bails out on a null player.
     /// </summary>
@@ -184,7 +158,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(Item __instance, ItemContainer newcontainer, int iTargetPos, BasePlayer sourcePlayer, ref bool __result)
         {
-            if (__instance == null || sourcePlayer == null) return true;
+            if (sourcePlayer == null) return true;
 
             var inventory = sourcePlayer.inventory;
             if (inventory == null) return true;
@@ -247,7 +221,7 @@ namespace PersonalNPCHarmony.Patches
 
     // ---------------------------------------------------------------- building
 
-    /// <summary>Oxide OnEntityBuilt.</summary>
+    /// <summary>compat OnEntityBuilt.</summary>
     [HarmonyPatch]
     public static class Planner_DoBuild_Patch
     {
@@ -258,7 +232,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(Planner __instance, BaseEntity __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             try { Hooks.Core?.OnEntityBuilt(__instance, __result.gameObject); }
             catch (Exception ex) { Hooks.Warn("OnEntityBuilt", ex); }
         }
@@ -271,7 +245,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BuildingBlock __instance, BuildingGrade.Enum iGrade, BasePlayer player, ref bool __result)
         {
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             try
             {
                 if (Hooks.Builder?.OnStructureUpgrade(__instance, player, iGrade) != null)
@@ -287,7 +261,7 @@ namespace PersonalNPCHarmony.Patches
 
     // ---------------------------------------------------------------- entities
 
-    /// <summary>Oxide OnEntitySpawned, narrowed to the collectibles the plugin tracks.</summary>
+    /// <summary>compat OnEntitySpawned, narrowed to the collectibles the plugin tracks.</summary>
     [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     public static class BaseNetworkable_Spawn_Patch
     {
@@ -321,7 +295,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { Hooks.Core?.OnEntityMounted(__instance, player); }
             catch (Exception ex) { Hooks.Warn("OnEntityMounted", ex); }
         }
@@ -340,7 +314,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BasePlayer __instance, GestureConfig toPlay)
         {
-            if (__instance == null || toPlay == null) return true;
+            if (toPlay == null) return true;
             try
             {
                 if (Hooks.Core?.CanUseGesture(__instance, toPlay) is bool allowed && !allowed)
@@ -367,7 +341,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(BaseLock __instance, BasePlayer player, ref bool __result)
         {
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             try
             {
                 if (Hooks.Core?.CanUseLockedEntity(player, __instance) is bool allowed)
@@ -451,7 +425,7 @@ namespace PersonalNPCHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(LootableCorpse __instance, BaseEntity fromEntity)
         {
-            if (__instance == null || fromEntity == null) return;
+            if (fromEntity == null) return;
 
             int frame = Time.frameCount;
             if (_lastFrame == frame && ReferenceEquals(_lastCorpse, __instance)) return;
@@ -474,7 +448,7 @@ namespace PersonalNPCHarmony.Patches
 
     // ---------------------------------------------------------------- save / wipe
 
-    /// <summary>Oxide OnServerSave - the helper persists its unlocked-player list here.</summary>
+    /// <summary>Harmony OnServerSave - the helper persists its unlocked-player list here.</summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Save), new[] { typeof(bool) })]
     public static class SaveRestore_Save_Patch
     {
@@ -487,7 +461,7 @@ namespace PersonalNPCHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnNewSave. SaveRestore.Load returning false means there was no save to restore, which
+    /// compat OnNewSave. SaveRestore.Load returning false means there was no save to restore, which
     /// is what Oxide uses to detect a wipe.
     /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]

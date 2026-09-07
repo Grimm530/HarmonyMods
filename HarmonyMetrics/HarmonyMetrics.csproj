@@ -11,7 +11,7 @@
     <RootNamespace>HarmonyMetrics</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: InfluxDB metrics for Harmony servers (no Oxide). Samples Performance / PerformanceMetrics / RuntimeProfiler and loaded HarmonyMods.</Description>
+    <Description>Harmony mod: InfluxDB metrics for Harmony servers (Harmony-only). Samples Performance / PerformanceMetrics / RuntimeProfiler and loaded HarmonyMods.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>

@@ -8,7 +8,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -1533,14 +1532,49 @@ namespace Oxide.Plugins
     // ---- WebRequests shim --------------------------------------------------
     public class WebRequests
     {
-        /// <summary>No-op web request enqueue; discord webhooks simply don't fire.</summary>
         public void Enqueue(string url, string body, Action<int, string> callback,
                             object owner = null,
                             Oxide.Core.Libraries.RequestMethod method = Oxide.Core.Libraries.RequestMethod.GET,
                             Dictionary<string, string> headers = null)
+            => Enqueue(url, body, callback, owner, method, headers, 30f);
+
+        public void Enqueue(string url, string body, Action<int, string> callback,
+                            object owner,
+                            Oxide.Core.Libraries.RequestMethod method,
+                            Dictionary<string, string> headers,
+                            float timeout)
         {
-            // Silently no-op; fire callback with error code so plugin handles gracefully.
-            try { callback?.Invoke(503, null); } catch { }
+            try
+            {
+                if (ServerMgr.Instance != null)
+                    ServerMgr.Instance.StartCoroutine(Send(url, body, callback, method, headers));
+                else
+                    callback?.Invoke(503, null);
+            }
+            catch { try { callback?.Invoke(503, null); } catch { } }
+        }
+
+        private static IEnumerator Send(string url, string body, Action<int, string> callback,
+            Oxide.Core.Libraries.RequestMethod method, Dictionary<string, string> headers)
+        {
+            using var req = new UnityEngine.Networking.UnityWebRequest(url,
+                method == Oxide.Core.Libraries.RequestMethod.GET ? "GET" : "POST");
+            if (!string.IsNullOrEmpty(body))
+                req.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(body));
+            req.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
+            if (headers != null)
+            {
+                foreach (var kv in headers)
+                    req.SetRequestHeader(kv.Key, kv.Value);
+            }
+            else if (method != Oxide.Core.Libraries.RequestMethod.GET)
+                req.SetRequestHeader("Content-Type", "application/json");
+            yield return req.SendWebRequest();
+            int code = (int)req.responseCode;
+            if (code == 0)
+                code = req.result == UnityEngine.Networking.UnityWebRequest.Result.Success ? 200 : 500;
+            try { callback?.Invoke(code, req.downloadHandler?.text); }
+            catch { }
         }
     }
 

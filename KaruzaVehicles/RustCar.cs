@@ -8,6 +8,7 @@ using Network;
 using Oxide.Core;
 using Rust;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.IO;
@@ -21,7 +22,7 @@ using static SeekerTarget;
 
 namespace KaruzaVehicles
 {
-    [Info("RustCar", "Karuza", "1.24.0")]
+    [Info("RustCar", "Karuza", "1.25.0")]
     public class RustCar : RustPlugin, IKaruzaEntityPlugin
     {
         public static RustCar Instance;
@@ -32,10 +33,33 @@ namespace KaruzaVehicles
 
         public bool IsUnloading = false;
 
+        List<Collider> trainTrackSplineColliders = new List<Collider>();
+
         internal void OnServerInitialized()
         {
             Instance = this;
             LoadConfig();
+
+            if (configuration.IgnoreTrainTrackColliders)
+            {
+                var trainTrackSplines = UnityEngine.Object.FindObjectsByType<TrainTrackSpline>(FindObjectsSortMode.None);
+                for (int i = 0; i < trainTrackSplines.Length; i++)
+                {
+                    var tts = trainTrackSplines[i];
+                    var collider = tts.GetComponentInChildren<Collider>();
+                    if (object.ReferenceEquals(collider, null))
+                    {
+                        continue;
+                    }
+
+                    if (collider.isTrigger)
+                    {
+                        continue;
+                    }
+
+                    trainTrackSplineColliders.Add(collider);
+                }
+            }
 
             if (TempConfigs.Count > 0)
             {
@@ -1535,7 +1559,12 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                float num = 30f;
+                float num = GetDamageRepairCooldown();
+                if (player.IsInCreativeMode && ConVar.Creative.freeRepair)
+                {
+                    num = 0f;
+                }
+
                 if (SecondsSinceAttacked <= num)
                 {
                     OnRepairFailed(player, RecentlyDamagedError, (num - SecondsSinceAttacked).ToString("N0"));
@@ -1558,6 +1587,11 @@ namespace KaruzaVehicles
 
                 float num4 = list.Sum((ItemAmount x) => x.amount);
                 float healthBefore = health;
+                if (player.IsInCreativeMode && ConVar.Creative.freeRepair)
+                {
+                    num4 = 0f;
+                }
+
                 if (num4 > 0f)
                 {
                     float num5 = list.Min(x => Mathf.Clamp01(player.inventory.GetAmount(x.itemid) / x.amount));
@@ -1578,7 +1612,7 @@ namespace KaruzaVehicles
                     {
                         int amount = Mathf.CeilToInt(num5 * item.amount);
                         int num7 = player.inventory.Take(null, item.itemid, amount);
-                        Facepunch.Rust.Analytics.Azure.LogResource(Facepunch.Rust.Analytics.Azure.ResourceMode.Consumed, "repair_entity", item.itemDef.shortname, num7, this, null, safezone: false, null, player.userID);
+                        Facepunch.Rust.Analytics.Azure.LogResource(Facepunch.Rust.Analytics.Azure.ResourceMode.Consumed, "repair_entity", item.itemDef.shortname, num7, this, null, safezone: false, null, player.userID, null, null, null, 0uL);
                         if (num7 > 0)
                         {
                             num6 += num7;
@@ -1861,10 +1895,10 @@ namespace KaruzaVehicles
                 }
 
                 InitializeWheelColliders();
-                PropUtilities.InitializeVehicle(this);
                 InitializeVanillaTowing();
                 InitializeLowHealthEffects();
                 InitializeDrift();
+                PropUtilities.InitializeVehicle(this);
 
                 InitializeChildrenCollections();
                 if (CarConfig.DisableGlobalNetwork)
@@ -2031,34 +2065,9 @@ namespace KaruzaVehicles
                     }
                 }
 
-                if (VehicleConfig.Bounciness > -1 || VehicleConfig.DynamicFriction > -1)
+                if (VehicleConfig.Bounciness > -1 || VehicleConfig.DynamicFriction > -1 || Instance.configuration.IgnoreTrainTrackColliders)
                 {
-                    var colliders = cachedTransform.GetComponentsInChildren<Collider>();
-                    for (int i = 0; i < colliders.Length; i++)
-                    {
-                        var col = colliders[i];
-                        if (col.isTrigger)
-                        {
-                            continue;
-                        }
-
-                        if (col is WheelCollider)
-                        {
-                            continue;
-                        }
-
-                        if (VehicleConfig.Bounciness > -1)
-                        {
-                            col.material.bounciness = VehicleConfig.Bounciness;
-                            col.material.bounceCombine = VehicleConfig.BounceCombine;
-                        }
-
-                        if (VehicleConfig.DynamicFriction > -1)
-                        {
-                            col.material.dynamicFriction = VehicleConfig.DynamicFriction;
-                            col.material.frictionCombine = VehicleConfig.FrictionCombine;
-                        }
-                    }
+                    ServerMgr.Instance.StartCoroutine(UpdateColliders());
                 }
 
                 var fuelSystem = new KaruzaVehicleFuelSystem(VehicleConfig.FuelSettings.FuelSource, FuelContainer);
@@ -2218,6 +2227,51 @@ namespace KaruzaVehicles
                 }
 
                 PrepareWeakspots();
+            }
+
+            IEnumerator UpdateColliders()
+            {
+                var colliders = cachedTransform.GetComponentsInChildren<Collider>(true);
+
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    var col = colliders[i];
+                    if (col.isTrigger)
+                    {
+                        continue;
+                    }
+
+                    if (col is WheelCollider)
+                    {
+                        continue;
+                    }
+
+                    if (VehicleConfig.Bounciness > -1)
+                    {
+                        col.material.bounciness = VehicleConfig.Bounciness;
+                        col.material.bounceCombine = VehicleConfig.BounceCombine;
+                    }
+
+                    if (VehicleConfig.DynamicFriction > -1)
+                    {
+                        col.material.dynamicFriction = VehicleConfig.DynamicFriction;
+                        col.material.frictionCombine = VehicleConfig.FrictionCombine;
+                    }
+
+                    if (Instance.configuration.IgnoreTrainTrackColliders)
+                    {
+                        for (int n = 0; n < Instance.trainTrackSplineColliders.Count; n++)
+                        {
+                            var tts = Instance.trainTrackSplineColliders[n];
+                            Physics.IgnoreCollision(col, tts);
+                        }
+
+                        if (i % 5 == 0)
+                        {
+                            yield return CoroutineEx.waitForFixedUpdate;
+                        }
+                    }
+                }
             }
 
             void InitializeDrift()
@@ -2797,7 +2851,7 @@ namespace KaruzaVehicles
                     }
                 }
 
-                if (OnlyOwnerAccessible() && !filterDriver && creatorEntity.net.ID.Value != player.net.ID.Value)
+                if (OnlyOwnerAccessible() && !filterDriver && !object.ReferenceEquals(creatorEntity, null) && creatorEntity.net.ID.Value != player.net.ID.Value)
                 {
                     return null;
                 }
@@ -4956,6 +5010,7 @@ namespace KaruzaVehicles
             public bool? ForceServerOcclusion { get; set; } = null;
             public bool DisableDecay { get; set; } = false;
             public int DefaultRadioFrequency { get; set; } = -1;
+            public bool IgnoreTrainTrackColliders { get; set; } = true;
         }
 
         public class CarConfig : CustomVehicleConfig

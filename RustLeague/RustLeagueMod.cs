@@ -1,8 +1,13 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace RustLeagueHarmony
 {
@@ -26,7 +31,9 @@ namespace RustLeagueHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
             try
@@ -115,6 +122,7 @@ namespace RustLeagueHarmony
                 _runner = null;
             }
 
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[RustLeague] OK: Unloaded.");
         }

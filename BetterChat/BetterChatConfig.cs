@@ -306,7 +306,7 @@ namespace BetterChatHarmony
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[BetterChat] Oxide config merge " + path + ": " + ex.Message);
+                Debug.LogWarning("[BetterChat] legacy config merge " + path + ": " + ex.Message);
             }
         }
     }

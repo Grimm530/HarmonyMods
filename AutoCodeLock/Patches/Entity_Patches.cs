@@ -11,7 +11,7 @@ namespace AutoCodeLockHarmony.Patches
         private static void Postfix(BaseNetworkable __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
 
             try
             {
@@ -34,7 +34,7 @@ namespace AutoCodeLockHarmony.Patches
         private static void Prefix(BaseNetworkable __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
 
             try
             {
@@ -57,7 +57,7 @@ namespace AutoCodeLockHarmony.Patches
         private static void Postfix(Deployer __instance, Deployable deployable, Ray ray, NetworkableId entityID)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
 
             try
             {
@@ -73,7 +73,7 @@ namespace AutoCodeLockHarmony.Patches
     }
 
     /// <summary>
-    /// Reliable Oxide OnEntityBuilt replacement — fires for construction and deployables
+    /// Reliable compat OnEntityBuilt replacement — fires for construction and deployables
     /// after OwnerID / player are assigned (Planner.DoBuild alone often sees OwnerID == 0).
     /// </summary>
     [HarmonyPatch(typeof(Analytics.Azure), nameof(Analytics.Azure.OnEntityBuilt))]
@@ -104,7 +104,7 @@ namespace AutoCodeLockHarmony.Patches
         private static void Postfix(Planner __instance, Construction.Target target, Construction component, BaseEntity __result)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || __result == null) return;
+            if (plugin == null || __result == null) return;
 
             try
             {

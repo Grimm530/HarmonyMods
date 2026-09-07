@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -30,7 +36,9 @@ namespace RaidableBases
         {
             try
             {
-                return HarmonyDataLayer.GetProfileFileFullPaths().Length > 0;
+                HarmonyDataLayer.GetFiles(Path.Combine(Name, "Profiles"));
+
+                return true;
             }
             catch
             {
@@ -45,7 +53,6 @@ namespace RaidableBases
                 return;
             }
 
-            Puts("No profiles found in HarmonyData/RaidableBases/Profiles - creating default profile files.");
             HarmonyDataLayer.GetDatafile(Path.Combine(Name, "Profiles", "_emptyfile"));
 
             foreach (var (key, options) in DefaultBuildingOptions())
@@ -73,45 +80,55 @@ namespace RaidableBases
 
         protected IEnumerator LoadProfiles(DisposableBuilder _sb, IPlayer user = null)
         {
-            // Use full paths under HarmonyData/RaidableBases/Profiles (do not rely on Oxide-style Name/Profiles ResolvePath).
-            string[] profileFilePaths = HarmonyDataLayer.GetProfileFileFullPaths();
+            string folder = Path.Combine(Name, "Profiles");
+            string[] files = GetProfileFiles();
 
-            if (profileFilePaths.Length == 0)
+            if (files.Length == 0)
             {
-                Puts("No profile files found. Profiles path: {0}", HarmonyDataLayer.GetProfilesPathForLog());
                 yield break;
             }
 
             ProcessExtensions(ExtOp.Invalidate);
             RaidableModes.Clear();
-            Buildings.Profiles.Clear();
+            Dictionary<string, BaseProfile> previousProfiles = Buildings.Profiles;
+            Buildings.Profiles = new(StringComparer.OrdinalIgnoreCase);
+            GridController.SpawnCache.Clear();
 
             bool grey = false, allProfilesPVP = true;
 
-            foreach (string filePath in profileFilePaths)
+            foreach (string file in files)
             {
                 yield return CoroutineEx.waitForFixedUpdate;
-                if (IsUnloading) yield break;
 
-                string fileName = Path.GetFileName(filePath);
-                string profileName = GetFileNameWithoutExtension(fileName);
+                string profileName = GetFileNameWithoutExtension(file);
 
                 try
                 {
-                    if (fileName.Contains("_empty"))
+                    if (file.Contains("_empty"))
                     {
                         continue;
                     }
 
-                    var options = HarmonyDataLayer.ReadObjectFromFullPath<BuildingOptions>(filePath);
+                    var path = Path.Combine(folder, profileName);
+                    var options = HarmonyDataLayer.ReadObject<BuildingOptions>(path);
 
                     if (options == null)
                     {
-                        Puts("Skipped profile (missing or invalid JSON): {0}", fileName);
-                        profileErrors.Add(fileName);
                         continue;
                     }
 
+                    options.AllowedWeaponAndAmmoShortnames ??= new();
+                    HashSet<string> acceptedItems = new(StringComparer.OrdinalIgnoreCase);
+                    for (int i = options.AllowedWeaponAndAmmoShortnames.Count - 1; i >= 0; i--)
+                    {
+                        string shortname = options.AllowedWeaponAndAmmoShortnames[i]?.Trim();
+                        if (string.IsNullOrWhiteSpace(shortname) || !acceptedItems.Add(shortname))
+                        {
+                            options.AllowedWeaponAndAmmoShortnames.RemoveAt(i);
+                        }
+                        else options.AllowedWeaponAndAmmoShortnames[i] = shortname;
+                    }
+                    options.AllowedWeaponAndAmmoShortnames.Sort(StringComparer.OrdinalIgnoreCase);
                     options.AdditionalBases ??= new();
 
                     if (options._AdditionalBases != null)
@@ -126,15 +143,6 @@ namespace RaidableBases
                         }
                         options._AdditionalBases = null;
                     }
-                    
-                    //foreach (var abo in options.AdditionalBases.Values)
-                    //{
-                    //    var autoheight = abo.Options.Find(x => x.Key == "autoheight");
-                    //    if (autoheight != null)
-                    //    {
-                    //        autoheight.Value = "false";
-                    //    }
-                    //}
 
                     if (options._EnforceDurability != null)
                     {
@@ -160,11 +168,6 @@ namespace RaidableBases
                         options.CustomSpawns.MaintainedSpawnsFile = options.CustomSpawns._SpawnsFile;
                         options.CustomSpawns.ScheduledSpawnsFile = options.CustomSpawns._SpawnsFile;
                         options.CustomSpawns._SpawnsFile = null;
-                    }
-
-                    if (options.Setup.DespawnLimit > despawnLimit)
-                    {
-                        despawnLimit = options.Setup.DespawnLimit;
                     }
 
                     if (allowBuilding.HasValue)
@@ -204,11 +207,6 @@ namespace RaidableBases
                         options.Setup.ForcedHeightValue = -1;
                     }
 
-                    if (options.LandLevel < 0.5f)
-                    {
-                        options.LandLevel = 2.5f;
-                    }
-
                     if (options.BuoyantBox)
                     {
                         BuoyantBox = true;
@@ -223,7 +221,7 @@ namespace RaidableBases
                     {
                         options.NPC.Accuracy.MINIGUN = options.NPC.Accuracy.M249;
                     }
-                    
+
                     if (options.Rewards.XPerience == -125)
                     {
                         options.Rewards.XPerience = options.Rewards.SkillTree;
@@ -243,17 +241,27 @@ namespace RaidableBases
                     //options.CustomSpawns.SpawnPointPrefabs.Remove("");
                     options.BlockedEntityDamage.RemoveAll(string.IsNullOrWhiteSpace);
 
-                    Buildings.Profiles[profileName] = new(this, options, profileName);
+                    if (previousProfiles.TryGetValue(profileName, out var profile))
+                    {
+                        profile.BaseLootList = new();
+                        profile.Options = options;
+                        profile.ProfileName = profileName;
+                        profile.Spawns = new();
+                    }
+                    else
+                    {
+                        profile = new(this, options, profileName);
+                    }
+
+                    Buildings.Profiles[profileName] = profile;
                 }
                 catch (Exception ex)
                 {
-                    Puts("{0}\n{1}", fileName, ex);
-                    profileErrors.Add(fileName);
+                    Puts("{0}\n{1}", file, ex);
+                    profileErrors.Add(file);
                     continue;
                 }
             }
-
-            Puts("Loaded {0} profile(s) from {1}. Failed: {2}.", Buildings.Profiles.Count, HarmonyDataLayer.GetProfilesPathForLog(), profileErrors.Count);
 
             bool saveConfig = false;
 
@@ -288,12 +296,30 @@ namespace RaidableBases
                 saveConfig = true;
             }
 
-            if (saveConfig) SaveConfig();
+            foreach (var opt in config.Settings.Buyable.Cooldowns.Dictionary.Values)
+            {
+                if (opt.VIP.HasValue)
+                {
+                    opt.Permissions["raidablebases.vipcooldown"] = opt.VIP.Value;
+                    opt.VIP = null;
+                    saveConfig = true;
+                }
+            }
+
+            if (saveConfig)
+            {
+                SaveConfig();
+                yield return null;
+            }
 
             Dictionary<int, (string mode, int count)> levels = new();
             Dictionary<string, HashSet<Vector3>> modes = new();
             using var tmp = Buildings.Profiles.ToPooledList();
             using var sb = DisposableBuilder.Get();
+            using var customSpawnTypes = DisposableList<RaidableType>();
+            customSpawnTypes.Add(RaidableType.Purchased);
+            customSpawnTypes.Add(RaidableType.Maintained);
+            customSpawnTypes.Add(RaidableType.Scheduled);
             bool allowPVP = false;
             bool allowPVE = false;
 
@@ -346,9 +372,7 @@ namespace RaidableBases
 
                 yield return CoroutineEx.waitForFixedUpdate;
 
-                List<RaidableType> types = new() { RaidableType.Purchased, RaidableType.Maintained, RaidableType.Scheduled };
-
-                foreach (var type in types)
+                foreach (RaidableType type in customSpawnTypes)
                 {
                     var spawnsFile = profile.Options.CustomSpawns.Get(type);
                     if (GridController.SpawnsFileValid(spawnsFile))
@@ -445,6 +469,7 @@ namespace RaidableBases
             }
 
             LoadImportedSkins();
+            yield return null;
 
             AllowBuyingPVP = config.Settings.Buyable.AllowBuyPVP;
 
@@ -467,9 +492,11 @@ namespace RaidableBases
                         permission.GrantGroupPermission(record.Group, record.Permission, this);
                     }
                 }
+                yield return null;
             }
 
-            foreach (var value in config.Settings.Buyable.Wipe.All())
+            using var values = config.Settings.Buyable.Wipe.All();
+            foreach (var value in values)
             {
                 if (value.Contains('.') && !permission.PermissionExists(value))
                 {
@@ -482,6 +509,7 @@ namespace RaidableBases
             }
 
             CheckForWipe(true);
+            yield return null;
             RaidableModes.Clear();
             GetRaidableModes();
 
@@ -489,11 +517,40 @@ namespace RaidableBases
             {
                 yield return LoadBaseTables(_sb, user);
 
-                Message(user, "Initialized base loot tables and profiles.");
+                Reply(user, "Initialized base loot tables and profiles.");
             }
 
             RegisterLanguageMessages();
+            yield return null;
             UpdateUI();
+            yield return null;
+            RegisterBuyableCooldownPermissions();
+            yield return null;
+        }
+
+        private void RegisterBuyableCooldownPermissions()
+        {
+            using var keys = DisposableList<string>();
+            foreach (var opt in config.Settings.Buyable.Cooldowns.Dictionary.Values)
+            {
+                keys.Clear();
+                keys.AddRange(opt.Permissions.Keys);
+                foreach (string key in keys)
+                {
+                    if (string.IsNullOrWhiteSpace(key))
+                    {
+                        opt.Permissions.Remove(key);
+                    }
+                    else if (!key.Contains('.'))
+                    {
+                        continue;
+                    }
+                    else if (!permission.PermissionExists(key))
+                    {
+                        permission.RegisterPermission(key, this);
+                    }
+                }
+            }
         }
 
         private bool AllowBuyingPVP = true;
@@ -502,6 +559,13 @@ namespace RaidableBases
         {
             using var sb = DisposableBuilder.Get();
             yield return LoadProfiles(sb, user);
+
+            foreach (var raid in Raids)
+            {
+                raid.Options = raid.rb.options;
+            }
+
+            InvalidatePasteData();
         }
 
         private IEnumerator ReloadTables(IPlayer user, bool edit = false, bool test = false, bool loot = false)
@@ -551,7 +615,7 @@ namespace RaidableBases
             _sb.Length = 0;
             _sb.AppendLine("-");
 
-            var modes = GetRaidableModes().ToList();
+            using var modes = GetRaidableModes().ToPooledList();
             modes.Add(RaidableMode.Random);
 
             foreach (string mode in modes)
@@ -605,7 +669,7 @@ namespace RaidableBases
 
         protected IEnumerator LoadBaseTables(DisposableBuilder _sb, IPlayer user = null, bool edit = false, bool test = false, bool loot = false)
         {
-            var profiles = Buildings.Profiles.ToList();
+            using var profiles = Buildings.Profiles.ToPooledList();
             profiles.Sort((x, y) => x.Value.Options.Level.CompareTo(y.Value.Options.Level));
 
             foreach (var (key, profile) in profiles)
@@ -639,7 +703,7 @@ namespace RaidableBases
                 return;
             }
 
-            List<bool> worker = new();
+            using var worker = DisposableList<bool>();
             string lower = (en ? mode.ToLower() : mode).Replace(" ", "");
 
             worker.Add(create
@@ -731,7 +795,7 @@ namespace RaidableBases
             {
                 if (notice)
                 {
-                    Message(user, modified && !worker.All(x => x) ?
+                    Reply(user, modified && !worker.All(x => x) ?
                         $"Difficulty '{mode}' has been updated with {worker.Count(x => x)} missing settings in the configuration file." : modified ?
                         $"Difficulty '{mode}' has been added to the configuration file. You may now edit the configuration, add copypaste files to the copypaste folder and profiles, and create loot tables." :
                         $"Difficulty '{mode}' exists already.");
@@ -778,7 +842,7 @@ namespace RaidableBases
                     }
                     if (notice)
                     {
-                        Message(user, en ?
+                        Reply(user, en ?
                             $"REMINDER: Make certain that you create Base_Loot and/or Difficulty_Loot tables for '{mode}'" :
                             $"НАПОМИНАНИЕ: Убедитесь, что вы создали таблицы Base_Loot и/или Difficulty_Loot для '{mode}'");
                     }
@@ -786,7 +850,7 @@ namespace RaidableBases
             }
             else
             {
-                Message(user, modified ? $"{mode} has been removed." : $"{mode} does not exist.");
+                Reply(user, modified ? $"{mode} has been removed." : $"{mode} does not exist.");
                 if (modified)
                 {
                     bool disabled = false;
@@ -804,7 +868,7 @@ namespace RaidableBases
                     }
                     if (disabled)
                     {
-                        Message(user, mx("Difficulty Disabled", user.Id, mode));
+                        Reply(user, mx("Difficulty Disabled", user.Id, mode));
                     }
                     SaveConfig();
                 }
@@ -815,7 +879,6 @@ namespace RaidableBases
         {
             if (mode.Equals(RaidableMode.Legacy, StringComparison.OrdinalIgnoreCase))
             {
-                profile.Options.LandLevel = 1.5f;
                 profile.Options.ArenaWalls.Enabled = false;
                 profile.Options.ProtectionRadii.Set(15f);
                 profile.Options.NPC.SpawnAmountScientists = 0;
@@ -849,7 +912,8 @@ namespace RaidableBases
                 profile.Options.NPC.SpawnAmountMurderers = 0;
                 profile.Options.Setup.DespawnLimit = 1;
                 profile.Options.Setup.PasteHeightAdjustment = 100f;
-                Puts($"{mode} difficulty has been preconfigured: No arena walls, no npcs, and height increased by 100m.");
+                profile.Options.Setup.Sky = true;
+                Puts($"{mode} difficulty has been preconfigured: No arena walls, no npcs, height increased by 100m, and sky placement enabled (precise ground placement skipped, height measured above the highest ground under the base).");
             }
             if (mode.Equals("Siege", StringComparison.OrdinalIgnoreCase))
             {
@@ -862,11 +926,11 @@ namespace RaidableBases
 
         protected void CommandDifficulty(IPlayer user, string command, string[] args)
         {
-            if (!user.IsAdmin || !user.HasPermission("raidablebases.config")) { Message(user, "No Permission"); return; }
-            else if (IsGridLoading()) Message(user, "GridIsLoading");
+            if (!user.IsAdmin || !user.HasPermission("raidablebases.config")) { Reply(user, "No Permission"); return; }
+            else if (IsGridLoading()) Reply(user, "GridIsLoading");
             else if (args.Length > 1 && args[0].Equals("add", StringComparison.OrdinalIgnoreCase)) ModifyDifficultyMode(user, args[1], true);
             else if (args.Length > 1 && args[0].Equals("remove", StringComparison.OrdinalIgnoreCase)) ModifyDifficultyMode(user, args[1], false);
-            else user.Message("Syntax: rb.difficulty add|remove \"name\"");
+            else ReplyOrLog(user, "Syntax: rb.difficulty add|remove \"name\"");
         }
 
         private void LoadTable(string mode, DisposableBuilder _sb, string file, List<LootItem> lootList, bool edit, bool test, bool loot)
@@ -965,7 +1029,7 @@ namespace RaidableBases
 
             Buildings.LootID[mode] = DateTime.Now;
 
-            Interface.Oxide.CallHook("OnRaidableTableLoaded", file, lootList.Count, JsonConvert.SerializeObject(lootList));
+            HarmonyModInterface.Mods.CallHook("OnRaidableTableLoaded", file, lootList.Count, JsonConvert.SerializeObject(lootList));
         }
 
         private DateTime GetCurrentSessionLoot(string mode, List<Dictionary<string, object>> dictionary)

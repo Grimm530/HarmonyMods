@@ -170,7 +170,8 @@ public static class LootFeature
             return;
         }
 
-        loot.inventory.Clear();
+        while (loot.inventory.itemList.Count > 0)
+            loot.inventory.itemList[0].Remove();
         int amount = UnityEngine.Random.Range(Mathf.Max(1, profile.spawnAmountMin), Mathf.Max(1, profile.spawnAmountMax) + 1);
         var pool = new List<LootableItemData>(profile.items);
         for (int i = 0; i < amount && pool.Count > 0; i++)
@@ -192,7 +193,7 @@ public static class LootFeature
                 item = ItemManager.CreateByName(itemData.shortname, qty, 0uL);
             }
             if (item != null)
-                loot.inventory.Insert(item);
+                item.MoveToContainer(loot.inventory);
         }
     }
 

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using P = Oxide.Plugins.VirtualItems;
+using P = Harmony.Plugins.VirtualItems;
 
 namespace VirtualItemsHarmony.Patches
 {

@@ -11,7 +11,6 @@ namespace AdminAlias.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance, ref string __result)
         {
-            if (__instance == null) return;
             var overrideName = AdminAliasConfig.GetOverride(__instance.userID);
             if (overrideName != null)
                 __result = overrideName;

@@ -22,15 +22,15 @@ namespace PlatformSync
         PATCH
     }
 
-    /// <summary>Minimal Oxide-style shims used by the PlatformSync port.</summary>
+    /// <summary>Minimal compat-style shims used by the PlatformSync port.</summary>
     public static class Compat
     {
         public static readonly string ServerRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
         public static string DataDirectory => Path.Combine(ServerRoot, "HarmonyData");
         public static string LinksDataPath => Path.Combine(DataDirectory, "PlatformSync", "links.json");
         public static string LinksLogLegacyPath => Path.Combine(DataDirectory, "PlatformSync", "links.log");
-        public static string OxideLinksDataPath => Path.Combine(ServerRoot, "oxide", "data", "PlatformSync", "links.json");
-        public static string OxideLinksLogLegacyPath => Path.Combine(ServerRoot, "oxide", "data", "PlatformSync", "links.log");
+        public static string LegacyHostLinksDataPath => Path.Combine(ServerRoot, "oxide", "data", "PlatformSync", "links.json");
+        public static string LegacyHostLinksLogPath => Path.Combine(ServerRoot, "oxide", "data", "PlatformSync", "links.log");
 
         public static readonly TimerHelper Timer = new TimerHelper();
         public static readonly WebRequestHelper Webrequest = new WebRequestHelper();
@@ -630,11 +630,11 @@ namespace PlatformSync
                 {
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        Type iface = asm.GetType("Oxide.Core.Interface");
+                        Type iface = asm.GetType("Harmony.Core.HarmonyModInterface");
                         if (iface == null) continue;
-                        object oxide = iface.GetProperty("Oxide", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-                        if (oxide == null) continue;
-                        object rpm = oxide.GetType().GetProperty("RootPluginManager")?.GetValue(oxide);
+                        object modRuntime = iface.GetProperty("Mods", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                        if (modRuntime == null) continue;
+                        object rpm = modRuntime.GetType().GetProperty("RootModManager")?.GetValue(modRuntime);
                         if (rpm == null) continue;
                         MethodInfo get = rpm.GetType().GetMethod("GetPlugin", new[] { typeof(string) });
                         _plugin = get?.Invoke(rpm, new object[] { _name });

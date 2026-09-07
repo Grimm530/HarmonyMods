@@ -28,7 +28,7 @@ public static class PlayerLoot_AddContainer_Patch
     {
         yield return new WaitForSeconds(0.15f);
         if (player != null && !player.IsDestroyed && player.IsConnected && mod != null)
-            mod.ShowButtons(player, includeInventoryPanel: true);
+            mod.ShowButtons(player);
     }
 
     private static BasePlayer GetPlayer(PlayerLoot loot)

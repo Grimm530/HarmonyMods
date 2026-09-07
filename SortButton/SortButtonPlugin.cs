@@ -5,7 +5,7 @@ using System.IO;
 using System.Reflection;
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 
 namespace SortButton

@@ -4,32 +4,13 @@ using ConVar;
 
 namespace CCL.Harmony.HideAdminActions;
 
-[HarmonyPatch(typeof(Chat), nameof(Chat.BroadcastPlayerAction), typeof(BasePlayer), typeof(string))]
-internal class __HideAdminActions_Chat_BroadcastPlayerAction_Single
-{
-    [HarmonyPrefix]
-    private static bool Prefix(string action)
-    {
-        return !action.Contains("gave");
-    }
-}
-
-[HarmonyPatch(typeof(Chat), nameof(Chat.BroadcastPlayerAction), typeof(BasePlayer), typeof(string), typeof(BasePlayer), typeof(string))]
-internal class __HideAdminActions_Chat_BroadcastPlayerAction_Triple
-{
-    [HarmonyPrefix]
-    private static bool Prefix(string middle, string suffix)
-    {
-        return !middle.Contains("gave") && !suffix.Contains("gave");
-    }
-}
-
 [HarmonyPatch(typeof(Chat), nameof(Chat.Broadcast))]
 internal class __HideAdminActions_Chat_Broadcast
 {
     [HarmonyPrefix]
-    private static bool Prefix(string message, string username)
+    private static bool Prefix(string message, string username, string color, ulong userid)
     {
+        // Match NoGiveNotices: block all "gave" messages from SERVER (gave themselves, gave X to Y, gave everyone, etc.)
         return "SERVER" != username || !message.Contains("gave");
     }
 }
@@ -38,7 +19,7 @@ internal class __HideAdminActions_Chat_Broadcast
 internal class __HideAdminActions_Chat_GetNameColor
 {
     [HarmonyPrefix]
-    private static bool Prefix(ref string __result)
+    private static bool Prefix(ulong userId, BasePlayer player, ref string __result)
     {
         __result = "#5af";
 

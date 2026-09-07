@@ -1,7 +1,7 @@
 using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
-using QPlugin = Oxide.Plugins.Quest;
+using QPlugin = Harmony.Plugins.Quest;
 
 namespace QuestHarmony.Patches
 {

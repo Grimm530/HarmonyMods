@@ -62,16 +62,16 @@ public static class EventModPatches
         }
 
         TryOne("RaidableBases", cfg.RaidableBases, () =>
-            TryPatch(harmony, FindType("RaidableBases.RaidableBases+RaidableBase", "Oxide.Plugins.RaidableBases+RaidableBase"),
+            TryPatch(harmony, FindType("RaidableBases.RaidableBases+RaidableBase", "Harmony.Plugins.RaidableBases+RaidableBase"),
                 "AwardRaiders", new HarmonyMethod(typeof(EventModPatches), nameof(Postfix_RaidableBases_AwardRaiders))));
         TryOne("Convoy", cfg.Convoy, () =>
             TryPatch(harmony, FindType("Convoy.EventLauncher"),
                 "StopEvent", prefix: new HarmonyMethod(typeof(EventModPatches), nameof(Prefix_Convoy_StopEvent))));
         TryOne("ArmoredTrain", cfg.ArmoredTrain, () =>
-            TryPatch(harmony, FindType("Oxide.Plugins.ArmoredTrain+EconomyManager"),
+            TryPatch(harmony, FindType("Harmony.Plugins.ArmoredTrain+EconomyManager"),
                 "DefineEventWinner", prefix: new HarmonyMethod(typeof(EventModPatches), nameof(Prefix_ArmoredTrain_DefineEventWinner))));
         TryOne("CustomHelicopterTiers", cfg.CustomHelicopterTiers, () =>
-            TryPatch(harmony, FindType("Oxide.Plugins.CustomHelicopterTiers2", "CHT.CHTMod"),
+            TryPatch(harmony, FindType("Harmony.Plugins.CustomHelicopterTiers2", "CHT.CHTMod"),
                 "OnEntityDeath",
                 postfix: new HarmonyMethod(typeof(EventModPatches), nameof(Postfix_CHT_OnEntityDeath)),
                 paramTypes: new[] { typeof(PatrolHelicopter), typeof(HitInfo) }));
@@ -145,7 +145,7 @@ public static class EventModPatches
 
     public static void Postfix_RaidableBases_AwardRaiders(object __instance)
     {
-        if (__instance == null || LeaderboardMod.Instance == null) return;
+        if (LeaderboardMod.Instance == null) return;
         try
         {
             var t = __instance.GetType();
@@ -210,7 +210,7 @@ public static class EventModPatches
     {
         try
         {
-            var t = FindType("Oxide.Plugins.ArmoredTrain+EconomyManager");
+            var t = FindType("Harmony.Plugins.ArmoredTrain+EconomyManager");
             if (t == null) return;
             var field = AccessTools.Field(t, "PlayersBalance");
             if (field?.GetValue(null) is not IDictionary balance || balance.Count == 0) return;
@@ -238,7 +238,7 @@ public static class EventModPatches
 
     public static void Postfix_CHT_OnEntityDeath(object __instance, PatrolHelicopter patrolHelicopter, HitInfo hitInfo)
     {
-        if (__instance == null || patrolHelicopter == null || LeaderboardMod.Instance == null) return;
+        if (patrolHelicopter == null || LeaderboardMod.Instance == null) return;
         try
         {
             var mgrField = AccessTools.Field(__instance.GetType(), "_tieredHelicopterManager")

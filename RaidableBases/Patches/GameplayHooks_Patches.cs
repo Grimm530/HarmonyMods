@@ -18,7 +18,7 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static bool Prefix(ElevatorLift __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null)
+            if (msg.player == null)
                 return true;
 
             var read = msg.read;
@@ -48,7 +48,7 @@ namespace RaidableBases
                 direction = targetFloor >= 0 ? Elevator.Direction.Up : Elevator.Direction.Down;
             }
 
-            var block = Interface.CallHook("OnElevatorButtonPress", __instance, msg.player, direction, fullTravel);
+            var block = HarmonyModInterface.CallHook("OnElevatorButtonPress", __instance, msg.player, direction, fullTravel);
             return block == null;
         }
     }
@@ -60,16 +60,14 @@ namespace RaidableBases
         private static bool Prefix(Elevator __instance, int targetFloor, out float timeToTravel, Elevator fromElevator, ref bool __result)
         {
             timeToTravel = 0f;
-            if (__instance == null)
-                return true;
 
             // BMG elevators block vanilla move/call and drive travel themselves.
-            if (Interface.CallHook("OnElevatorMove", __instance, targetFloor) != null)
+            if (HarmonyModInterface.CallHook("OnElevatorMove", __instance, targetFloor) != null)
             {
                 __result = false;
                 return false;
             }
-            if (fromElevator != null && Interface.CallHook("OnElevatorCall", __instance, fromElevator) != null)
+            if (fromElevator != null && HarmonyModInterface.CallHook("OnElevatorCall", __instance, fromElevator) != null)
             {
                 __result = false;
                 return false;
@@ -84,9 +82,9 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static void Prefix(PressButton __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null)
+            if (msg.player == null)
                 return;
-            Interface.CallHook("OnButtonPress", __instance, msg.player);
+            HarmonyModInterface.CallHook("OnButtonPress", __instance, msg.player);
         }
     }
 
@@ -98,16 +96,16 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static void Prefix(Item __instance, ref float amount)
         {
-            if (__instance == null || amount <= 0f)
+            if (amount <= 0f)
                 return;
 
-            // OnNeverWear is an Oxide NeverWear-style hook; RB returns amount to force wear in raid zones.
-            var never = Interface.CallHook("OnNeverWear", __instance, amount);
+            // OnNeverWear is an legacy NeverWear-style hook; RB returns amount to force wear in raid zones.
+            var never = HarmonyModInterface.CallHook("OnNeverWear", __instance, amount);
             if (never is float forced && forced > 0f)
                 amount = forced;
 
             var args = new object[] { __instance, amount };
-            Interface.CallHook("OnLoseCondition", args);
+            HarmonyModInterface.CallHook("OnLoseCondition", args);
             if (args[1] is float updated)
                 amount = updated;
         }
@@ -119,7 +117,7 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static bool Prefix(BaseCombatEntity victim, HitInfo info, ref bool __result)
         {
-            var result = Interface.CallHook("CanRaidWindowBlockDamage", victim, info);
+            var result = HarmonyModInterface.CallHook("CanRaidWindowBlockDamage", victim, info);
             if (result is bool block)
             {
                 __result = block;
@@ -137,13 +135,13 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static bool Prefix(SamSite __instance)
         {
-            if (__instance == null || !__instance.IsPowered())
+            if (!__instance.IsPowered())
                 return true;
 
             var scanList = Pool.Get<List<SamSite.ISamSiteTarget>>();
             try
             {
-                var replaced = Interface.CallHook("OnSamSiteTargetScan", __instance, scanList);
+                var replaced = HarmonyModInterface.CallHook("OnSamSiteTargetScan", __instance, scanList);
                 if (replaced == null)
                     return true;
 
@@ -179,7 +177,7 @@ namespace RaidableBases
                     // Optional per-target gate used by CanEntityBeTargeted(entity, SamSite).
                     if (item is BaseEntity be)
                     {
-                        var can = Interface.CallHook("CanEntityBeTargeted", be, __instance);
+                        var can = HarmonyModInterface.CallHook("CanEntityBeTargeted", be, __instance);
                         if (can is bool allow && !allow)
                             continue;
                     }
@@ -220,9 +218,7 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static bool Prefix(MLRS __instance, BasePlayer owner)
         {
-            if (__instance == null)
-                return true;
-            var block = Interface.CallHook("OnMlrsFire", __instance, owner);
+            var block = HarmonyModInterface.CallHook("OnMlrsFire", __instance, owner);
             return block == null;
         }
     }
@@ -235,9 +231,7 @@ namespace RaidableBases
         [HarmonyPostfix]
         private static void Postfix(BuildingPrivlidge __instance, BasePlayer granter, ulong targetPlayerId)
         {
-            if (__instance == null)
-                return;
-            Interface.CallHook("OnCupboardAuthorize", __instance, granter);
+            HarmonyModInterface.CallHook("OnCupboardAuthorize", __instance, granter);
         }
     }
 
@@ -247,9 +241,7 @@ namespace RaidableBases
         [HarmonyPostfix]
         private static void Postfix(BuildingPrivlidge __instance, bool force)
         {
-            if (__instance == null)
-                return;
-            Interface.CallHook("OnCupboardProtectionCalculated", __instance, __instance.cachedProtectedMinutes);
+            HarmonyModInterface.CallHook("OnCupboardProtectionCalculated", __instance, __instance.cachedProtectedMinutes);
         }
     }
 
@@ -261,14 +253,14 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static void Prefix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null || info == null)
+            if (info == null)
                 return;
             // Prefer FireBall initiator; RB also rewrites null/FireBall initiator while fire is in event territory.
             FireBall fire = info.Initiator as FireBall;
             if (fire == null && info.WeaponPrefab is FireBall fb)
                 fire = fb;
             if (fire != null)
-                Interface.CallHook("OnFireBallDamage", fire, __instance, info);
+                HarmonyModInterface.CallHook("OnFireBallDamage", fire, __instance, info);
         }
     }
 
@@ -281,7 +273,7 @@ namespace RaidableBases
             if (__instance is not FireBall spread || spread.IsDestroyed || spread.generation <= 0f)
                 return;
             var creator = spread.creatorEntity as FireBall ?? spread;
-            Interface.CallHook("OnFireBallSpread", creator, spread);
+            HarmonyModInterface.CallHook("OnFireBallSpread", creator, spread);
         }
     }
 
@@ -293,9 +285,9 @@ namespace RaidableBases
         [HarmonyPrefix]
         private static bool Prefix(RelationshipManager.PlayerTeam __instance, BasePlayer player)
         {
-            if (__instance == null || player == null)
+            if (player == null)
                 return true;
-            var block = Interface.CallHook("OnTeamAcceptInvite", __instance, player);
+            var block = HarmonyModInterface.CallHook("OnTeamAcceptInvite", __instance, player);
             return block == null;
         }
     }
@@ -317,8 +309,8 @@ namespace RaidableBases
             read.Position = pos;
 
             string tag = clanId != 0L ? clanId.ToString() : string.Empty;
-            // Non-null blocks accept (hogging / ally exploit). Also notifies Oxide Clans leave path.
-            return Interface.CallHook("OnClanMemberJoined", (ulong)msg.player.userID, tag) == null;
+            // Non-null blocks accept (hogging / ally exploit). Also notifies legacy Clans leave path.
+            return HarmonyModInterface.CallHook("OnClanMemberJoined", (ulong)msg.player.userID, tag) == null;
         }
     }
 
@@ -349,7 +341,7 @@ namespace RaidableBases
                 ? System.Array.Empty<string>()
                 : body.Substring(space + 1).Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
 
-            var block = Interface.CallHook("OnPlayerCommand", player, command, args);
+            var block = HarmonyModInterface.CallHook("OnPlayerCommand", player, command, args);
             return block == null;
         }
     }
@@ -364,7 +356,7 @@ namespace RaidableBases
         private static void Prefix(BasePlayer __instance, HitInfo info, ref bool __state)
         {
             __state = false;
-            if (info == null || __instance == null || __instance.IsNpc)
+            if (info == null || __instance.IsNpc)
                 return;
             if (!ConVar.Server.pve)
                 return;

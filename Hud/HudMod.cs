@@ -1,15 +1,24 @@
 // HudMod.cs — Harmony entry point for CombatClasses 1.0.0131
-// Hosts Oxide.Plugins.Hud, lifecycle, chat + console commands.
+// Hosts Harmony.Plugins.Hud, lifecycle, chat + console commands.
 
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
+using GrimmCuiHarmony;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.Hud;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.Hud;
+using GrimmCuiHarmony;
 
 namespace HudHarmony
 {
@@ -55,7 +64,7 @@ namespace HudHarmony
     public class HudMod : IHarmonyModHooks
     {
         public static HudMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -73,14 +82,15 @@ namespace HudHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -115,7 +125,7 @@ namespace HudHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.HarmonyRegisterPermissions();
             }
@@ -210,8 +220,9 @@ namespace HudHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
+            InventoryLayerUiBridge.ClearAll();
 
             UnregisterConsoleCommands();
 
@@ -219,7 +230,7 @@ namespace HudHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[Hud] Harmony mod unloaded.");
         }
@@ -264,7 +275,7 @@ namespace HudHarmony
             if (plugin == null || string.IsNullOrEmpty(method)) return null;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var mi = typeof(HarmonyPlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (mi == null) return null;
                 return mi.Invoke(plugin, args);
             }
@@ -300,13 +311,13 @@ namespace HudHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
 
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player, command, args }); return; }
@@ -337,11 +348,11 @@ namespace HudHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -371,11 +382,11 @@ namespace HudHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var name = attr.Command.Trim().ToLowerInvariant();
@@ -581,7 +592,7 @@ namespace HudHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName,
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 mi?.Invoke(plugin, new object[] { arg });
             }

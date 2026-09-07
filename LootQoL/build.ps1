@@ -21,7 +21,8 @@ if ($LASTEXITCODE -eq 0) {
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! LootQoL.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "Load order: 0Permissions -> LootQoL" -ForegroundColor Yellow
+    Write-Host "Load order: 0Permissions -> 0GrimmCUI -> LootQoL" -ForegroundColor Yellow
+    Write-Host "After harmony.reload 0GrimmCUI, also harmony.reload LootQoL" -ForegroundColor Yellow
     Write-Host "Config: HarmonyConfig/LootQoL.json" -ForegroundColor Gray
     Write-Host "Lang: HarmonyLanguage/LootQoL.json" -ForegroundColor Gray
 } else {

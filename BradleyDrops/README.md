@@ -1,6 +1,6 @@
 # BradleyDrops (Harmony port)
 
-Port of Oxide `BradleyDrops` to a Harmony mod. Config copied from `oxide/config/BradleyDrops.json` (not BradleyDropsSVR1.json). Difficulty notes: `.cursor/PluginInstructionalFiles/BradleyDrops_Difficulty_Summary.md`.
+Port of Oxide `BradleyDrops` to a Harmony mod. Config copied from `legacy/config/BradleyDrops.json` (not BradleyDropsSVR1.json). Difficulty notes: `.cursor/PluginInstructionalFiles/BradleyDrops_Difficulty_Summary.md`.
 
 ## Paths
 

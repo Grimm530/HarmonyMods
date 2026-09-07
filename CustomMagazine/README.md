@@ -1,6 +1,6 @@
 # CustomMagazine (Harmony)
 
-Oxide **CustomMagazine 1.0.9** port. Skin-based extended magazine capacity.
+Legacy **CustomMagazine 1.0.9** port. Skin-based extended magazine capacity.
 
 ## Deploy
 

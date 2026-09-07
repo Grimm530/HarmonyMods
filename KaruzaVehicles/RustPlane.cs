@@ -21,7 +21,7 @@ using static SeekerTarget;
 
 namespace KaruzaVehicles
 {
-    [Info("RustPlane", "Karuza", "1.36.0")]
+    [Info("RustPlane", "Karuza", "1.37.0")]
     public class RustPlane : RustPlugin, IKaruzaEntityPlugin
     {
         public static RustPlane Instance;
@@ -1413,7 +1413,12 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                float num = 30f;
+                float num = GetDamageRepairCooldown();
+                if (player.IsInCreativeMode && ConVar.Creative.freeRepair)
+                {
+                    num = 0f;
+                }
+
                 if (SecondsSinceAttacked <= num)
                 {
                     OnRepairFailed(player, RecentlyDamagedError, (num - SecondsSinceAttacked).ToString("N0"));
@@ -1436,6 +1441,11 @@ namespace KaruzaVehicles
 
                 float num4 = list.Sum((ItemAmount x) => x.amount);
                 float healthBefore = health;
+                if (player.IsInCreativeMode && ConVar.Creative.freeRepair)
+                {
+                    num4 = 0f;
+                }
+
                 if (num4 > 0f)
                 {
                     float num5 = list.Min(x => Mathf.Clamp01(player.inventory.GetAmount(x.itemid) / x.amount));
@@ -1456,7 +1466,7 @@ namespace KaruzaVehicles
                     {
                         int amount = Mathf.CeilToInt(num5 * item.amount);
                         int num7 = player.inventory.Take(null, item.itemid, amount);
-                        Facepunch.Rust.Analytics.Azure.LogResource(Facepunch.Rust.Analytics.Azure.ResourceMode.Consumed, "repair_entity", item.itemDef.shortname, num7, this, null, safezone: false, null, player.userID);
+                        Facepunch.Rust.Analytics.Azure.LogResource(Facepunch.Rust.Analytics.Azure.ResourceMode.Consumed, "repair_entity", item.itemDef.shortname, num7, this, null, safezone: false, null, player.userID, null, null, null, 0uL);
                         if (num7 > 0)
                         {
                             num6 += num7;

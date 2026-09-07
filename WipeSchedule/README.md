@@ -1,6 +1,6 @@
 # WipeSchedule Harmony Mod (2.0.21)
 
-Oxide-free Harmony port of **Wipe Schedule 2.0.21** (Mevent). Exact logic replica; hosting uses HarmonyConfig / HarmonyData / 0Permissions.
+Harmony Harmony port of **Wipe Schedule 2.0.21** (Mevent). Exact logic replica; hosting uses HarmonyConfig / HarmonyData / 0Permissions.
 
 ## Paths
 
@@ -47,4 +47,4 @@ Copies only `WipeSchedule.dll` to `HarmonyMods/`.
 ## Notes
 
 - CUI buttons are rewritten to `cui.endtest WIPESCHEDULE …` (same pattern as Shop/Kits).
-- Optional Oxide plugins (ServerPanel, Notify, ImageLibrary) remain stubs unless a Harmony equivalent is wired later.
+- Optional Harmony mods (ServerPanel, Notify, ImageLibrary) remain stubs unless a Harmony equivalent is wired later.

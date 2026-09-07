@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Text;
 using Facepunch;
 using Rust.Ai.Gen2;
 using UnityEngine;
@@ -29,8 +28,6 @@ public class RadarBehaviour : MonoBehaviour
     private static MethodInfo _grimmGetNpcData;
     private static PropertyInfo _grimmCustomNpcDataName;
     private static bool _grimmReflectionResolved;
-    private static Dictionary<string, string> _deployableItems;
-    private static bool _deployableItemsInitialized;
 
     private void Awake()
     {
@@ -115,14 +112,12 @@ public class RadarBehaviour : MonoBehaviour
         {
             foreach (var p in BasePlayer.activePlayerList)
             {
-                if (p == null || p.IsDestroyed || p == _player || p.IsNpc) continue;
-                if (!IsSteamAccountId(p.userID)) continue;
+                if (p == null || p.IsDead() || p == _player || p.IsNpc) continue;
                 var v = p.transform.position - pos;
                 if (v.sqrMagnitude > sqPlayers) continue;
-                float dist = Mathf.Sqrt(v.sqrMagnitude);
-                var color = GetOnlinePlayerColor(p, p.transform.position);
-                var label = GetCheats(p) + (p.displayName ?? "");
-                DrawPlayerMarker(p, label, color, dist, drawDuration);
+                // Team-style: green dot above head + name in green (clean like game's teammate UI).
+                var color = RadarConfig.GetColorFromHex(RadarConfig.Config?.ColorHexCodes?.OnlinePlayer, Color.green);
+                DrawPlayerMarker(p.transform.position, p.displayName, color, drawDuration);
             }
         }
 
@@ -139,17 +134,15 @@ public class RadarBehaviour : MonoBehaviour
         {
             foreach (var p in BasePlayer.sleepingPlayerList)
             {
-                if (p == null || p.IsDestroyed) continue;
+                if (p == null || p.IsDead()) continue;
                 var v = p.transform.position - pos;
                 if (v.sqrMagnitude > sqSleepers) continue;
-                float dist = Mathf.Sqrt(v.sqrMagnitude);
                 var baseHex = p.IsAlive()
                     ? RadarConfig.Config?.ColorHexCodes?.SleepingPlayer
                     : RadarConfig.Config?.ColorHexCodes?.SleepingDeadPlayer;
                 var fallback = p.IsAlive() ? Color.cyan : new Color(0.5f, 0.3f, 0.3f);
                 var col = RadarConfig.GetColorFromHex(baseHex, fallback);
-                var label = GetCheats(p) + (p.displayName ?? "");
-                DrawPlayerMarker(p, label, col, dist, drawDuration);
+                DrawPlayerMarker(p.transform.position, p.displayName ?? "", col, drawDuration);
             }
         }
 
@@ -172,7 +165,6 @@ public class RadarBehaviour : MonoBehaviour
                     var npcCol = RadarConfig.GetColorFromHex(RadarConfig.Config?.ColorHexCodes?.NPC, Color.yellow);
                     var vname = vendor.ShortPrefabName ?? "Vendor";
                     DrawEntity(vendor.transform.position + Vector3.up, npcCol, vname, SmallBoxSize, drawDuration);
-                    TryDrawNpcTargetVictim(vendor, vendor.transform.position, npcCol, sqr, sqNpc, drawDuration);
                     continue;
                 }
                 if (e is BaseNPC2 gen2 && !gen2.IsAnimal)
@@ -180,7 +172,6 @@ public class RadarBehaviour : MonoBehaviour
                     var npcCol = RadarConfig.GetColorFromHex(RadarConfig.Config?.ColorHexCodes?.NPC, Color.yellow);
                     var gname = gen2.ShortPrefabName ?? "Npc";
                     DrawEntity(gen2.transform.position + Vector3.up, npcCol, gname, SmallBoxSize, drawDuration);
-                    TryDrawNpcTargetVictim(gen2, gen2.transform.position, npcCol, sqr, sqNpc, drawDuration);
                     continue;
                 }
             }
@@ -235,8 +226,8 @@ public class RadarBehaviour : MonoBehaviour
 
             if (e is StorageContainer storage)
             {
-                // Loot first (loot crates, LockedByEntCrate, LootContainer); then Box (Options -> Boxes).
-                if (_state.IsEnabled(RadarEntityType.Loot) && (storage is LootContainer || storage is LockedByEntCrate || IsLoot(storage)) && sqr <= sqLoot)
+                // Loot first (loot crates, LootContainer, LockedByEntCrate); then Box (player boxes from AdditionalBoxes).
+                if (_state.IsEnabled(RadarEntityType.Loot) && (storage is LootContainer || IsLoot(storage)) && sqr <= sqLoot)
                 {
                     var col = RadarConfig.GetColorFromHex(RadarConfig.Config?.ColorHexCodes?.Loot, Color.yellow);
                     DrawEntity(storage.transform.position + Vector3.up, col, "Loot", SmallBoxSize, drawDuration);
@@ -311,81 +302,13 @@ public class RadarBehaviour : MonoBehaviour
         }
     }
 
-    internal const int FindByItemMaxResults = 20;
-
-    /// <summary>AdminRadar 5.4.312 <c>CommandDeployable</c>: item or entity shortname → deployable entity shortname.</summary>
-    internal static bool TryFindDeployables(string search, out string results, out int count)
-    {
-        results = null;
-        count = 0;
-        if (string.IsNullOrWhiteSpace(search))
-            return false;
-
-        EnsureDeployableItems();
-        if (_deployableItems == null || _deployableItems.Count == 0)
-            return false;
-
-        var sb = new StringBuilder();
-        foreach (var pair in _deployableItems)
-        {
-            if (pair.Value.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0
-                && pair.Key.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
-                continue;
-
-            count++;
-            sb.Append(pair.Value).Append(" -> ").AppendLine(pair.Key);
-            if (count >= FindByItemMaxResults)
-                break;
-        }
-
-        if (count == 0)
-            return false;
-
-        results = sb.ToString();
-        return true;
-    }
-
-    private static void EnsureDeployableItems()
-    {
-        if (_deployableItemsInitialized)
-            return;
-        _deployableItemsInitialized = true;
-        _deployableItems = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var def in ItemManager.GetItemDefinitions())
-        {
-            if (!def.TryGetComponent<ItemModDeployable>(out var imd))
-                continue;
-            var entity = imd.entityPrefab.Get()?.GetComponent<StorageContainer>();
-            if (entity == null)
-                continue;
-            if (!string.Equals(entity.ShortPrefabName, def.shortname, StringComparison.Ordinal))
-                _deployableItems[entity.ShortPrefabName] = def.shortname;
-        }
-    }
-
     private static bool IsBox(BaseEntity e)
     {
-        var list = RadarConfig.Config?.Options?.Boxes;
-        if (list == null || list.Count == 0)
-            return false;
-
-        EnsureDeployableItems();
+        var list = RadarConfig.Config?.Options?.AdditionalBoxes;
+        if (list == null || list.Count == 0) return false;
         var shortName = e?.ShortPrefabName ?? "";
         for (int i = 0; i < list.Count; i++)
-        {
-            if (shortName.IndexOf(list[i], StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-        }
-
-        if (_deployableItems == null || !_deployableItems.TryGetValue(shortName, out var itemShortname))
-            return false;
-
-        for (int i = 0; i < list.Count; i++)
-        {
-            if (string.Equals(list[i], itemShortname, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
+            if (shortName.IndexOf(list[i], StringComparison.OrdinalIgnoreCase) >= 0) return true;
         return false;
     }
 
@@ -398,7 +321,9 @@ public class RadarBehaviour : MonoBehaviour
             || shortName.IndexOf("hackable", StringComparison.OrdinalIgnoreCase) >= 0
             || shortName.IndexOf("oil", StringComparison.OrdinalIgnoreCase) >= 0
             || shortName.IndexOf("foodbox", StringComparison.OrdinalIgnoreCase) >= 0
-            || shortName.IndexOf("vehicle_parts", StringComparison.OrdinalIgnoreCase) >= 0;
+            || shortName.IndexOf("vehicle_parts", StringComparison.OrdinalIgnoreCase) >= 0
+            || shortName == "krieg_storage_horizontal"
+            || shortName == "krieg_storage_vertical";
     }
 
     /// <summary>
@@ -472,103 +397,7 @@ public class RadarBehaviour : MonoBehaviour
             if (!PassesNpcWorldViewDepth(p.transform.position))
                 continue;
             DrawEntity(p.transform.position + Vector3.up, npcCol, NpcBasePlayerLabel(p), SmallBoxSize, drawDuration);
-            TryDrawNpcTargetVictim(p, p.transform.position, npcCol, v.sqrMagnitude, sqNpc, drawDuration);
         }
-    }
-
-    private void TryDrawNpcTargetVictim(BaseEntity entity, Vector3 entityPos, Color color, float sqrDist, float sqNpc, float drawDuration)
-    {
-        if (RadarConfig.Config?.Options?.ShowNpcPlayerTarget != true)
-            return;
-        if (sqrDist > sqNpc)
-            return;
-        if (!entity.HasBrain)
-            return;
-
-        var players = GetPlayersFromBrain(entity);
-        if (players == null || players.Count == 0)
-            return;
-
-        BasePlayer victim = null;
-        for (int i = 0; i < players.Count; i++)
-        {
-            if (players[i] != null)
-            {
-                victim = players[i];
-                break;
-            }
-        }
-
-        if (victim == null)
-            return;
-
-        float dist = Mathf.Sqrt(sqrDist);
-        var offset = new Vector3(0f, 2f + dist * 0.03f, 0f);
-        DrawNpcTargetVictim(victim, entityPos, offset, color, drawDuration);
-    }
-
-    private static List<BasePlayer> GetPlayersFromBrain(BaseEntity entity)
-    {
-        var players = new List<BasePlayer>();
-        if (!entity.TryGetComponent(out BaseAIBrain brain))
-            return players;
-        if (brain.Senses?.Players == null)
-            return players;
-
-        foreach (var ent in brain.Senses.Players)
-        {
-            if (ent is BasePlayer player && IsSteamAccountId(player.userID))
-                players.Add(player);
-        }
-
-        return players;
-    }
-
-    private void DrawNpcTargetVictim(BasePlayer victim, Vector3 from, Vector3 offset, Color color, float duration)
-    {
-        if (_player == null || !_player.IsConnected || victim == null)
-            return;
-
-        string victimColor;
-        if (victim.IsSleeping())
-            victimColor = RadarConfig.Config?.ColorHexCodes?.SleepingPlayer ?? "#00ffff";
-        else if (victim.IsAlive())
-            victimColor = "#00ff00";
-        else
-            victimColor = RadarConfig.Config?.ColorHexCodes?.OnlineDeadPlayer ?? "#ff0000";
-
-        var text = $"<color={victimColor}>{victim.displayName}</color>";
-        var pos = from + offset;
-        _player.Command("ddraw.text", duration, color, pos, DdrawSizedPlayerName("T: " + text), 0, 0);
-    }
-
-    private static string GetCheats(BasePlayer target)
-    {
-        var track = RadarConfig.Config?.TrackAdminStatus;
-        if (track == null || !track.Any || target == null)
-            return string.Empty;
-
-        var sb = new StringBuilder();
-        if (track.Radar && !string.IsNullOrWhiteSpace(track.RadarText) && RadarMod.IsRadarActive(target.userID))
-            sb.Append(track.RadarText).Append('|');
-        if (track.Spectating && target.SpectatingTarget != null && !string.IsNullOrWhiteSpace(track.SpectatingText))
-            sb.Append(track.SpectatingText).Append('|');
-        if (track.God && !string.IsNullOrWhiteSpace(track.GodText) && target.IsGod())
-            sb.Append(track.GodText).Append('|');
-        if (track.GodPlugin && !string.IsNullOrWhiteSpace(track.GodPluginText) && target.metabolism?.calories?.min == 500)
-            sb.Append(track.GodPluginText).Append('|');
-        if (track.Vanish && !string.IsNullOrWhiteSpace(track.VanishText) && (target.limitNetworking || target.isInvisible))
-            sb.Append(track.VanishText).Append('|');
-        if (track.NoClip && !string.IsNullOrWhiteSpace(track.NoClipText) && target.IsFlying)
-            sb.Append(track.NoClipText).Append('|');
-
-        if (sb.Length == 0)
-            return string.Empty;
-
-        sb.Length -= 1;
-        sb.Insert(0, '(');
-        sb.Append(") ");
-        return sb.ToString();
     }
 
     /// <summary>BossMonster / NpcSpawn: <c>CustomScientistNpc</c> exposes <c>Config.Name</c> (no Grimm registration).</summary>
@@ -658,27 +487,7 @@ public class RadarBehaviour : MonoBehaviour
         return false;
     }
 
-    /// <summary>AdminRadar 5.4.312 <c>GetColor</c>: dead / flying / underground / online.</summary>
-    private static Color GetOnlinePlayerColor(BasePlayer target, Vector3 position)
-    {
-        var hex = RadarConfig.Config?.ColorHexCodes;
-        if (target.health <= 0f || target.IsDead())
-            return RadarConfig.GetColorFromHex(hex?.OnlineDeadPlayer, Color.red);
-        if (!target.IsOnGround() || target.IsFlying)
-            return RadarConfig.GetColorFromHex(hex?.OnlinePlayerFlying, Color.white);
-        try
-        {
-            if (TerrainMeta.HeightMap != null && position.y + 1f < TerrainMeta.HeightMap.GetHeight(position))
-                return RadarConfig.GetColorFromHex(hex?.OnlinePlayerUnderground, Color.white);
-        }
-        catch
-        {
-            // HeightMap can be missing during load
-        }
-        return RadarConfig.GetColorFromHex(hex?.OnlinePlayer, Color.white);
-    }
-
-    /// <summary>AdminRadar 5.4.312 player label: sized name + colored health + distance (white names are otherwise invisible).</summary>
+    /// <summary>Team-style marker: small dot above head + name in green (like the game's teammate UI).</summary>
     private static string DdrawSizedPlayerName(string text)
     {
         var sz = RadarConfig.Config?.Settings?.PlayerNameTextSize ?? 24;
@@ -695,35 +504,16 @@ public class RadarBehaviour : MonoBehaviour
         return "<size=" + sz + ">" + text + "</size>";
     }
 
-    /// <summary>
-    /// AdminRadar 5.4.312 <c>TryCacheOnlinePlayer</c> / <c>DrawAppendedText</c>:
-    /// player-height <c>ddraw.box</c> plus name + red health + orange distance.
-    /// Tiny white <c>ddraw.sphere</c> + white name is invisible against sky/snow.
-    /// </summary>
-    private void DrawPlayerMarker(BasePlayer target, string displayName, Color color, float distance, float duration)
+    private void DrawPlayerMarker(Vector3 feetPosition, string displayName, Color color, float duration)
     {
-        if (_player == null || !_player.IsConnected || target == null) return;
-
-        var feetPosition = target.transform.position;
-        bool ducked = target.modelState != null && target.modelState.ducked;
-        float height = BasePlayer.GetHeight(ducked);
-        var boxPos = feetPosition + Vector3.up;
-        var textOffset = Vector3.up * 2f;
-        if (target.IsSpectating())
-            textOffset += Vector3.up;
-
-        var hex = RadarConfig.Config?.ColorHexCodes;
-        string healthHex = hex?.Health ?? "#ff0000";
-        string distHex = hex?.Distance ?? "#ffa500";
-        int nameSize = RadarConfig.Config?.Settings?.PlayerNameTextSize ?? 24;
-        int infoSize = RadarConfig.Config?.Settings?.PlayerInformationTextSize ?? 24;
-        int hp = Mathf.CeilToInt(target.health);
-        int distM = Mathf.CeilToInt(distance);
-
-        string label = "<size=" + nameSize + ">" + (displayName ?? "") + "</size> <size=" + infoSize + "><color=" + healthHex + ">" + hp + "</color> <color=" + distHex + ">" + distM + "</color></size>";
-
-        _player.Command("ddraw.box", duration, color, boxPos, height);
-        _player.Command("ddraw.text", duration, color, feetPosition + textOffset, label);
+        if (_player == null || !_player.IsConnected) return;
+        float dotHeight = 2.2f;
+        float nameHeight = 2.5f;
+        const float dotRadius = 0.15f;
+        var dotPos = feetPosition + Vector3.up * dotHeight;
+        var namePos = feetPosition + Vector3.up * nameHeight;
+        _player.Command("ddraw.sphere", duration, color, dotPos, dotRadius, 0, 0);
+        _player.Command("ddraw.text", duration, color, namePos, DdrawSizedPlayerName(displayName ?? ""), 0, 0);
     }
 
     private void DrawEntity(Vector3 position, Color color, string text, float boxSize, float duration)

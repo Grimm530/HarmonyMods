@@ -10,7 +10,7 @@ namespace InfiniteVendingStock.Patches
         private static void Postfix(NPCVendingMachine __instance)
         {
             InfiniteVendingStockService service = InfiniteVendingStockMod.Service;
-            if (service == null || __instance == null || __instance.IsDestroyed) return;
+            if (service == null || __instance.IsDestroyed) return;
 
             try
             {
@@ -30,7 +30,7 @@ namespace InfiniteVendingStock.Patches
         private static void Postfix(VendingMachine __instance)
         {
             InfiniteVendingStockService service = InfiniteVendingStockMod.Service;
-            if (service == null || __instance == null) return;
+            if (service == null) return;
 
             NPCVendingMachine npc = __instance as NPCVendingMachine;
             if (npc == null) return;

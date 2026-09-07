@@ -1,6 +1,6 @@
 # InventoryCleaner (Harmony)
 
-Oxide **Inventory Cleaner 2.1.1** (Joao Pster) port as a standalone Harmony mod (no Oxide runtime).
+Legacy **Inventory Cleaner 2.1.1** (Joao Pster) port as a standalone Harmony mod (Harmony-only runtime).
 
 ## Load order
 

@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -169,7 +175,17 @@ namespace RaidableBases
                 }
                 try { io.ClearConnections(); } catch { }
             }
-            
+
+            if (entity is DroneStorage)
+            {
+                return;
+            }
+
+            if (entity.Is(out ChickenCoop coop))
+            {
+                coop.Animals.Clear();
+            }
+
             entity.SafelyKill();
         }
 
@@ -185,8 +201,9 @@ namespace RaidableBases
                 }
                 return container.Drop(prefab, position, ent.transform.rotation, 0f);
             }
-            catch
+            catch (Exception ex)
             {
+                Puts(ex);
                 return null;
             }
         }
@@ -195,7 +212,18 @@ namespace RaidableBases
 
         private UndoLoopComparer UndoComparer = new();
 
-        private TreeLoopComparer TreeComparer = new();
+        private class UndoLoopBatch
+        {
+            public List<BaseEntity> Entities = new();
+            public List<BaseEntity> PickupEntities = new();
+            public int Limit;
+            public ulong NewestEntityId;
+
+            public UndoLoopBatch(int limit)
+            {
+                Limit = Mathf.Clamp(limit, 1, 500);
+            }
+        }
 
         public class UndoLoopSettings
         {
@@ -227,26 +255,11 @@ namespace RaidableBases
                 if (ReferenceEquals(x, y)) return 0;
                 if (x == null) return -1;
                 if (y == null) return 1;
-                return Evaluate(x).CompareTo(Evaluate(y));
-            }
-        }
-
-        public class TreeLoopComparer : IComparer<BaseNetworkable>
-        {
-            private int Evaluate(BaseNetworkable entity) => entity switch
-            {
-                VineSwingingTree => 2,
-                TreeEntity => 1,
-                NaturalBeehive => 0,
-                _ => 9
-            };
-
-            public int Compare(BaseNetworkable x, BaseNetworkable y)
-            {
-                if (ReferenceEquals(x, y)) return 0;
-                if (x == null) return -1;
-                if (y == null) return 1;
-                return Evaluate(x).CompareTo(Evaluate(y));
+                int result = Evaluate(x).CompareTo(Evaluate(y));
+                if (result != 0) return result;
+                ulong xId = x.net?.ID.Value ?? 0uL;
+                ulong yId = y.net?.ID.Value ?? 0uL;
+                return yId.CompareTo(xId);
             }
         }
 
@@ -258,33 +271,42 @@ namespace RaidableBases
             }
         }
 
+        private void UndoLoop(List<UndoLoopBatch> batches)
+        {
+            if (batches != null && batches.Count > 0)
+            {
+                ServerMgr.Instance.StartCoroutine(UndoLoopCo(batches));
+            }
+        }
+
         private IEnumerator UndoLoopCo(List<BaseEntity> entities, int limit, object[] hookObjects)
         {
-            entities.RemoveAll(entity => entity.IsKilled() || (entity.HasParent() && entity.GetParentEntity() is Tugboat));
+            entities.RemoveAll(entity => entity.IsKilled() || entity.HasParent() && entity.GetParentEntity() is Tugboat);
 
             entities.Sort(UndoComparer);
 
             WaitForSeconds instruction = CoroutineEx.waitForSeconds(0.1f);
-
+            FrameDeadline deadline = new(undoFrameBudgetMilliseconds);
             int threshold = limit;
-
             int checks = 0;
+            int index = 0;
 
-            while (entities.Count > 0)
+            while (index < entities.Count)
             {
-                if (++checks >= threshold)
+                BaseEntity entity = entities[index++];
+                KillEntity(entity, UndoSettings);
+
+                bool delay = ++checks >= threshold;
+                if (delay || limit < 500 && deadline.Expired)
                 {
                     checks = 0;
                     threshold = Performance.report.frameRate < 15 ? 1 : limit;
-                    yield return instruction;
+                    yield return delay ? instruction : null;
+                    deadline.Reset();
                 }
-
-                BaseEntity entity = entities[0];
-
-                entities.RemoveAt(0);
-
-                KillEntity(entity, UndoSettings);
             }
+
+            entities.Clear();
 
             if (hookObjects != null && hookObjects.Length > 0)
             {
@@ -292,8 +314,25 @@ namespace RaidableBases
                 {
                     LogToFile("despawn", $"{DateTime.Now} Despawn completed {hookObjects[0]}", this, true);
                 }
-                Interface.CallHook("OnRaidableBaseDespawned", hookObjects);
+                HarmonyModInterface.CallHook("OnRaidableBaseDespawned", hookObjects);
             }
+        }
+
+        private IEnumerator UndoLoopCo(List<UndoLoopBatch> batches)
+        {
+            batches.Sort((a, b) => b.NewestEntityId.CompareTo(a.NewestEntityId));
+
+            foreach (UndoLoopBatch batch in batches)
+            {
+                yield return UndoLoopCo(batch.PickupEntities, batch.Limit, null);
+            }
+
+            foreach (UndoLoopBatch batch in batches)
+            {
+                yield return UndoLoopCo(batch.Entities, batch.Limit, null);
+            }
+
+            batches.Clear();
         }
 
         #endregion Garbage

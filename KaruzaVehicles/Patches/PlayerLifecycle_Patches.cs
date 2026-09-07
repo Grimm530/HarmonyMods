@@ -10,7 +10,7 @@ namespace KaruzaVehicles.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var push = KaruzaVehiclesMod.Instance?.VehiclePush;
-            if (push == null || __instance == null) return;
+            if (push == null) return;
             try { push.OnPlayerConnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[KaruzaVehicles] OnPlayerConnected: " + ex.Message); }
         }
@@ -23,7 +23,7 @@ namespace KaruzaVehicles.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var push = KaruzaVehiclesMod.Instance?.VehiclePush;
-            if (push == null || __instance == null) return;
+            if (push == null) return;
             try { push.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[KaruzaVehicles] OnPlayerDisconnected: " + ex.Message); }
         }

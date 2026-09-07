@@ -1,10 +1,15 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
-using Facepunch;
+using GrimmCuiHarmony;
 using Network;
+using GrimmCuiHarmony;
 using Newtonsoft.Json;
+using GrimmCuiHarmony;
 using Newtonsoft.Json.Linq;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace RecyclerSpeed;
 
@@ -26,6 +31,7 @@ public class RecyclerSpeedMod
 
 	public void OnLoaded(OnHarmonyModLoadedArgs args)
 	{
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
 		Instance = this;
 		try
 		{
@@ -54,17 +60,7 @@ public class RecyclerSpeedMod
 		if (player == null) return;
 		var mod = Instance;
 		if (mod == null) return;
-		mod.HandleCuiCommand(player, ToStringArray(arg.Args));
-	}
-
-	private static string[] ToStringArray(StringView[] args)
-	{
-		if (args == null || args.Length == 0) return Array.Empty<string>();
-
-		var result = new string[args.Length];
-		for (int i = 0; i < args.Length; i++)
-			result[i] = args[i].ToString();
-		return result;
+		mod.HandleCuiCommand(player, arg.Args.AsStringArray());
 	}
 
 	public void OnUnloaded(OnHarmonyModUnloadedArgs args)

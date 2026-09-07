@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: Cooking 2.0.35 (Oxide port). Config: HarmonyConfig/Cooking.json. Data: Custom cooking data directory or HarmonyData/Cooking. Requires Permissions mod.</Description>
+    <Description>Harmony mod: Cooking 2.0.35 (Harmony port). Config: HarmonyConfig/Cooking.json. Data: Custom cooking data directory or HarmonyData/Cooking. Requires Permissions mod.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
@@ -111,4 +111,12 @@
       <HintPath>$(RustManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
 </Project>

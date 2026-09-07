@@ -9,7 +9,7 @@ using UnityEngine;
 namespace EntityOwner
 {
     /// <summary>
-    /// Entity Owner 3.4.3 logic (Oxide port). Config / lang / ownership / auth helpers.
+    /// Entity Owner 3.4.3 logic (Harmony port). Config / lang / ownership / auth helpers.
     /// </summary>
     public sealed class EntityOwnerService
     {

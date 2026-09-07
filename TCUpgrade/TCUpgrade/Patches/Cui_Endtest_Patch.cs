@@ -1,13 +1,10 @@
-using System;
 using HarmonyLib;
-using UnityEngine;
 
 namespace TCUpgrade.Patches;
 
 /// <summary>
-/// Clients only forward ConsoleGen commands (e.g. cui.endtest). TCUpgrade CUI buttons are emitted
-/// as "cui.endtest TCUPGRADE …" by <see cref="CUIHelper.NormalizeButtonCommand"/>; this marker
-/// routes only the TCUPGRADE payload to the mod. Other markers (AdminMenu/TeleportGUI/etc.) pass through.
+/// Intercepts cui.endtest when args start with SENDCMD so TCUpgrade CUI buttons work for all players
+/// (including after mod reload). Buttons use "cui.endtest SENDCMD ..." (vanilla replicated command).
 /// </summary>
 [HarmonyPatch(typeof(global::cui), nameof(global::cui.endtest))]
 public static class Cui_Endtest_Patch
@@ -17,31 +14,16 @@ public static class Cui_Endtest_Patch
 	{
 		var a = args?.Args;
 		if (a == null || a.Length < 1)
-		{
 			return true;
-		}
-
-		string marker = a[0].ToString();
-		if (!string.Equals(marker, TCUpgradeMod.CuiMarker, StringComparison.OrdinalIgnoreCase))
-		{
+		if (a.Length == 1 && !a[0].StartsWith("SENDCMD"))
 			return true;
-		}
-
-		TCUpgradeMod mod = TCUpgradeMod.Instance;
-		if (mod == null)
-		{
+		if (a.Length >= 2 && a[0] != "SENDCMD")
 			return true;
-		}
 
-		try
-		{
-			mod.HandleSendCmdFromCui(args);
-		}
-		catch (Exception ex)
-		{
-			Debug.LogWarning((object)("[TCUpgrade] cui.endtest TCUPGRADE: " + ex));
-		}
+		var mod = TCUpgradeMod.Instance;
+		if (mod == null) return true;
 
+		mod.HandleSendCmdFromCui(args);
 		return false;
 	}
 }

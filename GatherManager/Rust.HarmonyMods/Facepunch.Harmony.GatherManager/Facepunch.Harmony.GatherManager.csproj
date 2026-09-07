@@ -15,7 +15,7 @@
     <Description>Harmony mod: gather scale, craft scale, blueprints.grantall, /gather command</Description>
   </PropertyGroup>
   <PropertyGroup>
-    <ManagedPath>C:\!2XRUST\RustDedicated_Data\Managed</ManagedPath>
+    <ManagedPath>D:\!RustServer\RustDedicated_Data\Managed</ManagedPath>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">

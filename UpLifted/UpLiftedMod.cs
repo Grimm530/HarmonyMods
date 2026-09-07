@@ -1,12 +1,21 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
-using Oxide.Core.Libraries.Covalence;
-using OxidePlugin = Oxide.Plugins.UpLifted;
+using GrimmCuiHarmony;
+using Harmony.Core.Libraries.Covalence;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.UpLifted;
+using GrimmCuiHarmony;
 
 namespace UpLiftedHarmony
 {
@@ -48,7 +57,7 @@ namespace UpLiftedHarmony
             }
             if (TOD_Sky.Instance?.Cycle != null)
             {
-                try { Oxide.Plugins.UpLifted.Dispatch_OnTick(); }
+                try { Harmony.Plugins.UpLifted.Dispatch_OnTick(); }
                 catch { }
             }
         }
@@ -57,7 +66,7 @@ namespace UpLiftedHarmony
     public class UpLiftedMod : IHarmonyModHooks
     {
         public static UpLiftedMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         public const string AppDomainApiKey = "UpLifted_ApiType";
         public const string CuiMarker = "UPLIFTED";
@@ -73,14 +82,16 @@ namespace UpLiftedHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -122,15 +133,16 @@ namespace UpLiftedHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
             UnregisterConsoleCommands();
 
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[UpLifted] Harmony mod unloaded.");
         }
@@ -187,13 +199,13 @@ namespace UpLiftedHarmony
             return false;
         }
 
-        internal static void InvokeCommandMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        internal static void InvokeCommandMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player, command, args ?? Array.Empty<string>() }); return; }
 
@@ -229,11 +241,11 @@ namespace UpLiftedHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -415,7 +427,7 @@ namespace UpLiftedHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName,
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (mi != null)
                 {

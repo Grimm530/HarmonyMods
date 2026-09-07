@@ -2,7 +2,7 @@ using System;
 using Network;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class Hud
     {
@@ -56,6 +56,8 @@ namespace Oxide.Plugins
 
         public static void Dispatch_OnPlayerDisconnected(BasePlayer player)
         {
+            if (player != null)
+                HudHarmony.InventoryLayerUiBridge.Clear(player.userID);
             var inst = Instance;
             if (inst == null) return;
             try { inst.OnPlayerDisconnected(player); }
@@ -64,6 +66,8 @@ namespace Oxide.Plugins
 
         public static void Dispatch_OnPlayerSleep(BasePlayer player)
         {
+            if (player != null)
+                HudHarmony.InventoryLayerUiBridge.Clear(player.userID);
             var inst = Instance;
             if (inst == null) return;
             try { inst.OnPlayerSleep(player); }
@@ -76,6 +80,18 @@ namespace Oxide.Plugins
             if (inst == null) return;
             try { inst.OnPlayerSleepEnded(player); }
             catch (Exception ex) { Debug.LogWarning("[Hud] OnPlayerSleepEnded: " + ex.Message); }
+        }
+
+        public static void Dispatch_OnInventoryLayerRefresh(BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+            try
+            {
+                inst.ShowUIBG(player);
+                HudHarmony.InventoryLayerUiBridge.RefreshBackpackButton(player);
+            }
+            catch (Exception ex) { Debug.LogWarning("[Hud] OnInventoryLayerRefresh: " + ex.Message); }
         }
 
         public static void Dispatch_OnServerSave()

@@ -57,7 +57,7 @@ namespace Convoy
 
         /// <summary>
         /// Oxide Convoy CanEntityBeTargeted(BasePlayer, AutoTurret) parity for TruePVE.
-        /// Args match Interface.CallHook order: [target, attacker/turret].
+        /// Args match HarmonyModInterface.CallHook order: [target, attacker/turret].
         /// </summary>
         public static object CanEntityBeTargeted(BaseEntity target, BaseEntity attacker)
         {

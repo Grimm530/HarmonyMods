@@ -11,7 +11,6 @@ namespace GrimmNPC2.Patches
     {
         private static void Postfix(BaseEntity __instance)
         {
-            if (__instance == null) return;
             if (!(__instance is ScientistNPC2)) return;
 
             if (!GrimmNPC2.TryConsumePending(__instance, out var data)) return;
@@ -106,7 +105,6 @@ namespace GrimmNPC2.Patches
     {
         private static void Prefix(BaseEntity __instance)
         {
-            if (__instance == null) return;
             GrimmNPC2.UnregisterEntity(__instance);
         }
     }
@@ -116,7 +114,7 @@ namespace GrimmNPC2.Patches
     {
         private static void Prefix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null || info == null || !info.hasDamage) return;
+            if (info == null || !info.hasDamage) return;
 
             ApplyIncomingDamageScaling(__instance, info);
             ApplyOutgoingDamageScaling(info);

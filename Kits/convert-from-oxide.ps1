@@ -1,20 +1,20 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\Kits.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\Kits.cs"
 $dst = Join-Path $PSScriptRoot "Kits.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
 # --- Usings ---
-$text = $text.Replace("using Oxide.Core;`r`n", "")
-$text = $text.Replace("using Oxide.Core;`n", "")
-$text = $text.Replace("using Oxide.Core.Libraries;`r`n", "")
-$text = $text.Replace("using Oxide.Core.Libraries;`n", "")
-$text = $text.Replace("using Oxide.Core.Libraries.Covalence;`r`n", "")
-$text = $text.Replace("using Oxide.Core.Libraries.Covalence;`n", "")
-$text = $text.Replace("using Oxide.Core.Plugins;`r`n", "")
-$text = $text.Replace("using Oxide.Core.Plugins;`n", "")
-# Keep Oxide.Game.Rust.Cui
-$text = $text.Replace("using Oxide.Plugins.KitsExtensionMethods;", "using KitsHarmony.KitsExtensionMethods;")
+$text = $text.Replace("using Harmony.Core;`r`n", "")
+$text = $text.Replace("using Harmony.Core;`n", "")
+$text = $text.Replace("using Harmony.Core.Libraries;`r`n", "")
+$text = $text.Replace("using Harmony.Core.Libraries;`n", "")
+$text = $text.Replace("using Harmony.Core.Libraries.Covalence;`r`n", "")
+$text = $text.Replace("using Harmony.Core.Libraries.Covalence;`n", "")
+$text = $text.Replace("using Harmony.Core.Plugins;`r`n", "")
+$text = $text.Replace("using Harmony.Core.Plugins;`n", "")
+# Keep Game.Rust.Cui
+$text = $text.Replace("using Harmony.Plugins.KitsExtensionMethods;", "using KitsHarmony.KitsExtensionMethods;")
 
 # --- Strip #if CARBON blocks: keep #else branch when present (line-based, not greedy) ---
 function Strip-CarbonBlocks([string]$src) {
@@ -59,16 +59,16 @@ $text = $text.Replace("using Carbon.Modules;`r`n", "")
 $text = $text.Replace("using Carbon.Modules;`n", "")
 
 # --- Namespaces ---
-$text = $text.Replace("namespace Oxide.Plugins", "namespace KitsHarmony")
-$text = $text.Replace("namespace Oxide.Plugins.KitsExtensionMethods", "namespace KitsHarmony.KitsExtensionMethods")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace KitsHarmony")
+$text = $text.Replace("namespace Harmony.Plugins.KitsExtensionMethods", "namespace KitsHarmony.KitsExtensionMethods")
 # Fix double-replace if KitsExtensionMethods was already under KitsHarmony from first replace
 $text = $text.Replace("namespace KitsHarmony.KitsExtensionMethods", "namespace KitsHarmony.KitsExtensionMethods")
 # The first replace also hits KitsExtensionMethods namespace incorrectly:
-# "namespace Oxide.Plugins.KitsExtensionMethods" -> after replacing "namespace Oxide.Plugins" becomes
+# "namespace Harmony.Plugins.KitsExtensionMethods" -> after replacing "namespace Harmony.Plugins" becomes
 # "namespace KitsHarmony.KitsExtensionMethods" which is correct IF we do the longer one first.
-# Re-read: we already replaced Oxide.Plugins.KitsExtensionMethods first... wait we didn't.
-# Order was: Oxide.Plugins first, which would turn
-#   namespace Oxide.Plugins.KitsExtensionMethods
+# Re-read: we already replaced Harmony.Plugins.KitsExtensionMethods first... wait we didn't.
+# Order was: Harmony.Plugins first, which would turn
+#   namespace Harmony.Plugins.KitsExtensionMethods
 # into
 #   namespace KitsHarmony.KitsExtensionMethods
 # Good.
@@ -76,7 +76,7 @@ $text = $text.Replace("namespace KitsHarmony.KitsExtensionMethods", "namespace K
 # --- Class declaration ---
 $newClass = @"
     /// <summary>
-    /// Kits 2.3.8 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// Kits 2.3.8 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public class Kits : KitsPluginBase
 "@
@@ -120,7 +120,7 @@ $text = $text.Replace("private void Unload()", "internal void Unload()")
 # --- ExtensionMethods Permission type ---
 $text = $text.Replace("internal static Permission perm;", "internal static HarmonyPermissionHelper perm;")
 $text = $text.Replace(
-    "perm ??= Interface.Oxide.GetLibrary<Permission>();",
+    "perm ??= HarmonyModInterface.Mods.GetLibrary<Permission>();",
     "perm ??= KitsHost.Instance?.Permission;")
 
 # --- IsSteamId: ensure string extension available (PlayerExtensions) ---
@@ -180,13 +180,13 @@ $text = $text.Replace(
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core" },
     @{ Name = "RustPlugin"; Pattern = "RustPlugin" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },
     @{ Name = "[PluginReference]"; Pattern = "\[PluginReference\]" },
     @{ Name = "#if CARBON"; Pattern = "#if CARBON" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "KitsPluginBase"; Pattern = "KitsPluginBase" },
     @{ Name = "GetLibrary<Permission>"; Pattern = "GetLibrary<Permission>" },

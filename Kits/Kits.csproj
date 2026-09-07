@@ -11,7 +11,7 @@
     <RootNamespace>KitsHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: Kits 2.3.8 (Oxide-free). Mevent Kits port.</Description>
+    <Description>Harmony mod: Kits 2.3.8 (Harmony). Mevent Kits port.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -92,7 +92,11 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="RustCui.cs" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

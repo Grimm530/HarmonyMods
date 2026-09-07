@@ -1,8 +1,13 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace RustVehiclesGUIHarmony
 {
@@ -34,6 +39,7 @@ namespace RustVehiclesGUIHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, ".."));
             RustVehiclesGUIHost.Init(root);
@@ -162,7 +168,7 @@ namespace RustVehiclesGUIHarmony
             catch { }
         }
 
-        /// <summary>Oxide-style Call dispatcher. ServerPanel uses this for API_OpenPlugin.</summary>
+        /// <summary>compat-style Call dispatcher. ServerPanel uses this for API_OpenPlugin.</summary>
         public object Call(string method, params object[] args)
         {
             if (_plugin == null || string.IsNullOrEmpty(method)) return null;

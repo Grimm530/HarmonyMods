@@ -26,7 +26,7 @@ namespace AnimalSpawn
         {
             private static bool Prefix(BaseCombatEntity __instance, HitInfo info)
             {
-                if (Ins == null || __instance == null || info == null) return true;
+                if (Ins == null || info == null) return true;
                 if (!AnimalSpawn.IsCustomAnimal(__instance) && !AnimalSpawn.IsCustomAnimal(info.Initiator))
                     return true;
                 object r = Ins.OnEntityTakeDamage(__instance, info);
@@ -39,7 +39,7 @@ namespace AnimalSpawn
         {
             private static void Postfix(HumanNPC __instance, ref BaseEntity __result)
             {
-                if (Ins == null || __instance == null || __result == null) return;
+                if (Ins == null || __result == null) return;
                 if (__result is AnimalSpawn.CustomAnimalNpc victim && __instance is NPCPlayer attacker)
                 {
                     object r = Ins.OnNpcTarget(attacker, victim);
@@ -53,7 +53,7 @@ namespace AnimalSpawn
         {
             private static bool Prefix(BaseNpc __instance, BaseEntity target, ref float __result)
             {
-                if (Ins == null || __instance == null || target == null) return true;
+                if (Ins == null || target == null) return true;
                 if (!(__instance is BaseAnimalNPC animal) || !(target is AnimalSpawn.CustomAnimalNpc victim))
                     return true;
 

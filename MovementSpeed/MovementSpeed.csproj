@@ -11,7 +11,7 @@
     <RootNamespace>MovementSpeedHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: MovementSpeed 1.0.9 (Oxide port). Config: HarmonyConfig/MovementSpeed.json. Provides run/swim speed API for SkillTree RoadRunner.</Description>
+    <Description>Harmony mod: MovementSpeed 1.0.9 (Harmony port). Config: HarmonyConfig/MovementSpeed.json. Provides run/swim speed API for SkillTree RoadRunner.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>

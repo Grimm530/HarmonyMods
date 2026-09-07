@@ -11,7 +11,7 @@
     <RootNamespace>ServerPanelHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: ServerPanel 2.0.20 + ServerPanelPopUps 2.0.20 (Oxide-free). Mevent ServerPanel port.</Description>
+    <Description>Harmony mod: ServerPanel 2.0.20 + ServerPanelPopUps 2.0.20 (Harmony). Mevent ServerPanel port.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -101,7 +101,11 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="RustCui.cs" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

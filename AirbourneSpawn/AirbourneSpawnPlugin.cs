@@ -620,7 +620,7 @@ namespace AirbourneSpawnHarmony
                     if (File.Exists(oxidePath))
                     {
                         File.Copy(oxidePath, path);
-                        Debug.Log("[AirbourneSpawn] Migrated oxide/config/AirbourneSpawn.json -> HarmonyConfig/AirbourneSpawn.json");
+                        Debug.Log("[AirbourneSpawn] Migrated legacy/config/AirbourneSpawn.json -> HarmonyConfig/AirbourneSpawn.json");
                     }
                     else
                     {

@@ -9,7 +9,7 @@ namespace RestoreItemsHarmony.Patches
         [HarmonyPostfix]
         private static void Postfix(ItemContainer __instance, Item item, bool __result)
         {
-            if (!__result || __instance == null || item == null) return;
+            if (!__result || item == null) return;
             var plugin = RestoreItemsHarmonyMod.Plugin;
             if (plugin == null) return;
             try { plugin.DispatchOnItemAddedToContainer(__instance, item); }
@@ -26,7 +26,7 @@ namespace RestoreItemsHarmony.Patches
         [HarmonyPostfix]
         private static void Postfix(Item __instance, Item targetItem, int amount)
         {
-            if (__instance == null || targetItem == null || amount <= 0) return;
+            if (targetItem == null || amount <= 0) return;
             if (targetItem.parent == null || __instance.parent == null) return;
             if (!ReferenceEquals(targetItem.parent, __instance.parent)) return;
 

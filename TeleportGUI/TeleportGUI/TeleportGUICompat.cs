@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace TeleportGUI
 {
-    /// <summary>Oxide-free shims used by the vendored Chaos UI framework port.</summary>
+    /// <summary>Harmony shims used by the vendored Chaos UI framework port.</summary>
     public static class TeleportGUICompat
     {
         public static string StripTags(this string value)

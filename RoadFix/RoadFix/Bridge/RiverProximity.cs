@@ -176,6 +176,84 @@ internal static class RiverProximity
         return found;
     }
 
+    /// <summary>River topology bit (same as WaterBodyType.River → 16384).</summary>
+    private const int TopologyRiver = 16384;
+
+    /// <summary>
+    /// True if this world point is wet river (water collider or River topology),
+    /// not merely riverside grass.
+    /// </summary>
+    public static bool IsWetWater(Vector3 worldPos)
+    {
+        int topo = TerrainMeta.TopologyMap.GetTopology(worldPos);
+        if ((topo & TopologyRiver) != 0)
+            return true;
+
+        float waterY = WaterLevel.RaycastWaterColliders(worldPos);
+        float terrainY = TerrainMeta.HeightMap.GetHeight(worldPos);
+        if (waterY < 0.15f && terrainY > waterY + 1.5f)
+            return false;
+        return terrainY <= waterY + 1.1f && waterY > terrainY - 0.25f && waterY > 0.05f;
+    }
+
+    /// <summary>
+    /// Walk along the path (and a few metres to each side) until the water / River
+    /// topology ends. SpanLength from GetRadius is often short of the visible water.
+    /// </summary>
+    public static void ExpandSpanToWater(PathList path, ref float start, ref float end)
+    {
+        if (path?.Path == null)
+            return;
+
+        float pathLen = path.Path.Length;
+        float step = 2f;
+        float maxEach = 80f;
+        float s = start;
+        for (float d = start; d >= Mathf.Max(0f, start - maxEach); d -= step)
+        {
+            if (!IsWetAlongPath(path, d))
+                break;
+            s = d;
+        }
+        float e = end;
+        for (float d = end; d <= Mathf.Min(pathLen, end + maxEach); d += step)
+        {
+            if (!IsWetAlongPath(path, d))
+                break;
+            e = d;
+        }
+        start = s;
+        end = Mathf.Max(e, s + 1f);
+    }
+
+    private static bool IsWetAlongPath(PathList path, float dist)
+    {
+        Vector3 pt = path.Spline ? path.Path.GetPointCubicHermite(dist) : path.Path.GetPoint(dist);
+        Vector3 tan = path.Path.GetTangent(dist);
+        tan.y = 0f;
+        if (tan.sqrMagnitude < 0.0001f)
+            tan = Vector3.forward;
+        tan.Normalize();
+        Vector3 side = Vector3.Cross(Vector3.up, tan);
+        side.y = 0f;
+        if (side.sqrMagnitude < 0.0001f)
+            side = Vector3.right;
+        side.Normalize();
+
+        if (IsWetWater(pt))
+            return true;
+        if (IsWetWater(pt + side * 4f) || IsWetWater(pt - side * 4f))
+            return true;
+        if (IsWetWater(pt + side * 8f) || IsWetWater(pt - side * 8f))
+            return true;
+        // Some riverbanks/water-collider edges are offset from the path spline.
+        // A little extra lateral sampling prevents early-span cutoffs that leave
+        // bridge deck edges short on one side.
+        if (IsWetWater(pt + side * 12f) || IsWetWater(pt - side * 12f))
+            return true;
+        return false;
+    }
+
     private static byte SampleMask(float xn, float zn)
     {
         if (_mask == null || _res <= 0)

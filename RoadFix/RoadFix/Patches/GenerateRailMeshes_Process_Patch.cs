@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using RoadFix.Bridge;
 using UnityEngine;
@@ -6,8 +7,7 @@ using UnityEngine;
 namespace RoadFix.Patches;
 
 /// <summary>
-/// Before rail meshes: optionally snap crossing rail nodes to a straight deck grade
-/// (bridgerail gravel). After meshes: place bridgerail.map.
+/// Before rail meshes: snap crossing rail nodes to the shared bridge.map deck.
 /// </summary>
 [HarmonyPatch(typeof(GenerateRailMeshes), nameof(GenerateRailMeshes.Process))]
 public static class GenerateRailMeshes_Process_Patch
@@ -19,6 +19,12 @@ public static class GenerateRailMeshes_Process_Patch
         {
             if (!RoadFixConfig.IsEnabled())
                 return;
+
+            if (World.Cached)
+            {
+                BridgeService.NoteCachedIdle();
+                return;
+            }
 
             var cfg = RoadFixConfig.Config;
             if (cfg?.SnapRailNodesToDeck != true)
@@ -32,6 +38,17 @@ public static class GenerateRailMeshes_Process_Patch
             {
                 BridgeTerrain.SnapRailNodesToDeckGrade(crossing);
                 n++;
+                List<BridgeCrossing> extras = crossing.ExtraSpans;
+                if (extras == null)
+                    continue;
+                BridgeMapPlacer.GetRailDeckGrade(crossing, out float y0, out float y1);
+                for (int i = 0; i < extras.Count; i++)
+                {
+                    if (extras[i].SpanLength < 1f || extras[i].Path?.Path == null)
+                        continue;
+                    BridgeTerrain.SnapRailNodesToDeckGrade(extras[i], y0, y1);
+                    n++;
+                }
             }
 
             if (cfg.DebugLogging)

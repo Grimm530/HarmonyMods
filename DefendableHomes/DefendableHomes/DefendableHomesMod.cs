@@ -2,19 +2,20 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.DefendableHomes;
+using DefendableHomes.Patches;
+using HarmonyPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes
 {
     /// <summary>
-    /// Harmony entry point for Defendable Homes. Instantiates the ported Oxide plugin body,
+    /// Harmony entry point for Defendable Homes. Instantiates the ported Harmony mod body,
     /// loads config from HarmonyConfig/DefendableHomes.json, registers commands, and drives
     /// Init / OnServerInitialized / Unload.
     /// </summary>
     public class DefendableHomesMod : IHarmonyModHooks
     {
         public static DefendableHomesMod Instance { get; private set; }
-        public static OxidePlugin Plugin { get; private set; }
+        public static HarmonyPlugin Plugin { get; private set; }
 
         private HarmonyLib.Harmony _harmony;
         private Coroutine _initCoroutine;
@@ -28,11 +29,12 @@ namespace DefendableHomes
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
             try
             {
-                Plugin = new OxidePlugin();
+                Plugin = new HarmonyPlugin();
                 Plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -104,13 +106,14 @@ namespace DefendableHomes
 
             ModRunner.Destroy();
             Plugin = null;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[DefendableHomes] Harmony mod unloaded.");
         }
 
         private void RegisterGrimmHookHandler()
         {
-            _grimmHookHandler = OxidePlugin.Dispatch_GrimmHook;
+            _grimmHookHandler = HarmonyPlugin.Dispatch_GrimmHook;
             try
             {
                 var list = AppDomain.CurrentDomain.GetData("Harmony_CallHookList") as List<Func<string, object[], object>>;
@@ -234,7 +237,7 @@ namespace DefendableHomes
             if (!ulong.TryParse(parts[2], out ulong steamId) || steamId == 0) return false;
             int amount = 1;
             if (parts.Length > 3) int.TryParse(parts[3], out amount);
-            return OxidePlugin.TryGiveFlare(parts[1], steamId, amount);
+            return HarmonyPlugin.TryGiveFlare(parts[1], steamId, amount);
         }
 
         private static BasePlayer PlayerOf(ConsoleSystem.Arg arg) => arg?.Connection?.player as BasePlayer;
@@ -253,7 +256,7 @@ namespace DefendableHomes
             var player = PlayerOf(arg);
             if (player == null)
             {
-                OxidePlugin.CmdGiveFlareConsole(arg);
+                HarmonyPlugin.CmdGiveFlareConsole(arg);
                 return;
             }
             if (!player.IsAdmin)
@@ -261,7 +264,7 @@ namespace DefendableHomes
                 arg.ReplyWith("[DefendableHomes] Only admins can use giveflare.");
                 return;
             }
-            OxidePlugin.CmdGiveFlareChat(player, ArgStrings(arg));
+            HarmonyPlugin.CmdGiveFlareChat(player, ArgStrings(arg));
         }
 
         private static void HandleDefStop(ConsoleSystem.Arg arg)
@@ -272,7 +275,7 @@ namespace DefendableHomes
                 arg.ReplyWith("[DefendableHomes] defstop must be run by a player.");
                 return;
             }
-            OxidePlugin.CmdDefStop(player);
+            HarmonyPlugin.CmdDefStop(player);
         }
         #endregion
     }

@@ -1,21 +1,21 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\RustVehicles.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\RustVehicles.cs"
 $dst = Join-Path $PSScriptRoot "RustVehicles.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
 # Strip Oxide runtime usings (keep nothing Oxide).
 foreach ($using in @(
-        "using Oxide.Core;",
-        "using Oxide.Core.Plugins;",
+        "using Harmony.Core;",
+        "using Harmony.Core.Plugins;",
         "using Oxide.Game.Rust;",
         "using System.Web;"
     )) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
-$text = $text.Replace("using static Oxide.Plugins.RustVehicles;", "using static RustVehiclesHarmony.RustVehicles;")
-$text = $text.Replace("namespace Oxide.Plugins", "namespace RustVehiclesHarmony")
+$text = $text.Replace("using static Harmony.Plugins.RustVehicles;", "using static RustVehiclesHarmony.RustVehicles;")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace RustVehiclesHarmony")
 
 # Avoid DescriptionAttribute clash with System.ComponentModel while keeping DefaultValue.
 $text = [regex]::Replace($text, "(?m)^using System\.ComponentModel;\r?\n", "")
@@ -23,7 +23,7 @@ $text = $text.Replace("[DefaultValue(", "[System.ComponentModel.DefaultValue(")
 
 $newClass = @"
     /// <summary>
-    /// RustVehicles 2.0.5 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// RustVehicles 2.0.5 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     [Info("Rust Vehicles", "Grimm530", "2.0.5")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
@@ -66,20 +66,20 @@ foreach ($method in $methods) {
 
 # Data path → HarmonyData/RustVehicles/RustVehicles.json
 $text = $text.Replace(
-    'Interface.Oxide.DataFileSystem.ReadObject<VehicleDatabase>(Name)',
-    'Interface.Oxide.DataFileSystem.ReadObject<VehicleDatabase>("RustVehicles/RustVehicles")')
+    'HarmonyModInterface.Mods.DataFileSystem.ReadObject<VehicleDatabase>(Name)',
+    'HarmonyModInterface.Mods.DataFileSystem.ReadObject<VehicleDatabase>("RustVehicles/RustVehicles")')
 $text = $text.Replace(
-    'Interface.Oxide.DataFileSystem.WriteObject(Name, vehicleDatabase)',
-    'Interface.Oxide.DataFileSystem.WriteObject("RustVehicles/RustVehicles", vehicleDatabase)')
+    'HarmonyModInterface.Mods.DataFileSystem.WriteObject(Name, vehicleDatabase)',
+    'HarmonyModInterface.Mods.DataFileSystem.WriteObject("RustVehicles/RustVehicles", vehicleDatabase)')
 
 # HttpUtility.UrlEncode → Uri.EscapeDataString
 $text = $text.Replace("HttpUtility.UrlEncode", "Uri.EscapeDataString")
 
 # Oxide webrequest enums → local stubs
 $text = $text.Replace("Core.Libraries.RequestMethod", "RequestMethod")
-$text = $text.Replace("Oxide.Core.Libraries.RequestMethod", "RequestMethod")
+$text = $text.Replace("Harmony.Core.Libraries.RequestMethod", "RequestMethod")
 $text = $text.Replace("Core.Libraries.DecompressionMethods", "DecompressionMethods")
-$text = $text.Replace("Oxide.Core.Libraries.DecompressionMethods", "DecompressionMethods")
+$text = $text.Replace("Harmony.Core.Libraries.DecompressionMethods", "DecompressionMethods")
 
 # Constructor + Version
 $ctorMarker = "        private readonly string PERMISSION_USE = `"RustVehicles.use`";"
@@ -156,11 +156,11 @@ $text = $text.Replace(
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core" },
     @{ Name = "RustPlugin"; Pattern = "RustPlugin" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "RustVehiclesPluginBase"; Pattern = "RustVehiclesPluginBase" },
     @{ Name = "HttpUtility"; Pattern = "HttpUtility" },

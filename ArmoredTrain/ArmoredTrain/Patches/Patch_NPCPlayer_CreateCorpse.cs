@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using ATPlugin = Oxide.Plugins.ArmoredTrain;
+using ATPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain.Patches
 {
@@ -12,7 +12,7 @@ namespace ArmoredTrain.Patches
         [HarmonyPostfix]
         public static void Postfix(NPCPlayer __instance, BaseCorpse __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             ScientistNPC scientist = __instance as ScientistNPC;
             NPCPlayerCorpse corpse = __result as NPCPlayerCorpse;
             if (scientist == null || corpse == null) return;

@@ -3,8 +3,8 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
-using PluginBody = Oxide.Plugins.CustomHelicopterTiers2;
-using TierComp = Oxide.Plugins.CustomHelicopterTiers2.TieredHelicopterComponent;
+using PluginBody = Harmony.Plugins.CustomHelicopterTiers2;
+using TierComp = Harmony.Plugins.CustomHelicopterTiers2.TieredHelicopterComponent;
 
 namespace CHT.Patches
 {
@@ -19,7 +19,7 @@ namespace CHT.Patches
         [HarmonyPrefix]
         public static bool Prefix(PatrolHelicopterAI __instance)
         {
-            if (__instance == null || __instance.helicopterBase == null)
+            if (__instance.helicopterBase == null)
                 return true;
 
             if (TierComp.GetComponent(__instance.helicopterBase) == null)

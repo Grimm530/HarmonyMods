@@ -2,7 +2,7 @@
 // Returning false cancels the damage (matching Oxide "non-null return = cancel" semantics).
 // The plugin may also modify info.damageTypes before returning null (allow-through).
 using HarmonyLib;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {

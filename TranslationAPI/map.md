@@ -1,6 +1,6 @@
 # Harmony Mod Migration Map: TranslationAPI, ChatTranslator, Rustcord
 
-Migration plan for converting three Oxide plugins to standalone Harmony mods (no Oxide). Reference for connecting them and working with the external Discord bot.
+Migration plan for converting three Harmony mods to standalone Harmony mods (Harmony-only). Reference for connecting them and working with the external Discord bot.
 
 ---
 
@@ -26,8 +26,8 @@ Migration plan for converting three Oxide plugins to standalone Harmony mods (no
 | Core translation logic (Google/Microsoft/Yandex) | [x] Done |
 | Config: `HarmonyConfig/TranslationAPI.json` (created if missing) | [x] Done |
 | Static API: `TranslationAPIMod.Translate(text, to, from, callback)` | [x] Done |
-| No Oxide dependency | [x] Done |
-| Remove Oxide bridge plugin (server has no Oxide) | [x] Done – deleted `oxide/plugins/TranslationAPI.cs` |
+| Harmony-only dependency | [x] Done |
+| Remove Oxide bridge plugin (server has Harmony-only) | [x] Done – deleted `oxide/plugins/TranslationAPI.cs` |
 
 **Usage by other mods**:
 ```csharp
@@ -67,8 +67,8 @@ TranslationAPIMod.Translate(message, "en", "auto", translated => { /* use transl
 
 ### Current Oxide Dependencies
 - `Oxide.Ext.Discord` – Discord bot (Connect, GetChannel, CreateMessage, UpdateStatus)
-- `Oxide.Core.Plugins` – PluginReference for TranslationAPI, ChatTranslator, Clans, etc.
-- ~60 Oxide hooks (OnPlayerChat, OnPlayerConnected, OnCrateDropped, etc.)
+- `Harmony.Core.Plugins` – PluginReference for TranslationAPI, ChatTranslator, Clans, etc.
+- ~60 Harmony hooks (OnPlayerChat, OnPlayerConnected, OnCrateDropped, etc.)
 
 ### Discord Replacement
 Game has **no** server-side Discord API. Options:
@@ -91,7 +91,7 @@ For full Rustcord feature parity (bot presence, Discord→Game commands, multi-c
 
 #### 4.2 Game→Discord (Hooks → Harmony Patches)
 
-| Oxide Hook | Game Patch Target | Status |
+| Harmony Hook | Game Patch Target | Status |
 |------------|-------------------|--------|
 | `OnPlayerChat` | `Chat.sayImpl` Postfix | [x] Done |
 | `OnPlayerConnected` | `BasePlayer.PlayerInit` Postfix | [x] Done |
@@ -126,7 +126,7 @@ For full Rustcord feature parity (bot presence, Discord→Game commands, multi-c
 - Clans, AdminChat, AdminHammer, AdminRadar, Kits, Vanish, RaidableBases, DangerousTreasures, NoGiveNotices, Give, AirEvent, HarborEvent, JunkyardEvent, PowerPlantEvent
 - Each requires finding game equivalent or implementing stub
 
-#### 4.6 Config Structure (Slim – No Oxide Dependencies)
+#### 4.6 Config Structure (Slim – Harmony-only Dependencies)
 
 | Oxide Section | Kept? | Notes |
 |---------------|-------|-------|
@@ -135,7 +135,7 @@ For full Rustcord feature parity (bot presence, Discord→Game commands, multi-c
 | Rust/Plugin/Premium Logging (20–64) | ✗ | Removed – logged elsewhere; mod uses minimal "Post to Discord" |
 | Post to Discord | ✓ | Slim: Player Chat, Joins & Quits, Deaths, Crate Drops (what mod can send) |
 | Discord Output Formatting (65–77) | ✓ | Simple/Embed for Bans, Deaths, Join/Quit, Kicks, Teams, etc. |
-| Output Type (Plugin/Premium) (78–99) | ✗ | Removed – no Oxide plugin hooks |
+| Output Type (Plugin/Premium) (78–99) | ✗ | Removed – no Harmony mod hooks |
 | Logging Exclusions (100–109) | ✗ | Removed |
 | Filter Settings | ✓ | Chat filter words, replacement |
 | Discord Logging Channels | ✓ | Without msg_private (not used in Harmony) |
@@ -150,7 +150,7 @@ For full Rustcord feature parity (bot presence, Discord→Game commands, multi-c
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Rust Dedicated Server (no Oxide)                                    │
+│  Rust Dedicated Server (Harmony-only)                                    │
 │                                                                      │
 │  ┌──────────────┐     ┌──────────────────┐     ┌────────────────┐ │
 │  │ ChatTranslator│────▶│  TranslationAPI   │     │    Rustcord     │ │

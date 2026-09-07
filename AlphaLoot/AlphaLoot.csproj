@@ -5,59 +5,53 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Description>Harmony mod: AlphaLoot loot tables without Oxide hook overhead. Config: HarmonyConfig/AlphaLoot.json; data: HarmonyData/AlphaLoot.</Description>
-    <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
+    <Description>Harmony mod: AlphaLoot loot tables without Harmony hook overhead. Config: HarmonyConfig/AlphaLoot.json; data: HarmonyData/AlphaLoot.</Description>
   </PropertyGroup>
-  <Target Name="ClearReferenceCopyLocalPaths" AfterTargets="ResolveAssemblyReferences">
-    <ItemGroup>
-      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" />
-    </ItemGroup>
-  </Target>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
-      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>$(RustManaged)\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Console">
-      <HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Network">
-      <HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.System">
-      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
-      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Data">
-      <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Global">
-      <HintPath>$(RustManaged)\Rust.Global.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
     </Reference>
     <Reference Include="Rust.FileSystem">
-      <HintPath>$(RustManaged)\Rust.FileSystem.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.FileSystem.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Localization">
-      <HintPath>$(RustManaged)\Rust.Localization.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Localization.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>$(RustManaged)\UnityEngine.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

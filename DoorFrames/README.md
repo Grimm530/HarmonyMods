@@ -1,6 +1,6 @@
 # DoorFrames (Harmony)
 
-Oxide **DoorFrames 2.2.0** port. Place double doors, garage doors, shop fronts, fences, and cells in floor frames.
+Legacy **DoorFrames 2.2.0** port. Place double doors, garage doors, shop fronts, fences, and cells in floor frames.
 
 ## Load order
 

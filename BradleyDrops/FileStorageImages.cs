@@ -1,13 +1,13 @@
-// FileStorage-backed ImageLibrary stand-in (no Oxide ImageLibrary plugin).
+// FileStorage-backed ImageLibrary stand-in (Harmony-only ImageLibrary plugin).
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
-using Oxide.Core.Plugins;
+using Harmony.Core.Plugins;
 
-namespace Oxide.Core.Plugins
+namespace Harmony.Core.Plugins
 {
     public sealed class FileStorageImageLibrary : Plugin
     {
@@ -97,7 +97,7 @@ namespace Oxide.Core.Plugins
                     AddImage(kv.Value, kv.Key);
             }
             if (callback != null)
-                Oxide.Core.Interface.NextTick(callback);
+                Harmony.Core.Interface.NextTick(callback);
         }
 
         private void TryStoreLocal(string key, string path)
@@ -121,7 +121,7 @@ namespace Oxide.Core.Plugins
                 if (ServerMgr.Instance != null)
                     ServerMgr.Instance.StartCoroutine(Download(key, url));
                 else
-                    Oxide.Core.Interface.NextTick(() =>
+                    Harmony.Core.Interface.NextTick(() =>
                     {
                         if (ServerMgr.Instance != null)
                             ServerMgr.Instance.StartCoroutine(Download(key, url));
@@ -157,7 +157,7 @@ namespace Oxide.Core.Plugins
                 var owner = CommunityEntity.ServerInstance?.net?.ID ?? default(NetworkableId);
                 if (owner == default(NetworkableId))
                 {
-                    Oxide.Core.Interface.NextTick(() => StoreBytes(key, bytes, ext));
+                    Harmony.Core.Interface.NextTick(() => StoreBytes(key, bytes, ext));
                     return;
                 }
                 var type = (ext != null && ext.IndexOf("jpg", StringComparison.OrdinalIgnoreCase) >= 0)

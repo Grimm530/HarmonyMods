@@ -1,16 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
+    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
+  </PropertyGroup>
+  <PropertyGroup>
     <AssemblyName>TCUpgrade</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <RootNamespace>TCUpgrade</RootNamespace>
-    <Description>Harmony mod: TCUpgrade - upgrade, repair, reskin, wallpaper. Standalone, no Oxide plugin. Config: HarmonyConfig/TCUpgrade.json</Description>
-    <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
+    <Description>Harmony mod: TCUpgrade - upgrade, repair, reskin, wallpaper. Standalone, no Harmony mod. Config: HarmonyConfig/TCUpgrade.json</Description>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Include="..\Shared\BuildingBlockCompat.cs" Link="BuildingBlockCompat.cs" />
-  </ItemGroup>
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>false</Private>
+    </Reference>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
       <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
@@ -52,4 +57,16 @@
       <HintPath>$(RustManaged)\Rust.Localization.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="TCUpgrade\Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\StringViewCompat.cs" Link="StringViewCompat.cs" />
+    <Compile Include="..\Shared\BuildingBlockCompat.cs" Link="BuildingBlockCompat.cs" />
+  </ItemGroup>
+  <Target Name="EnsureRustManaged" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(RustManaged)' == '' Or !Exists('$(RustManaged)\Assembly-CSharp.dll')"
+           Text="Could not find Rust Managed folder (Assembly-CSharp.dll). Build with: dotnet build -p:RustManaged=&quot;C:\svr1\RustDedicated_Data\Managed&quot;" />
+  </Target>
 </Project>

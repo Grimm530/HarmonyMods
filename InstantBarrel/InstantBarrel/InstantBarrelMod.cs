@@ -4,7 +4,7 @@ namespace InstantBarrel;
 
 /// <summary>
 /// Main mod class implementing IHarmonyModHooks for lifecycle.
-/// No Oxide dependency: permissions and hooks are config-only; patch game methods directly.
+/// Harmony-only dependency: permissions and hooks are config-only; patch game methods directly.
 /// </summary>
 public class InstantBarrelMod : IHarmonyModHooks
 {
@@ -14,7 +14,7 @@ public class InstantBarrelMod : IHarmonyModHooks
     {
         Instance = this;
         InstantBarrelConfig.LoadConfig();
-        UnityEngine.Debug.Log("[InstantBarrel] Mod loaded. Barrels and road signs: instant loot (config-only, no Oxide).");
+        UnityEngine.Debug.Log("[InstantBarrel] Mod loaded. Barrels and road signs: instant loot (config-only, Harmony-only).");
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
@@ -24,7 +24,7 @@ public class InstantBarrelMod : IHarmonyModHooks
 
     /// <summary>
     /// Whether the player is allowed instant barrel loot. Config-only: when RequirePermission is false, everyone gets it.
-    /// No Oxide or external permission system; add your own logic here or via config if needed.
+    /// Harmony-only or external permission system; add your own logic here or via config if needed.
     /// </summary>
     public static bool HasPermission(string userIdString)
     {

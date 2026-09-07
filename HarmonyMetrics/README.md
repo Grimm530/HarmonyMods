@@ -2,7 +2,7 @@
 
 InfluxDB metrics Harmony mod for this server. Based on [RustyMoose/Rust.ServerMetrics](https://github.com/RustyMoose/Rust.ServerMetrics) (August 2026 fork of the archived Pinkstink/features-not-bugs project), rewritten for a **Harmony-only** stack.
 
-The original `oxide_plugins` / `Oxide.Core` hook-time collector is gone. This server does not run Oxide, so that path never produced data. HarmonyMetrics watches **loaded Harmony mods** instead and also samples Facepunch's built-in performance counters that the stock game already maintains.
+The original `oxide_plugins` / `Harmony.Core` hook-time collector is gone. This server does not run Oxide, so that path never produced data. HarmonyMetrics watches **loaded Harmony mods** instead and also samples Facepunch's built-in performance counters that the stock game already maintains.
 
 ## InfluxDB + Grafana (this machine)
 
@@ -23,6 +23,19 @@ Each shortcut opens a PowerShell launcher that stays open, plus a console window
 Or use the elevated launchers under `C:\Rust-Server-Metrics-master\Start-InfluxDB-AsAdmin.bat` / `Start-Grafana-AsAdmin.bat` (those scripts now prefer `C:\InfluxDB-1.8` and `C:\Grafana`).
 
 Database expected by config: `rust_server_metrics` (underscore). Grafana default login is `admin` / `admin` on first open.
+
+### Lag / hitch report (Influx CLI)
+
+When someone reports lag at a clock time, do **not** hand-write Influx queries. Use:
+
+```powershell
+cd C:\svr1\.cursor\HarmonyMods\HarmonyMetrics\tools
+.\Get-LagReport.ps1 -Around "2026-09-06 00:03" -BeforeMinutes 75 -AfterMinutes 90
+```
+
+Defaults: last 2 hours, `server=stagingserver`, writes JSON under `tools/lag-reports/`. Options: `-Hours 6`, `-ServerTag`, `-OutDir`, `-HitchThresholdMs`.
+
+The script already accounts for writer quirks (`"duration"` reserved word; `behaviour`/`method` tags stored with literal quotes — filtered via regex; players field is `count`). It prints frametime minutes, instant hitches, `server_update` / invoke / console tops, Grimm census, and a short verdict hint.
 
 **Never load this mod while Influx is down on an older build** — UnityWebRequest retries with a 15s timeout could freeze the dedicated process. Current builds pause uploads for 30s and drop buffered points when Influx is unreachable.
 
@@ -110,7 +123,7 @@ Classification (authoritative markers used by the spawn mods themselves):
 
 ## Grafana
 
-The upstream dashboard still works for the original measurements (`framerate`, `frametime`, `memory`, `network`, `rpc_calls`, …). Replace Oxide plugin panels with:
+The upstream dashboard still works for the original measurements (`framerate`, `frametime`, `memory`, `network`, `rpc_calls`, …). Replace Harmony mod panels with:
 
 - measurement `harmony_mods`, tag `mod`, field `patches`
 - measurement `harmony_mod_count`, fields `count`, `patches`
@@ -126,4 +139,5 @@ A starter dashboard JSON is in `res/Grafana-Dashboard.json` (upstream file with 
 | Config | `HarmonyConfig/HarmonyMetrics.json` |
 | Source | `.cursor/HarmonyMods/HarmonyMetrics/` |
 | Runtime DLL | `HarmonyMods/HarmonyMetrics.dll` |
+| Lag report script | `.cursor/HarmonyMods/HarmonyMetrics/tools/Get-LagReport.ps1` |
 | Upstream reference | `.cursor/HarmonyMods/Rust-Server-Metrics-master/` (not loaded) |

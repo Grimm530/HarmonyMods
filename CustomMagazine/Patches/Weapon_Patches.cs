@@ -10,7 +10,7 @@ namespace CustomMagazineHarmony.Patches
         private static void Prefix(BaseProjectile __instance)
         {
             var plugin = CustomMagazineMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.ApplyMagazineScale(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[CustomMagazine] OnWeaponReload: " + ex.Message); }
         }
@@ -23,7 +23,7 @@ namespace CustomMagazineHarmony.Patches
         private static void Prefix(BaseProjectile __instance)
         {
             var plugin = CustomMagazineMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.ApplyMagazineScale(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[CustomMagazine] OnWeaponModChange: " + ex.Message); }
         }
@@ -36,7 +36,7 @@ namespace CustomMagazineHarmony.Patches
         private static void Postfix(LootContainer __instance)
         {
             var plugin = CustomMagazineMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnLootSpawn(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[CustomMagazine] OnLootSpawn: " + ex.Message); }
         }

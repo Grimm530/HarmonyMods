@@ -10,6 +10,7 @@ namespace ZombieHorde
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             _plugin = new ZombieHordePlugin();
             ZombieHordePlugin.Instance = _plugin;
             _plugin.Init();
@@ -21,6 +22,7 @@ namespace ZombieHorde
             _plugin?.Shutdown();
             _plugin = null;
             ZombieHordePlugin.Instance = null;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[ZombieHorde] Harmony mod unloaded.");
         }

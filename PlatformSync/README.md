@@ -1,23 +1,23 @@
 # PlatformSync (Harmony mod)
 
-Harmony port of **Platform Sync server plugin** 1.1.01 (`PlatformSync | Grimm530`). Behavior is kept as close as possible to the Oxide plugin; only loader/config/hooks differ.
+Harmony port of **Platform Sync server plugin** 1.1.01 (`PlatformSync | Grimm530`). Behavior is kept as close as possible to the Harmony mod; only loader/config/hooks differ.
 
 ## Identity
 
 | Field | Value |
 |-------|--------|
 | **Name** | PlatformSync |
-| **Source** | `.cursor/Oxide.Plugins.Cant-Use/PlatformSync.cs` |
+| **Source** | `.cursor/Harmony.Plugins.Cant-Use/PlatformSync.cs` |
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
 | **Entry** | `PlatformSync.PlatformSyncHarmonyEntry` |
-| **Config** | `HarmonyConfig/PlatformSync.json` (migrates from `oxide/config/PlatformSync.json` if present) |
+| **Config** | `HarmonyConfig/PlatformSync.json` (migrates from `legacy/config/PlatformSync.json` if present) |
 | **Data** | `HarmonyData/PlatformSync/` (`links.json`, optional `groups.json` mirror/fallback) |
 | **Permissions** | **0Permissions** — Discord link / nitro groups (`verified`, `nitro`, …) via `Permissions_ApiType` + generation rebind |
 
-## What changed vs Oxide PlatformSync (Harmony necessities only)
+## What changed vs original PlatformSync (Harmony necessities only)
 
 - `RustPlugin` → `PlatformSyncHarmonyEntry : IHarmonyModHooks` + `PlatformSyncPlugin`
-- Config/data under `HarmonyConfig/` / `HarmonyData/` instead of `oxide/config` + `oxide/data`
+- Config/data under `HarmonyConfig/` / `HarmonyData/` instead of `legacy/config` + `oxide/data`
 - `OnPlayerConnected` → Harmony postfix on `BasePlayer.PlayerInit`
 - Chat commands `/link`, `/testlink`, `/testurl` → Harmony prefix on `ConVar.Chat.say`
 - Console commands registered via `ConsoleSystem` (`ps.testlink`, `ps.testurl`, `localverify`, `localverifycheck`, `localverifyroles`)
@@ -105,4 +105,4 @@ ps.recheck cancel
 ## Reference
 
 - Harmony framework: `.cursor/PluginInstructionalFiles/Harmony_Mod_Execution_Framework.md`
-- Original plugin: `.cursor/Oxide.Plugins.Cant-Use/PlatformSync.cs`
+- Original plugin: `.cursor/Harmony.Plugins.Cant-Use/PlatformSync.cs`

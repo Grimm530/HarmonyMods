@@ -1,13 +1,13 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Core.Plugins;
+using Harmony.Core.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Oxide.Core;
-using Oxide.Core.Libraries;
+using Harmony.Core;
+using Harmony.Core.Libraries;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("Virtual Items", "WhiteThunder", "0.5.1")]
     [Description("Removes resource costs of specific ingredients for crafting and building.")]
@@ -130,10 +130,10 @@ namespace Oxide.Plugins
 
         #region Helper Methods
 
-        public static void LogDebug(string message) => Interface.Oxide.LogDebug($"[Virtual Items] {message}");
-        public static void LogInfo(string message) => Interface.Oxide.LogInfo($"[Virtual Items] {message}");
-        public static void LogWarning(string message) => Interface.Oxide.LogWarning($"[Virtual Items] {message}");
-        public static void LogError(string message) => Interface.Oxide.LogError($"[Virtual Items] {message}");
+        public static void LogDebug(string message) => HarmonyModInterface.Mods.LogDebug($"[Virtual Items] {message}");
+        public static void LogInfo(string message) => HarmonyModInterface.Mods.LogInfo($"[Virtual Items] {message}");
+        public static void LogWarning(string message) => HarmonyModInterface.Mods.LogWarning($"[Virtual Items] {message}");
+        public static void LogError(string message) => HarmonyModInterface.Mods.LogError($"[Virtual Items] {message}");
 
         private static void SendInventoryUpdate(BasePlayer player)
         {

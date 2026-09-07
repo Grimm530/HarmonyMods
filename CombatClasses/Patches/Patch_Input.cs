@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using CCPlugin = Oxide.Plugins.CombatClasses;
+using CCPlugin = Harmony.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony.Patches
 {
@@ -10,7 +10,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || __instance.serverInput == null) return;
+            if (__instance.serverInput == null) return;
             var inst = CCPlugin.GetModInstance();
             if (inst == null || !inst.IsReady) return;
             if (!CCPlugin.IsHookSubscribed("OnPlayerInput")) return;
@@ -31,7 +31,6 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance, Item __state)
         {
-            if (__instance == null) return;
             var newItem = __instance.GetActiveItem();
             if (__state == newItem) return;
             try { CCPlugin.Dispatch_OnActiveItemChanged(__instance, __state, newItem); }

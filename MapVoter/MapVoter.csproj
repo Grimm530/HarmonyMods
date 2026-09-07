@@ -10,6 +10,16 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Shared\ConsoleIndexCompat.cs" Link="ConsoleIndexCompat.cs" />
+    <Compile Include="..\Shared\StringViewCompat.cs" Link="StringViewCompat.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Patches\Cui_Endtest_Patch.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI">
+      <HintPath>$(MSBuildThisFileDirectory)..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib">

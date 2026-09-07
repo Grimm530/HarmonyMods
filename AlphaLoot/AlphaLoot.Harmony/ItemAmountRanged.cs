@@ -50,7 +50,7 @@ public class ItemAmountRanged : ItemAmount
 			{
 				return;
 			}
-			item = ItemManager.Create(blueprintBaseDefinition, 1, 0uL, true, 0uL);
+			item = ItemManager.Create(blueprintBaseDefinition, 1, 0uL);
 			item.blueprintTarget = base.ItemID;
 		}
 		else

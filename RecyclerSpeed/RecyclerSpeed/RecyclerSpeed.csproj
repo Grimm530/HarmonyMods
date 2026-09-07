@@ -9,34 +9,41 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Data">
-      <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Harmony">
-      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
-      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Network">
-      <HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Console">
-      <HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.System">
-      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
+      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Shared\StringViewCompat.cs" Link="StringViewCompat.cs" />
   </ItemGroup>
 </Project>

@@ -23,7 +23,7 @@ namespace CustomMapGen.Patches
                     UnityEngine.Debug.Log($"[CustomMapGen] Islands disabled - overriding TargetCount from {originalTargetCount} to 0");
                     return;
                 }
-                
+
                 // Adjust TargetCount based on intensity (0-10 scale)
                 // Intensity 7 = default, scale proportionally
                 if (config.IslandIntensity > 0 && config.IslandIntensity != 7)

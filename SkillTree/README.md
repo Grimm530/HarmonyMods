@@ -1,13 +1,13 @@
 # SkillTree Harmony Mod
 
-Port of SkillTree 1.7.14 (imthenewguy / Grimm530) to the Oxide-free Harmony-first stack.
+Port of SkillTree 1.7.15 (imthenewguy / Grimm530) to the Harmony Harmony-first stack.
 
 ## Identity
 
 | | |
 |---|---|
 | Assembly | `SkillTree.dll` |
-| Namespace | `SkillTreeHarmony` / `Oxide.Plugins.SkillTree` (partial) |
+| Namespace | `SkillTreeHarmony` / `Harmony.Plugins.SkillTree` (partial) |
 | Entry point | `SkillTreeHarmony.SkillTreeMod : IHarmonyModHooks` |
 
 ## Paths
@@ -26,11 +26,11 @@ The `CustomSkillTreeDataDirectory` is already set in the live config to the Data
 ## Build
 
 ```powershell
-cd c:\!2XRUST\.cursor\HarmonyMods\SkillTree
+cd c:\svr1\.cursor\HarmonyMods\SkillTree
 .\build.ps1
 ```
 
-Output: `c:\!2XRUST\HarmonyMods\SkillTree.dll`
+Output: `c:\svr1\HarmonyMods\SkillTree.dll`
 
 Set `RUST_MANAGED_PATH` or `RUST_SERVER_ROOT` env vars if the auto-detected paths are wrong.
 
@@ -69,11 +69,11 @@ SkillTree.dll
   SkillTreeHarmony.SkillTreeMod        IHarmonyModHooks entry point
   SkillTreeHarmony.ModRunner           MonoBehaviour: NextTick + coroutines
   SkillTreeHarmony.PermissionsBridge   Reflection bridge to PermissionsHarmony
-  Oxide.Plugins.SkillTree (partial x2)
+  Harmony.Plugins.SkillTree (partial x2)
     SkillTreePlugin.cs                 Original plugin body (untouched)
     SkillTreeDispatch.cs               Lifecycle + Dispatch_* static methods
-  OxideCompat.cs                       Oxide.Core / Oxide.Plugins shims
-  RustCui.cs                           Oxide.Game.Rust.Cui shims
+  HarmonyCompat.cs                       Harmony.Core / Harmony.Plugins shims
+  RustCui.cs                           Game.Rust.Cui shims
   Patches/                             Harmony patches -> Dispatch_* calls
 ```
 
@@ -81,20 +81,24 @@ SkillTree.dll
 
 ImageLibrary, Economics, ServerRewards, RaidableBases, ZoneManager, and other optional plugins are resolved via AppDomain at runtime. If absent, SkillTree degrades gracefully (no images, no economy respec, etc.).
 
-## 1.7.14 highlights (vs 1.7.12 / prior Harmony 1.7.122 port)
+## 1.7.15 highlights (vs 1.7.14 Harmony port)
 
-- Prestige History UI; Cooking coop skills (Clever Incubator / Soft Touch / Factory Farmer)
-- Underwater: Frugal Wrighter, Heated Shot, Wind Catcher
-- Raiding Strategist (siege damage); Harvesting Replenish; Team Friendly Fire
-- Recycler buffs via nested `GetRecyclerStats` Harmony postfix (August wipe API)
-- Heli XP via `OnPatrolHelicopterTakeDamage` (wired in Hurt patch + Dispatch)
-- Preserved port adaptations: `CustomSkillTreeDataDirectory`, OnFuelConsume NRE fix, scoreboard `TryParse`, `WoundingTick` medkit chance
+- Craft_Speed uses `ItemBlueprint.GetCraftTime()` (September Forced: raw `.time` is often 0)
+- Crafting XP also uses `GetCraftTime()` / cached modified craft time so stackable crafts award XP again
+- `GetCleanItemDefinitions` fixed (was infinite-recursion empty list) + excludes hidden items
+- `HandleBearBuff` re-entrancy guard (no Subscribe/Unsubscribe)
+- Tree nav / points-spent UI reflect the viewed tree; rebuild recalculates spend counters
+- Dead per-tree max skill points check removed
+- Trap detection by entity type (covers industrial auto turret / bar-games shotgun trap); monument `NPCAutoTurret` excluded
+- Default skinning whitelist includes `knife.bone.obsidian`
+- September Forced: `StartSetFlags` for lockpick / MLRS / chicken coop; cookable fractional `amountOfBecome`
+- Note: changelog mentions prestige bonus starting SP / max SP increase — those fields are **not** present in the upstream 1.7.15 source and were not invented here
 
 ## Yield / gather patches (must match Oxide timing)
 
 SkillTree yield buffs mutate the live `Item` (or `itemList`) **before** `GiveItem`. Broken postfix/`item=null` ports silently no-op because `HandleDispenser` returns on `item == null`.
 
-| Oxide hook | Game site | Patch |
+| Harmony hook | Game site | Patch |
 |---|---|---|
 | `OnDispenserGather` | `ResourceDispenser.GiveResourceFromItem` after `ItemManager.CreateByItemID` | Transpiler → `Dispatch_OnDispenserGather(dispenser, player, item)` |
 | `OnDispenserBonus` | `ResourceDispenser.AssignFinishBonus` after `ItemManager.Create` | Transpiler → `Dispatch_OnDispenserBonus(dispenser, player, item)` |
@@ -109,7 +113,7 @@ SkillTree yield buffs mutate the live `Item` (or `itemList`) **before** `GiveIte
 
 ## Perk hook wiring (`Patch_PerkHooks.cs`)
 
-Many buffs had `Dispatch_*` stubs with **no Harmony callers** (dead copies). Callers now replace Oxide `Interface.CallHook` at the game site (or Prefix where cancel/`ref` result is needed).
+Many buffs had `Dispatch_*` stubs with **no Harmony callers** (dead copies). Callers now replace Oxide `HarmonyModInterface.CallHook` at the game site (or Prefix where cancel/`ref` result is needed).
 
 Previously dead / miswired (now fixed): Free_Bullet_Chance, Extended_Mag, Research_Refund, Lock_Picker, Recycler_Speed/Efficiency, Extra_Fish / Fishing_Luck, Vehicle_Mechanic, Mining/Woodcutting Hotspot, Double_Bandage_Heal, food/tea stack (Rationer/Iron_Stomach/Tea_*), Rocket_Velocity, Dudless_Explosive, scientist kill XP, Node_Spawn_Chance, OnBonusItemDropped magnet, metal-detector dig XP, flyhack Roadrunner, Bear OnNpcTarget, Build_Craft card swipe, **Loot Magnet** (`Loot_Pickup` via `OnEntityDeath` — must replace `Die` CallHook, not Postfix after `DropItems`/`IsDestroyed`).
 
@@ -120,6 +124,6 @@ On load, watch for `[SkillTree] CallHookReplace: did not find '…'` — means a
 ## Known Compile Risks
 
 - `Patch_MiscGameHooks.cs`: Several game methods (`AntiHack.ReportViolation`, `ResearchTable.ResearchPrice`, `ScientistNPC.CanTargetEntity`, `BaseMelee.ServerUse`) use internal method names that may differ across Rust updates. If any patch class fails to compile, comment it out and add to a `[HarmonyPatch]` manually or remove from `.csproj`.
-- `Patch_ItemCrafter.cs`: `ItemCrafter.CraftItem` postfix applies `Craft_Speed`. `FinishCrafting` replaces Oxide `OnItemCraftFinished` **before** `GiveItem` (a method postfix is too late — stacking zeros `item.amount` and `Craft_Duplicate` logs `Creating item with less than 1 amount!`). `ItemManager.Create` prefix retags that Facepunch amount error as `[SkillTree]` when SkillTree is the caller. `RepairBench.RepairAnItem` prefix applies `MaxRepair` / `Free_Repairs`.
+- `Patch_ItemCrafter.cs`: `ItemCrafter.CraftItem` postfix applies `Craft_Speed`. `FinishCrafting` replaces legacy `OnItemCraftFinished` **before** `GiveItem` (a method postfix is too late — stacking zeros `item.amount` and `Craft_Duplicate` logs `Creating item with less than 1 amount!`). `ItemManager.Create` prefix retags that Facepunch amount error as `[SkillTree]` when SkillTree is the caller. `RepairBench.RepairAnItem` prefix applies `MaxRepair` / `Free_Repairs`.
 - `Patch_MiscGameHooks.cs` `BaseNetworkable_Spawned_Patch`: May be high-frequency. Monitor performance on busy servers.
 - Fish bait/bite/tension apply stay on internal plugin Harmony patches; catch/luck/XP use `Patch_PerkHooks`.

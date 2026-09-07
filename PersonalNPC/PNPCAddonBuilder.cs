@@ -504,10 +504,10 @@ namespace PersonalNPCHarmony
             var resources = new ResourcesFromBuild();
             var path = "copypaste/" + setup.filename;
 
-            if (!Interface.Oxide.DataFileSystem.ExistsDatafile(path))
+            if (!HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(path))
                 return resources;
 
-            var datafile = Interface.Oxide.DataFileSystem.GetDatafile(path);
+            var datafile = HarmonyModInterface.Mods.DataFileSystem.GetDatafile(path);
             var ents = datafile["entities"] as List<object>;
             if (ents == null)
                 return resources;
@@ -592,7 +592,7 @@ namespace PersonalNPCHarmony
 
                 var needed = CalculateResourcesForSetup(setup);
                 bool canAfford = PlayerHasResources(player, needed, setup.requireResources);
-                bool fileExists = Interface.Oxide.DataFileSystem.ExistsDatafile("copypaste/" + setup.filename);
+                bool fileExists = HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile("copypaste/" + setup.filename);
                 string costDisplay = GetCostDisplay(player, needed, setup.requireResources);
 
                 list.Add(new Dictionary<string, object>
@@ -640,7 +640,7 @@ namespace PersonalNPCHarmony
                     return setup;
             }
 
-            if (Interface.Oxide.DataFileSystem.ExistsDatafile("copypaste/" + buildName))
+            if (HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile("copypaste/" + buildName))
             {
                 return new Configuration.BotSetup
                 {
@@ -1000,7 +1000,7 @@ namespace PersonalNPCHarmony
             private IEnumerator InitBuilders()
             {
                 path = "copypaste/" + _botSetup.filename;
-                datafile = Interface.Oxide.DataFileSystem.GetDatafile(path);
+                datafile = HarmonyModInterface.Mods.DataFileSystem.GetDatafile(path);
 
                 todoSorted = new List<Dictionary<string, object>>();
                 BuilderInstance.SendMsg(_owner, "Calculation_of_the_drawing");

@@ -107,14 +107,7 @@ namespace Convoy
         {
             string prefix = ConvoyMod.Instance?.Config?.Prefix ?? "[Convoy]";
             if (player != null && player.IsConnected)
-            {
-                // Command replies: tip when GameTips enabled, else chat.
-                var tip = ConvoyMod.Instance?.FullConfig?.NotifyConfig?.GameTipConfig;
-                if (tip != null && tip.IsEnabled)
-                    ConvoyNotifyStub.ShowGameTip(player, prefix + " " + message, tip.Style);
-                else
-                    player.ChatMessage(prefix + " " + message);
-            }
+                player.ChatMessage(prefix + " " + message);
             else
                 UnityEngine.Debug.Log("[Convoy] " + message);
         }
@@ -767,7 +760,7 @@ namespace Convoy
                 if (timeNotify != null && timeNotify.Contains(_eventTime) && !_isEventLooted)
                 {
                     string prefix = Cfg?.Prefix ?? "[Convoy]";
-                    ConvoyNotifyStub.SendMessageToAll("RemainTime", prefix, EventConfig.DisplayName ?? "Convoy", _eventTime);
+                    ConvoyNotifyStub.SendMessageToAll("RemainTime", prefix, EventConfig.DisplayName ?? "Convoy", _eventTime.ToString());
                 }
 
                 if (_eventTime % 30 == 0 && EventConfig != null && EventConfig.EventTime - _eventTime > 30)
@@ -780,7 +773,7 @@ namespace Convoy
             EventLauncher.StopEvent();
         }
 
-        /// <summary>Oxide NpcSpawnManager.GetEventNpcCount: living event NPCs that are on foot.</summary>
+        /// <summary>original NpcSpawnManager.GetEventNpcCount: living event NPCs that are on foot.</summary>
         private int GetUnmountedLiveNpcCount()
         {
             int n = 0;
@@ -826,7 +819,7 @@ namespace Convoy
             if (endTime < 0) endTime = 0;
             _eventTime = endTime;
             string prefix = Cfg?.Prefix ?? "[Convoy]";
-            ConvoyNotifyStub.SendMessageToAll("Looted", prefix, EventConfig?.DisplayName ?? "Convoy");
+            ConvoyNotifyStub.SendMessageToAll("Looted", prefix, EventConfig?.DisplayName ?? "Convoy", "");
             UnityEngine.Debug.Log("[Convoy] All crates opened or destroyed — convoy will despawn in " + endTime + "s.");
         }
 
@@ -854,7 +847,7 @@ namespace Convoy
             if (attacker != null && !(attacker is NPCPlayer))
                 _lastAttacker = attacker;
 
-            // Announce only when transitioning into stop/aggro (Oxide parity — avoid spam every hit).
+            // Announce only when transitioning into stop/aggro (original parity — avoid spam every hit).
             var bc = Cfg?.BehaviorConfig;
             bool shouldAnnounce = attacker != null
                 && ((_aggressiveTime <= 0 && bc != null && bc.AggressiveTime > 0) || !_isStopped);
@@ -871,7 +864,7 @@ namespace Convoy
             if (shouldAnnounce)
             {
                 string prefix = Cfg?.Prefix ?? "[Convoy]";
-                ConvoyNotifyStub.SendMessageToAll("ConvoyAttacked", prefix, who);
+                ConvoyNotifyStub.SendMessageToAll("ConvoyAttacked", prefix, who, "");
             }
         }
 
@@ -1051,7 +1044,7 @@ namespace Convoy
 
         /// <summary>
         /// Remount living roaming NPCs when the convoy starts moving again.
-        /// Oxide parity: do not spawn replacements for NPCs the player already killed.
+        /// original parity: do not spawn replacements for NPCs the player already killed.
         /// Movement is kinematic, so dead drivers are not replaced either.
         /// </summary>
         private void MountAllNpc()

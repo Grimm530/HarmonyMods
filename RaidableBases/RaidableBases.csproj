@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RustManaged)</RustManaged>
     <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
     <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\RustDedicated_Data\Managed'))</RustManaged>
   </PropertyGroup>
@@ -11,7 +12,9 @@
     <RootNamespace>RaidableBases</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Raidable Bases - Standalone Harmony mod. Config: HarmonyConfig; Data/paste: HarmonyData. Uses CopyPaste Harmony mod.</Description>
+    <Description>Raidable Bases 3.2.634 - Standalone Harmony mod. Built-in PasteEngine; optional Kits mod.</Description>
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
@@ -22,12 +25,55 @@
   <ItemGroup>
     <Compile Remove="_backup_*/**" />
     <Compile Remove="_adapted_*.cs" />
-    <None Include="adapt-3.1.5.ps1" />
-    <None Include="split.ps1" />
+    <None Include="adapt-3.2.634.ps1" />
     <None Include="build.ps1" />
     <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="mscorlib">
+      <HintPath>$(RustManaged)\mscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(RustManaged)\netstandard.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System">
+      <HintPath>$(RustManaged)\System.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Core">
+      <HintPath>$(RustManaged)\System.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Data">
+      <HintPath>$(RustManaged)\System.Data.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Drawing">
+      <HintPath>$(RustManaged)\System.Drawing.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.IO.Compression.FileSystem">
+      <HintPath>$(RustManaged)\System.IO.Compression.FileSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Numerics">
+      <HintPath>$(RustManaged)\System.Numerics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Runtime.Serialization">
+      <HintPath>$(RustManaged)\System.Runtime.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Xml">
+      <HintPath>$(RustManaged)\System.Xml.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Xml.Linq">
+      <HintPath>$(RustManaged)\System.Xml.Linq.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Rust.Harmony">
       <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
     </Reference>
@@ -42,6 +88,9 @@
     </Reference>
     <Reference Include="Facepunch.System">
       <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Unity">
+      <HintPath>$(RustManaged)\Facepunch.Unity.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
       <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
@@ -89,4 +138,12 @@
       <HintPath>$(RustManaged)\UnityEngine.TextRenderingModule.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_DragRPC_Patch.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
 </Project>

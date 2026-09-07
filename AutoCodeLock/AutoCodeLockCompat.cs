@@ -1,5 +1,5 @@
 /*
- * Oxide-free shims for AutoCodeLock 3.0.12 Chaos UI under Harmony.
+ * Harmony shims for AutoCodeLock 3.0.12 Chaos UI under Harmony.
  */
 using System;
 using System.Collections;
@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace AutoCodeLockHarmony
 {
-    /// <summary>Oxide Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
+    /// <summary>compat Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
         public new TValue this[TKey key]
@@ -169,8 +169,8 @@ namespace AutoCodeLockHarmony
         public static void Shutdown() => Instance = null;
     }
 
-    /// <summary>Oxide Interface stubs used by soft hooks (CanAutoLock).</summary>
-    public static class Interface
+    /// <summary>Harmony Interface stubs used by soft hooks (CanAutoLock).</summary>
+    public static class HarmonyModInterface
     {
         public static object CallHook(string name, params object[] args)
         {
@@ -306,7 +306,7 @@ namespace AutoCodeLockHarmony
     }
 }
 
-namespace Oxide.Ext.Chaos
+namespace Grimm.Chaos
 {
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class PermissionAttribute : Attribute

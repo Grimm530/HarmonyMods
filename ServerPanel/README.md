@@ -1,7 +1,7 @@
 # ServerPanel (Harmony)
 
 Harmony port of Mevent's **ServerPanel 2.0.20** with **ServerPanelPopUps 2.0.20** consolidated into a
-single assembly. No Oxide/Carbon required.
+single assembly. Harmony-only/Carbon required.
 
 ## Build
 
@@ -55,9 +55,13 @@ AppDomain.CurrentDomain.GetData("ServerPanelPopUps_Plugin");   // IsLoaded + Cal
 ```
 
 `ServerPanel_Plugin` dispatches the full `API_*` surface (`API_OnServerPanelProcessCategory`,
-`API_OnServerPanelOpenCategoryByID`, `API_OnServerPanelCallClose`, `API_OnServerPanelClosed`,
-`API_OnServerPanelGetCategoryInfo`, `API_GetBackgroundParentLayer`, ...) and also exposes the common ones
-as direct methods.
+`API_OnServerPanelOpenCategoryByID`, `API_OnServerPanelRefreshContent`, `API_OnServerPanelCallClose`,
+`API_OnServerPanelClosed`, `API_OnServerPanelGetCategoryInfo`, `API_GetBackgroundParentLayer`, ...)
+and also exposes the common ones as direct methods.
+
+Embedded plugin pages (RustVehiclesGUI Buy/Manage, Shop, Kits) must call `API_OnServerPanelRefreshContent`
+to redraw the current category. Do not look up `UI_ServerPanel` in `ConsoleSystem.Index` — Harmony CUI
+routes that command through `cui.endtest`, so the console index entry is not a reliable interop path.
 
 ## Plugin pages
 
@@ -86,11 +90,11 @@ drains. Setting `Enable Offline Image Mode: true` makes it read `TheMevent/...` 
 
 ## Known gaps
 
-- The `Leaderboard` Harmony mod does not implement `API_OpenPlugin` or publish a plugin wrapper, so the
-  LEADERBOARD category stays empty until it exposes one. VEHICLES is served by the `RustVehiclesGUI` mod.
+- VEHICLES is served by the `RustVehiclesGUI` mod; LEADERBOARD is served by the `Leaderboard`
+  Harmony mod (`Leaderboard_Plugin` / `UltimateLeaderboard_Plugin`, `API_OpenPlugin`).
 - ServerPanelAvatars is not ported; header avatars use the Steam avatar path already built into
   ServerPanel.
 - The in-game editor is included but only lightly exercised; edits are written back to
   `HarmonyData/ServerPanel/`.
-- `Interface.CallHook` only forwards `OnServerPanelClosed` and `OnServerPanelCategoryPage` to the known
-  consumer mods; arbitrary Oxide hook broadcasts are no-ops.
+- `HarmonyModInterface.CallHook` only forwards `OnServerPanelClosed` and `OnServerPanelCategoryPage` to the known
+  consumer mods; arbitrary Harmony hook broadcasts are no-ops.

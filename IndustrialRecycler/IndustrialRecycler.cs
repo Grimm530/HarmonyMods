@@ -2,19 +2,18 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Facepunch;
 using HarmonyLib;
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
-    [Info("IndustrialRecycler", "Marte6", "1.9.1")]
+    [Info("IndustrialRecycler", "Marte6", "1.9.3")]
     [Description("Automate recycling by attaching storage and adapters to recyclers.")]
     public partial class IndustrialRecycler : RustPlugin
     {
@@ -118,10 +117,60 @@ namespace Oxide.Plugins
             ServerMgr.Instance.StartCoroutine(InitializeRecyclers());
         }
 
+        private static T FindChildOfType<T>(BaseEntity parent) where T : BaseEntity
+        {
+            if (parent?.children == null)
+                return null;
+            var children = parent.children;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] is T match)
+                    return match;
+            }
+            return null;
+        }
+
+        private static void ForEachChildOfType<T>(BaseEntity parent, Action<T> action) where T : BaseEntity
+        {
+            if (parent?.children == null || action == null)
+                return;
+            var children = parent.children;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] is T match)
+                    action(match);
+            }
+        }
+
+        private static StorageContainer FindChildStorageByPrefab(BaseEntity parent, string prefabPath, string shortName)
+        {
+            if (parent?.children == null)
+                return null;
+            var children = parent.children;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] is not StorageContainer c || c == null)
+                    continue;
+                string pref = c.PrefabName ?? string.Empty;
+                string shortN = c.ShortPrefabName ?? string.Empty;
+                if (pref.Equals(prefabPath, StringComparison.OrdinalIgnoreCase)
+                    || shortN.Equals(shortName, StringComparison.OrdinalIgnoreCase))
+                    return c;
+            }
+            return null;
+        }
+
         void Unload()
         {
-            foreach (var comp in BaseNetworkable.serverEntities.OfType<RecyclerComponent>())
-                UnityEngine.Object.Destroy(comp);
+            foreach (var entity in BaseNetworkable.serverEntities)
+            {
+                if (entity is Recycler recycler)
+                {
+                    var comp = recycler.GetComponent<RecyclerComponent>();
+                    if (comp != null)
+                        UnityEngine.Object.Destroy(comp);
+                }
+            }
             _savedRecyclers.Clear();
             _industrialRecyclers.Clear();
             _standardRecyclers.Clear();
@@ -134,8 +183,11 @@ namespace Oxide.Plugins
             _handledPlacements.Clear();
             _industrialRecyclers.Clear();
             _standardRecyclers.Clear();
-            foreach (var r in _playerVirtualRecycler.Values.Where(r => r != null && !r.IsDestroyed).ToList())
-                r.Kill();
+            foreach (var r in _playerVirtualRecycler.Values)
+            {
+                if (r != null && !r.IsDestroyed)
+                    r.Kill();
+            }
             _playerVirtualRecycler.Clear();
             foreach (var p in BasePlayer.activePlayerList)
             {
@@ -326,14 +378,18 @@ namespace Oxide.Plugins
         {
             if (playerLoot == null)
                 return;
-            BasePlayer player = playerLoot.baseEntity;
+            DestroyRecyclerPlayerUi(playerLoot.baseEntity);
+        }
+
+        /// <summary>
+        /// Removes Input/Output and storage-nav CUI. Safe to call when loot Clear is a no-op.
+        /// </summary>
+        internal void DestroyRecyclerPlayerUi(BasePlayer player)
+        {
             if (player == null || player.IsDestroyed)
                 return;
-            if (_playersWithUi.Contains(player.userID))
-            {
-                _playersWithUi.Remove(player.userID);
-                CuiHelper.DestroyUi(player, UiOverlayName);
-            }
+            _playersWithUi.Remove(player.userID);
+            CuiHelper.DestroyUi(player, UiOverlayName);
             CuiHelper.DestroyUi(player, StorageUiOverlayName);
         }
 
@@ -378,14 +434,18 @@ namespace Oxide.Plugins
 
         void OnLootEntityEnd(BasePlayer player, Recycler recycler)
         {
-            if (player != null)
-                CloseVirtualRecycler(player);
+            if (player == null)
+                return;
+            DestroyRecyclerPlayerUi(player);
+            CloseVirtualRecycler(player);
         }
 
         void OnPlayerDisconnected(BasePlayer player, string reason)
         {
-            if (player != null)
-                CloseVirtualRecycler(player);
+            if (player == null)
+                return;
+            DestroyRecyclerPlayerUi(player);
+            CloseVirtualRecycler(player);
         }
 
         object OnRecyclerToggle(Recycler recycler, BasePlayer player)
@@ -414,13 +474,13 @@ namespace Oxide.Plugins
         private void CustomizeCommands()
         {
             var registeredChatCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            RegisterChatCommands(_config.StandardPurchaseCommands ?? Enumerable.Empty<string>(), nameof(CommandOpenStandardPurchaseUI), "standard purchase", registeredChatCommands);
-            RegisterChatCommands(_config.IndustrialPurchaseCommands ?? Enumerable.Empty<string>(), nameof(CommandOpenIndustrialPurchaseUI), "industrial purchase", registeredChatCommands);
-            RegisterChatCommands(_config.VirtualUseCommands ?? Array.Empty<string>(), nameof(CommandIrec), "virtual recycler", registeredChatCommands);
+            RegisterChatCommands(_config.StandardPurchaseCommands, nameof(CommandOpenStandardPurchaseUI), "standard purchase", registeredChatCommands);
+            RegisterChatCommands(_config.IndustrialPurchaseCommands, nameof(CommandOpenIndustrialPurchaseUI), "industrial purchase", registeredChatCommands);
+            RegisterChatCommands(_config.VirtualUseCommands, nameof(CommandIrec), "virtual recycler", registeredChatCommands);
             RegisterChatCommands(new[] { "upgraderecycler" }, nameof(CommandUpgradeRecycler), "upgrade", registeredChatCommands);
             RegisterChatCommands(new[] { "togglerecycler" }, nameof(ToggleRecyclerConfig), "toggle", registeredChatCommands);
-            RegisterChatCommands(_config.RecyclerCommands ?? Enumerable.Empty<string>(), nameof(CommandGetRecycler), "industrial give", registeredChatCommands);
-            RegisterChatCommands(_config.StandardRecyclerCommands ?? Enumerable.Empty<string>(), nameof(CommandGetStandardRecycler), "standard give", registeredChatCommands);
+            RegisterChatCommands(_config.RecyclerCommands, nameof(CommandGetRecycler), "industrial give", registeredChatCommands);
+            RegisterChatCommands(_config.StandardRecyclerCommands, nameof(CommandGetStandardRecycler), "standard give", registeredChatCommands);
             cmd.AddConsoleCommand("industrialrecycler.openinput", this, nameof(OpenInputStorage));
             cmd.AddConsoleCommand("industrialrecycler.openoutput", this, nameof(OpenOutputStorage));
             cmd.AddConsoleCommand("giveindustrialrecycler", this, nameof(ConsoleCommandGiveRecycler));
@@ -451,7 +511,7 @@ namespace Oxide.Plugins
 
         private void DeleteDataFile(string file)
         {
-            string filePath = Path.Combine(Interface.Oxide.DataFileSystem.Directory, $"{file}.json");
+            string filePath = Path.Combine(HarmonyModInterface.Mods.DataFileSystem.Directory, $"{file}.json");
             if (File.Exists(filePath))
             {
                 try
@@ -468,19 +528,21 @@ namespace Oxide.Plugins
                 return false;
             string inputShort = Path.GetFileNameWithoutExtension(InputStoragePrefabPath);
             string outputShort = Path.GetFileNameWithoutExtension(OutputStoragePrefabPath);
-            return recycler
-                .GetComponentsInChildren<StorageContainer>(true)
-                .Any(sc =>
-                {
-                    if (sc == null || sc.IsDestroyed)
-                        return false;
-                    var pref = sc.PrefabName ?? string.Empty;
-                    var shortName = sc.ShortPrefabName ?? string.Empty;
-                    return pref.Equals(InputStoragePrefabPath, StringComparison.OrdinalIgnoreCase)
-                        || pref.Equals(OutputStoragePrefabPath, StringComparison.OrdinalIgnoreCase)
-                        || shortName.Equals(inputShort, StringComparison.OrdinalIgnoreCase)
-                        || shortName.Equals(outputShort, StringComparison.OrdinalIgnoreCase);
-                });
+            var containers = recycler.GetComponentsInChildren<StorageContainer>(true);
+            for (int i = 0; i < containers.Length; i++)
+            {
+                StorageContainer sc = containers[i];
+                if (sc == null || sc.IsDestroyed)
+                    continue;
+                var pref = sc.PrefabName ?? string.Empty;
+                var shortName = sc.ShortPrefabName ?? string.Empty;
+                if (pref.Equals(InputStoragePrefabPath, StringComparison.OrdinalIgnoreCase)
+                    || pref.Equals(OutputStoragePrefabPath, StringComparison.OrdinalIgnoreCase)
+                    || shortName.Equals(inputShort, StringComparison.OrdinalIgnoreCase)
+                    || shortName.Equals(outputShort, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         private Recycler GetRecyclerFromItemContainer(ItemContainer container)
@@ -530,9 +592,12 @@ namespace Oxide.Plugins
         {
             yield return CoroutineEx.waitForEndOfFrame;
             yield return new WaitForSeconds(1f);
-            foreach (Recycler recycler in BaseNetworkable.serverEntities.OfType<Recycler>())
+            foreach (var entity in BaseNetworkable.serverEntities)
             {
-                if (recycler == null || recycler.IsDestroyed || recycler.net == null)
+                if (entity is not Recycler recycler || recycler == null || recycler.IsDestroyed || recycler.net == null)
+                    continue;
+                // Monument / world recyclers must keep vanilla powergrid stats — only track player-owned.
+                if (recycler.OwnerID == 0UL)
                     continue;
                 if (_recyclerOwners.ContainsKey(recycler.net.ID.Value))
                     continue;
@@ -541,15 +606,14 @@ namespace Oxide.Plugins
                 {
                     if (recycler.GetComponent<RecyclerComponent>() == null)
                         recycler.gameObject.AddComponent<RecyclerComponent>();
-                    ApplyEfficiency(recycler, GetConfiguredEfficiencyFor(recycler.OwnerID, false));
                     _industrialRecyclers.Add(recycler.net.ID.Value);
                 }
                 else
                 {
-                    ApplyEfficiency(recycler, GetConfiguredEfficiencyFor(recycler.OwnerID, false));
                     _standardRecyclers.Add(recycler.net.ID.Value);
                 }
                 _recyclerOwners[recycler.net.ID.Value] = recycler.OwnerID;
+                RefreshRecyclerStatsSnapshot(recycler);
             }
         }
 
@@ -740,9 +804,9 @@ namespace Oxide.Plugins
             recycler.UpdateNetworkGroup();
             recycler.gameObject.layer = 0;
             recycler.SendNetworkUpdateImmediate();
-            ApplyEfficiency(recycler, GetConfiguredEfficiencyFor(player.userID, true));
-            recycler.gameObject.AddComponent<VirtualRecyclerBehaviour>().Init(player, recycler);
             _playerVirtualRecycler[player.userID] = recycler;
+            RefreshRecyclerStatsSnapshot(recycler);
+            recycler.gameObject.AddComponent<VirtualRecyclerBehaviour>().Init(player, recycler);
         }
 
         private void CloseVirtualRecycler(BasePlayer player)
@@ -869,7 +933,8 @@ namespace Oxide.Plugins
                     Button =
                     {
                         Color = "0.3960785 0.4666667 0.2627451 1",
-                        Command = $"industrialrecycler.openinput {recyclerId}",
+                        // Embed cui.endtest so ConsoleGen clients always forward the click (do not rely on JSON rewrite alone).
+                        Command = $"cui.endtest INDUSTRIALRECYCLER industrialrecycler.openinput {recyclerId}",
                         Close = UiOverlayName,
                     },
                     Text =
@@ -897,7 +962,7 @@ namespace Oxide.Plugins
                     Button =
                     {
                         Color = "0.3960785 0.4666667 0.2627451 1",
-                        Command = $"industrialrecycler.openoutput {recyclerId}",
+                        Command = $"cui.endtest INDUSTRIALRECYCLER industrialrecycler.openoutput {recyclerId}",
                         Close = UiOverlayName,
                     },
                     Text =
@@ -956,19 +1021,28 @@ namespace Oxide.Plugins
 
         private void OpenRecyclerInventory(ConsoleSystem.Arg arg)
         {
-            var player = arg.Player();
-            if (player == null || arg.Args.Length == 0)
-                return;
-            if (!uint.TryParse(arg.Args[0], out uint recyclerId))
+            var player = arg?.Player() ?? arg?.Connection?.player as BasePlayer;
+            if (player == null || !TryGetRecyclerIdArg(arg, out ulong recyclerId))
                 return;
             var recycler = BaseNetworkable.serverEntities.Find(new NetworkableId(recyclerId)) as Recycler;
-            if (recycler != null && HasAccess(player, recycler))
-            {
-                player.inventory.loot.StartLootingEntity(recycler, true);
-                player.inventory.loot.AddContainer(recycler.inventory);
-                player.inventory.loot.SendImmediate();
-                player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), recycler.panelName);
-            }
+            if (recycler == null || !HasAccess(player, recycler))
+                return;
+            DestroyRecyclerPlayerUi(player);
+            // Child/industrial layouts can sit outside the default 3m loot distance — skip position checks.
+            if (!player.inventory.loot.StartLootingEntity(recycler, false))
+                return;
+            player.inventory.loot.AddContainer(recycler.inventory);
+            player.inventory.loot.SendImmediate();
+            player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), recycler.panelName);
+        }
+
+        private static bool TryGetRecyclerIdArg(ConsoleSystem.Arg arg, out ulong recyclerId)
+        {
+            recyclerId = 0UL;
+            if (arg?.Args == null || arg.Args.Length == 0)
+                return false;
+            string raw = arg.Args[0].ToString();
+            return !string.IsNullOrEmpty(raw) && ulong.TryParse(raw, out recyclerId);
         }
 
         private void ConsoleCommandGiveRecycler(ConsoleSystem.Arg arg)
@@ -1012,10 +1086,8 @@ namespace Oxide.Plugins
 
         private void OpenStorage(ConsoleSystem.Arg arg, bool isInput)
         {
-            var player = arg.Player();
-            if (player == null || arg.Args.Length == 0)
-                return;
-            if (!uint.TryParse(arg.Args[0], out uint recyclerId))
+            var player = arg?.Player() ?? arg?.Connection?.player as BasePlayer;
+            if (player == null || !TryGetRecyclerIdArg(arg, out ulong recyclerId))
                 return;
             var networkableId = new NetworkableId(recyclerId);
             var recycler = BaseNetworkable.serverEntities.Find(networkableId) as Recycler;
@@ -1025,14 +1097,45 @@ namespace Oxide.Plugins
             if (comp == null)
                 return;
             var storage = isInput ? comp.InputStorage : comp.OutputStorage;
-            player.inventory.loot.StartLootingEntity(storage, true);
+            if (storage == null || storage.IsDestroyed || storage.inventory == null)
+                return;
+            PrepareAttachedStorageForLoot(storage);
+            // Attached input/output boxes often sit >3m from eyes or fail CanBeLooted distance — do not use position checks.
+            if (!player.inventory.loot.StartLootingEntity(storage, false))
+            {
+                // StartLootingEntity already Clear()'d; do not leave StorageNav / Input-Output CUI orphaned.
+                DestroyRecyclerPlayerUi(player);
+                TryReopenRecyclerLoot(player, recycler);
+                return;
+            }
             player.inventory.loot.AddContainer(storage.inventory);
             player.inventory.loot.SendImmediate();
-            player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), storage.panelName);
+            player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), storage.panelName ?? "generic");
             CreateStorageNavUi(player, recyclerId, isInput);
         }
 
-        private void CreateStorageNavUi(BasePlayer player, uint recyclerId, bool viewingInput)
+        private static void PrepareAttachedStorageForLoot(StorageContainer storage)
+        {
+            if (storage == null || storage.IsDestroyed)
+                return;
+            storage.isLootable = true;
+            storage.needsBuildingPrivilegeToUse = false;
+            storage.requireAuthIfNotLocked = false;
+        }
+
+        private void TryReopenRecyclerLoot(BasePlayer player, Recycler recycler)
+        {
+            if (player == null || recycler == null || recycler.IsDestroyed || !HasAccess(player, recycler))
+                return;
+            if (!player.inventory.loot.StartLootingEntity(recycler, false))
+                return;
+            if (recycler.inventory != null)
+                player.inventory.loot.AddContainer(recycler.inventory);
+            player.inventory.loot.SendImmediate();
+            player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), recycler.panelName);
+        }
+
+        private void CreateStorageNavUi(BasePlayer player, ulong recyclerId, bool viewingInput)
         {
             CuiHelper.DestroyUi(player, StorageUiOverlayName);
             const float panelWidthPx = 385f;
@@ -1070,7 +1173,9 @@ namespace Oxide.Plugins
             string headerText = viewingInput ? lang.GetMessage("InputButton", this, player.UserIDString) : lang.GetMessage("OutputButton", this, player.UserIDString);
             string otherText = viewingInput ? lang.GetMessage("GoToOutput", this, player.UserIDString) : lang.GetMessage("GoToInput", this, player.UserIDString);
             string recyclerText = lang.GetMessage("GoToRecycler", this, player.UserIDString);
-            string otherCmd = viewingInput ? $"industrialrecycler.openoutput {recyclerId}" : $"industrialrecycler.openinput  {recyclerId}";
+            string otherCmd = viewingInput
+                ? $"cui.endtest INDUSTRIALRECYCLER industrialrecycler.openoutput {recyclerId}"
+                : $"cui.endtest INDUSTRIALRECYCLER industrialrecycler.openinput {recyclerId}";
             c.Add(
                 new CuiLabel
                 {
@@ -1119,7 +1224,7 @@ namespace Oxide.Plugins
                     Button =
                     {
                         Color = "0.4 0.6 0.4 0.95",
-                        Command = $"industrialrecycler.openrecycler {recyclerId}",
+                        Command = $"cui.endtest INDUSTRIALRECYCLER industrialrecycler.openrecycler {recyclerId}",
                         Material = "assets/content/ui/namefontmaterial.mat",
                     },
                     RectTransform = { AnchorMin = $"{secondMinX:F3} {(1 - btnH) / 2:F3}", AnchorMax = $"{secondMaxX:F3} {(1 + btnH) / 2:F3}" },
@@ -1539,19 +1644,31 @@ namespace Oxide.Plugins
             if (player == null)
                 return 0;
             int count = 0;
-            var trackedIds = (isIndustrial ? _industrialRecyclers : _standardRecyclers).ToList();
-            foreach (ulong entityId in trackedIds)
+            var tracked = isIndustrial ? _industrialRecyclers : _standardRecyclers;
+            // Snapshot keys so we can remove invalid ids while iterating
+            var trackedIds = Pool.Get<List<ulong>>();
+            try
             {
-                var recycler = BaseNetworkable.serverEntities.Find(new NetworkableId(entityId)) as Recycler;
-                if (recycler == null || recycler.IsDestroyed)
+                foreach (ulong entityId in tracked)
+                    trackedIds.Add(entityId);
+                for (int i = 0; i < trackedIds.Count; i++)
                 {
-                    _recyclerOwners.Remove(entityId);
-                    _industrialRecyclers.Remove(entityId);
-                    _standardRecyclers.Remove(entityId);
-                    continue;
+                    ulong entityId = trackedIds[i];
+                    var recycler = BaseNetworkable.serverEntities.Find(new NetworkableId(entityId)) as Recycler;
+                    if (recycler == null || recycler.IsDestroyed)
+                    {
+                        _recyclerOwners.Remove(entityId);
+                        _industrialRecyclers.Remove(entityId);
+                        _standardRecyclers.Remove(entityId);
+                        continue;
+                    }
+                    if (recycler.OwnerID == player.userID)
+                        count++;
                 }
-                if (recycler.OwnerID == player.userID)
-                    count++;
+            }
+            finally
+            {
+                Pool.FreeUnmanaged(ref trackedIds);
             }
             return count;
         }
@@ -1606,8 +1723,8 @@ namespace Oxide.Plugins
             if (recycler == null)
                 return null;
             recycler.OwnerID = player.userID;
-            ApplyEfficiency(recycler, GetConfiguredEfficiencyFor(player.userID, false));
             RegisterRecyclerOwnership(recycler, false);
+            RefreshRecyclerStatsSnapshot(recycler);
             return recycler;
         }
 
@@ -1667,6 +1784,7 @@ namespace Oxide.Plugins
             {
                 spawnedRecycler.gameObject.AddComponent<RecyclerComponent>();
                 RegisterRecyclerOwnership(spawnedRecycler, true);
+                RefreshRecyclerStatsSnapshot(spawnedRecycler);
             }
             return spawnedRecycler != null;
         }
@@ -1678,6 +1796,7 @@ namespace Oxide.Plugins
                 return false;
             spawnedRecycler.gameObject.AddComponent<RecyclerComponent>();
             RegisterRecyclerOwnership(spawnedRecycler, true);
+            RefreshRecyclerStatsSnapshot(spawnedRecycler);
             return true;
         }
 
@@ -1762,7 +1881,6 @@ namespace Oxide.Plugins
 
         private Recycler UpgradeRecyclerWithComponents(BasePlayer player, Recycler recycler, int turn = 0)
         {
-            ApplyEfficiency(recycler, GetConfiguredEfficiencyFor(player.userID, false));
             return SetupStorageAndAdapters(recycler, player);
         }
 
@@ -1773,7 +1891,6 @@ namespace Oxide.Plugins
             var recycler = SpawnEntity(RecyclerPrefabPath, foundation, player, baseEntity.transform.position, baseEntity.transform.rotation * Quaternion.Euler(0, turn, 0)) as Recycler;
             if (recycler == null)
                 return null;
-            ApplyEfficiency(recycler, GetConfiguredEfficiencyFor(player.userID, false));
             recycler = SetupStorageAndAdapters(recycler, player);
             return recycler;
         }
@@ -1798,6 +1915,14 @@ namespace Oxide.Plugins
                 ent.transform.localRotation = rotation;
             }
             ent.Spawn();
+            // Player-deployed recyclers use the green (monument) powergrid profile so they
+            // receive Power Trip efficiency/duration buffs when Power Plant is powered.
+            if (ent is Recycler spawnedRecycler)
+            {
+                spawnedRecycler.recyclerType = global::RecyclerConfig.RecyclerType.Green;
+                spawnedRecycler.RecyclerTypeSyncVar = (int)global::RecyclerConfig.RecyclerType.Green;
+                spawnedRecycler.Server_RefreshPowergridState();
+            }
             ent.SendNetworkUpdateImmediate();
             return ent;
         }
@@ -1810,7 +1935,7 @@ namespace Oxide.Plugins
                 return;
             if (item == null || !item.IsValid() || item.info == null || item.amount <= 0)
                 return;
-            Interface.Oxide.CallHook("CanRecycle", recycler, item);
+            HarmonyModInterface.Mods.CallHook("CanRecycle", recycler, item);
             if (item.info.category == ItemCategory.Weapon)
             {
                 BaseProjectile projectile = item.GetHeldEntity() as BaseProjectile;
@@ -1831,8 +1956,10 @@ namespace Oxide.Plugins
                 }
                 if (item.contents?.itemList != null && item.contents.itemList.Count > 0)
                 {
-                    foreach (Item attachment in item.contents.itemList.ToList())
+                    var attachments = item.contents.itemList;
+                    for (int i = attachments.Count - 1; i >= 0; i--)
                     {
+                        Item attachment = attachments[i];
                         if (attachment == null || !attachment.IsValid() || attachment.info == null)
                             continue;
                         attachment.RemoveFromContainer();
@@ -1848,7 +1975,7 @@ namespace Oxide.Plugins
                 if (ownerPlayer != null)
                 {
                     recycler.SetFlag(BaseEntity.Flags.On, false);
-                    Interface.CallHook("OnRecyclerToggle", recycler, ownerPlayer);
+                    HarmonyModInterface.CallHook("OnRecyclerToggle", recycler, ownerPlayer);
                 }
                 recycler.StartRecycling();
             }
@@ -1988,8 +2115,9 @@ namespace Oxide.Plugins
             foreach (var requirement in requiredItemMap)
             {
                 int amountToRemove = requirement.Value;
-                foreach (Item item in allItems.ToList())
+                for (int i = 0; i < allItems.Count; i++)
                 {
+                    Item item = allItems[i];
                     if (amountToRemove <= 0)
                         break;
                     if (item == null || !item.IsValid() || item.info == null || item.amount <= 0)
@@ -2048,32 +2176,61 @@ namespace Oxide.Plugins
             if (recycler == null)
                 return;
             var recyclerComponent = recycler.GetComponent<RecyclerComponent>();
-            IEnumerable<Item> sourceItems = recyclerComponent != null ? recyclerComponent.GatherAllItems() : recycler.inventory?.itemList ?? Enumerable.Empty<Item>();
-            List<Item> itemsToDrop = sourceItems
-                .Where(item => item != null && item.IsValid() && item.info != null && item.amount > 0)
-                .GroupBy(item => item.uid.Value)
-                .Select(group => group.First())
-                .ToList();
+            List<Item> itemsToDrop = recyclerComponent != null
+                ? recyclerComponent.GatherAllItems()
+                : new List<Item>();
+            if (recyclerComponent == null && recycler.inventory?.itemList != null)
+            {
+                var seen = new HashSet<ulong>();
+                var list = recycler.inventory.itemList;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    Item item = list[i];
+                    if (item == null || !item.IsValid() || item.info == null || item.amount <= 0)
+                        continue;
+                    if (!seen.Add(item.uid.Value))
+                        continue;
+                    itemsToDrop.Add(item);
+                }
+            }
             if (itemsToDrop.Count == 0)
                 return;
             Vector3 position = recycler.transform.position;
             Quaternion rotation = recycler.transform.rotation;
-            foreach (Item item in itemsToDrop)
+            for (int i = 0; i < itemsToDrop.Count; i++)
             {
+                Item item = itemsToDrop[i];
                 if (item.parent != null)
                     item.RemoveFromContainer();
             }
             for (int i = 0; i < itemsToDrop.Count; i += 6)
             {
-                List<Item> batch = itemsToDrop.Skip(i).Take(6).ToList();
+                int batchCount = Math.Min(6, itemsToDrop.Count - i);
+                List<Item> batch = new List<Item>(batchCount);
+                for (int j = 0; j < batchCount; j++)
+                    batch.Add(itemsToDrop[i + j]);
                 SpawnDroppedItemContainer(position, rotation, batch);
             }
         }
 
+        private static List<Item> FilterValidItems(List<Item> items)
+        {
+            var validItems = new List<Item>();
+            if (items == null)
+                return validItems;
+            for (int i = 0; i < items.Count; i++)
+            {
+                Item item = items[i];
+                if (item != null && item.IsValid() && item.info != null && item.amount > 0)
+                    validItems.Add(item);
+            }
+            return validItems;
+        }
+
         private DroppedItemContainer SpawnDroppedItemContainer(Vector3 position, Quaternion rotation, List<Item> itemsToDrop)
         {
-            List<Item> validItems = itemsToDrop?.Where(item => item != null && item.IsValid() && item.info != null && item.amount > 0).ToList();
-            if (validItems == null || validItems.Count == 0)
+            List<Item> validItems = FilterValidItems(itemsToDrop);
+            if (validItems.Count == 0)
                 return null;
             var droppedItemContainer = GameManager.server.CreateEntity(DroppedItemPrefab, position, rotation) as DroppedItemContainer;
             if (droppedItemContainer == null)
@@ -2087,7 +2244,7 @@ namespace Oxide.Plugins
         {
             if (container == null)
                 return;
-            List<Item> validItems = items?.Where(item => item != null && item.IsValid() && item.info != null && item.amount > 0).ToList() ?? new List<Item>();
+            List<Item> validItems = FilterValidItems(items);
             container.inventory = new ItemContainer();
             container.inventory.ServerInitialize(null, Math.Max(1, validItems.Count));
             container.inventory.GiveUID();
@@ -2596,24 +2753,8 @@ namespace Oxide.Plugins
                     return false;
                 string inputShort = Path.GetFileNameWithoutExtension(InputStoragePrefabPath);
                 string outputShort = Path.GetFileNameWithoutExtension(OutputStoragePrefabPath);
-                InputStorage = Recycler
-                    .children.OfType<StorageContainer>()
-                    .FirstOrDefault(c =>
-                        c != null
-                        && (
-                            (c.PrefabName ?? string.Empty).Equals(InputStoragePrefabPath, StringComparison.OrdinalIgnoreCase)
-                            || (c.ShortPrefabName ?? string.Empty).Equals(inputShort, StringComparison.OrdinalIgnoreCase)
-                        )
-                    );
-                OutputStorage = Recycler
-                    .children.OfType<StorageContainer>()
-                    .FirstOrDefault(c =>
-                        c != null
-                        && (
-                            (c.PrefabName ?? string.Empty).Equals(OutputStoragePrefabPath, StringComparison.OrdinalIgnoreCase)
-                            || (c.ShortPrefabName ?? string.Empty).Equals(outputShort, StringComparison.OrdinalIgnoreCase)
-                        )
-                    );
+                InputStorage = FindChildStorageByPrefab(Recycler, InputStoragePrefabPath, inputShort);
+                OutputStorage = FindChildStorageByPrefab(Recycler, OutputStoragePrefabPath, outputShort);
                 return InputStorage != null && OutputStorage != null;
             }
 
@@ -2623,10 +2764,10 @@ namespace Oxide.Plugins
                     return;
                 _instance._inputItemContainers.Add(InputStorage.inventory.uid.Value);
                 _instance._recyclerItemContainers.Add(Recycler.inventory.uid.Value);
-                var inputAdapter = InputStorage.children?.OfType<IndustrialStorageAdaptor>().FirstOrDefault();
+                var inputAdapter = FindChildOfType<IndustrialStorageAdaptor>(InputStorage);
                 if (inputAdapter?.net != null)
                     _instance._storageAdapters.Add(inputAdapter.net.ID.Value);
-                var outputAdapter = OutputStorage.children?.OfType<IndustrialStorageAdaptor>().FirstOrDefault();
+                var outputAdapter = FindChildOfType<IndustrialStorageAdaptor>(OutputStorage);
                 if (outputAdapter?.net != null)
                     _instance._storageAdapters.Add(outputAdapter.net.ID.Value);
             }
@@ -2639,18 +2780,16 @@ namespace Oxide.Plugins
                     _instance._inputItemContainers.Remove(InputStorage.inventory.uid.Value);
                 if (Recycler?.inventory != null)
                     _instance._recyclerItemContainers.Remove(Recycler.inventory.uid.Value);
-                if (InputStorage?.children != null)
+                ForEachChildOfType<IndustrialStorageAdaptor>(InputStorage, adapter =>
                 {
-                    foreach (var adapter in InputStorage.children.OfType<IndustrialStorageAdaptor>())
-                        if (adapter?.net != null)
-                            _instance._storageAdapters.Remove(adapter.net.ID.Value);
-                }
-                if (OutputStorage?.children != null)
+                    if (adapter?.net != null)
+                        _instance._storageAdapters.Remove(adapter.net.ID.Value);
+                });
+                ForEachChildOfType<IndustrialStorageAdaptor>(OutputStorage, adapter =>
                 {
-                    foreach (var adapter in OutputStorage.children.OfType<IndustrialStorageAdaptor>())
-                        if (adapter?.net != null)
-                            _instance._storageAdapters.Remove(adapter.net.ID.Value);
-                }
+                    if (adapter?.net != null)
+                        _instance._storageAdapters.Remove(adapter.net.ID.Value);
+                });
             }
 
             private void SetupRecycler()
@@ -2660,9 +2799,22 @@ namespace Oxide.Plugins
                 _instance._recyclerOwners[Recycler.net.ID.Value] = Recycler.OwnerID;
                 InputStorage.inventory.capacity = MaxStorageCapacity;
                 OutputStorage.inventory.capacity = MaxStorageCapacity;
+                // Access is gated by IndustrialRecycler HasAccess / CanLootEntity — do not let vehicle-storage
+                // privilege flags instantly cancel the loot panel after OpenStorage.
+                PrepareAttachedStorage(InputStorage);
+                PrepareAttachedStorage(OutputStorage);
                 SanitizeContainer(Recycler.inventory);
                 SanitizeContainer(InputStorage.inventory);
                 SanitizeContainer(OutputStorage.inventory);
+            }
+
+            private static void PrepareAttachedStorage(StorageContainer storage)
+            {
+                if (storage == null || storage.IsDestroyed)
+                    return;
+                storage.isLootable = true;
+                storage.needsBuildingPrivilegeToUse = false;
+                storage.requireAuthIfNotLocked = false;
             }
 
             public void HandleItemTransfers()
@@ -2682,8 +2834,21 @@ namespace Oxide.Plugins
                 SanitizeContainer(Recycler.inventory);
                 SanitizeContainer(InputStorage.inventory);
                 SanitizeContainer(OutputStorage.inventory);
-                if (CountAvailableRecyclerInputSlots() < 6 && Recycler.inventory.itemList.Any(IsUsableItem))
-                    Recycler.StartRecycling();
+                if (CountAvailableRecyclerInputSlots() < 6)
+                {
+                    bool hasUsable = false;
+                    var itemList = Recycler.inventory.itemList;
+                    for (int i = 0; i < itemList.Count; i++)
+                    {
+                        if (IsUsableItem(itemList[i]))
+                        {
+                            hasUsable = true;
+                            break;
+                        }
+                    }
+                    if (hasUsable)
+                        Recycler.StartRecycling();
+                }
                 else if (Recycler.inventory.itemList.Count == 0)
                     Recycler.StopRecycling();
             }
@@ -2716,7 +2881,14 @@ namespace Oxide.Plugins
             {
                 if (InputStorage?.inventory == null || OutputStorage?.inventory == null || Recycler?.inventory == null)
                     return;
-                var inputItems = new List<Item>(InputStorage.inventory.itemList.Where(IsUsableItem));
+                var inputItems = new List<Item>();
+                var sourceItems = InputStorage.inventory.itemList;
+                for (int i = 0; i < sourceItems.Count; i++)
+                {
+                    Item item = sourceItems[i];
+                    if (IsUsableItem(item))
+                        inputItems.Add(item);
+                }
                 foreach (Item item in inputItems)
                 {
                     if (!IsUsableItem(item))
@@ -2755,14 +2927,16 @@ namespace Oxide.Plugins
             {
                 if (container?.itemList == null)
                     return;
-                foreach (Item item in container.itemList.ToList())
+                var itemList = container.itemList;
+                for (int i = itemList.Count - 1; i >= 0; i--)
                 {
+                    Item item = itemList[i];
                     if (item == null || !item.IsValid() || item.info == null)
                         continue;
                     if (item.amount <= 0)
                         item.Remove();
                 }
-                container.itemList.RemoveAll(item => item == null || !item.IsValid() || item.info == null || item.amount <= 0);
+                itemList.RemoveAll(item => item == null || !item.IsValid() || item.info == null || item.amount <= 0);
             }
 
             public bool ToggleConfig()
@@ -2800,7 +2974,14 @@ namespace Oxide.Plugins
             {
                 if (container?.itemList == null)
                     return new List<Item>();
-                List<Item> items = container.itemList.Where(IsUsableItem).ToList();
+                List<Item> items = new List<Item>();
+                var itemList = container.itemList;
+                for (int i = 0; i < itemList.Count; i++)
+                {
+                    Item item = itemList[i];
+                    if (IsUsableItem(item))
+                        items.Add(item);
+                }
                 foreach (Item item in items)
                     item.RemoveFromContainer();
                 return items;
@@ -2810,8 +2991,10 @@ namespace Oxide.Plugins
             {
                 if (items == null)
                     return;
-                foreach (Item item in items.Where(IsUsableItem))
+                foreach (Item item in items)
                 {
+                    if (!IsUsableItem(item))
+                        continue;
                     if (target == null || !_instance.SafeMoveToContainer(item, target))
                         item.Drop(fallbackPosition + Vector3.up, Vector3.zero);
                 }
@@ -2819,12 +3002,8 @@ namespace Oxide.Plugins
 
             private bool AdaptersHavePipesConnected()
             {
-                IndustrialStorageAdaptor ia = null;
-                IndustrialStorageAdaptor oa = null;
-                if (InputStorage != null && InputStorage.children != null)
-                    ia = InputStorage.children.OfType<IndustrialStorageAdaptor>().FirstOrDefault();
-                if (OutputStorage != null && OutputStorage.children != null)
-                    oa = OutputStorage.children.OfType<IndustrialStorageAdaptor>().FirstOrDefault();
+                IndustrialStorageAdaptor ia = FindChildOfType<IndustrialStorageAdaptor>(InputStorage);
+                IndustrialStorageAdaptor oa = FindChildOfType<IndustrialStorageAdaptor>(OutputStorage);
                 return IsAdapterConnected(ia) || IsAdapterConnected(oa);
             }
 
@@ -2940,7 +3119,7 @@ namespace Oxide.Plugins
                     InputStorage.transform.localRotation = inputRot;
                     InputStorage.inventory.capacity = MaxStorageCapacity;
                     var ia =
-                        (InputStorage.children?.OfType<IndustrialStorageAdaptor>().FirstOrDefault())
+                        FindChildOfType<IndustrialStorageAdaptor>(InputStorage)
                         ?? _instance.SpawnEntity(AdapterPrefabPath, InputStorage, owner, inputAdapterOffset, inputAdapterRot) as IndustrialStorageAdaptor;
                     if (ia != null)
                     {
@@ -2957,7 +3136,7 @@ namespace Oxide.Plugins
                     OutputStorage.transform.localRotation = outputRot;
                     OutputStorage.inventory.capacity = MaxStorageCapacity;
                     var oa =
-                        (OutputStorage.children?.OfType<IndustrialStorageAdaptor>().FirstOrDefault())
+                        FindChildOfType<IndustrialStorageAdaptor>(OutputStorage)
                         ?? _instance.SpawnEntity(AdapterPrefabPath, OutputStorage, owner, outputAdapterOffset, outputAdapterRot) as IndustrialStorageAdaptor;
                     if (oa != null)
                     {
@@ -2979,13 +3158,23 @@ namespace Oxide.Plugins
             public List<Item> GatherAllItems()
             {
                 var items = new List<Item>();
-                if (InputStorage?.inventory?.itemList != null)
-                    items.AddRange(InputStorage.inventory.itemList.Where(IsUsableItem));
-                if (OutputStorage?.inventory?.itemList != null)
-                    items.AddRange(OutputStorage.inventory.itemList.Where(IsUsableItem));
-                if (Recycler?.inventory?.itemList != null)
-                    items.AddRange(Recycler.inventory.itemList.Where(IsUsableItem));
-                return items.GroupBy(item => item.uid.Value).Select(group => group.First()).ToList();
+                var seen = new HashSet<ulong>();
+                void AddUsable(ItemContainer container)
+                {
+                    if (container?.itemList == null) return;
+                    var list = container.itemList;
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        Item item = list[i];
+                        if (!IsUsableItem(item)) continue;
+                        if (!seen.Add(item.uid.Value)) continue;
+                        items.Add(item);
+                    }
+                }
+                AddUsable(InputStorage?.inventory);
+                AddUsable(OutputStorage?.inventory);
+                AddUsable(Recycler?.inventory);
+                return items;
             }
 
             private void OnDestroy()
@@ -2995,30 +3184,151 @@ namespace Oxide.Plugins
             }
         }
 
-        private float GetConfiguredEfficiencyFor(ulong ownerId, bool isVirtual)
+        /// <summary>
+        /// Permission-tier efficiency only. When no tier is set, return false so vanilla
+        /// GetRecyclerStats (including Power Trip powergrid buffs) is left unchanged.
+        /// </summary>
+        private bool TryGetConfiguredEfficiencyFor(ulong ownerId, bool isVirtual, out float efficiency)
         {
+            efficiency = 0f;
             string uid = ownerId.ToString();
             if (isVirtual)
             {
                 if (permission.UserHasPermission(uid, PermissionVirtualEfficiency4))
-                    return Mathf.Clamp01(_config.VirtualEfficiency4);
+                {
+                    efficiency = Mathf.Clamp01(_config.VirtualEfficiency4);
+                    return true;
+                }
                 if (permission.UserHasPermission(uid, PermissionVirtualEfficiency3))
-                    return Mathf.Clamp01(_config.VirtualEfficiency3);
+                {
+                    efficiency = Mathf.Clamp01(_config.VirtualEfficiency3);
+                    return true;
+                }
                 if (permission.UserHasPermission(uid, PermissionVirtualEfficiency2))
-                    return Mathf.Clamp01(_config.VirtualEfficiency2);
+                {
+                    efficiency = Mathf.Clamp01(_config.VirtualEfficiency2);
+                    return true;
+                }
                 if (permission.UserHasPermission(uid, PermissionVirtualEfficiency1))
-                    return Mathf.Clamp01(_config.VirtualEfficiency1);
-                return 0.6f;
+                {
+                    efficiency = Mathf.Clamp01(_config.VirtualEfficiency1);
+                    return true;
+                }
+                return false;
             }
             if (permission.UserHasPermission(uid, PermissionEfficiency4))
-                return Mathf.Clamp01(_config.StandardEfficiency4);
+            {
+                efficiency = Mathf.Clamp01(_config.StandardEfficiency4);
+                return true;
+            }
             if (permission.UserHasPermission(uid, PermissionEfficiency3))
-                return Mathf.Clamp01(_config.StandardEfficiency3);
+            {
+                efficiency = Mathf.Clamp01(_config.StandardEfficiency3);
+                return true;
+            }
             if (permission.UserHasPermission(uid, PermissionEfficiency2))
-                return Mathf.Clamp01(_config.StandardEfficiency2);
+            {
+                efficiency = Mathf.Clamp01(_config.StandardEfficiency2);
+                return true;
+            }
             if (permission.UserHasPermission(uid, PermissionEfficiency1))
-                return Mathf.Clamp01(_config.StandardEfficiency1);
-            return 0.6f;
+            {
+                efficiency = Mathf.Clamp01(_config.StandardEfficiency1);
+                return true;
+            }
+            return false;
+        }
+
+        private bool TryGetConfiguredDurationFor(ulong ownerId, bool isVirtual, out float duration)
+        {
+            duration = 0f;
+            string ownerIdString = ownerId.ToString();
+            if (isVirtual)
+            {
+                if (permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed4))
+                {
+                    duration = _config.VirtualSpeed4Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed3))
+                {
+                    duration = _config.VirtualSpeed3Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed2))
+                {
+                    duration = _config.VirtualSpeed2Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed1))
+                {
+                    duration = _config.VirtualSpeed1Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionSpeed4))
+                {
+                    duration = _config.VirtualSpeed4Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionSpeed3))
+                {
+                    duration = _config.VirtualSpeed3Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionSpeed2))
+                {
+                    duration = _config.VirtualSpeed2Duration;
+                    return true;
+                }
+                if (permission.UserHasPermission(ownerIdString, PermissionSpeed1))
+                {
+                    duration = _config.VirtualSpeed1Duration;
+                    return true;
+                }
+                return false;
+            }
+            if (permission.UserHasPermission(ownerIdString, PermissionSpeed4))
+            {
+                duration = _config.Speed4Duration;
+                return true;
+            }
+            if (permission.UserHasPermission(ownerIdString, PermissionSpeed3))
+            {
+                duration = _config.Speed3Duration;
+                return true;
+            }
+            if (permission.UserHasPermission(ownerIdString, PermissionSpeed2))
+            {
+                duration = _config.Speed2Duration;
+                return true;
+            }
+            if (permission.UserHasPermission(ownerIdString, PermissionSpeed1))
+            {
+                duration = _config.Speed1Duration;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Power Trip: green recyclers get efficiency/duration buffs from the Power Plant grid.
+        /// Returns the relative delta/scale vs the recycler type's unpowered baseline so permission
+        /// tiers stay ahead of stock while still receiving the same grid bonuses.
+        /// </summary>
+        private static void GetPowergridRelativeModifiers(Recycler recycler, float vanillaEfficiency, float vanillaDuration, out float efficiencyDelta, out float durationFactor)
+        {
+            efficiencyDelta = 0f;
+            durationFactor = 1f;
+            if (recycler == null)
+                return;
+            global::RecyclerConfig config = global::RecyclerConfig.instance;
+            if (config == null || !config.TryGetConfigForType(recycler.GetRecyclerType(), out var zoneConfig) || zoneConfig == null)
+                return;
+            float baseEfficiency = zoneConfig.efficiency;
+            float baseDuration = zoneConfig.duration;
+            if (baseDuration > 0.0001f)
+                durationFactor = vanillaDuration / baseDuration;
+            efficiencyDelta = vanillaEfficiency - baseEfficiency;
         }
 
         private void ApplyEfficiency(Recycler recycler, float efficiency)
@@ -3026,6 +3336,14 @@ namespace Oxide.Plugins
             if (recycler == null)
                 return;
             recycler.lastFetchedEfficiency = Mathf.Clamp01(efficiency);
+        }
+
+        private void RefreshRecyclerStatsSnapshot(Recycler recycler)
+        {
+            if (recycler == null || recycler.IsDestroyed)
+                return;
+            recycler.GetRecyclerStats(out float efficiency, out _);
+            ApplyEfficiency(recycler, efficiency);
         }
 
         [AutoPatch]
@@ -3039,65 +3357,32 @@ namespace Oxide.Plugins
                 {
                     return;
                 }
-                bool isVirtual = plugin._playerVirtualRecycler.Values.Contains(__instance);
+                bool isVirtual = false;
+                foreach (KeyValuePair<ulong, Recycler> pair in plugin._playerVirtualRecycler)
+                {
+                    if (pair.Value == __instance)
+                    {
+                        isVirtual = true;
+                        break;
+                    }
+                }
                 bool isManaged = plugin._industrialRecyclers.Contains(__instance.net.ID.Value) || plugin._standardRecyclers.Contains(__instance.net.ID.Value) || isVirtual;
                 if (!isManaged)
                     return;
+
+                // Vanilla values already include Power Trip powergrid buffs for this recycler type/stage.
+                float vanillaEfficiency = efficiency;
+                float vanillaDuration = duration;
+                GetPowergridRelativeModifiers(__instance, vanillaEfficiency, vanillaDuration, out float efficiencyDelta, out float durationFactor);
+
                 ulong ownerId = __instance.OwnerID;
-                string ownerIdString = ownerId.ToString();
-                efficiency = plugin.GetConfiguredEfficiencyFor(ownerId, isVirtual);
-                if (isVirtual)
-                {
-                    if (plugin.permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed4))
-                    {
-                        duration = plugin._config.VirtualSpeed4Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed3))
-                    {
-                        duration = plugin._config.VirtualSpeed3Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed2))
-                    {
-                        duration = plugin._config.VirtualSpeed2Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionVirtualSpeed1))
-                    {
-                        duration = plugin._config.VirtualSpeed1Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed4))
-                    {
-                        duration = plugin._config.VirtualSpeed4Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed3))
-                    {
-                        duration = plugin._config.VirtualSpeed3Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed2))
-                    {
-                        duration = plugin._config.VirtualSpeed2Duration;
-                    }
-                    else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed1))
-                    {
-                        duration = plugin._config.VirtualSpeed1Duration;
-                    }
-                    return;
-                }
-                if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed4))
-                {
-                    duration = plugin._config.Speed4Duration;
-                }
-                else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed3))
-                {
-                    duration = plugin._config.Speed3Duration;
-                }
-                else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed2))
-                {
-                    duration = plugin._config.Speed2Duration;
-                }
-                else if (plugin.permission.UserHasPermission(ownerIdString, PermissionSpeed1))
-                {
-                    duration = plugin._config.Speed1Duration;
-                }
+                if (plugin.TryGetConfiguredEfficiencyFor(ownerId, isVirtual, out float configuredEfficiency))
+                    efficiency = Mathf.Clamp01(configuredEfficiency + efficiencyDelta);
+                // else keep vanilla (powergrid-aware) efficiency
+
+                if (plugin.TryGetConfiguredDurationFor(ownerId, isVirtual, out float configuredDuration))
+                    duration = Mathf.Max(0.1f, configuredDuration * durationFactor);
+                // else keep vanilla (powergrid-aware) duration
             }
         }
 
@@ -3203,12 +3488,14 @@ namespace Oxide.Plugins
             {
                 if (container?.itemList == null)
                     return;
-                foreach (Item item in container.itemList.ToList())
+                var itemList = container.itemList;
+                for (int i = itemList.Count - 1; i >= 0; i--)
                 {
+                    Item item = itemList[i];
                     if (item != null && item.IsValid() && item.info != null && item.amount <= 0)
                         item.Remove();
                 }
-                container.itemList.RemoveAll(item => item == null || !item.IsValid() || item.info == null || item.amount <= 0);
+                itemList.RemoveAll(item => item == null || !item.IsValid() || item.info == null || item.amount <= 0);
             }
         }
     }

@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -94,6 +100,9 @@ namespace RaidableBases
 
         private void OnMapMarkerAdded(BasePlayer player, ProtoBuf.MapNote note)
         {
+            // Vanish handles marker teleport for limitNetworking (vanished) admins.
+            if (player.limitNetworking)
+                return;
             if (player.IsAlive() && player.HasPermission("raidablebases.mapteleport") && !player.isMounted)
             {
                 float y = GetSpawnHeight(note.worldPosition);
@@ -120,25 +129,32 @@ namespace RaidableBases
 
         internal void InitHarmony() => Init();
         internal void UnloadHarmony() => Unload();
-        /// <summary>Load config only (used from OnLoaded so load returns immediately).</summary>
         internal void InitMinimal()
         {
             LoadConfig();
-            // Bind Kits Harmony stub so profile Scientist/Murderer Kits resolve via KitsAPI.
             Kits = RaidableBasesHost.Instance?.Kits ?? new KitsPluginStub();
             KitsAPI.Init();
         }
-        /// <summary>Rest of init after config (run from deferred soft-start coroutine to avoid load freeze).</summary>
         internal void InitRest()
         {
             if (InstallationError) return;
+            _messages = new(this);
             HtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
+            _configPresetController = new(this);
+            _pasteEngine = new(this);
+            _targetInfo = new(this);
+            _pasteEngine.Initialize();
+            harmonyEngine ??= new HarmonyEngine(this);
             Automated = new(this, config.Settings.Maintained.Enabled, config.Settings.Schedule.Enabled);
             UndoComparer.DeployableItems = DeployableItems;
             UndoComparer.IsBox = IsBox;
             SpawnsController.Instance = this;
             UI = new() { Instance = this };
             UI.LoadOffsetData();
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                UI.DestroyAllUi(player);
+            }
             IsUnloading = false;
             Buildings = new();
             GridController.Instance = this;
@@ -172,7 +188,13 @@ namespace RaidableBases
             if (InstallationError) return;
             IsUnloading = true;
             IsSpawnerBusy = true;
+            _configPresetController?.Dispose();
+            _pasteEngine?.Dispose();
+            _targetInfo?.Dispose();
+            _messages?.Dispose();
+            TryInvokeMethod(ClearPlayerDelayExclusions);
             SaveData();
+            UI?.DestroyAll();
             TryInvokeMethod(StopLoadCoroutines);
             TryInvokeMethod(UnsubscribeSky);
             TryInvokeMethod(StartEntityCleanup);
@@ -185,11 +207,16 @@ namespace RaidableBases
             IsSpawnerBusy = spawnerBusy;
         }
 
-        /// <summary>Unload steps with yields so entry can run unload without freezing.</summary>
         internal IEnumerator RunUnloadStepsAsync()
         {
             if (InstallationError) yield break;
+            _configPresetController?.Dispose();
+            _pasteEngine?.Dispose();
+            _targetInfo?.Dispose();
+            _messages?.Dispose();
             SaveData();
+            yield return null;
+            UI?.DestroyAll();
             yield return null;
             UnsubscribeSky();
             yield return null;
@@ -209,7 +236,6 @@ namespace RaidableBases
 
         public void OnServerInitializedHarmony() => OnServerInitialized(true);
 
-        /// <summary>Start server init as a soft-start coroutine (yields between steps so server stays responsive on harmony.load).</summary>
         public void StartSoftInitCoroutine(System.Action onComplete = null)
         {
             if (ServerMgr.Instance != null)
@@ -221,17 +247,11 @@ namespace RaidableBases
             }
         }
 
-        /// <summary>Soft start: run server init as coroutine with yields between heavy steps.</summary>
         public IEnumerator OnServerInitializedSoftStartCoroutine(System.Action onComplete = null)
         {
             yield return null;
             if (InstallationError || IsUnloading || RaidableBasesHost.Instance == null) yield break;
-            // Avoid double soft-start overlapping on watchdog retry.
-            if (Queues != null)
-            {
-                onComplete?.Invoke();
-                yield break;
-            }
+            if (Queues != null) { onComplete?.Invoke(); yield break; }
             InitRest();
             yield return null;
             if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
@@ -249,42 +269,18 @@ namespace RaidableBases
             AddCovalenceCommand("rb.toggle", nameof(CommandToggle), "raidablebases.config");
             AddCovalenceCommand("rb.difficulty", nameof(CommandDifficulty), "raidablebases.config");
             CommandRegistry.RegisterAttributedConsoleCommands(this);
-            Puts("Commands registered (chat + console): buyraid/rbe/rb/rbevent + ui_buyraid");
             yield return null;
             if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
-            LoadPlayerData();
+            LoadPlayerData(true);
             yield return CoroutineEx.waitForSeconds(0.05f);
             if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
             yield return InitializeSkinsCoroutine();
             yield return CoroutineEx.waitForSeconds(0.05f);
             if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
-            if (config.Settings.Buyable.Cooldowns == null)
-            {
-                config.Settings.Buyable.Cooldowns = new();
-                data.BuyableCooldowns.Clear();
-                SaveConfig();
-            }
-            if (config.Settings.TeleportMarker)
-                Subscribe(nameof(OnMapMarkerAdded));
-            else
-                Unsubscribe(nameof(OnMapMarkerAdded));
-            Subscribe(nameof(OnPlayerSleepEnded));
-            GridController.LoadSpawns();
-            yield return CoroutineEx.waitForSeconds(0.05f);
-            if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
-            if (ZoneManager != null)
-                SpawnsController.SetupZones(true);
-            Skins.Clear();
-            CreateDefaultFiles();
-            yield return CoroutineEx.waitForSeconds(0.05f);
-            if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
-            SetOnSun(true);
-            GridController.SetupGrid();
-            yield return CoroutineEx.waitForSeconds(0.05f);
-            if (IsUnloading || RaidableBasesHost.Instance == null) yield break;
+            Initialize();
             OceanLevel = WaterSystem.OceanLevel;
             Queues.RestartCoroutine();
-            timer.Repeat(Mathf.Clamp(config.EventMessages.Interval, 1f, 60f), 0, CheckNotifications);
+            timer.Repeat(Mathf.Clamp(config.EventMessages.Interval, 1f, 60f), 0, _messages.ProcessQueue);
             timer.Repeat(30f, 0, UpdateAllMarkers);
             timer.Repeat(30f, 0, CheckOceanLevel);
             timer.Repeat(300f, 0, SaveData);
@@ -293,15 +289,12 @@ namespace RaidableBases
             BuildPrefabIds();
             LoadOwnership();
             onComplete?.Invoke();
-            Puts("Soft-start complete - maintained/scheduled automation will run when grid finishes.");
+            Puts("Soft-start complete.");
         }
 
-        private void OnServerInitialized(bool isStartup)
+        private void OnServerInitialized(bool initial)
         {
-            if (InstallationError)
-            {
-                return;
-            }
+            if (InstallationError) return;
             SpawnsController.instruction0 = CoroutineEx.waitForSeconds(0.0025f);
             if (!string.IsNullOrWhiteSpace(config.Settings.EditCommand)) AddCovalenceCommand(config.Settings.EditCommand, nameof(CommandEdit));
             if (!string.IsNullOrWhiteSpace(config.Settings.BuyCommand)) AddCovalenceCommand(config.Settings.BuyCommand, nameof(CommandBuyRaid));
@@ -316,13 +309,12 @@ namespace RaidableBases
             AddCovalenceCommand("rb.toggle", nameof(CommandToggle), "raidablebases.config");
             AddCovalenceCommand("rb.difficulty", nameof(CommandDifficulty), "raidablebases.config");
             CommandRegistry.RegisterAttributedConsoleCommands(this);
-            Puts("Commands registered (chat + console): buyraid/rbe/rb/rbevent + ui_buyraid");
-            LoadPlayerData();
+            LoadPlayerData(initial);
             InitializeSkins();
             Initialize();
             OceanLevel = WaterSystem.OceanLevel;
             Queues.RestartCoroutine();
-            timer.Repeat(Mathf.Clamp(config.EventMessages.Interval, 1f, 60f), 0, CheckNotifications);
+            timer.Repeat(Mathf.Clamp(config.EventMessages.Interval, 1f, 60f), 0, _messages.ProcessQueue);
             timer.Repeat(30f, 0, UpdateAllMarkers);
             timer.Repeat(30f, 0, CheckOceanLevel);
             timer.Repeat(300f, 0, SaveData);
@@ -330,6 +322,154 @@ namespace RaidableBases
             SubscribeDamageHook();
             BuildPrefabIds();
             LoadOwnership();
+        }
+
+        private void EnsureSchedulers(bool npcEnabled)
+        {
+            if (npcEnabled && npcSchedulerCo == null)
+            {
+                npcSchedulerCo = ServerMgr.Instance.StartCoroutine(NpcSchedulerCoroutine());
+            }
+
+            if (raidMaintenanceCo == null)
+            {
+                raidMaintenanceCo = ServerMgr.Instance.StartCoroutine(RaidMaintenanceCoroutine());
+            }
+        }
+
+        private IEnumerator NpcSchedulerCoroutine()
+        {
+            WaitForSeconds instruction = CoroutineEx.waitForSeconds(0.1f);
+            FrameDeadline deadline = new(npcSchedulerFrameBudgetMilliseconds);
+
+            try
+            {
+                while (!IsUnloading && Raids.Count > 0)
+                {
+                    double now = Time.realtimeSinceStartupAsDouble;
+                    using var brains = HumanoidBrains.Values.ToPooledList();
+
+                    for (int i = 0; i < brains.Count; i++)
+                    {
+                        HumanoidBrain brain = brains[i];
+                        if (brain == null || brain.CannotSchedule())
+                        {
+                            continue;
+                        }
+
+                        brain.TickEquipment(now);
+
+                        if (deadline.Expired)
+                        {
+                            yield return null;
+                            now = Time.realtimeSinceStartupAsDouble;
+                            deadline.Reset();
+                        }
+
+                        if (brain == null || brain.CannotSchedule())
+                        {
+                            continue;
+                        }
+
+                        if (now >= brain.nextAttackThinkTime)
+                        {
+                            brain.nextAttackThinkTime = now + 1d;
+                            brain.TryToAttack();
+
+                            if (deadline.Expired)
+                            {
+                                yield return null;
+                                now = Time.realtimeSinceStartupAsDouble;
+                                deadline.Reset();
+                            }
+                        }
+
+                        if (brain == null || brain.CannotSchedule())
+                        {
+                            continue;
+                        }
+
+                        if (brain.UsesBaseNavigation)
+                        {
+                            brain.TickBaseNavigation(now);
+                        }
+                        else if (!brain.isStationary && now >= brain.nextRoamThinkTime)
+                        {
+                            brain.nextRoamThinkTime = now + UnityEngine.Random.Range(6f, 7f);
+                            brain.TryToRoam();
+                        }
+
+                        if (deadline.Expired)
+                        {
+                            yield return null;
+                            now = Time.realtimeSinceStartupAsDouble;
+                            deadline.Reset();
+                        }
+                    }
+
+                    yield return instruction;
+                }
+            }
+            finally
+            {
+                npcSchedulerCo = null;
+            }
+        }
+
+        private IEnumerator RaidMaintenanceCoroutine()
+        {
+            WaitForSeconds instruction = CoroutineEx.waitForSeconds(0.05f);
+            FrameDeadline deadline = new(raidMaintenanceFrameBudgetMilliseconds);
+
+            try
+            {
+                while (!IsUnloading && Raids.Count > 0)
+                {
+                    double now = Time.realtimeSinceStartupAsDouble;
+                    using var raids = Raids.ToPooledList();
+
+                    for (int i = 0; i < raids.Count; i++)
+                    {
+                        RaidableBase raid = raids[i];
+                        if (raid == null || raid.IsDespawning || !raid.protectionStarted || now < raid.nextProtectorTime)
+                        {
+                            continue;
+                        }
+
+                        if (raid.intruders.Count > 0)
+                        {
+                            raid.UpdateLootAmountCounted();
+                        }
+
+                        while (!raid.RunProtector(deadline.Value))
+                        {
+                            yield return null;
+                            deadline.Reset();
+                        }
+
+                        now = Time.realtimeSinceStartupAsDouble;
+
+                        if (!raid.IsDespawning)
+                        {
+                            raid.nextProtectorTime = now + 1d;
+                        }
+
+                        if (deadline.Expired)
+                        {
+                            yield return null;
+                            deadline.Reset();
+                            now = Time.realtimeSinceStartupAsDouble;
+                        }
+                    }
+
+                    yield return instruction;
+                    deadline.Reset();
+                }
+            }
+            finally
+            {
+                raidMaintenanceCo = null;
+            }
         }
 
         private void OnSunrise()
@@ -432,21 +572,35 @@ namespace RaidableBases
             return !Get(targetPoint, out var raid) || raid.Options.MLRS ? (object)null : true;
         }
 
-        private object OnClanMemberJoined(ulong userid, string tag)
+        private void OnClanMemberJoined(ulong userid, string tag)
         {
             var player = BasePlayer.FindByID(userid);
-            if (player == null) return null;
-            var raid = Raids.FirstOrDefault(other => other.ownerId == player.userID && other.IsAllyHogging(player));
-            if (raid == null) return null;
-            // Oxide Clans (optional) + block native ClanManager accept when hogging.
+            if (player == null) return;
+            RaidableBase raid = null;
+            foreach (var other in Raids)
+            {
+                if (other.ownerId == player.userID && other.IsAllyHogging(player))
+                {
+                    raid = other;
+                    break;
+                }
+            }
+            if (raid == null) return;
             Clans?.Call("cmdChatClan", player, "clan", new string[1] { "leave" });
-            return true;
         }
 
         private object OnTeamAcceptInvite(RelationshipManager.PlayerTeam playerTeam, BasePlayer player)
         {
             if (player == null) return null;
-            var raid = Raids.FirstOrDefault(other => other.ownerId == player.userID && other.IsAllyHogging(player));
+            RaidableBase raid = null;
+            foreach (var other in Raids)
+            {
+                if (other.ownerId == player.userID && other.IsAllyHogging(player))
+                {
+                    raid = other;
+                    break;
+                }
+            }
             if (raid == null) return null;
             playerTeam.RejectInvite(player);
             return true;
@@ -606,14 +760,9 @@ namespace RaidableBases
                         return;
                     }
 
-                    // Game update: BuildCost() returns EntityBuildCost { Items, CraftAmount }, not IEnumerable.
-                    var buildCost = block.BuildCost();
-                    if (buildCost.Items != null)
+                    foreach (var ia in block.BuildCost().Items)
                     {
-                        foreach (var ia in buildCost.Items)
-                        {
-                            player.GiveItem(ItemManager.Create(ia.itemDef, (int)ia.amount));
-                        }
+                        player.GiveItem(ItemManager.Create(ia.itemDef, (int)ia.amount));
                     }
 
                     block.SafelyKill();
@@ -621,7 +770,7 @@ namespace RaidableBases
             }
             else if (raid.IsFoundation(e) && raid.NearFoundation(e.transform.position))
             {
-                Message(player, "TooCloseToABuilding");
+                SendNotification(player, "TooCloseToABuilding");
                 e.Invoke(e.SafelyKill, 0.1f);
             }
             else AddPlayerEntity(e, raid);
@@ -656,8 +805,16 @@ namespace RaidableBases
 
         private object OnElevatorButtonPress(ElevatorLift e, BasePlayer player, Elevator.Direction Direction, bool FullTravel)
         {
-            var parent = e.IsValid() && e.HasParent() ? e.GetParentEntity() : e.owner;
-            if (!parent.IsNetworked() || !Get(parent.transform.position, out var raid) || !raid.Elevators.TryGetValue(parent.net.ID, out var elevator))
+            if (e == null)
+            {
+                return null;
+            }
+            var parent = e.HasParent() ? e.GetParentEntity() : e.owner;
+            if (parent == null || parent.net == null || parent.IsDestroyed)
+            {
+                return null;
+            }
+            if (!Get(parent.transform.position, out var raid) || !raid.Elevators.TryGetValue(parent.net.ID, out var elevator))
             {
                 return null;
             }
@@ -713,11 +870,21 @@ namespace RaidableBases
 
         private object OnElevatorMove(Elevator elevator, int targetFloor)
         {
-            if (elevator.IsNetworked() && Get(elevator.transform.position, out var raid) && raid.Elevators.TryGetValue(elevator.net.ID, out var ele) && ele.IsBMG()) return true;
+            if (elevator.IsValid() && !elevator.IsDestroyed && Get(elevator.transform.position, out var raid) && raid.Elevators.TryGetValue(elevator.net.ID, out var ele) && ele.IsBMG()) return true;
             return null;
         }
 
         private object OnElevatorCall(Elevator elevator, Elevator fromElevator) => OnElevatorMove(elevator, 0);
+
+        private string GetTypeName(BaseEntity entity)
+        {
+            string key = entity.Is(out BasePlayer player) ? player.UserIDString : entity.PrefabName;
+            if (!TypeNameLookup.TryGetValue(key, out string name))
+            {
+                TypeNameLookup[key] = name = entity.GetType().Name;
+            }
+            return name;
+        }
 
         private bool IsProtectedScientist(BasePlayer player, BaseEntity entity)
         {
@@ -730,11 +897,8 @@ namespace RaidableBases
             {
                 return false;
             }
-            if (!TypeNameLookup.TryGetValue(player.UserIDString, out string name))
-            {
-                TypeNameLookup[player.UserIDString] = name = player.GetType().Name;
-            }
-            if (!name.Contains("CustomScientist", CompareOptions.OrdinalIgnoreCase))
+            string name = GetTypeName(player);
+            if (!name.Contains("CustomScientist", CompareOptions.OrdinalIgnoreCase) && !name.Contains("Better", CompareOptions.OrdinalIgnoreCase))
             {
                 return false;
             }
@@ -742,7 +906,7 @@ namespace RaidableBases
             {
                 return false;
             }
-            if (entity is AutoTurret turret && turret.OwnerID == 0 && turret.skinID == RB_SKIN_ID)
+            if (entity.Is(out AutoTurret turret) && turret.OwnerID == 0 && turret.skinID == RB_SKIN_ID)
             {
                 turret.authorizedPlayers.Add(player.userID);
             }
@@ -778,13 +942,39 @@ namespace RaidableBases
             }
         }
 
+        private void OnPlayerDisconnected(BasePlayer player, string reason)
+        {
+            if (!ReferenceEquals(player, null))
+            {
+                _targetInfo?.Hide(player, false);
+                _configPresetController?.ForgetImportUi(player.userID);
+                UI.RemoveUser(player.userID);
+            }
+
+            if (player == null || !player.IsDead())
+            {
+                return;
+            }
+
+            foreach (var raid in Raids)
+            {
+                if (!raid.raiders.TryGetValue(player.userID, out var ri) || ri.PreEnter)
+                {
+                    continue;
+                }
+
+                raid.HandlePlayerExiting(player);
+                break;
+            }
+        }
+
         private void OnPlayerSleepEnded(BasePlayer player)
         {
-            if (player == null)
+            if (player == null || !player.IsHuman())
                 return;
             player.Invoke(() =>
             {
-                if (player.IsDestroyed || !player.IsHuman())
+                if (player.IsDestroyed)
                 {
                     return;
                 }
@@ -796,15 +986,16 @@ namespace RaidableBases
 
                 UI.PrivateEvents.Remove(player.userID);
                 UI.PublicEvents.Remove(player.userID);
+                UI.DestroyUi(player, UiType.Status);
 
                 if (GetPVPDelay(player.userID, false, out DelaySettings ds))
                 {
+                    RemovePVPDelay(player.userID, ds);
+
                     if (config.UI.Delay.Enabled)
                     {
-                        RemovePVPDelay(player.userID, ds);
                         UI.DestroyUi(player, UiType.Delay);
                     }
-                    ds.Destroy();
                 }
 
                 if (config.UI.Lockout.Enabled)
@@ -812,27 +1003,30 @@ namespace RaidableBases
                     UI.UpdateUi(player, UiType.Lockout);
                 }
 
-                if (config.UI.Status.Enabled)
-                {
-                    UI.UpdateUi(player, UiType.Status);
-                }
-
                 if (!Get(player.transform.position, out var raid, 5f))
                 {
                     return;
                 }
 
+                //if (raid.IsUnderground(player.transform.position))
+                //{
+                //    raid.OnPlayerExit(player);
+                //    raid.intruders.Remove(player.userID);
+                //    raid.enteredEntities.Remove(player);
+                //    return;
+                //}
+
                 if (raid.IsUnderground(player.transform.position))
                 {
-                    raid.intruders.Remove(player.userID);
-                    raid.enteredEntities.Remove(player);
+                    raid.HandlePlayerUnderground(player);
                     return;
                 }
 
                 if (!config.Settings.Management.AllowTeleport && !raid.TeleportExceptions.Remove(player.userID) && !raid.CanBypass(player) && !raid.CanRespawnAt(player) && raid.Type != RaidableType.None && !raid.WasConnected(player))
                 {
-                    Message(player, "CannotTeleport");
-                    raid.intruders.Remove(player.userID);
+                    SendNotification(player, "CannotTeleport");
+                    //raid.intruders.Remove(player.userID);
+                    raid.HandlePlayerExiting(player);
                     raid.RemovePlayer(player, raid.Location, raid.ProtectionRadius, raid.Type, true);
                 }
                 else
@@ -905,7 +1099,7 @@ namespace RaidableBases
                     raid.TrySetOwner(attacker, player, info, false);
                 }
 
-                if (!raid.IsEngaged && raid.EngageOnNpcDeath && attacker != null && attacker.IsHuman() && !attacker.limitNetworking && !attacker.IsFlying)
+                if (!raid.IsEngaged && raid.EngageOnNpcDeath && attacker != null && attacker.IsHuman() && !attacker.IsFlying && !IsVanished(attacker))
                 {
                     raid.IsEngaged = true;
                 }
@@ -920,10 +1114,10 @@ namespace RaidableBases
                     Backpacks?.Call("API_DropBackpack", player);
                 }
 
-                if (!raid.intruders.Contains(player.userID))
-                {
-                    raid.OnPlayerExited(player);
-                }
+                //if (!raid.intruders.Contains(player.userID))
+                //{
+                //    raid.OnPlayerExited(player);
+                //} 
 
                 raid.HandlePlayerExiting(player);
                 raid.HandleTurretSight(player);
@@ -1000,7 +1194,7 @@ namespace RaidableBases
                     config.Settings.Management.PVPDelayPersists && GetPVPDelay(player.userID, true, out var ds) && ds.raid != null ? ds.raid.BlacklistedCommands : null;
                 if (commands != null && commands.Exists(value => command.EndsWith(value, StringComparison.OrdinalIgnoreCase)))
                 {
-                    Message(player, "CommandNotAllowed");
+                    SendNotification(player, "CommandNotAllowed");
                     return true;
                 }
             }
@@ -1037,6 +1231,7 @@ namespace RaidableBases
             if (!raid.IsDespawning && config.Settings.Management.AllowCupboardLoot)
             {
                 DropOrRemoveItems(priv, raid, true, false);
+                raid.UpdateLootAmountCounted();
             }
 
             if (raid.Options.RequiresCupboardAccess)
@@ -1067,10 +1262,18 @@ namespace RaidableBases
         private void OnEntityDeath(StorageContainer container, HitInfo info) => EntityHandler(container, info);
 
         //private void OnEntityKill(BuildingBlock block) => OnEntityDeath(block, new HitInfo(block.lastAttacker, block, DamageType.Explosion, 9999f)); // ent kill testing
+        private void OnEntityKill(Fridge io) => OnEntityDeath(io, null);
 
         private void OnEntityDeath(StabilityEntity entity, HitInfo info)
         {
-            if (info == null || !Get(entity.transform.position, out var raid) || raid.IsDespawning || !raid.GetInitiatorPlayer(info, DamageType.Generic, entity, out var attacker))
+            if (!Get(entity.transform.position, out var raid) || raid.IsDespawning)
+            {
+                return;
+            }
+
+            raid.InvalidateBaseRoute(entity);
+
+            if (info == null || !raid.GetInitiatorPlayer(info, DamageType.Generic, entity, out var attacker))
             {
                 return;
             }
@@ -1108,7 +1311,6 @@ namespace RaidableBases
         }
 
         //private void OnEntityKill(IOEntity io) => OnEntityDeath(io, null);
-        private void OnEntityKill(Fridge io) => OnEntityDeath(io, null);
 
         private void OnEntityDeath(IOEntity io, HitInfo info)
         {
@@ -1125,7 +1327,7 @@ namespace RaidableBases
                 BaseEntity drop = DropLoot(io, fridge.inventory, raid.Options.BuoyantBox);
                 if (raid.Options.DespawnGreyBoxBags) raid.SetupEntity(drop);
             }
-            else if (io is AutoTurret turret && raid.turrets.Remove(turret))
+            else if (io is AutoTurret turret && raid.TryRemoveOrConfirmTurret(turret))
             {
                 BaseEntity drop = DropLoot(io, turret.inventory, raid.Options.BuoyantBox);
                 if (config.Settings.Management.DropLoot.DespawnGreyWeaponBags) raid.SetupEntity(drop);
@@ -1153,7 +1355,7 @@ namespace RaidableBases
 
             if (raid._containers.Remove(container))
             {
-                Interface.CallHook("OnRaidableLootDestroyed", raid.Location, raid.ProtectionRadius, raid.GetLootAmountRemaining(), container, raid.Options.Level);
+                HarmonyModInterface.CallHook("OnRaidableLootDestroyed", raid.Location, raid.ProtectionRadius, raid.UpdateLootAmountCounted(), container, raid.Options.Level);
             }
 
             if (!raid.IsAnyLooted && info != null)
@@ -1202,8 +1404,8 @@ namespace RaidableBases
                     {
                         foreach (var target in BasePlayer.activePlayerList)
                         {
-							if (!raid.IsRaider(target) && target.HasPermission("raidablebases.limitedannouncements")) continue;
-                            raid.QueueNotification(target, "OnRaidFinished", FormatGridReference(target, raid.Location));
+                            if (!raid.IsRaider(target) && target.HasPermission("raidablebases.limitedannouncements")) continue;
+                            raid.NotifyUnlessSmart(target, "OnRaidFinished", FormatGridReference(target, raid.Location));
                         }
                     }
                 }
@@ -1227,7 +1429,7 @@ namespace RaidableBases
                 return null;
             }
 
-            if (player.IsNetworked())
+            if (player != null && player.IsConnected)
             {
                 if (entity is BaseLadder || player.userID == entity.OwnerID)
                 {
@@ -1239,7 +1441,7 @@ namespace RaidableBases
                 }
             }
 
-            if (raid.IsPickupBlacklisted(entity.ShortPrefabName) || entity is DroppedItem di && di.item != null && raid.IsPickupBlacklisted(di.item.info.shortname))
+            if (raid.IsPickupBlacklisted(entity.ShortPrefabName) || entity.Is(out DroppedItem di) && di.item != null && raid.IsPickupBlacklisted(di.item.info.shortname))
             {
                 return false;
             }
@@ -1300,20 +1502,20 @@ namespace RaidableBases
         private object OnMlrsFire(MLRS mlrs, BasePlayer player)
         {
             if (!Get(mlrs.TrueHitPos, out var raid, 25f) || raid.Options.MLRS) return null;
-            Message(player, "MLRS Target Denied");
+            SendNotification(player, "MLRS Target Denied");
             return true;
         }
 
-        private object OnNearbyTurretsScan(AutoTurret turret) => OnInterferenceUpdate(turret);
-
-        // Oxide signature: OnNearbyTurretsScan(AutoTurret, List<AutoTurret>)
-        private object OnNearbyTurretsScan(AutoTurret turret, List<AutoTurret> list) => OnInterferenceUpdate(turret);
+        private object OnNearbyTurretsScan(AutoTurret turret)
+        {
+            return OnInterferenceUpdate(turret);
+        }
 
         private object OnInterferenceUpdate(AutoTurret turret)
         {
             if (turret == null || turret.IsDestroyed) return null;
             if (!Get(turret.transform.position, out var raid)) return null;
-            if (IsRaidDefenseSkin(turret.skinID) || !turret.enableSaving) return true;
+            if (turret.skinID == RB_SKIN_ID || !turret.enableSaving) return true;
             return turret.OwnerID.IsSteamId() ? (object)true : null;
         }
 
@@ -1329,7 +1531,7 @@ namespace RaidableBases
                 OnEntitySpawnedMLRS(rocket);
                 return;
             }
-            if (te.creatorEntity != null || !Get(te.transform.position, out var raid) || !raid.UsableByTurret)
+            if (te.creatorEntity != null || !Get(te.transform.position, out var raid))
             {
                 return;
             }
@@ -1341,13 +1543,14 @@ namespace RaidableBases
             float nearestSqrDistance = 9f;
             float nearestMuzzleSqrDistance = 9f;
 
-            foreach (var turret in raid.turrets)
+            foreach (var info in raid.turrets.Values)
             {
-                if (turret.IsKilled())
+                if (info.IsKilled())
                 {
                     continue;
                 }
 
+                var turret = info.turret;
                 float sqrDistance = (turret.transform.position - position).sqrMagnitude;
                 if (sqrDistance < nearestSqrDistance)
                 {
@@ -1392,8 +1595,8 @@ namespace RaidableBases
             BasePlayer owner = systems[0].rocketOwnerRef.Get(true) as BasePlayer;
             if (!raid.Options.MLRS)
             {
-                if (owner != null) Message(owner, "MLRS Target Denied");
-                else raid.Message("MLRS Target Denied");
+                if (owner != null) SendNotification(owner, "MLRS Target Denied");
+                else raid.Notify("MLRS Target Denied");
                 rocket.Invoke(rocket.SafelyKill, 0.1f);
                 rocket.playerDamage?.Clear();
                 rocket.damageTypes?.Clear();
@@ -1419,7 +1622,7 @@ namespace RaidableBases
             {
                 fire.DelayedSafeKill();
             }
-            else if (raid.cached_attacker != null && !(fire.creatorEntity is BasePlayer) && Time.time - raid.cached_attack_time < 1f && raid.raiders.ContainsKey(raid.cached_attacker_id))
+            else if (raid.cached_attacker != null && !(fire.creatorEntity is BasePlayer) && Time.timeAsDouble - raid.cached_attack_time < 1d && raid.raiders.ContainsKey(raid.cached_attacker_id))
             {
                 fire.creatorEntity = raid.cached_attacker;
             }
@@ -1443,11 +1646,7 @@ namespace RaidableBases
                 }
                 if (backpack.ShortPrefabName == "item_drop" || backpack.ShortPrefabName == "item_drop_buoyant")
                 {
-                    // Grey box/sacks from broken raid containers must be lootable by anyone.
-                    // onlyOwnerLoot + playerSteamID==0 makes vanilla OnStartBeingLooted reject every player.
                     backpack.buryLeftoverItems = false;
-                    backpack.onlyOwnerLoot = false;
-                    backpack.playerSteamID = 0;
                     return;
                 }
                 if (backpack.playerSteamID.IsSteamId())
@@ -1491,7 +1690,7 @@ namespace RaidableBases
             ulong playerSteamID = corpse.playerSteamID;
             if (playerSteamID.IsSteamId())
             {
-                if (Interface.CallHook("OnRaidablePlayerCorpseCreate", new object[] { corpse, raid.Location, raid.AllowPVP, raid.Options.Level, raid.GetOwner(), raid.GetRaiders(), raid.BaseName, raid.PlayersLootable }) != null)
+                if (HarmonyModInterface.CallHook("OnRaidablePlayerCorpseCreate", new object[] { corpse, raid.Location, raid.AllowPVP, raid.Options.Level, raid.GetOwner(), raid.GetRaiders(), raid.BaseName, raid.PlayersLootable }) != null)
                 {
                     return;
                 }
@@ -1510,17 +1709,17 @@ namespace RaidableBases
                     container.playerSteamID = playerSteamID;
                     container.Spawn();
 
-                    if (container.IsKilled())
+                    if (IsContainerKilled(container))
                     {
                         goto done;
                     }
 
                     container.TakeFrom(corpse.containers, 0f);
                     corpse.Invoke(corpse.SafelyKill, 0.0625f);
-                    
+
                     var player = RustCore.FindPlayerById(playerSteamID);
                     var backpack = raid.AddBackpack(container, playerSteamID, player);
-                    bool canEjectBackpack = Interface.CallHook("OnRaidableBaseBackpackEject", new object[] { container, playerSteamID, raid.Location, raid.AllowPVP, raid.Options.Level, raid.GetOwner(), raid.GetRaiders(), raid.BaseName, raid.PlayersLootable }) == null;
+                    bool canEjectBackpack = HarmonyModInterface.CallHook("OnRaidableBaseBackpackEject", new object[] { container, playerSteamID, raid.Location, raid.AllowPVP, raid.Options.Level, raid.GetOwner(), raid.GetRaiders(), raid.BaseName, raid.PlayersLootable }) == null;
 
                     if (canEjectBackpack && raid.EjectBackpack(backpack, raid.EjectBackpacksPVE))
                     {
@@ -1562,7 +1761,7 @@ namespace RaidableBases
                 {
                     if (!spawns.Value.CanBuild(buildPos, profile.Options.ProtectionRadius(spawns.Key)))
                     {
-                        Message(player, "Building is blocked for spawns!");
+                        SendNotification(player, "Building is blocked for spawns!");
                         return false;
                     }
                 }
@@ -1580,20 +1779,20 @@ namespace RaidableBases
 
             if (target.player != null && !InRange(raid.Location, target.player.transform.position, raid.ProtectionRadius - 0.6f))
             {
-                Message(target.player, "Building is blocked!");
+                SendNotification(target.player, "Building is blocked!");
                 return false;
             }
 
             if (!raid.Options.AllowBuildingPriviledges && CupboardPrefabIDs.Contains(construction.prefabID))
             {
-                Message(target.player, "Cupboards are blocked!");
+                SendNotification(target.player, "Cupboards are blocked!");
                 return false;
             }
             else if (construction.prefabID == 2150203378)
             {
                 if (!config.Settings.Management.AllowLadders || raid.Options.RequiresCupboardAccessLadders && !raid.CanBuild(target.player))
                 {
-                    Message(target.player, "Ladders are blocked!");
+                    SendNotification(target.player, "Ladders are blocked!");
                     return false;
                 }
                 if (raid.raiders.TryGetValue(target.player.userID, out var ri) && ri.Input != null)
@@ -1614,7 +1813,7 @@ namespace RaidableBases
                 }
                 else
                 {
-                    Message(target.player, "Barricades are blocked!");
+                    SendNotification(target.player, "Barricades are blocked!");
                     return false;
                 }
             }
@@ -1623,7 +1822,7 @@ namespace RaidableBases
                 var value = GetFileNameWithoutExtension(construction.fullName);
                 if (value != "explosivesiegedeployable" && !raid.Options.AllowedBuildingBlockExceptions.Exists(value.Contains))
                 {
-                    Message(target.player, "Building is blocked!");
+                    SendNotification(target.player, "Building is blocked!");
                     return false;
                 }
             }
@@ -1662,7 +1861,7 @@ namespace RaidableBases
 
         private void OnLootEntityEnd(BasePlayer player, StorageContainer container)
         {
-            if (player == null || player.limitNetworking || container == null || container.inventory == null || container.OwnerID.IsSteamId() || !Get(container, out var raid))
+            if (player == null || IsVanished(player) || container == null || container.inventory == null || container.OwnerID.IsSteamId() || !Get(container, out var raid))
             {
                 return;
             }
@@ -1695,7 +1894,7 @@ namespace RaidableBases
 
         private void OnLootEntityEnd(BasePlayer player, ContainerIOEntity container)
         {
-            if (config.BlockPaidContent && config.DestroyLootedContainer && !container.IsKilled() && container.inventory.IsEmpty() && PaidDeployableItems.TryGetValue(container.PrefabName, out var def) && Has(container) && RequiresOwnership(def, container.skinID))
+            if (config.BlockPaidContent && config.DestroyLootedContainer && !container.IsKilled() && container.inventory.IsEmpty() && PaidDeployableItems.TryGetValue(container.PrefabName, out var def) && RequiresOwnership(def, container.skinID) && Has(container))
             {
                 container.Invoke(container.SafelyKill, 0.1f);
             }
@@ -1703,12 +1902,11 @@ namespace RaidableBases
 
         private object CanLootDroppedItemContainer(BasePlayer player, BaseEntity entity) => entity switch
         {
-            _ when entity.skinID != RB_SKIN_ID || !entity.OwnerID.IsSteamId() || entity.OwnerID == player.userID => null,
-            _ when RelationshipManager.ServerInstance != null && RelationshipManager.ServerInstance.playerToTeam.TryGetValue(entity.OwnerID, out var team) && team.members.Contains(player.userID) => null,
-            _ when ConVar.Clan.enabled && player.clanId != 0L && (BasePlayer.FindByID(entity.OwnerID) ?? BasePlayer.FindSleeping(entity.OwnerID)) is BasePlayer owner && owner.clanId == player.clanId => null,
+            _ when entity.skinID != RB_SKIN_ID || !entity.OwnerID.IsSteamId() || entity.OwnerID == player.userID || IsVanished(player) => null,
+            _ when RelationshipManager.ServerInstance.playerToTeam.TryGetValue(entity.OwnerID, out var team) && team.members.Contains(player.userID) => null,
             _ when Convert.ToBoolean(Clans?.Call("IsClanMember", entity.OwnerID.ToString(), player.UserIDString)) => null,
             _ when Convert.ToBoolean(Friends?.Call("AreFriends", entity.OwnerID.ToString(), player.UserIDString)) => null,
-            _ => ((Func<object>)(() => { Message(player, "You do not own this loot!"); return true; }))(),
+            _ => ((Func<object>)(() => { SendNotification(player, "You do not own this loot!"); return true; }))(),
         };
 
         private object CanLootEntity(BasePlayer player, BaseEntity entity)
@@ -1763,13 +1961,13 @@ namespace RaidableBases
 
         private bool IsAbandonedEntity(BaseEntity entity) => AbandonedBases != null && Convert.ToBoolean(AbandonedBases?.Call("isAbandoned", entity));
 
-        private bool IsArmoredTrain(BaseEntity entity) => entity.OwnerID == 0uL && entity is AutoTurret turret && !turret.isLootable && !turret.dropFloats && turret.parentEntity.IsSet();
+        private bool IsArmoredTrain(BaseEntity entity) => entity.OwnerID == 0uL && entity.Is(out AutoTurret turret) && !turret.isLootable && !turret.dropFloats && turret.parentEntity.IsSet();
 
         private static bool IsEventDrone(BaseEntity entity) => entity.OwnerID == 335576777746;
 
         private bool IsSentryTargetingNpc(BasePlayer player, BaseEntity entity) => entity is NPCAutoTurret && player.skinID != RB_SKIN_ID && !player.userID.IsSteamId();
 
-        private bool IgnorePlayer(BasePlayer player, BaseEntity entity) => player.limitNetworking || IsSentryTargetingNpc(player, entity) || IsArmoredTrain(entity);
+        private bool IgnorePlayer(BasePlayer player, BaseEntity entity) => IsVanished(player) || IsSentryTargetingNpc(player, entity) || IsArmoredTrain(entity);
 
         private bool IsPositionInSpace(Vector3 a, Vector3 b, float r) => Space != null && a.y - b.y > r + M_RADIUS;
 
@@ -1784,11 +1982,9 @@ namespace RaidableBases
         {
             if (trigger == null || player.IsKilled()) return null;
             if (ShouldIgnoreFlyingPlayer(player)) return true;
-            // Oxide: keep raid NPCs out of event trap/turret triggers when Ignore* is set.
             if (Has(player) && (Has(trigger) || (Get(player.userID, out HumanoidBrain brain) && brain.raid.Options.NPC.IgnorePlayerTrapsTurrets))) return true;
-            BaseEntity entity = trigger is TriggerParent p ? p.Entity : trigger.gameObject.ToBaseEntity();
+            BaseEntity entity = Get(trigger, out var raid) ? raid.triggers[trigger] : (trigger is TriggerParent p ? p.Entity : trigger.gameObject.ToBaseEntity());
             if (IsProtectedScientist(player, entity)) return true;
-            // Exact Oxide semantics: true/null → allow enter; false → cancel enter.
             return CanEntityBeTargetedInternal(player, entity, IsPVE()) is true or null ? (object)null : true;
         }
 
@@ -1818,7 +2014,7 @@ namespace RaidableBases
                 return null;
             }
 
-            if (hopper.OwnerID == 0 && raid.Has(hopper, false))
+            if (hopper.OwnerID == 0 && raid.Has(hopper))
             {
                 return true;
             }
@@ -1831,13 +2027,13 @@ namespace RaidableBases
             DroppedItem di = target as DroppedItem;
             if (di != null)
             {
-                return raid.AllowPVP || di.DroppedBy == 0 || di.DroppedBy == hopper.OwnerID || raid.IsAlly(di.DroppedBy, hopper.OwnerID);
+                return raid.AllowPVP || di.DroppedBy == 0 || di.DroppedBy == hopper.OwnerID || raid.raiders.TryGetValue(di.DroppedBy, out var raider) && raid.IsAlly(raider, hopper.OwnerID);
             }
 
             PlayerCorpse corpse = target as PlayerCorpse;
             if (corpse != null)
             {
-                return raid.AllowPVP || corpse.playerSteamID == hopper.OwnerID || raid.IsAlly(corpse.playerSteamID, hopper.OwnerID);
+                return raid.AllowPVP || corpse.playerSteamID == hopper.OwnerID || raid.raiders.TryGetValue(corpse.playerSteamID, out var raider) && raid.IsAlly(raider, hopper.OwnerID);
             }
 
             return null;
@@ -1848,8 +2044,6 @@ namespace RaidableBases
             if (player.IsKilled()) return null;
             return CanEntityBeTargetedInternal(player, entity, false);
         }
-
-        private static bool IsRaidDefenseSkin(ulong skin) => skin == RB_SKIN_ID || skin == 14922524UL;
 
         private object CanEntityBeTargetedInternal(BasePlayer player, BaseEntity entity, bool earlyExit)
         {
@@ -1898,12 +2092,8 @@ namespace RaidableBases
 
             if (player.IsHuman())
             {
-                // Oxide: raid-skinned defenses always target players (skin 14922524 / our RB_SKIN_ID).
-                if (IsRaidDefenseSkin(entity.skinID))
-                    return true;
-
                 AutoTurret turret = entity as AutoTurret;
-                if (raid.Options.BlockOutsideDamageToPlayersInside && !IsRaidDefenseSkin(entity.skinID) && CanBlockOutsideDamage(raid, entity))
+                if (raid.Options.BlockOutsideDamageToPlayersInside && entity.skinID != RB_SKIN_ID && CanBlockOutsideDamage(raid, entity))
                 {
                     if (turret != null)
                     {
@@ -1918,7 +2108,7 @@ namespace RaidableBases
                     if (success == DamageResult.None) return null;
                     if (success == DamageResult.Blocked) return false;
                 }
-                return IsRaidDefenseSkin(entity.skinID) || entity is BaseDetector || HasPVPDelay(player.userID);
+                return entity.skinID == RB_SKIN_ID || entity is BaseDetector || HasPVPDelay(player.userID);
             }
 
             return IsEventDrone(entity) ? (object)null : entity.OwnerID.IsSteamId() ? !raid.Options.NPC.IgnorePlayerTrapsTurrets : !raid.Options.NPC.IgnoreTrapsTurrets;
@@ -1995,7 +2185,7 @@ namespace RaidableBases
 
         private object CanEntityTrapTrigger(BaseTrap trap, BasePlayer player)
         {
-            if (player == null || player.limitNetworking)
+            if (player == null || IsVanished(player))
             {
                 return null;
             }
@@ -2026,6 +2216,36 @@ namespace RaidableBases
             }
         }
 
+        private static bool BlockDamage(HitInfo info)
+        {
+            if (info.Weapon is BlowPipeWeapon)
+            {
+                info.HitEntity = null;
+            }
+
+            return NullifyDamage(info);
+        }
+
+        public struct DamageContext
+        {
+            public BaseCombatEntity Entity;
+            public HitInfo Info;
+            public DamageType DamageType;
+            public RaidableBase Raid;
+            public BasePlayer Attacker;
+            public bool IsHuman;
+
+            public DamageContext(BaseCombatEntity entity, HitInfo info)
+            {
+                Entity = entity;
+                Info = info;
+                DamageType = info.damageTypes.GetMajorityDamageType();
+                Raid = null;
+                Attacker = null;
+                IsHuman = false;
+            }
+        }
+
         private object CanRaidWindowBlockDamage(BaseCombatEntity victim, HitInfo info)
         {
             return Has(victim) ? false : null;
@@ -2038,41 +2258,54 @@ namespace RaidableBases
                 return null;
             }
 
-            if (info.Initiator != null)
-            {
-                switch (info.Initiator.OwnerID)
-                {
-                    case 1309:
-                    case 13099:
-                    case 8002738255:
-                    case 335576777746:
-                        return null;
-                }
-            }
-
-            DamageType damageType = info.damageTypes.GetMajorityDamageType();
-            DamageResult success = entity is BasePlayer player ?
-                HandlePlayerDamage(player, info, damageType, out var raid, out var attacker, out var isHuman) :
-                HandleEntityDamage(entity, info, damageType, out raid, out attacker, out isHuman);
-
-            if (success == DamageResult.None)
+            if (info.Initiator?.OwnerID is 1309 or 13099 or 8002738255 or 335576777746)
             {
                 return null;
             }
 
-            if (success == DamageResult.Blocked)
+            DamageContext context = new(entity, info);
+            DamageResult result = entity.Is(out BasePlayer victim) ? EvaluatePlayerDamage(victim, ref context) : EvaluateEntityDamage(ref context);
+
+            if (result == DamageResult.None)
             {
-                if (info.Weapon is BlowPipeWeapon)
-                {
-                    info.HitEntity = null;
-                }
-                return NullifyDamage(info);
+                return null;
             }
 
-            if (isHuman && damageType != DamageType.Heat && raid != null)
+            if (result == DamageResult.Blocked)
             {
-                raid.CreateSpheres();
-                raid.GetRaider(attacker).lastActiveTime = Time.time;
+                return BlockDamage(context.Info);
+            }
+
+            if (context.Raid != null)
+            {
+                bool raidEntity = context.Entity is not BasePlayer && Has(context.Entity);
+                bool checkItemRestrictions = raidEntity && (context.IsHuman || context.Attacker == null);
+
+                if (checkItemRestrictions && context.Raid.Options.RestrictByAcceptedItems() && !context.Raid.IsWeaponAllowedByAcceptedItems(context.Attacker, context.Info))
+                {
+                    if (context.IsHuman)
+                    {
+                        NotifyOnce(context.Attacker, "ItemNotAccepted");
+                    }
+
+                    return NullifyDamage(context.Info);
+                }
+
+                if (checkItemRestrictions && context.Raid.Options.RestrictByWorkbenchLevel(MaxConsideredWorkbenchLevel) && !context.Raid.IsWeaponAllowedByWorkbenchLevel(context.Attacker, context.Info))
+                {
+                    if (context.IsHuman)
+                    {
+                        NotifyOnce(context.Attacker, "WorkbenchLevelReq", context.Raid.Options.WorkbenchLevel);
+                    }
+
+                    return NullifyDamage(context.Info);
+                }
+
+                if (context.IsHuman && context.DamageType != DamageType.Heat)
+                {
+                    context.Raid.CreateSpheres();
+                    context.Raid.GetRaider(context.Attacker).lastActiveTime = Time.timeAsDouble;
+                }
             }
 
             return true;
@@ -2080,10 +2313,11 @@ namespace RaidableBases
 
         protected void UnsubscribeDamageHook()
         {
-            if (Raids.Count > 0 || config == null || config.Settings.Management.PVPDelayPersists && PvpDelay.Count > 0)
+            if (Raids.Count > 0 || config == null || (config.Settings.Management.PVPDelayPersists && PvpDelay.Count > 0))
             {
                 return;
             }
+
             Unsubscribe(nameof(OnEntityTakeDamage));
             Unsubscribe(nameof(CanEntityTakeDamage));
         }
@@ -2102,116 +2336,130 @@ namespace RaidableBases
             }
         }
 
-        private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) => CanEntityTakeDamage(entity, info);
+        private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) => CanEntityTakeDamage(entity, info);
 
-        private DamageResult HandlePlayerDamage(BasePlayer victim, HitInfo info, DamageType damageType, out RaidableBase raid, out BasePlayer attacker, out bool isHuman)
+        private DamageResult EvaluatePlayerDamage(BasePlayer victim, ref DamageContext context)
         {
-            BaseEntity weapon = info.Initiator;
-            attacker = null;
-            isHuman = false;
+            BaseEntity initiator = context.Info.Initiator;
+            bool got = Get(victim, context.Info, out var raid);
+            context.Raid = raid;
 
-            if (!Get(victim, info, out raid) || raid.IsDespawning)
+            if (!got || raid.IsDespawning)
             {
-                if (config.Settings.Management.PVPDelayPersists && weapon is BasePlayer attacker2 && HasPVPDelay(attacker2.userID) && HasPVPDelay(victim.userID))
+                if (config.Settings.Management.PVPDelayPersists && initiator is BasePlayer other && HasPVPDelay(other.userID) && HasPVPDelay(victim.userID))
                 {
                     return DamageResult.Allowed;
                 }
+
                 return DamageResult.None;
             }
 
-            if (info.WeaponPrefab is MLRSRocket)
+            bool hasVictim = Has(victim);
+
+            if (context.Info.WeaponPrefab is MLRSRocket)
             {
-                return ((raid.AllowPVP || Has(victim)) && raid.Options.MLRS && (weapon?.OwnerID != 13099)) ? DamageResult.Allowed : DamageResult.Blocked;
+                bool allowed = (raid.AllowPVP || hasVictim) && raid.Options.MLRS && initiator?.OwnerID != 13099;
+                return allowed ? DamageResult.Allowed : DamageResult.Blocked;
             }
 
-            if (IsHelicopter(info, out var eventHeli))
+            if (IsHelicopter(context.Info, out bool eventHelicopter))
             {
-                return eventHeli ? DamageResult.None : DamageResult.Allowed;
+                return eventHelicopter ? DamageResult.None : DamageResult.Allowed;
             }
 
-            if (Has(victim) && weapon != null && weapon.OwnerID == 0uL && !weapon.enableSaving && Has(weapon))
+            if (hasVictim && initiator?.OwnerID == 0uL && !initiator.enableSaving && Has(initiator))
             {
-                info.damageTypes.Clear();
+                context.Info.damageTypes.Clear();
                 return DamageResult.None;
             }
 
-            if (IsTrueDamage(weapon, raid.IsProtectedWeapon(weapon)))
+            if (IsTrueDamage(initiator, raid.IsProtectedWeapon(initiator)))
             {
-                return HandleTrueDamage(raid, info, weapon, victim);
+                return EvaluateTrueDamage(raid, context.Info, initiator, victim, hasVictim);
             }
 
-            if (raid.GetInitiatorPlayer(info, damageType, victim, out attacker))
+            if (!raid.GetInitiatorPlayer(context.Info, context.DamageType, victim, out var attacker))
             {
-                return HandleAttacker(attacker, victim, info, damageType, raid, out isHuman);
+                return hasVictim ? DamageResult.Blocked : DamageResult.None;
             }
 
-            return Has(victim) ? DamageResult.Blocked : DamageResult.None;
+            context.Attacker = attacker;
+            return EvaluateAttackerDamage(attacker, victim, ref context);
         }
 
-        private DamageResult HandleTrueDamage(RaidableBase raid, HitInfo info, BaseEntity weapon, BasePlayer victim)
+        private DamageResult EvaluateTrueDamage(RaidableBase raid, HitInfo info, BaseEntity weapon, BasePlayer victim, bool raidVictim)
         {
-            if (victim is ScientistNPC && !Has(victim))
+            if (victim is ScientistNPC && !raidVictim)
             {
                 return DamageResult.None;
             }
 
-            if (raid.Options.NPC.BlockOutsideDamageToNpcsInside && Has(victim) && CanBlockOutsideDamage(raid, weapon) && InRange(victim.transform.position, raid.Location, raid.ProtectionRadius))
+            if (raidVictim && raid.Options.NPC.BlockOutsideDamageToNpcsInside && CanBlockOutsideDamage(raid, weapon) && InRange(victim.transform.position, raid.Location, raid.ProtectionRadius))
             {
                 return DamageResult.Blocked;
             }
 
-            AutoTurret turret = weapon as AutoTurret;
-            if (turret != null)
+            if (weapon is not AutoTurret turret)
             {
-                var (min, max) = victim.userID.IsSteamId() ? (raid.Options.AutoTurret.Min, raid.Options.AutoTurret.Max) : (raid.Options.AutoTurret.NpcMin, raid.Options.AutoTurret.NpcMax);
-
-                if (min != 1 || max != 1)
-                {
-                    info.damageTypes.Scale(DamageType.Bullet, UnityEngine.Random.Range(min, max));
-                }
-
-                if (Has(victim) && (raid.Options.NPC.IgnorePlayerTrapsTurrets && weapon.OwnerID.IsSteamId() || weapon.OwnerID == 0uL && weapon.skinID == RB_SKIN_ID))
-                {
-                    if (turret.target == victim)
-                    {
-                        turret.SetNoTarget();
-                        return DamageResult.None;
-                    }
-                    return DamageResult.Blocked;
-                }
-
-                if (weapon.OwnerID.IsSteamId())
-                {
-                    if (!victim.IsHuman())
-                    {
-                        return DamageResult.Allowed;
-                    }
-
-                    if (InRange2D(weapon.transform.position, raid.Location, raid.ProtectionRadius))
-                    {
-                        return raid.AllowPVP ? DamageResult.Allowed : DamageResult.Blocked;
-                    }
-                }
-
-                return raid.OnTurretTarget(turret, victim);
+                return DamageResult.Allowed;
             }
 
-            // GunTrap / FlameTurret: same IgnoreTrapsTurrets intent as CanEntityBeTargeted (Oxide relies on OnEntityEnter).
-            if (Has(victim) && weapon is GunTrap or FlameTurret)
+            float min, max;
+            if (victim.userID.IsSteamId())
             {
-                if (weapon.OwnerID.IsSteamId() ? raid.Options.NPC.IgnorePlayerTrapsTurrets : raid.Options.NPC.IgnoreTrapsTurrets)
+                min = raid.Options.AutoTurret.Min;
+                max = raid.Options.AutoTurret.Max;
+            }
+            else
+            {
+                min = raid.Options.AutoTurret.NpcMin;
+                max = raid.Options.AutoTurret.NpcMax;
+            }
+
+            if (min != 1f || max != 1f)
+            {
+                info.damageTypes.Scale(DamageType.Bullet, UnityEngine.Random.Range(min, max));
+            }
+
+            bool ignorePlayerTurret = raidVictim && raid.Options.NPC.IgnorePlayerTrapsTurrets && weapon.OwnerID.IsSteamId();
+            bool isRaidTurret = raidVictim && weapon.OwnerID == 0uL && weapon.skinID == RB_SKIN_ID;
+
+            if (ignorePlayerTurret || isRaidTurret)
+            {
+                if (turret.target == victim)
                 {
-                    return DamageResult.Blocked;
+                    turret.SetNoTarget();
+                    return DamageResult.None;
+                }
+
+                return DamageResult.Blocked;
+            }
+
+            if (weapon.OwnerID.IsSteamId())
+            {
+                if (!victim.IsHuman())
+                {
+                    return DamageResult.Allowed;
+                }
+
+                if (InRange2D(weapon.transform.position, raid.Location, raid.ProtectionRadius))
+                {
+                    return raid.AllowPVP ? DamageResult.Allowed : DamageResult.Blocked;
                 }
             }
 
-            return DamageResult.Allowed;
+            return raid.OnTurretTarget(turret, victim);
         }
 
-        private DamageResult HandleAttacker(BasePlayer attacker, BasePlayer victim, HitInfo info, DamageType damageType, RaidableBase raid, out bool isHuman)
+        private DamageResult EvaluateAttackerDamage(BasePlayer attacker, BasePlayer victim, ref DamageContext context)
         {
-            isHuman = attacker.IsHuman();
-            if (!isHuman && Has(attacker) && Has(victim))
+            RaidableBase raid = context.Raid;
+            context.IsHuman = attacker.IsHuman();
+
+            bool raidAttacker = Has(attacker);
+            bool raidVictim = Has(victim);
+
+            if (!context.IsHuman && raidAttacker && raidVictim)
             {
                 return DamageResult.Blocked;
             }
@@ -2223,14 +2471,14 @@ namespace RaidableBases
 
             if (HasPVPDelay(victim.userID))
             {
-                if (!raid.Options.AllowFriendlyFire && raid.IsAlly(attacker.userID, victim.userID))
+                if (!raid.Options.AllowFriendlyFire && raid.IsAlly(attacker, victim))
                 {
                     return DamageResult.Blocked;
                 }
 
                 if (EventTerritory(attacker.transform.position))
                 {
-                    raid.SetPVPDelay(attacker, damageType == DamageType.Heat);
+                    raid.SetPVPDelay(attacker, context.DamageType == DamageType.Heat);
                     return DamageResult.Allowed;
                 }
 
@@ -2245,27 +2493,19 @@ namespace RaidableBases
                 return DamageResult.Allowed;
             }
 
-            if (isHuman && !victim.IsHuman())
+            if (context.IsHuman)
             {
-                return HandleNpcVictim(raid, victim, attacker, info);
+                return victim.IsHuman()
+                    ? EvaluatePvpDamage(raid, victim, attacker, context.Info, context.DamageType)
+                    : EvaluateHumanToNpcDamage(raid, victim, attacker, context.Info, raidVictim);
             }
 
-            if (isHuman && victim.IsHuman())
-            {
-                return HandlePVPDamage(raid, victim, attacker, info, damageType);
-            }
-
-            if (Has(attacker))
-            {
-                return HandleNpcAttacker(raid, victim, attacker, info, damageType);
-            }
-
-            return DamageResult.None;
+            return raidAttacker ? EvaluateRaidNpcDamage(raid, victim, attacker, context.Info, context.DamageType, raidVictim) : DamageResult.None;
         }
 
-        private DamageResult HandleNpcVictim(RaidableBase raid, BasePlayer victim, BasePlayer attacker, HitInfo info)
+        private DamageResult EvaluateHumanToNpcDamage(RaidableBase raid, BasePlayer victim, BasePlayer attacker, HitInfo info, bool raidVictim)
         {
-            if (!Has(victim) || !HumanoidBrains.TryGetValue(victim.userID, out var brain))
+            if (!raidVictim || !HumanoidBrains.TryGetValue(victim.userID, out var brain))
             {
                 return DamageResult.Allowed;
             }
@@ -2277,7 +2517,7 @@ namespace RaidableBases
                     return DamageResult.Blocked;
                 }
 
-                var parent = attacker.HasParent() ? attacker.GetParentEntity() : null;
+                BaseEntity parent = attacker.HasParent() ? attacker.GetParentEntity() : null;
 
                 if (parent is BaseHelicopter || parent is HotAirBalloon)
                 {
@@ -2287,19 +2527,18 @@ namespace RaidableBases
 
             if (raid.Options.NPC.BlockOutsideDamageToNpcsInside && brain.AttackTarget != attacker && CanBlockOutsideDamage(raid, attacker) && InRange(victim.transform.position, raid.Location, raid.ProtectionRadius))
             {
-                // Still mark agro so NPCs react once the player steps inside.
-                brain.SetTarget(attacker, converge: false);
                 return DamageResult.Blocked;
             }
 
             if (!raid.Options.NPC.CanLeave && raid.Options.NPC.BlockOutsideDamageOnLeave && !InRange(attacker.transform.position, raid.Location, raid.ProtectionRadius) && InRange(victim.transform.position, raid.Location, raid.ProtectionRadius))
             {
-                // Remember shooter, but heal/forget roam so outside snipe doesn't soft-kill NPCs.
-                brain.SetTarget(attacker, converge: false);
+                brain.Forget();
+
                 if (!victim.IsDead())
                 {
                     victim.Heal(victim.MaxHealth());
                 }
+
                 return DamageResult.Blocked;
             }
 
@@ -2312,16 +2551,14 @@ namespace RaidableBases
                     return DamageResult.Allowed;
                 }
 
-            brain.SetSleeping(false);
+                brain.SetSleeping(false);
             }
 
-            // Damage agro (converge:false). SetTarget no-ops when attacker is vanished (limitNetworking).
-            brain.SetTarget(attacker, converge: false);
-
+            brain.SetTarget(attacker);
             return DamageResult.Allowed;
         }
 
-        private DamageResult HandlePVPDamage(RaidableBase raid, BasePlayer victim, BasePlayer attacker, HitInfo info, DamageType damageType)
+        private DamageResult EvaluatePvpDamage(RaidableBase raid, BasePlayer victim, BasePlayer attacker, HitInfo info, DamageType damageType)
         {
             if (playerDelayExclusions.Count > 1 && HasDelayExclusion(victim.userID) && HasDelayExclusion(attacker.userID))
             {
@@ -2333,42 +2570,45 @@ namespace RaidableBases
                 return DamageResult.Blocked;
             }
 
-            if (raid.Options.BlockOutsideDamageToPlayersInside && CanBlockOutsideDamage(raid, attacker) && !(info.WeaponPrefab is MLRSRocket))
+            if (raid.Options.BlockOutsideDamageToPlayersInside && CanBlockOutsideDamage(raid, attacker) && info.WeaponPrefab is not MLRSRocket)
             {
                 if (config.EventMessages.NoDamageFromOutsideToPlayersInside && damageType != DamageType.Heat)
                 {
-                    TryMessage(attacker, "NoDamageFromOutsideToPlayersInside");
+                    NotifyOnce(attacker, "NoDamageFromOutsideToPlayersInside");
                 }
+
                 return DamageResult.Blocked;
             }
 
-            if (IsPVE() && (!InRange(attacker.transform.position, raid.Location, raid.ProtectionRadius) || !InRange(victim.transform.position, raid.Location, raid.ProtectionRadius)))
+            if (IsPVE() &&
+                (!InRange(attacker.transform.position, raid.Location, raid.ProtectionRadius) ||
+                !InRange(victim.transform.position, raid.Location, raid.ProtectionRadius)))
             {
                 return DamageResult.Blocked;
             }
 
-            if (raid.IsAlly(attacker.userID, victim.userID))
+            if (raid.IsAlly(attacker, victim))
             {
                 return raid.Options.AllowFriendlyFire ? DamageResult.Allowed : DamageResult.Blocked;
             }
 
-            if (raid.AllowPVP)
+            if (!raid.AllowPVP)
             {
-                raid.SetPVPDelay(attacker, damageType == DamageType.Heat);
-                return DamageResult.Allowed;
+                return DamageResult.Blocked;
             }
 
-            return DamageResult.Blocked;
+            raid.SetPVPDelay(attacker, damageType == DamageType.Heat);
+            return DamageResult.Allowed;
         }
 
-        private DamageResult HandleNpcAttacker(RaidableBase raid, BasePlayer victim, BasePlayer attacker, HitInfo info, DamageType damageType)
+        private DamageResult EvaluateRaidNpcDamage(RaidableBase raid, BasePlayer victim, BasePlayer attacker, HitInfo info, DamageType damageType, bool raidVictim)
         {
-            if (!Has(attacker) || !HumanoidBrains.TryGetValue(attacker.userID, out var brain))
+            if (!HumanoidBrains.TryGetValue(attacker.userID, out var brain))
             {
                 return DamageResult.Allowed;
             }
 
-            if (Has(victim))
+            if (raidVictim)
             {
                 return DamageResult.Blocked;
             }
@@ -2390,67 +2630,94 @@ namespace RaidableBases
                 info.UseProtection = false;
             }
 
-            switch (brain.attackType)
-            {
-                case HumanoidBrain.AttackType.BaseProjectile:
-                    info.damageTypes.ScaleAll(raid.Options.NPC.Multipliers.ProjectileDamageMultiplier);
-                    break;
-                case HumanoidBrain.AttackType.Explosive:
-                    info.damageTypes.ScaleAll(raid.Options.NPC.Multipliers.ExplosiveDamageMultiplier);
-                    break;
-                case HumanoidBrain.AttackType.Melee:
-                    info.damageTypes.ScaleAll(raid.Options.NPC.Multipliers.MeleeDamageMultiplier);
-                    break;
-            }
+            var opt = raid.Options.NPC.Multipliers;
+            var m = brain.attackType switch { HumanoidBrain.AttackType.BaseProjectile => opt.ProjectileDamageMultiplier, HumanoidBrain.AttackType.Explosive => opt.ExplosiveDamageMultiplier, HumanoidBrain.AttackType.Melee => opt.MeleeDamageMultiplier, _ => 1f };
+            if (m != 1f) info.damageTypes.ScaleAll(m);
 
             return DamageResult.Allowed;
         }
 
-        private DamageResult HandleEntityDamage(BaseCombatEntity entity, HitInfo info, DamageType damageType, out RaidableBase raid, out BasePlayer attacker, out bool isHuman)
+        private DamageResult EvaluateEntityDamage(ref DamageContext context)
         {
-            raid = null;
-            attacker = null;
-            isHuman = false;
+            BaseCombatEntity entity = context.Entity;
+            HitInfo info = context.Info;
 
             if (info.Initiator is SamSite ss)
             {
                 return ss.skinID == RB_SKIN_ID ? DamageResult.Allowed : DamageResult.None;
             }
 
-            if (!Get(entity.transform.position, out raid) || !ValidateEventTurretDamage(info, raid, entity))
+            if (!Get(entity.transform.position, out var raid))
             {
                 return DamageResult.None;
             }
 
-            if (IsHelicopter(info, out bool eventHeli))
+            context.Raid = raid;
+
+            if (!CanEventTurretDamage(info, raid, entity))
             {
-                HandleHelicopterDamage(entity, info);
-                return eventHeli ? DamageResult.None : DamageResult.Allowed;
+                return DamageResult.None;
             }
 
-            bool isAttacker = raid.GetInitiatorPlayer(info, damageType, entity, out attacker);
-            isHuman = isAttacker && attacker.IsHuman();
+            if (IsHelicopter(info, out bool eventHelicopter))
+            {
+                if (config.Settings.Management.BlockHelicopterDamage && entity.OwnerID == 0uL)
+                {
+                    info.damageTypes.Clear();
+                }
+
+                return eventHelicopter ? DamageResult.None : DamageResult.Allowed;
+            }
+
+            bool hasAttacker = raid.GetInitiatorPlayer(info, context.DamageType, entity, out var attacker);
+            context.Attacker = attacker;
+            context.IsHuman = hasAttacker && attacker.IsHuman();
 
             if (raid.IsDespawning)
             {
-                return !isAttacker ? DamageResult.Allowed : DamageResult.None;
+                return hasAttacker ? DamageResult.None : DamageResult.Allowed;
             }
 
-            if (HandleOwnerlessEntities(entity, info, raid, isHuman) == DamageResult.None)
+            if (context.IsHuman && entity.OwnerID == 0uL && raid.Type != RaidableType.None)
             {
+                raid.IsEngaged = true;
+                raid.CheckDespawn();
+            }
+
+            if (info.Initiator != null && info.Initiator.skinID == RB_SKIN_ID && entity.skinID == RB_SKIN_ID)
+            {
+                info.damageTypes.Clear();
                 return DamageResult.None;
             }
 
-            ApplyPlayerDamageMultipliers(info, raid, damageType, isAttacker, isHuman, attacker);
+            ApplyRaidEntityDamageMultipliers(ref context, hasAttacker);
 
-            HandleSpecificEntities(entity, info, raid);
+            if (entity.Is(out BearTrap trap))
+            {
+                if (raid.Options.BearTrapsImmuneToExplosives && info.WeaponPrefab is TimedExplosive)
+                {
+                    info.damageTypes.Clear();
+                }
 
-            if (ShouldBlockDamage(entity, info, damageType, raid))
+                if (raid.Options.RearmBearTraps)
+                {
+                    trap.Invoke(trap.Arm, 0.1f);
+                }
+            }
+
+            if (raid.IsDamageBlocked(entity) || (!raid.Options.MLRS && info.WeaponPrefab is MLRSRocket))
             {
                 return DamageResult.Blocked;
             }
 
-            if (ShouldBlockDueToLoadingOrDecay(entity, damageType, raid))
+            if (context.DamageType == DamageType.Decay)
+            {
+                if (entity.OwnerID == 0uL && !entity.enableSaving && Has(entity))
+                {
+                    return DamageResult.Blocked;
+                }
+            }
+            else if (raid.IsLoading || entity is DroppedItemContainer)
             {
                 return DamageResult.Blocked;
             }
@@ -2460,20 +2727,22 @@ namespace RaidableBases
                 return DamageResult.Allowed;
             }
 
-            if (entity is BuildingBlock block)
+            if (entity.Is(out BuildingBlock block))
             {
-                DamageResult handleBuildingResult = HandleBuildingBlock(block, raid);
-                if (handleBuildingResult != DamageResult.None)
+                DamageResult result = EvaluateBuildingBlockDamage(block, raid);
+
+                if (result != DamageResult.None)
                 {
-                    return handleBuildingResult;
+                    return result;
                 }
             }
             else if (raid.IsMountable(entity))
             {
-                DamageResult handleMountableResult = HandleMountable(entity, info, raid, isHuman, attacker);
-                if (handleMountableResult != DamageResult.None)
+                DamageResult result = EvaluateMountableDamage(entity, info, raid, context.IsHuman, attacker);
+
+                if (result != DamageResult.None)
                 {
-                    return handleMountableResult;
+                    return result;
                 }
             }
 
@@ -2482,214 +2751,135 @@ namespace RaidableBases
                 return DamageResult.None;
             }
 
-            bool checkList = raid.BuiltList.Contains(entity);
+            bool builtEntity = raid.BuiltList.Contains(entity);
 
-            if (!checkList && !raid.Has(entity, false))
+            if (!builtEntity && !raid.Has(entity))
             {
                 return DamageResult.None;
             }
 
             if (info.WeaponPrefab is TimedExplosive && info.WeaponPrefab.ShortPrefabName == "torpedostraight")
             {
-                ScaleTorpedoDamage(info, raid);
+                info.damageTypes.ScaleAll(UnityEngine.Random.Range(raid.Options.Water.TorpedoMin, raid.Options.Water.TorpedoMax));
             }
 
-            if (!attacker.IsNetworked())
+            if (!attacker.IsValid())
             {
-                return ValidateUnknownAttacker(info, raid, entity) ? DamageResult.Allowed : DamageResult.None;
+                BaseEntity initiator = info.Initiator;
+                bool allowUnknownAttacker = initiator.IsNull() || (initiator.OwnerID == 0uL && Has(initiator)) || IsLootingWeapon(info);
+
+                return allowUnknownAttacker ? DamageResult.Allowed : DamageResult.None;
             }
 
-            if (!isHuman)
+            if (!context.IsHuman)
             {
-                return HandleNonHumanAttacker(entity, raid, attacker, info, damageType);
+                return EvaluateNonHumanDamageToEntity(entity, raid, attacker, info);
             }
 
-            if (info.IsProjectile())
-            {
-                raid.cached_attacker = attacker;
-                raid.cached_attack_time = Time.time;
-                raid.cached_attacker_id = attacker.userID;
-            }
-
-            UpdateAttackerInfo(entity, attacker);
-
-            if (HandleEcoAndMountDamage(raid, attacker, info, damageType) == DamageResult.Blocked)
-            {
-                return DamageResult.Blocked;
-            }
-
-            if (raid.Options.BlockOutsideDamageToBaseInside && CanBlockOutsideDamage(raid, attacker) && !(info.WeaponPrefab is MLRSRocket))
-            {
-                TryMessage(attacker, "NoDamageFromOutsideToBaseInside");
-                return DamageResult.Blocked;
-            }
-
-            if (HandleRaidAndTurretConditions(entity, raid, attacker, info, damageType) == DamageResult.Blocked)
-            {
-                return DamageResult.Blocked;
-            }
-
-            if (!checkList && FinalizeRaidChecks(entity, info, raid, attacker, damageType) == DamageResult.Blocked)
-            {
-                return DamageResult.Blocked;
-            }
-
-            return DamageResult.Allowed;
+            return EvaluateHumanDamageToEntity(entity, raid, attacker, info, context.DamageType, builtEntity);
         }
 
-        private bool ValidateEventTurretDamage(HitInfo info, RaidableBase raid, BaseCombatEntity entity)
+        private bool CanEventTurretDamage(HitInfo info, RaidableBase raid, BaseCombatEntity entity)
         {
             if (entity.OwnerID != 0uL || entity.enableSaving || info.Initiator.IsKilled() || info.Initiator.skinID != RB_SKIN_ID)
             {
                 return true;
             }
-            AutoTurret turret = info.Initiator as AutoTurret;
-            if (turret != null)
+
+            if (info.Initiator is not AutoTurret)
             {
-                BuildingBlock block = entity as BuildingBlock;
-                if (block != null && block.grade == BuildingGrade.Enum.Twigs)
+                return true;
+            }
+
+            if (entity.Is(out BuildingBlock block) && block.grade == BuildingGrade.Enum.Twigs)
+            {
+                // Do not redirect turret damage through twig onto the player — that
+                // made raid turrets effectively shoot through walls.
+                if (raid.Options.TurretsHurtTwig)
                 {
-                    BasePlayer target = turret.target as BasePlayer;
-                    if (target != null && raid.intruders.Contains(target.userID))
-                    {
-                        turret.target.Hurt(info);
-                    }
-                    if (raid.Options.TurretsHurtTwig)
-                    {
-                        return true;
-                    }
-                }
-                info.damageTypes.Clear();
-                return false;
-            }
-            return true;
-        }
-
-        private void HandleHelicopterDamage(BaseCombatEntity entity, HitInfo info)
-        {
-            if (config.Settings.Management.BlockHelicopterDamage && entity.OwnerID == 0uL)
-            {
-                info.damageTypes.Clear();
-            }
-        }
-
-        private DamageResult HandleOwnerlessEntities(BaseCombatEntity entity, HitInfo info, RaidableBase raid, bool isHuman)
-        {
-            if (isHuman && entity.OwnerID == 0uL && raid.Type != RaidableType.None)
-            {
-                raid.IsEngaged = true;
-                raid.CheckDespawn();
-            }
-            if (info.Initiator != null && info.Initiator.skinID == RB_SKIN_ID && entity.skinID == RB_SKIN_ID)
-            {
-                info.damageTypes.Clear();
-                return DamageResult.None;
-            }
-            return DamageResult.Allowed;
-        }
-
-        private void ApplyMaxEffectiveRangeMultiplier(float maxEffectiveRange, float sqrProtectionRadius, Vector3 a, HitInfo info, HumanoidBrain brain)
-        {
-            if (maxEffectiveRange > 0f)
-            {
-                float distanceSq = (a - brain.ServerPosition).sqrMagnitude;
-
-                if (distanceSq > sqrProtectionRadius)
-                {
-                    bool flag = distanceSq > maxEffectiveRange * maxEffectiveRange;
-
-                    info.damageTypes.ScaleAll(flag ? 0f : 1f - (Mathf.Sqrt(distanceSq) / maxEffectiveRange));
+                    return true;
                 }
             }
+
+            info.damageTypes.Clear();
+            return false;
         }
 
-        private void ApplyPlayerDamageMultipliers(HitInfo info, RaidableBase raid, DamageType damageType, bool isAttacker, bool isHuman, BasePlayer attacker)
+        private void ApplyMaxEffectiveRangeMultiplier(float maxEffectiveRange, float sqrProtectionRadius, Vector3 position, HitInfo info, HumanoidBrain brain)
         {
-            if (isAttacker ? isHuman : damageType == DamageType.Heat)
+            if (!(maxEffectiveRange > 0f))
+            {
+                return;
+            }
+
+            float distanceSquared = (position - brain.ServerPosition).sqrMagnitude;
+            if (!(distanceSquared > sqrProtectionRadius))
+            {
+                return;
+            }
+
+            bool outsideEffectiveRange = distanceSquared > maxEffectiveRange * maxEffectiveRange;
+            info.damageTypes.ScaleAll(outsideEffectiveRange ? 0f : 1f - Mathf.Sqrt(distanceSquared) / maxEffectiveRange);
+        }
+
+        private void ApplyRaidEntityDamageMultipliers(ref DamageContext context, bool hasAttacker)
+        {
+            RaidableBase raid = context.Raid;
+
+            if (hasAttacker ? context.IsHuman : context.DamageType == DamageType.Heat)
             {
                 if (raid.PlayerDamageMultiplier.Count > 0)
                 {
-                    foreach (var m in raid.PlayerDamageMultiplier)
+                    foreach (var multiplier in raid.PlayerDamageMultiplier)
                     {
-                        info.damageTypes.Scale(m.index, m.amount);
+                        context.Info.damageTypes.Scale(multiplier.index, multiplier.amount);
                     }
                 }
-                if (raid.Options.PlayerDamageMultiplierTC != 1f && info.HitEntity is BuildingPrivlidge)
+
+                if (raid.Options.PlayerDamageMultiplierTC != 1f && context.Info.HitEntity is BuildingPrivlidge)
                 {
-                    info.damageTypes.ScaleAll(raid.Options.PlayerDamageMultiplierTC);
+                    context.Info.damageTypes.ScaleAll(raid.Options.PlayerDamageMultiplierTC);
                 }
             }
+
             if (!raid.Options.Siege.Disabled)
             {
-                raid.Options.Siege.Scale(attacker, info, isHuman);
+                raid.Options.Siege.Scale(context);
             }
         }
 
-        private void HandleSpecificEntities(BaseCombatEntity entity, HitInfo info, RaidableBase raid)
+        private DamageResult EvaluateBuildingBlockDamage(BuildingBlock block, RaidableBase raid)
         {
-            if (entity is BearTrap trap && trap != null)
+            if (raid.Options.Setup.FoundationsImmune || (raid.Options.Setup.FoundationsImmuneForcedHeight && raid.Options.Setup.ForcedHeight != -1))
             {
-                if (raid.Options.BearTrapsImmuneToExplosives && info.WeaponPrefab is TimedExplosive)
-                {
-                    info.damageTypes.Clear();
-                }
-                if (raid.Options.RearmBearTraps)
-                {
-                    trap.Invoke(trap.Arm, 0.1f);
-                }
-            }
-        }
-
-        private bool ShouldBlockDamage(BaseCombatEntity entity, HitInfo info, DamageType damageType, RaidableBase raid)
-        {
-            return raid.IsDamageBlocked(entity) || (!raid.Options.MLRS && info.WeaponPrefab is MLRSRocket);
-        }
-
-        private bool ShouldBlockDueToLoadingOrDecay(BaseCombatEntity entity, DamageType damageType, RaidableBase raid)
-        {
-            if (damageType == DamageType.Decay)
-            {
-                return entity.OwnerID == 0uL && !entity.enableSaving && raid.Has(entity, false);
-            }
-            return raid.IsLoading || entity is DroppedItemContainer;
-        }
-
-        private DamageResult HandleBuildingBlock(BuildingBlock block, RaidableBase raid)
-        {
-            if (raid.Options.Setup.FoundationsImmune || raid.Options.Setup.FoundationsImmuneForcedHeight && raid.Options.Setup.ForcedHeight != -1)
-            {
-                if (raid.foundations.Count > 0 && block.ShortPrefabName.StartsWith("foundation"))
+                if (raid.foundations.Count > 0 && raid.IsFoundation(block))
                 {
                     return DamageResult.Blocked;
                 }
 
-                if (raid.floors == null && block.ShortPrefabName.StartsWith("floor") && block.transform.position.y - raid.Location.y <= 3f)
+                if (raid.FloorsAreFoundations && block.ShortPrefabName.StartsWith("floor") && block.transform.position.y - raid.Location.y <= 3f)
                 {
                     return DamageResult.Blocked;
                 }
             }
 
-            if (block.OwnerID == 0)
+            if (block.OwnerID == 0uL)
             {
                 if (raid.Options.TwigImmune && block.grade == BuildingGrade.Enum.Twigs)
                 {
                     return DamageResult.Blocked;
                 }
+
                 if (raid.Options.BlocksImmune)
                 {
                     return block.grade == BuildingGrade.Enum.Twigs ? DamageResult.Allowed : DamageResult.Blocked;
                 }
             }
 
-            if (block.grade == BuildingGrade.Enum.Twigs)
-            {
-                return DamageResult.Allowed;
-            }
-
-            return DamageResult.None;
+            return block.grade == BuildingGrade.Enum.Twigs ? DamageResult.Allowed : DamageResult.None;
         }
 
-        private DamageResult HandleMountable(BaseEntity entity, HitInfo info, RaidableBase raid, bool isHuman, BasePlayer attacker)
+        private DamageResult EvaluateMountableDamage(BaseEntity entity, HitInfo info, RaidableBase raid, bool isHuman, BasePlayer attacker)
         {
             if (config.Settings.Management.MiniCollision && entity is Minicopter && entity == info.Initiator)
             {
@@ -2698,8 +2888,7 @@ namespace RaidableBases
 
             if (isHuman && !ExcludedMountsExists(entity.ShortPrefabName))
             {
-                BaseMountable mountable = entity as BaseMountable;
-                if (mountable != null)
+                if (entity.Is(out BaseMountable mountable))
                 {
                     BaseVehicle vehicle = mountable.HasParent() ? mountable.VehicleParent() : mountable as BaseVehicle;
 
@@ -2708,26 +2897,31 @@ namespace RaidableBases
                         return config.Settings.Management.MountDamageFromPlayers ? DamageResult.Allowed : DamageResult.Blocked;
                     }
                 }
+
                 if (!config.Settings.Management.MountDamageFromPlayers)
                 {
-                    TryMessage(attacker, "NoMountedDamageTo");
+                    NotifyOnce(attacker, "NoMountedDamageTo");
                     return DamageResult.Blocked;
                 }
-                if (config.Settings.Management.BlockMounts && raid.IsMounted(attacker, raid.Options.Siege.Only || !config.Settings.Management.BlockSiegeMounts))
+
+                if (config.Settings.Management.BlockMounts &&
+                    raid.IsMounted(attacker, raid.Options.Siege.Only || !config.Settings.Management.BlockSiegeMounts))
                 {
-                    TryMessage(attacker, "NoMountedDamageFrom");
+                    NotifyOnce(attacker, "NoMountedDamageFrom");
                     return DamageResult.Blocked;
                 }
-                if (raid.Options.BlockOutsideDamageToBaseInside && CanBlockOutsideDamage(raid, attacker) && !(info.WeaponPrefab is MLRSRocket))
+
+                if (raid.Options.BlockOutsideDamageToBaseInside && CanBlockOutsideDamage(raid, attacker) && info.WeaponPrefab is not MLRSRocket)
                 {
-                    TryMessage(attacker, "NoDamageFromOutsideToBaseInside");
+                    NotifyOnce(attacker, "NoDamageFromOutsideToBaseInside");
                     return DamageResult.Blocked;
                 }
             }
 
             if (info.Initiator == entity)
             {
-                return config.Settings.Management.MountDamageFromPlayers || (entity is BatteringRam or BatteringRamHead) ? DamageResult.Allowed : DamageResult.Blocked;
+                bool allowDamage = config.Settings.Management.MountDamageFromPlayers || entity is BatteringRam or BatteringRamHead;
+                return allowDamage ? DamageResult.Allowed : DamageResult.Blocked;
             }
 
             return DamageResult.None;
@@ -2736,28 +2930,18 @@ namespace RaidableBases
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ExcludedMountsExists(string prefabName)
         {
-            foreach (var prefix in ExcludedMounts)
+            foreach (string prefix in ExcludedMounts)
             {
                 if (prefabName.StartsWith(prefix))
                 {
                     return true;
                 }
             }
+
             return false;
         }
 
-        private void ScaleTorpedoDamage(HitInfo info, RaidableBase raid)
-        {
-            info.damageTypes.ScaleAll(UnityEngine.Random.Range(raid.Options.Water.TorpedoMin, raid.Options.Water.TorpedoMax));
-        }
-
-        private bool ValidateUnknownAttacker(HitInfo info, RaidableBase raid, BaseCombatEntity entity)
-        {
-            BaseEntity initiator = info.Initiator;
-            return initiator.IsNull() || (initiator.OwnerID == 0uL && Has(initiator)) || IsLootingWeapon(info);
-        }
-
-        private DamageResult HandleNonHumanAttacker(BaseCombatEntity entity, RaidableBase raid, BasePlayer attacker, HitInfo info, DamageType damageType)
+        private DamageResult EvaluateNonHumanDamageToEntity(BaseCombatEntity entity, RaidableBase raid, BasePlayer attacker, HitInfo info)
         {
             if (entity.OwnerID == 0uL && !raid.Options.RaidingNpcs && !Has(attacker))
             {
@@ -2765,44 +2949,104 @@ namespace RaidableBases
                 return DamageResult.None;
             }
 
-            if (info.damageTypes.Has(DamageType.Explosion) || info.WeaponPrefab is TimedExplosive)
+            if (entity.OwnerID == 0uL && Has(attacker) && (info.damageTypes.Has(DamageType.Explosion) || info.WeaponPrefab is TimedExplosive) && entity is not BasePlayer)
             {
-                if (entity.OwnerID == 0uL && !(entity is BasePlayer) && Has(attacker))
-                {
-                    return DamageResult.Blocked;
-                }
-
-                //return raid.Has(entity) ? DamageResult.Allowed : DamageResult.Blocked;
-                //return (entity.OwnerID == 0uL || raid.BuiltList.Contains(entity)) ? DamageResult.Allowed : DamageResult.Blocked;
+                return DamageResult.Blocked;
             }
 
             return DamageResult.Allowed;
         }
 
-        private void UpdateAttackerInfo(BaseCombatEntity entity, BasePlayer attacker)
+        private DamageResult EvaluateHumanDamageToEntity(BaseCombatEntity entity, RaidableBase raid, BasePlayer attacker, HitInfo info, DamageType damageType, bool builtEntity)
         {
+            if (info.IsProjectile())
+            {
+                raid.cached_attacker = attacker;
+                raid.cached_attack_time = Time.timeAsDouble;
+                raid.cached_attacker_id = attacker.userID;
+            }
+
             entity.lastAttacker = attacker;
             attacker.lastDealtDamageTime = Time.time;
-        }
 
-        private DamageResult HandleEcoAndMountDamage(RaidableBase raid, BasePlayer attacker, HitInfo info, DamageType damageType)
-        {
             if (raid.Options.Eco.Enabled && !raid.IsEcoTool(attacker, info))
             {
-                TryMessage(attacker, "EcoOnly");
+                NotifyOnce(attacker, "EcoOnly");
                 return DamageResult.Blocked;
             }
 
             if (raid.Options.Siege.Only && !raid.Options.Siege.IsSiegeTool(attacker, info, damageType))
             {
-                TryMessage(attacker, "PrimitiveOnly");
+                NotifyOnce(attacker, "PrimitiveOnly");
                 return DamageResult.Blocked;
             }
 
             if (config.Settings.Management.BlockMounts && raid.IsMounted(attacker, raid.Options.Siege.Only || !config.Settings.Management.BlockSiegeMounts))
             {
-                TryMessage(attacker, "NoMountedDamageFrom");
+                NotifyOnce(attacker, "NoMountedDamageFrom");
                 return DamageResult.Blocked;
+            }
+
+            if (raid.Options.BlockOutsideDamageToBaseInside && CanBlockOutsideDamage(raid, attacker) && info.WeaponPrefab is not MLRSRocket)
+            {
+                NotifyOnce(attacker, "NoDamageFromOutsideToBaseInside");
+                return DamageResult.Blocked;
+            }
+
+            if (raid.ID.Length == 17 && IsBox(entity, false) && (attacker.UserIDString == raid.ID || raid.IsAlly(attacker, Convert.ToUInt64(raid.ID)))) // intentionally coded this way to make it difficult to understand (private plugin uses raid.ID)
+            {
+                return DamageResult.Blocked;
+            }
+
+            if (raid.ownerId.IsSteamId() && raid.CanEjectEnemy() && !raid.IsAlly(attacker))
+            {
+                NotifyOnce(attacker, "NoDamageToEnemyBase");
+                return DamageResult.Blocked;
+            }
+
+            if (raid.HasLockout(attacker, damageType != DamageType.Heat))
+            {
+                return DamageResult.Blocked;
+            }
+
+            if (raid.Options.AutoTurret.AutoAdjust && entity.skinID == RB_SKIN_ID && entity.Is(out AutoTurret turret) && turret.sightRange < raid.Options.AutoTurret.SightRange * 2f)
+            {
+                raid.SetupSightRange(turret, raid.Options.AutoTurret.SightRange, 2);
+            }
+
+            if (damageType == DamageType.Explosion && !raid.Options.ExplosionModifier.Equals(100f))
+            {
+                info.damageTypes.Scale(damageType, raid.Options.ExplosionModifier / 100f);
+            }
+
+            if (builtEntity)
+            {
+                return DamageResult.Allowed;
+            }
+
+            if (raid.IsOpened && IsLootingWeapon(info) && raid.AddLooter(attacker, info))
+            {
+                if (damageType == DamageType.Explosion && info.WeaponPrefab is TimedExplosive)
+                {
+                    raid.GetRaider(attacker).HasDestroyed = true;
+                }
+
+                raid.TrySetOwner(attacker, entity, info, damageType == DamageType.Heat);
+            }
+
+            if (!raid.CanHurtBox(entity))
+            {
+                if (damageType != DamageType.Heat)
+                {
+                    NotifyOnce(attacker, "NoDamageToBoxes");
+                }
+
+                return DamageResult.Blocked;
+            }
+
+            if (raid.Options.MLRS && info.WeaponPrefab is MLRSRocket)
+            {
+                raid.GetRaider(attacker).lastActiveTime = Time.timeAsDouble;
             }
 
             return DamageResult.Allowed;
@@ -2813,72 +3057,13 @@ namespace RaidableBases
             return !InRange(attacker.transform.position, raid.Location, Mathf.Max(raid.ProtectionRadius, raid.Options.ArenaWalls.Radius));
         }
 
-        private DamageResult HandleRaidAndTurretConditions(BaseCombatEntity entity, RaidableBase raid, BasePlayer attacker, HitInfo info, DamageType damageType)
-        {
-            if (raid.ID.IsSteamId() && IsBox(entity, false) && (attacker.UserIDString == raid.ID || raid.IsAlly(attacker.userID, Convert.ToUInt64(raid.ID))))
-            {
-                return DamageResult.Blocked;
-            }
-
-            if (raid.ownerId.IsSteamId() && raid.CanEjectEnemy() && !raid.IsAlly(attacker))
-            {
-                TryMessage(attacker, "NoDamageToEnemyBase");
-                return DamageResult.Blocked;
-            }
-
-            if (raid.HasLockout(attacker, damageType != DamageType.Heat))
-            {
-                return DamageResult.Blocked;
-            }
-
-            if (raid.Options.AutoTurret.AutoAdjust && entity.skinID == RB_SKIN_ID && entity is AutoTurret turret && turret.sightRange < raid.Options.AutoTurret.SightRange * 2)
-            {
-                raid.SetupSightRange(turret, raid.Options.AutoTurret.SightRange, 2);
-            }
-
-            if (damageType == DamageType.Explosion && !raid.Options.ExplosionModifier.Equals(100f))
-            {
-                info.damageTypes.Scale(damageType, raid.Options.ExplosionModifier / 100f);
-            }
-
-            return DamageResult.None;
-        }
-
-        private DamageResult FinalizeRaidChecks(BaseCombatEntity entity, HitInfo info, RaidableBase raid, BasePlayer attacker, DamageType damageType)
-        {
-            if (raid.IsOpened && IsLootingWeapon(info) && raid.AddLooter(attacker, info))
-            {
-                if (damageType == DamageType.Explosion && info.WeaponPrefab is TimedExplosive)
-                {
-                    raid.GetRaider(attacker).HasDestroyed = true;
-                }
-                raid.TrySetOwner(attacker, entity, info, damageType == DamageType.Heat);
-            }
-
-            if (!raid.CanHurtBox(entity))
-            {
-                if (damageType != DamageType.Heat)
-                {
-                    TryMessage(attacker, "NoDamageToBoxes");
-                }
-                return DamageResult.Blocked;
-            }
-
-            if (raid.Options.MLRS && info.WeaponPrefab is MLRSRocket)
-            {
-                raid.GetRaider(attacker).lastActiveTime = Time.time;
-            }
-
-            return DamageResult.None;
-        }
-
         private readonly Dictionary<ulong, List<PlayerExclusion>> playerDelayExclusions = new();
 
         private class PlayerExclusion : Pool.IPooled
         {
             public object plugin;
-            public float time;
-            public bool IsExpired => Time.time > time;
+            public double time;
+            public bool IsExpired => Time.timeAsDouble > time;
             public void EnterPool()
             {
                 plugin = null;
@@ -2886,8 +3071,6 @@ namespace RaidableBases
             }
             public void LeavePool()
             {
-                plugin = null;
-                time = 0f;
             }
         }
 
@@ -2908,7 +3091,7 @@ namespace RaidableBases
                 {
                     exclusions.Remove(exclusion);
                     exclusion.plugin = null;
-                    exclusion.time = 0f;
+                    exclusion.time = 0d;
                     Pool.Free(ref exclusion);
                 }
                 if (exclusions.Count == 0)
@@ -2925,7 +3108,7 @@ namespace RaidableBases
                     exclusions.Add(exclusion);
                 }
                 exclusion.plugin = plugin;
-                exclusion.time = Time.time + maxDelayLength;
+                exclusion.time = Time.timeAsDouble + maxDelayLength;
             }
         }
 
@@ -2949,10 +3132,27 @@ namespace RaidableBases
                 if (exclusions.Count == 0)
                 {
                     playerDelayExclusions.Remove(userid);
-                    Pool.Free(ref exclusions);
+                    Pool.FreeUnmanaged(ref exclusions);
                 }
             }
             return false;
+        }
+
+        protected void ClearPlayerDelayExclusions()
+        {
+            foreach (var exclusions in playerDelayExclusions.Values)
+            {
+                for (int i = 0; i < exclusions.Count; i++)
+                {
+                    PlayerExclusion exclusion = exclusions[i];
+                    Pool.Free(ref exclusion);
+                }
+
+                List<PlayerExclusion> obj = exclusions;
+                Pool.FreeUnmanaged(ref obj);
+            }
+
+            playerDelayExclusions.Clear();
         }
 
         #endregion Hooks

@@ -4,10 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
-using Oxide.Core.Libraries.Covalence;
+using Harmony.Core.Libraries.Covalence;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.IndustrialRecycler;
+using HarmonyPlugin = Harmony.Plugins.IndustrialRecycler;
 
 namespace IndustrialRecyclerHarmony
 {
@@ -53,7 +54,7 @@ namespace IndustrialRecyclerHarmony
     public class IndustrialRecyclerMod : IHarmonyModHooks
     {
         public static IndustrialRecyclerMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private HarmonyLib.Harmony _findHarmony;
@@ -70,14 +71,15 @@ namespace IndustrialRecyclerHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -115,7 +117,7 @@ namespace IndustrialRecyclerHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.HarmonyResolvePluginReferences();
             }
@@ -138,8 +140,8 @@ namespace IndustrialRecyclerHarmony
                 ModRunner.Instance.StopCoroutine(_initCoroutine);
                 _initCoroutine = null;
             }
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
             try { _findHarmony?.UnpatchAll(_findHarmony.Id); }
             catch { }
             _findHarmony = null;
@@ -147,7 +149,7 @@ namespace IndustrialRecyclerHarmony
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[IndustrialRecycler] Harmony mod unloaded.");
         }
@@ -305,7 +307,7 @@ namespace IndustrialRecyclerHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var mi = typeof(OxidePlugin).GetMethod("GiveRecyclerItem", bf, null, new[] { typeof(BasePlayer), typeof(bool) }, null);
+                var mi = typeof(HarmonyPlugin).GetMethod("GiveRecyclerItem", bf, null, new[] { typeof(BasePlayer), typeof(bool) }, null);
                 if (mi == null) return false;
                 var result = mi.Invoke(plugin, new object[] { player, isStandard });
                 return result is true;
@@ -342,11 +344,11 @@ namespace IndustrialRecyclerHarmony
         private void RegisterAttributedChatCommands()
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                 if (attrs == null || attrs.Length == 0) continue;
-                foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                 {
                     if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                     var cmdName = attr.Command.Trim().ToLowerInvariant();
@@ -357,19 +359,19 @@ namespace IndustrialRecyclerHarmony
             }
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args, bool attributedOnly = false)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args, bool attributedOnly = false)
         {
             if (plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 if (string.IsNullOrEmpty(methodName) && attributedOnly)
                 {
                     foreach (var miScan in type.GetMethods(bf))
                     {
-                        var attrs = miScan.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), false);
-                        foreach (Oxide.Plugins.ChatCommandAttribute a in attrs)
+                        var attrs = miScan.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), false);
+                        foreach (Harmony.Plugins.ChatCommandAttribute a in attrs)
                         {
                             if (string.Equals(a.Command, command, StringComparison.OrdinalIgnoreCase))
                             { methodName = miScan.Name; break; }
@@ -415,11 +417,11 @@ namespace IndustrialRecyclerHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -620,10 +622,10 @@ namespace IndustrialRecyclerHarmony
             var plugin = Plugin;
             if (plugin == null) return;
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), false);
-                foreach (Oxide.Plugins.ConsoleCommandAttribute a in attrs)
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), false);
+                foreach (Harmony.Plugins.ConsoleCommandAttribute a in attrs)
                 {
                     if (string.Equals(a.Command, cmdName, StringComparison.OrdinalIgnoreCase))
                     {
@@ -649,7 +651,7 @@ namespace IndustrialRecyclerHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { arg }); return; }
 

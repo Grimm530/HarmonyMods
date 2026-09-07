@@ -10,7 +10,7 @@ namespace RestoreItemsHarmony.Patches
         private static void Postfix(BaseNetworkable __instance)
         {
             var plugin = RestoreItemsHarmonyMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try
             {
                 switch (__instance)
@@ -37,7 +37,7 @@ namespace RestoreItemsHarmony.Patches
         private static void Prefix(BaseNetworkable __instance)
         {
             var plugin = RestoreItemsHarmonyMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.DispatchOnEntityKill(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[RestoreItems] OnEntityKill: " + ex.Message); }
         }

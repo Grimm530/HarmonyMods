@@ -5,7 +5,7 @@ using System.Reflection;
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using Rust;
 using UnityEngine;
 
@@ -289,7 +289,8 @@ namespace LootQoLHarmony
         public void OnLootEntityEnd(BasePlayer player, BaseEntity entity)
         {
             DestroyLootOverlayUi(player);
-            OnLootBouncerEnd(player, entity as LootContainer);
+            if (_config?.LootBouncer != null)
+                OnLootBouncerEnd(player, entity as LootContainer);
         }
 
         internal void DestroyLootOverlayUi(BasePlayer player)

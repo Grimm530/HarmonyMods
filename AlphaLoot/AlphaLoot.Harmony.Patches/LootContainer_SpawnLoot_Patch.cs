@@ -1,4 +1,3 @@
-using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -56,15 +55,7 @@ public class LootContainer_SpawnLoot_Patch
 		}
 		AlphaLootTools.ClearItemContainer(__instance.inventory);
 		ItemManager.DoRemoves();
-		try
-		{
-			instance.PopulateLootContainer(__instance, profile);
-		}
-		catch (Exception ex)
-		{
-			Debug.LogError((object)($"[AlphaLoot.Harmony] Failed to populate {text}: {ex.Message}. Falling back to vanilla loot."));
-			return true;
-		}
+		instance.PopulateLootContainer(__instance, profile);
 		if (config != null && ((config.DebugSupplyDrops && __instance is SupplyDrop) || config.DebugLootTable))
 		{
 			float globalMultiplier = config.GlobalMultiplier;

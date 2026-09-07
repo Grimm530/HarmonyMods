@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using CCPlugin = Oxide.Plugins.CombatClasses;
+using CCPlugin = Harmony.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony.Patches
 {
@@ -10,7 +10,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (!__result || __instance == null || targetEntity == null) return;
+            if (!__result || targetEntity == null) return;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return;
             try { CCPlugin.Dispatch_OnLootEntity(player, targetEntity); }
@@ -49,7 +49,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(Planner __instance, Construction component, Construction.Target __state, BaseEntity __result)
         {
-            if (__result == null || __instance == null) return;
+            if (__result == null) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             try
@@ -79,7 +79,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ItemContainer __instance, Item item, bool __result)
         {
-            if (!__result || __instance == null || item == null) return;
+            if (!__result || item == null) return;
             try { CCPlugin.Dispatch_OnItemAddedToContainer(__instance, item); }
             catch (System.Exception ex) { Debug.LogWarning("[CombatClasses] OnItemAddedToContainer: " + ex.Message); }
         }

@@ -1,4 +1,4 @@
-# Quest (Harmony OxideCompat port)
+# Quest (Harmony HarmonyCompat port)
 
 Port of Oxide `Quest` 8.6.8. CUI quest list, daily/repeatable quests, rewards, Discord stats.
 
@@ -25,7 +25,7 @@ Copies **only** `Quest.dll` to root `HarmonyMods/`.
 ## Load
 
 - Auto-loads with other Harmony mods. Requires **Permissions** (`0Permissions.dll`).
-- Do **not** run the Oxide plugin at the same time — leave `oxide/plugins/Quest.cs` in place but unloaded.
+- Do **not** run the Harmony mod at the same time — leave `oxide/plugins/Quest.cs` in place but unloaded.
 - Chat: `/quest`, `/qlist` (plus aliases from config `questListProgress`).
 - CUI buttons: `cui.endtest QUEST …` (`UI_Handler`, `CloseMiniQuestList`, `ToggleQuestPin`, `CloseMainUI`).
 - AppDomain: `Quest_ApiType` → `QuestHarmony.QuestMod` (`Call` dispatcher).

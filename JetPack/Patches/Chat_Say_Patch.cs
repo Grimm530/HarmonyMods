@@ -29,7 +29,7 @@ namespace JetPackHarmony.Patches
 
             try
             {
-                object blocked = Oxide.Plugins.JetPack.Dispatch_OnPlayerCommand(player, command, argsArr);
+                object blocked = Harmony.Plugins.JetPack.Dispatch_OnPlayerCommand(player, command, argsArr);
                 if (blocked != null) return false;
             }
             catch { }

@@ -1,5 +1,5 @@
 using HarmonyLib;
-using GBPlugin = Oxide.Plugins.GrimmBoss;
+using GBPlugin = Harmony.Plugins.GrimmBoss;
 
 namespace GrimmBoss.Patches
 {
@@ -10,7 +10,7 @@ namespace GrimmBoss.Patches
         [HarmonyPostfix]
         public static void Postfix(NPCPlayer __instance, BaseCorpse __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             ScientistNPC scientist = __instance as ScientistNPC;
             NPCPlayerCorpse corpse = __result as NPCPlayerCorpse;
             if (scientist == null || corpse == null) return;

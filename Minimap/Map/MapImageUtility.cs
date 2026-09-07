@@ -1,8 +1,8 @@
-using Oxide.Ext.Chaos.UIFramework;
+using global::Ext.Chaos.UIFramework;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public class MapImageUtility
 {

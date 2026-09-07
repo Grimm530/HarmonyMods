@@ -12,7 +12,7 @@ namespace Convoy.Patches
         [HarmonyPrefix]
         public static bool Prefix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             if (player is NPCPlayer) return true; // convoy NPCs mount freely
 
             var ec = EventController.Instance;

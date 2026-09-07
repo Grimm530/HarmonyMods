@@ -1,6 +1,6 @@
 # SubmersiblePump (Harmony)
 
-Oxide **SubmersiblePump 1.1.0** port. Craft and place a skinned fuel generator that becomes a water pump (optional freshwater topology).
+Legacy **SubmersiblePump 1.1.0** port. Craft and place a skinned fuel generator that becomes a water pump (optional freshwater topology).
 
 ## Load order
 

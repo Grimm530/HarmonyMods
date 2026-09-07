@@ -22,8 +22,8 @@ Developer: Grimm530 (r3ap3rsg@gmail.com)
 Copyright © Grimm530. All rights reserved.
 */
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Plugins;
+using Harmony.Core;
+using Harmony.Core.Plugins;
 using RestoreItemsHarmony;
 using System;
 using System.Collections.Generic;
@@ -86,10 +86,10 @@ using UnityEngine;
  */
 #endregion
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
-    /// RestoreItems 2.1.6 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// RestoreItems 2.1.6 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public partial class RestoreItems : RustPlugin
     {
@@ -168,7 +168,7 @@ namespace Oxide.Plugins
         }
         #endregion
 
-        #region Oxide Hooks
+        #region Harmony Hooks
         internal void OnServerInitialized()
         {
             if (!permission.PermissionExists(USE_PERM)) permission.RegisterPermission(USE_PERM, this);
@@ -187,7 +187,7 @@ namespace Oxide.Plugins
             try
             {
                 DebugLog($"Loading persistent data from {DATA_FILE}");
-                _playerData = Interface.Oxide.DataFileSystem.ReadObject<PlayerData>(DATA_FILE) ?? new PlayerData();
+                _playerData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PlayerData>(DATA_FILE) ?? new PlayerData();
                 if (_playerData.StoredInventories == null) _playerData.StoredInventories = new Dictionary<ulong, StoredInventory>();
                 
                 DebugLog($"Loaded {_playerData.StoredInventories.Count} stored inventories from persistent data");
@@ -208,7 +208,7 @@ namespace Oxide.Plugins
         {
             try
             {
-                Interface.Oxide.DataFileSystem.WriteObject(DATA_FILE, _playerData);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject(DATA_FILE, _playerData);
             }
             catch (Exception e)
             {
@@ -1671,14 +1671,20 @@ namespace Oxide.Plugins
             }
             
             // Special handling for slot 7 in wear container (backpack/parachute/shield slot)
-            var player = container.entityOwner as BasePlayer;
+            var player = container.playerOwner ?? container.entityOwner as BasePlayer;
             if (player != null && container == player.inventory.containerWear && position == 7)
             {
                 DebugLog($"Attempting to place {item.info.shortname} in special slot 7 (backpack/parachute/shield slot)");
             }
-            
+
+            if (player == null)
+            {
+                DebugLog($"Cannot validate CanAcceptItem for {item.info.shortname}: no owning player on container");
+                return false;
+            }
+
             // Check if the container can accept this item at this position
-            var canAccept = container.CanAcceptItem(item, position);
+            var canAccept = container.CanAcceptItem(player, item, position);
             if (canAccept != ItemContainer.CanAcceptResult.CanAccept)
             {
                 DebugLog($"Container cannot accept {item.info.shortname} at position {position}: {canAccept}");
@@ -1897,8 +1903,15 @@ namespace Oxide.Plugins
                             // CRITICAL: Never bypass validation - let the game's validation handle it
                             try
                             {
+                                var owner = item.GetOwnerPlayer() ?? item.parent?.playerOwner;
+                                if (owner == null)
+                                {
+                                    invalidContents.Add(recreatedContent);
+                                    continue;
+                                }
+
                                 // Check if container can accept this item
-                                var canAccept = item.contents.CanAcceptItem(recreatedContent, contentItem.Position);
+                                var canAccept = item.contents.CanAcceptItem(owner, recreatedContent, contentItem.Position);
                                 if (canAccept == ItemContainer.CanAcceptResult.CanAccept)
                                 {
                                     // Try to move item to container using normal game method
@@ -3120,7 +3133,7 @@ namespace Oxide.Plugins
 
         protected override void LoadConfig()
         {
-            Config.Filename = Path.Combine(OxideMod.ResolveServerRoot(), "HarmonyConfig", Name + ".json");
+            Config.Filename = Path.Combine(HarmonyModRuntime.ResolveServerRoot(), "HarmonyConfig", Name + ".json");
             if (File.Exists(Config.Filename))
                 Config.Load();
             try

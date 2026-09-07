@@ -1,10 +1,10 @@
 using Facepunch;
 using Network;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
-using Oxide.Game.Rust.Libraries.Covalence;
+using Harmony.Core;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
+using Game.Rust.Libraries.Covalence;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -13,7 +13,7 @@ using System.Text;
 using UnityEngine;
 using BTN = BUTTON;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("UberTool", "FuJiCuRa", "1.4.50", ResourceId = 78)]
     [Description("The ultimative build'n'place solution without any borders or other known limits")]
@@ -244,7 +244,7 @@ namespace Oxide.Plugins
                     p1.skin = skin;
                     p1.GetHeldEntity().skinID = skin;
                     p1.name = (string)tool[0];
-                    if (p1.CanMoveTo(player.inventory.containerBelt, -1))
+                    if (p1.CanMoveTo(player, player.inventory.containerBelt, -1))
                     {
                         p1.MoveToContainer(player.inventory.containerBelt, -1, true);
                         p1.MarkDirty();
@@ -681,7 +681,7 @@ namespace Oxide.Plugins
 
                     string s1 = lastSocketBase.socketName.Replace($"{target.entity.ShortPrefabName}/sockets/", "").TrimEnd('/', '1', '2', '3', '4').Replace("-", " ").Replace("–", " ");
 
-                    DoPlannerUpdate(PType.ToSocket, $"{Oxide.Plugins.FacepunchExtensions.TitleCase(s1)}");
+                    DoPlannerUpdate(PType.ToSocket, $"{Harmony.Plugins.FacepunchExtensions.TitleCase(s1)}");
                     lastPlacement = CheckPlacement(target, construction);
 
                     if (lastPlacement.isPopulated)
@@ -2112,7 +2112,7 @@ namespace Oxide.Plugins
                 GameObject gameObject = DoPlaG(target, construction);
                 if (gameObject != null)
                 {
-                    Interface.CallHook(r("BaRagvglOhvyg"), new object[] {
+                    HarmonyModInterface.CallHook(r("BaRagvglOhvyg"), new object[] {
                         plnnr,
                         gameObject
                     });
@@ -3404,7 +3404,7 @@ namespace Oxide.Plugins
             cmd.AddConsoleCommand(varCmdToggle, this, r("pzqGbttyr"));
             cmd.AddChatCommand(varChatToggle, this, r("pungGbttyr"));
             cmd.AddChatCommand(varChatScale, this, r("pungFpnyr"));
-            playerPrefs = Interface.GetMod().DataFileSystem.ReadObject<StrdDt>(Title);
+            playerPrefs = HarmonyModInterface.GetMod().DataFileSystem.ReadObject<StrdDt>(Title);
             if (playerPrefs == null || playerPrefs.playerData == null) playerPrefs = new StrdDt();
             foreach (BasePlayer player in BasePlayer.activePlayerList.Where(p => HasPermission(p)).ToList())
             {
@@ -3422,7 +3422,7 @@ namespace Oxide.Plugins
 
             PpltBldngSkns();
             
-            Interface.Oxide.DataFileSystem.WriteObject(Title, playerPrefs);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(Title, playerPrefs);
         }
 
         private void UpdateHooks()
@@ -3573,7 +3573,7 @@ namespace Oxide.Plugins
 
         private void SaveData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject(Title, playerPrefs);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(Title, playerPrefs);
         }
 
         private bool _disableStabilityStartup = false;

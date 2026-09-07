@@ -1,6 +1,6 @@
 # AdminTime
 
-Harmony mod: per-player admin time and weather. Commands: `/mytime`, `/myweather`, `/storm`, `/myweather.clear`. No Oxide; permissions via config allowlist. Port of the Admin Time Oxide plugin (nivex + Grimm530).
+Harmony mod: per-player admin time and weather. Commands: `/mytime`, `/myweather`, `/storm`, `/myweather.clear`. Harmony-only; permissions via config allowlist. Port of the Admin Time Harmony mod (nivex + Grimm530).
 
 ## Mod Identity
 
@@ -65,10 +65,10 @@ Client `EnvSync.Update` applies the networked sky time every frame. After Facepu
 
 ## Differences from Oxide Plugin
 
-- **No Oxide:** No `permission` library; use config `AllowedSteamIds` and `AdminsCanUseMytime`.
+- **Harmony-only:** No `permission` library; use config `AllowedSteamIds` and `AdminsCanUseMytime`.
 - **No RaidableBases hook:** Cannot call `EventTerritory` via Oxide. Use config `BlockPositions` (x,z,radius) to block overrides in specific areas.
 - **No PvP delay hooks:** Oxide `OnPlayerPvpDelayEntry`/`Expired` not available; overrides are not auto-disabled during PvP delay.
-- **API:** Same semantics: `SetPlayerTime`, `GetPlayerTime`, `HasTimeOverride`, `ResetPlayerTime` (static on `AdminTimeMod`) for Oxide plugins to call via reflection.
+- **API:** Same semantics: `SetPlayerTime`, `GetPlayerTime`, `HasTimeOverride`, `ResetPlayerTime` (static on `AdminTimeMod`) for Harmony mods to call via reflection.
 
 ## Replicated commands (no reload for new players)
 
@@ -86,4 +86,4 @@ Commands are registered in `Dict` and `GlobalDict` with `Replicated = true`, and
 .\build.ps1
 ```
 
-Output: `D:\!RustServer\HarmonyMods\AdminTime.dll`. Load: `harmony.load AdminTime`. Config: `HarmonyConfig/AdminTime.json` or `oxide/config/AdminTime.json`.
+Output: `D:\!RustServer\HarmonyMods\AdminTime.dll`. Load: `harmony.load AdminTime`. Config: `HarmonyConfig/AdminTime.json` or `legacy/config/AdminTime.json`.

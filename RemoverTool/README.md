@@ -1,6 +1,6 @@
 # RemoverTool (Harmony port of Oxide RemoverTool 4.3.431)
 
-Harmony-first, Oxide-free port of the Oxide plugin **Remover Tool** (Reneb/Fuji/Arainrr/Tryhard).
+Harmony-first, Harmony port of the Harmony mod **Remover Tool** (Reneb/Fuji/Arainrr/Tryhard).
 Behavioural replica of the original 4.3.431 logic running as a Rust Harmony mod.
 
 ## Load order
@@ -47,8 +47,8 @@ Behavioural replica of the original 4.3.431 logic running as a Rust Harmony mod.
 
 ## Optional plugin integrations
 
-These optional Oxide plugins are resolved lazily. Ones without a Harmony port resolve to `null`
-so the plugin falls back gracefully (matching Oxide's `PluginReference` behaviour):
+These optional Harmony mods are resolved lazily. Ones without a Harmony port resolve to `null`
+so the plugin falls back gracefully (matching original plugin's `PluginReference` behaviour):
 
 | Reference           | Status                                             |
 |---------------------|----------------------------------------------------|

@@ -6,7 +6,7 @@ using UnityEngine;
 namespace InfiniteVendingStock
 {
     /// <summary>
-    /// Harmony entry for Infinite Vending Stock (Oxide 1.0.2 port). No Oxide runtime.
+    /// Harmony entry for Infinite Vending Stock (Oxide 1.0.2 port). Harmony-only runtime.
     /// </summary>
     public class InfiniteVendingStockMod : IHarmonyModHooks
     {

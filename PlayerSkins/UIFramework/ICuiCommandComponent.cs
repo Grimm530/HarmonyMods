@@ -1,6 +1,6 @@
 using System;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public interface ICuiCommandComponent
 {

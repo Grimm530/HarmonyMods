@@ -12,15 +12,8 @@ namespace Convoy.Patches
         public static void Postfix(BaseCombatEntity __instance)
         {
             if (__instance?.net == null) return;
-            ulong netId = (ulong)__instance.net.ID.Value;
-            if (ConvoyState.GetNpcPresetName(netId) != null)
-            {
-                ConvoyState.NotifyConvoyNpcDeath(netId);
-                ConvoyGrimmNpc.Unregister(netId);
-            }
-
-            if (ConvoyState.IsConvoyCrate(netId))
-                EventController.Instance?.EventPassingCheck();
+            if (ConvoyState.GetNpcPresetName((ulong)__instance.net.ID.Value) != null)
+                ConvoyState.NotifyConvoyNpcDeath((ulong)__instance.net.ID.Value);
         }
     }
 }

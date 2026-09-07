@@ -1,4 +1,4 @@
-// SkillTreeDispatch.cs  --  partial class Oxide.Plugins.SkillTree
+// SkillTreeDispatch.cs  --  partial class Harmony.Plugins.SkillTree
 // Provides:
 //   - static Instance property and lifecycle wrappers (CallInit, CallLoaded, etc.)
 //   - public Dispatch_* methods called by Harmony patch files
@@ -11,7 +11,7 @@ using System.Reflection;
 using Rust.Ai.Gen2;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class SkillTree
     {
@@ -53,7 +53,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Assigns [PluginReference] fields from PluginManager.Find (ImageLibrary stub, Economics, etc.).
+        /// Assigns [PluginReference] fields from ModManager.Find (ImageLibrary stub, Economics, etc.).
         /// Safe to call multiple times; missing plugins stay null (plugin code null-checks most refs).
         /// </summary>
         public void ResolvePluginReferences()
@@ -180,7 +180,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Oxide OnPlayerDeath CallHook site in BasePlayer.Die. Routes typed NPC overloads
+        /// Harmony OnPlayerDeath CallHook site in BasePlayer.Die. Routes typed NPC overloads
         /// before the generic BasePlayer branch. Returns non-null to cancel death (unused by SkillTree).
         /// </summary>
         public static object Dispatch_OnPlayerDeathHook(BaseCombatEntity entity, HitInfo info)
@@ -321,11 +321,11 @@ namespace Oxide.Plugins
 
         // ---- Building / repair / condition --------------------------------
 
-        public static void Dispatch_OnEntityBuilt(Planner plan, GameObject go)
+        public static void Dispatch_OnEntityBuilt(Planner plan, GameObject go, string builtItemShortname = null)
         {
             var inst = Instance;
             if (inst == null || !inst.IsSubscribed(nameof(OnEntityBuilt))) return;
-            try { inst.OnEntityBuilt(plan, go); }
+            try { inst.OnEntityBuilt(plan, go, builtItemShortname); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityBuilt: " + ex.Message); }
         }
 

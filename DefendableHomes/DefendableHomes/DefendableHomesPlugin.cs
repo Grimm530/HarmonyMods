@@ -1,10 +1,10 @@
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
-using Oxide.Plugins.DefendableHomesExtensionMethods;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
+using Harmony.Plugins.DefendableHomesExtensionMethods;
 using Rust;
 using System;
 using System.Collections;
@@ -15,7 +15,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Networking;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("DefendableHomes", "KpucTaJl", "1.2.2")]
     public partial class DefendableHomes : RustPlugin
@@ -1135,11 +1135,11 @@ namespace Oxide.Plugins
 
         private void LoadData()
         {
-            PlayersData = Interface.Oxide.DataFileSystem.ReadObject<HashSet<PlayerData>>(Name);
+            PlayersData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<HashSet<PlayerData>>(Name);
             if (PlayersData == null) PlayersData = new HashSet<PlayerData>();
         }
 
-        private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, PlayersData);
+        private void SaveData() => HarmonyModInterface.Mods.DataFileSystem.WriteObject(Name, PlayersData);
 
         private static readonly DateTime Epoch = new DateTime(2024, 1, 1, 0, 0, 0);
 
@@ -1162,7 +1162,7 @@ namespace Oxide.Plugins
         }
         #endregion Data
 
-        #region Oxide Hooks
+        #region Harmony Hooks
         private static DefendableHomes _ins;
 
         private void Init()
@@ -1439,7 +1439,7 @@ namespace Oxide.Plugins
                 return;
             }
             
-            if (Interface.CallHook("CanDefendableHomesStart", player, difficultyLevel.Name, cupboards, foundations, center3, radius, maxRadius) is bool)
+            if (HarmonyModInterface.CallHook("CanDefendableHomesStart", player, difficultyLevel.Name, cupboards, foundations, center3, radius, maxRadius) is bool)
             {
                 ReturnFlare(player, entity, flareConfig);
                 return;
@@ -1464,7 +1464,7 @@ namespace Oxide.Plugins
             Controllers.Add(controller);
             if (Controllers.Count == 1) ToggleHooks(true);
 
-            Interface.Oxide.CallHook($"On{Name}Start", controller.transform.position, controller.MaxRadius);
+            HarmonyModInterface.Mods.CallHook($"On{Name}Start", controller.transform.position, controller.MaxRadius);
             AlertToPlayer(player, GetMessage("Start", player.UserIDString, _config.Prefix, difficultyLevel.Name));
             
             if (_config.IsKillFlare && entity.IsExists()) entity.Kill(); 
@@ -1528,7 +1528,7 @@ namespace Oxide.Plugins
                 });
             }
         }
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region Controller
         private HashSet<ControllerHomeRaid> Controllers { get; } = new HashSet<ControllerHomeRaid>();
@@ -1562,7 +1562,7 @@ namespace Oxide.Plugins
             SendBalance(controller);
             Controllers.Remove(controller);
             if (Controllers.Count == 0) ToggleHooks(false);
-            Interface.Oxide.CallHook($"On{Name}End", controller.transform.position);
+            HarmonyModInterface.Mods.CallHook($"On{Name}End", controller.transform.position);
             UnityEngine.Object.Destroy(controller.gameObject);
         }
 
@@ -1628,7 +1628,7 @@ namespace Oxide.Plugins
                 if (!player.IsPlayer()) return;
                 if (Players.Contains(player)) return;
                 Players.Add(player);
-                Interface.Oxide.CallHook($"OnPlayerEnter{_ins.Name}", player);
+                HarmonyModInterface.Mods.CallHook($"OnPlayerEnter{_ins.Name}", player);
                 _ins.AlertToPlayer(player, _ins.GetMessage("Enter", player.UserIDString, _config.Prefix, DifficultyLevel.Name));
             }
 
@@ -1639,7 +1639,7 @@ namespace Oxide.Plugins
                 if (!player.IsPlayer()) return;
                 if (!Players.Contains(player)) return;
                 Players.Remove(player);
-                Interface.Oxide.CallHook($"OnPlayerExit{_ins.Name}", player);
+                HarmonyModInterface.Mods.CallHook($"OnPlayerExit{_ins.Name}", player);
                 _ins.AlertToPlayer(player, _ins.GetMessage("Exit", player.UserIDString, _config.Prefix, DifficultyLevel.Name));
                 if (_config.Gui.IsGui) CuiHelper.DestroyUi(player, "Tabs_KpucTaJl");
             }
@@ -2629,7 +2629,7 @@ namespace Oxide.Plugins
                 }
             }
             ulong winnerId = controller.PlayersBalance.Max(x => x.Value).Key;
-            Interface.Oxide.CallHook($"On{Name}Winner", winnerId);
+            HarmonyModInterface.Mods.CallHook($"On{Name}Winner", winnerId);
             foreach (string command in _config.Economy.Commands) Server.Command(command.Replace("{steamid}", $"{winnerId}"));
             controller.PlayersBalance.Clear();
         }
@@ -2677,8 +2677,8 @@ namespace Oxide.Plugins
 
         private IEnumerator DownloadImages()
         {
-            string dataRoot = Interface.Oxide.DataDirectory;
-            string oxideRoot = Path.Combine(Interface.Oxide.RootDirectory, "oxide", "data");
+            string dataRoot = HarmonyModInterface.Mods.DataDirectory;
+            string oxideRoot = Path.Combine(HarmonyModInterface.Mods.RootDirectory, "oxide", "data");
             foreach (string name in Names)
             {
                 string file = FindImageFile(dataRoot, oxideRoot, name);
@@ -2854,7 +2854,7 @@ namespace Oxide.Plugins
             return false;
         }
 
-        /// <summary>Vanilla Facepunch clans (ClanManager / BasePlayer.clanId), not the Oxide Clans plugin.</summary>
+        /// <summary>Vanilla Facepunch clans (ClanManager / BasePlayer.clanId), not the legacy Clans plugin.</summary>
         private static bool AreNativeClanAllies(ulong playerId, ulong targetId)
         {
             try
@@ -3080,7 +3080,7 @@ namespace Oxide.Plugins
     }
 }
 
-namespace Oxide.Plugins.DefendableHomesExtensionMethods
+namespace Harmony.Plugins.DefendableHomesExtensionMethods
 {
     public static class ExtensionMethods
     {

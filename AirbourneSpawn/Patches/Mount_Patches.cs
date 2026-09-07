@@ -10,7 +10,7 @@ namespace AirbourneSpawnHarmony.Patches
         private static void Postfix(BaseMountable __instance, BasePlayer player)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null || player == null) return;
+            if (plugin == null || player == null) return;
             try { plugin.OnEntityMounted(__instance, player); }
             catch (System.Exception ex) { Hooks.Warn("OnEntityMounted", ex); }
         }
@@ -23,7 +23,7 @@ namespace AirbourneSpawnHarmony.Patches
         private static void Postfix(BaseMountable __instance, BasePlayer player)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null || player == null) return;
+            if (plugin == null || player == null) return;
             try { plugin.OnEntityDismounted(__instance, player); }
             catch (System.Exception ex) { Hooks.Warn("OnEntityDismounted", ex); }
         }

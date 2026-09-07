@@ -1,7 +1,7 @@
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine.UI;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class ImageContainer : BaseContainer
 {

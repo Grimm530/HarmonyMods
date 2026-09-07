@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace StackManagerHarmony.Patches
 {
-    /// <summary>Oxide CanStackItem → Item.CanStack</summary>
+    /// <summary>compat CanStackItem → Item.CanStack</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.CanStack))]
     public static class Item_CanStack_Patch
     {
@@ -31,7 +31,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnMaxStackable → Item.MaxStackable</summary>
+    /// <summary>compat OnMaxStackable → Item.MaxStackable</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.MaxStackable))]
     public static class Item_MaxStackable_Patch
     {
@@ -74,7 +74,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnItemSplit → Item.SplitItem</summary>
+    /// <summary>compat OnItemSplit → Item.SplitItem</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.SplitItem))]
     public static class Item_SplitItem_Patch
     {
@@ -101,7 +101,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnItemAction → Item.ServerCommand</summary>
+    /// <summary>compat OnItemAction → Item.ServerCommand</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.ServerCommand))]
     public static class Item_ServerCommand_Patch
     {
@@ -125,7 +125,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide CanMoveItem → PlayerInventory.MoveItem (RPC). Rewinds NetRead if hook returns null.</summary>
+    /// <summary>compat CanMoveItem → PlayerInventory.MoveItem (RPC). Rewinds NetRead if hook returns null.</summary>
     [HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.MoveItem))]
     public static class PlayerInventory_MoveItem_Patch
     {
@@ -170,8 +170,8 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide CanMoveItemsFrom → PlayerInventory.CanMoveItemsFrom</summary>
-    [HarmonyPatch(typeof(PlayerInventory), nameof(PlayerInventory.CanMoveItemsFrom))]
+    /// <summary>compat CanMoveItemsFrom → PlayerInventory.CanMoveItemsFrom</summary>
+    [HarmonyPatch(typeof(PlayerInventory), "CanMoveItemsFrom")]
     public static class PlayerInventory_CanMoveItemsFrom_Patch
     {
         [HarmonyPrefix]
@@ -201,7 +201,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnGiveSoldItem → VendingMachine.GiveSoldItem</summary>
+    /// <summary>compat OnGiveSoldItem → VendingMachine.GiveSoldItem</summary>
     [HarmonyPatch(typeof(VendingMachine), nameof(VendingMachine.GiveSoldItem))]
     public static class VendingMachine_GiveSoldItem_Patch
     {
@@ -225,7 +225,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnEntityBuilt → Planner.DoBuild</summary>
+    /// <summary>compat OnEntityBuilt → Planner.DoBuild</summary>
     [HarmonyPatch(typeof(Planner), "DoBuild", new[] { typeof(Construction.Target), typeof(Construction) })]
     public static class Planner_DoBuild_Patch
     {
@@ -244,7 +244,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnLootEntity → PlayerLoot.StartLootingEntity</summary>
+    /// <summary>compat OnLootEntity → PlayerLoot.StartLootingEntity</summary>
     [HarmonyPatch(typeof(PlayerLoot), nameof(PlayerLoot.StartLootingEntity), new[] { typeof(BaseEntity), typeof(bool) })]
     public static class PlayerLoot_StartLootingEntity_Patch
     {
@@ -265,7 +265,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerRespawned → BasePlayer.RespawnAt</summary>
+    /// <summary>Harmony OnPlayerRespawned → BasePlayer.RespawnAt</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.RespawnAt))]
     public static class BasePlayer_RespawnAt_Patch
     {
@@ -283,7 +283,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerConnected → BasePlayer.PlayerInit</summary>
+    /// <summary>Harmony OnPlayerConnected → BasePlayer.PlayerInit</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PlayerInit))]
     public static class BasePlayer_PlayerInit_Patch
     {
@@ -301,7 +301,7 @@ namespace StackManagerHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDisconnected → BasePlayer.OnDisconnected</summary>
+    /// <summary>Harmony OnPlayerDisconnected → BasePlayer.OnDisconnected</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {

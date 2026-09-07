@@ -2,10 +2,10 @@ using Facepunch;
 using Facepunch.Math;
 using HarmonyLib;
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust;
 using Rust.Ai.Gen2;
 using System;
@@ -21,7 +21,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("TruePVE", "Nivex & Grimm530", "2.4.31")]
     [Description("Improvement of the default Rust PVE behavior")]
@@ -198,18 +198,27 @@ namespace Oxide.Plugins
             public double Heli { get; set; }
             public bool Any() => Bradley > 0 || Heli > 0;
         }
+        private const string LD_ZEROMEMBERID = "0";
+        private const ulong LD_RR_EVENT = 8675309;
+        private const ulong LD_CONVOY_EVENT = 755446;
+        private const ulong LD_HARBOR_EVENT = 81182151852251420;
+
+        private MonumentInfo _ldLaunchSite;
+        private readonly List<MonumentInfo> _ldHarbors = new();
+        private readonly Dictionary<string, HashSet<ulong>> _ldSkinFossils = new(); // typeName -> seen skins (avoid re-log spam)
+
         private class LDDamageEntry
         {
             public float DamageDealt;
             public DateTime Timestamp;
-            public ulong TeamID;
+            public string MemberId = LD_ZEROMEMBERID;
             public string Weapon = "";
             public LDDamageEntry() { }
-            public LDDamageEntry(ulong teamID)
+            public LDDamageEntry(string memberId)
             {
                 DamageDealt = 0f;
                 Timestamp = DateTime.Now;
-                TeamID = teamID;
+                MemberId = string.IsNullOrEmpty(memberId) ? LD_ZEROMEMBERID : memberId;
                 Weapon = "";
             }
             public bool IsOutdated(int timeoutSeconds) => timeoutSeconds > 0 && DateTime.Now.Subtract(Timestamp).TotalSeconds >= timeoutSeconds;
@@ -222,12 +231,12 @@ namespace Oxide.Plugins
             [JsonIgnore]
             public BasePlayer Player;
             public LDDamageKey() { }
-            public LDDamageKey(BasePlayer player)
+            public LDDamageKey(BasePlayer player, string memberId)
             {
                 Player = player;
                 UserId = player?.userID ?? 0;
                 Name = player?.displayName ?? string.Empty;
-                Entry = new(player != null ? player.currentTeam : 0);
+                Entry = new(memberId);
             }
         }
         private class LDDamageInfo
@@ -250,9 +259,10 @@ namespace Oxide.Plugins
                 LockSeconds = lockSeconds;
                 LockRadius = lockRadius;
             }
-            public void AddDamage(BaseCombatEntity entity, BasePlayer attacker, float amount, string weapon = "")
+            public float AddDamage(BaseCombatEntity entity, BasePlayer attacker, float amount, string memberId, string weapon = "")
             {
-                if (attacker == null || amount <= 0f) return;
+                if (attacker == null || amount <= 0f) return 0f;
+                if (string.IsNullOrEmpty(memberId)) memberId = LD_ZEROMEMBERID;
                 for (int i = 0; i < Keys.Count; i++)
                 {
                     var key = Keys[i];
@@ -260,15 +270,37 @@ namespace Oxide.Plugins
                     {
                         key.Entry.DamageDealt += amount;
                         key.Entry.Timestamp = DateTime.Now;
-                        key.Entry.TeamID = attacker.currentTeam;
+                        key.Entry.MemberId = memberId;
                         if (!string.IsNullOrEmpty(weapon)) key.Entry.Weapon = weapon;
-                        return;
+                        // Solo: only this player's total. Team/clan: sum shared MemberId.
+                        return memberId == LD_ZEROMEMBERID ? key.Entry.DamageDealt : GetMemberDamage(memberId);
                     }
                 }
-                var dk = new LDDamageKey(attacker);
+                var dk = new LDDamageKey(attacker, memberId);
                 dk.Entry.DamageDealt = amount;
                 if (!string.IsNullOrEmpty(weapon)) dk.Entry.Weapon = weapon;
                 Keys.Add(dk);
+                return memberId == LD_ZEROMEMBERID ? amount : GetMemberDamage(memberId);
+            }
+            public float GetMemberDamage(string memberId)
+            {
+                if (string.IsNullOrEmpty(memberId) || memberId == LD_ZEROMEMBERID) return 0f;
+                float t = 0f;
+                for (int i = 0; i < Keys.Count; i++)
+                {
+                    if (Keys[i].Entry?.MemberId == memberId)
+                        t += Keys[i].Entry?.DamageDealt ?? 0f;
+                }
+                return t;
+            }
+            public float GetPlayerDamage(ulong userId)
+            {
+                for (int i = 0; i < Keys.Count; i++)
+                {
+                    if (Keys[i].UserId == userId)
+                        return Keys[i].Entry?.DamageDealt ?? 0f;
+                }
+                return 0f;
             }
             public float TotalDamage()
             {
@@ -383,7 +415,7 @@ namespace Oxide.Plugins
         {
             if (!string.IsNullOrEmpty(format))
             {
-                Interface.Oxide.LogInfo("[{0}] {1}", "TruePVE", (args.Length != 0) ? string.Format(format, args) : format);
+                HarmonyModInterface.Mods.LogInfo("[{0}] {1}", "TruePVE", (args.Length != 0) ? string.Format(format, args) : format);
             }
         }
 		
@@ -410,7 +442,7 @@ namespace Oxide.Plugins
             // Save PreventLooting data
             if (config.PreventLooting.Enabled && _preventLootingData != null)
             {
-                Interface.Oxide.DataFileSystem.WriteObject("PreventLooting", _preventLootingData);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject("PreventLooting", _preventLootingData);
             }
             // Destroy all lockout UI
             if (config.LootDefender.Enabled)
@@ -544,7 +576,7 @@ namespace Oxide.Plugins
                 permission.RegisterPermission(CorpsePerm, this);
                 permission.RegisterPermission(BackpackPerm, this);
                 permission.RegisterPermission(StoragePerm, this);
-                _preventLootingData = Interface.Oxide.DataFileSystem.ReadObject<PreventLootingStoredData>("PreventLooting");
+                _preventLootingData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PreventLootingStoredData>("PreventLooting");
                 if (_preventLootingData == null)
                     _preventLootingData = new PreventLootingStoredData();
                 // Register PreventLooting chat commands
@@ -660,6 +692,8 @@ namespace Oxide.Plugins
             if (currentRuleSet == null)
                 Puts(GetMessage("Warning_NoRuleSet"), config.defaultRuleSet);
             SetUseZones();
+            if (config.LootDefender.Enabled)
+                CacheLootDefenderMonuments();
             if (config.schedule.enabled)
             {
                 TimerLoop(true);
@@ -895,7 +929,7 @@ namespace Oxide.Plugins
 
         private void LoadData()
         {
-            try { data = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name); } catch (Exception ex) { Puts(ex.ToString()); }
+            try { data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<StoredData>(Name); } catch (Exception ex) { Puts(ex.ToString()); }
             data ??= new();
             data.LastSeen ??= new();
             data.mappings ??= new();
@@ -929,7 +963,7 @@ namespace Oxide.Plugins
         private void SaveData()
         {
             data.LastRunTime = DateTime.Now;
-            Interface.Oxide.DataFileSystem.WriteObject(Name, data);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(Name, data);
         }
 
         public IEnumerator UpdateLastSeenCo()
@@ -1005,7 +1039,7 @@ namespace Oxide.Plugins
             // Save PreventLooting data
             if (config.PreventLooting.Enabled && _preventLootingData != null)
             {
-                Interface.Oxide.DataFileSystem.WriteObject("PreventLooting", _preventLootingData);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject("PreventLooting", _preventLootingData);
             }
         }
 
@@ -1135,6 +1169,12 @@ namespace Oxide.Plugins
             // return if user doesn't have access to run console command
             if (!user.IsAdmin) return;
 
+            if (args.Length > 0 && args[0].Equals("toggleskin", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleToggleSkin(user, args);
+                return;
+            }
+
             if (args.Length > 0 && (args[0] == "map" || args[0] == "unmap"))
             {
                 if (user.HasPermission(PermCanMap))
@@ -1249,6 +1289,71 @@ namespace Oxide.Plugins
             }
         }
 
+        private void HandleToggleSkin(IPlayer user, string[] args)
+        {
+            // tpve toggleskin <Bradley|Heli> <entity type> <skin ID>
+            if (args.Length != 4)
+            {
+                user.Reply(args.Length switch
+                {
+                    <= 1 => "Usage: tpve toggleskin <Bradley|Heli> <entity type> <skin ID>",
+                    2 => "Missing entity type and skin ID.\nUsage: tpve toggleskin <Bradley|Heli> <entity type> <skin ID>",
+                    3 => "Missing skin ID.\nUsage: tpve toggleskin <Bradley|Heli> <entity type> <skin ID>",
+                    _ => "Too many arguments.\nUsage: tpve toggleskin <Bradley|Heli> <entity type> <skin ID>"
+                });
+                return;
+            }
+
+            bool isBradley = args[1].Equals("Bradley", StringComparison.OrdinalIgnoreCase);
+            bool isHeli = args[1].Equals("Heli", StringComparison.OrdinalIgnoreCase) || args[1].Equals("Helicopter", StringComparison.OrdinalIgnoreCase);
+            if (!isBradley && !isHeli)
+            {
+                user.Reply("Unsupported type. Use Bradley or Heli.\nUsage: tpve toggleskin <Bradley|Heli> <entity type> <skin ID>");
+                return;
+            }
+
+            if (!ulong.TryParse(args[3], out ulong skinID))
+            {
+                user.Reply($"Invalid skin ID: {args[3]}");
+                return;
+            }
+
+            if (skinID == 0uL)
+            {
+                user.Reply(isBradley
+                    ? "Skin ID 0 is controlled by 'Lock Bradley From Everywhere Else'."
+                    : "Skin ID 0 is controlled by 'Lock Heli From Everywhere Else'.");
+                return;
+            }
+
+            var review = isBradley ? config.LootDefender.BradleyReviewableSkins : config.LootDefender.HeliReviewableSkins;
+            var include = isBradley ? config.LootDefender.BradleyIncludedSkins : config.LootDefender.HeliIncludedSkins;
+            string typeName = args[2];
+
+            if (review == null) review = isBradley ? (config.LootDefender.BradleyReviewableSkins = new()) : (config.LootDefender.HeliReviewableSkins = new());
+            if (include == null) include = isBradley ? (config.LootDefender.BradleyIncludedSkins = new()) : (config.LootDefender.HeliIncludedSkins = new());
+
+            if (review.TryGetValue(typeName, out var skins) && skins != null)
+            {
+                skins.Remove(skinID);
+                if (skins.Count == 0) review.Remove(typeName);
+            }
+
+            if (!_ldSkinFossils.TryGetValue(typeName, out var fossil) || fossil == null)
+                _ldSkinFossils[typeName] = fossil = new HashSet<ulong>();
+            fossil.Add(skinID);
+
+            if (include.Add(skinID))
+                user.Reply($"Added skin {skinID} to {(isBradley ? "Bradley" : "Heli")} lock allowlist.");
+            else
+            {
+                include.Remove(skinID);
+                user.Reply($"Removed skin {skinID} from {(isBradley ? "Bradley" : "Heli")} lock allowlist.");
+            }
+
+            SaveConfig();
+        }
+
         private bool IsTraceEnabled(IPlayer user)
         {
             if (config.options.PlayerConsole || config.options.ServerConsole)
@@ -1314,7 +1419,7 @@ namespace Oxide.Plugins
         private void CommandMap(IPlayer user, string command, string[] args)
         {
             if (args.Length > 0) command = args[0];
-            args = args.Length > 1 ? args[1..] : Array.Empty<string>();
+            args = args.Length > 1 ? args.Skip(1).ToArray() : Array.Empty<string>();
 
             if (command != "map" && command != "unmap")
             {
@@ -2052,7 +2157,9 @@ namespace Oxide.Plugins
 
             for (int i = mappings.Count - 1; i >= 0; i--)
             {
-                var (key, value) = mappings[i];
+                var pair = mappings[i];
+                string key = pair.Key;
+                string value = pair.Value;
 
                 if (key == AllZones && string.Equals(value, "exclude", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2061,8 +2168,10 @@ namespace Oxide.Plugins
                 }
             }
 
-            foreach (var (key, value) in mappings)
+            foreach (var pair in mappings)
             {
+                string key = pair.Key;
+                string value = pair.Value;
                 if (!value.Equals("exclude", StringComparison.OrdinalIgnoreCase))
                 {
                     foreach (var ruleSet in config.ruleSets)
@@ -2358,13 +2467,30 @@ namespace Oxide.Plugins
                     }
                     if (config.options.LogToFile)
                     {
-                        LogToFile(traceFile, text, this);
+                        TryLogToFile(traceFile, text, 0);
                     }
                 }
             }
             catch (IOException)
             {
-                timer.Once(1f, () => LogToFile(traceFile, text, this));
+                TryLogToFile(traceFile, text, 0);
+            }
+        }
+
+        private void TryLogToFile(string file, string text, int attempt)
+        {
+            try
+            {
+                LogToFile(file, text, this);
+            }
+            catch (IOException)
+            {
+                if (attempt >= 4)
+                {
+                    Puts($"LogToFile failed after {attempt + 1} attempts; dropping trace write.");
+                    return;
+                }
+                timer.Once(1f, () => TryLogToFile(file, text, attempt + 1));
             }
         }
 
@@ -2508,8 +2634,8 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            // Integrated LootDefender: record damage early
-            if (config.LootDefender.Enabled && info?.Initiator is BasePlayer damagePlayer && entity is BaseCombatEntity bce)
+            // Integrated LootDefender: record damage early (player initiator only — skips WeakspotDestroyed null-initiator bonus)
+            if (config.LootDefender.Enabled && info.Initiator != null && info.Initiator is BasePlayer damagePlayer && entity is BaseCombatEntity bce)
             {
                 LD_RecordDamage(bce, damagePlayer, info);
             }
@@ -2896,7 +3022,7 @@ namespace Oxide.Plugins
             });
 
             string json = JsonConvert.SerializeObject(_fields.ToArray());
-            Interface.CallHook("API_SendFancyMessage", config.LootDefender.DiscordWebhookUrl, config.LootDefender.DiscordEmbedTitle, config.LootDefender.DiscordMessageColor, json, null, this);
+            HarmonyModInterface.CallHook("API_SendFancyMessage", config.LootDefender.DiscordWebhookUrl, config.LootDefender.DiscordEmbedTitle, config.LootDefender.DiscordMessageColor, json, null, this);
         }
         #endregion
 
@@ -3166,94 +3292,170 @@ namespace Oxide.Plugins
         }
 
         // =====================
-        // Can Lock Checks (with Harbor, Monument, etc.)
+        // Can Lock Checks (skin allowlists — no hot-path plugin API)
         // =====================
         private bool CanLockBradley(BaseEntity entity)
         {
             if (entity == null || !entity.IsValid()) return false;
-            
-            // Check threshold
             if (config.LootDefender.BradleyThreshold <= 0f) return false;
-            
-            // Check if from Monument Bradley Plugin
-            if (!config.LootDefender.BradleyLockMonument && BradleyDrops != null)
+
+            // Bradley Tiers / named instances
+            if (entity.net != null && entity.name != null && entity.name.Contains($"BradleyApc[{entity.net.ID.Value}]"))
+                return config.LootDefender.BradleyLockTiers;
+
+            if (entity.skinID != 0uL)
             {
-                if (BradleyDrops.CallHook("IsBradleyDrop", entity.skinID) != null)
-                {
-                    return false;
-                }
+                if (entity.skinID == LD_CONVOY_EVENT)
+                    return config.LootDefender.BradleyLockConvoy;
+                if (entity.skinID == LD_HARBOR_EVENT)
+                    return config.LootDefender.BradleyLockHarbor;
+                if (entity.skinID == LD_RR_EVENT)
+                    return config.LootDefender.BradleyLockMonument;
+
+                TrackReviewableSkin(entity, config.LootDefender.BradleyIncludedSkins, config.LootDefender.BradleyReviewableSkins, LDDamageType.Bradley);
+                return config.LootDefender.CanLockBradleySkin(entity.skinID);
             }
-            
-            // Check harbor (skinID 81182151852251420)
-            if (entity.skinID == 81182151852251420)
+
+            if (_ldLaunchSite != null && IsInMonumentBounds(_ldLaunchSite, entity.transform.position))
+                return config.LootDefender.BradleyLockLaunchSite;
+
+            for (int i = 0; i < _ldHarbors.Count; i++)
             {
-                return config.LootDefender.BradleyLockHarbor;
+                if (IsInMonumentBounds(_ldHarbors[i], entity.transform.position))
+                    return config.LootDefender.BradleyLockHarbor;
             }
-            
-            // Check convoy (skinID 755446)
-            if (entity.skinID == 755446)
-            {
-                return true; // Default to true for convoy
-            }
-            
-            // Check monument (skinID 8675309)
-            if (entity.skinID == 8675309)
-            {
-                return config.LootDefender.BradleyLockMonument;
-            }
-            
-            // Default to true for other bradleys
-            return true;
+
+            return config.LootDefender.CanLockBradleySkin(0uL);
         }
 
         private bool CanLockHeli(BaseCombatEntity entity)
         {
             if (entity == null || !entity.IsValid()) return false;
-            
-            // Check threshold
             if (config.LootDefender.HeliThreshold <= 0f) return false;
-            
-            // Check if it's a HeliSignal object (skip locking)
-            if (HeliSignals != null && HeliSignals.CallHook("IsHeliSignalObject", entity.skinID) != null)
+
+            if (entity.skinID != 0uL)
             {
-                return false;
-            }
-            
-            // Check harbor (skinID 81182151852251420)
-            if (entity.skinID == 81182151852251420)
-            {
-                // Use Heli setting if set, otherwise use Bradley setting
-                if (config.LootDefender.HeliLockHarbor.HasValue)
+                if (entity.skinID == LD_CONVOY_EVENT)
+                    return config.LootDefender.HeliLockConvoy;
+                if (entity.skinID == LD_HARBOR_EVENT)
                 {
-                    return config.LootDefender.HeliLockHarbor.Value;
+                    if (config.LootDefender.HeliLockHarbor.HasValue)
+                        return config.LootDefender.HeliLockHarbor.Value;
+                    return config.LootDefender.BradleyLockHarbor;
                 }
-                return config.LootDefender.BradleyLockHarbor;
+
+                TrackReviewableSkin(entity, config.LootDefender.HeliIncludedSkins, config.LootDefender.HeliReviewableSkins, LDDamageType.Heli);
             }
-            
-            // Check convoy (skinID 755446)
-            if (entity.skinID == 755446)
-            {
-                return true; // Default to true for convoy
-            }
-            
-            // Default to true for other helis
-            return true;
+
+            return config.LootDefender.CanLockHeliSkin(entity.skinID);
         }
 
         private bool CanLockNpc(BaseEntity entity)
         {
             if (entity == null || !entity.IsValid()) return false;
-            
-            // Check threshold
             if (config.LootDefender.NpcThreshold <= 0f) return false;
-            
-            // Check if owner ID is a Steam ID (player corpse)
-            if (entity.OwnerID.IsSteamId())
-            {
-                return false;
-            }
-            
+            if (entity.OwnerID.IsSteamId()) return false;
             return true;
+        }
+
+        private bool IsInMonumentBounds(MonumentInfo monument, Vector3 target)
+        {
+            if (monument == null) return false;
+            return monument.IsInBounds(target) || new OBB(monument.transform.position, monument.transform.rotation, new Bounds(monument.Bounds.center, new Vector3(300f, 300f, 300f))).Contains(target);
+        }
+
+        private void CacheLootDefenderMonuments()
+        {
+            _ldHarbors.Clear();
+            _ldLaunchSite = null;
+            if (TerrainMeta.Path?.Monuments == null) return;
+            for (int i = 0; i < TerrainMeta.Path.Monuments.Count; i++)
+            {
+                MonumentInfo mi = TerrainMeta.Path.Monuments[i];
+                if (mi == null || string.IsNullOrEmpty(mi.name)) continue;
+                if (mi.name.IndexOf("harbor_1", StringComparison.OrdinalIgnoreCase) >= 0 || mi.name.IndexOf("harbor_2", StringComparison.OrdinalIgnoreCase) >= 0)
+                    _ldHarbors.Add(mi);
+                else if (mi.name.IndexOf("launch_site", StringComparison.OrdinalIgnoreCase) >= 0)
+                    _ldLaunchSite = mi;
+            }
+        }
+
+        private void TrackReviewableSkin(BaseEntity entity, HashSet<ulong> include, Dictionary<string, HashSet<ulong>> review, LDDamageType damageEntryType)
+        {
+            if (entity == null || include == null || review == null) return;
+            if (review.ContainsKey("none")) return;
+
+            string typeName = entity.GetType().Name;
+            ulong skin = entity.skinID;
+            if (skin == 0uL) return;
+
+            if (!_ldSkinFossils.TryGetValue(typeName, out var fossil) || fossil == null)
+                _ldSkinFossils[typeName] = fossil = new HashSet<ulong>();
+
+            if (include.Contains(skin))
+            {
+                fossil.Add(skin);
+                return;
+            }
+
+            if (!review.TryGetValue(typeName, out var skins) || skins == null)
+                review[typeName] = skins = new HashSet<ulong>();
+
+            if (skins.Contains(skin))
+            {
+                fossil.Add(skin);
+                return;
+            }
+
+            if (!fossil.Add(skin)) return;
+
+            skins.Add(skin);
+            Puts($"[LootDefender] New skin for {typeName}: {skin}. Enable with: tpve toggleskin {(damageEntryType == LDDamageType.Bradley ? "Bradley" : "Heli")} {typeName} {skin}");
+            SaveConfig();
+        }
+
+        private string GetLootDefenderMemberId(BasePlayer attacker)
+        {
+            if (attacker == null) return LD_ZEROMEMBERID;
+            try
+            {
+                if (attacker.clanId != 0)
+                    return attacker.clanId.ToString();
+            }
+            catch { }
+            if (config.options.Clans && Clans != null)
+            {
+                try
+                {
+                    var clan = Clans.Call("GetClanOf", attacker.userID.Get()) as string;
+                    if (!string.IsNullOrEmpty(clan)) return clan;
+                }
+                catch { }
+            }
+            if (attacker.currentTeam != 0)
+                return attacker.currentTeam.ToString();
+            return LD_ZEROMEMBERID;
+        }
+
+        internal void UpdateLootDefenderMemberId(BasePlayer player, string id = null)
+        {
+            if (player == null || !config.LootDefender.Enabled) return;
+            if (string.IsNullOrEmpty(id) || id == LD_ZEROMEMBERID)
+                id = GetLootDefenderMemberId(player);
+            if (id == LD_ZEROMEMBERID) return;
+
+            foreach (var di in _ldDamage.Values)
+            {
+                if (di?.Keys == null) continue;
+                for (int i = 0; i < di.Keys.Count; i++)
+                {
+                    var key = di.Keys[i];
+                    if (key.UserId != player.userID) continue;
+                    if (key.Entry == null) continue;
+                    if (string.IsNullOrEmpty(key.Entry.MemberId) || key.Entry.MemberId == LD_ZEROMEMBERID)
+                        key.Entry.MemberId = id;
+                }
+            }
         }
 
         private void LD_ApplyLocks(LDDamageInfo di)
@@ -3362,39 +3564,44 @@ namespace Oxide.Plugins
             owners.Clear();
 
             if (di.Keys == null || di.Keys.Count == 0)
-            {
-                // No damage info; nothing to lock to
                 return owners;
-            }
 
             if (config.LootDefender.GroupByTeam)
             {
-                var teamToDamage = Pool.Get<Dictionary<ulong, float>>();
-                teamToDamage.Clear();
+                // Group key: team/clan MemberId, or solo:<userid> so solos are not lumped together
+                var groupToDamage = Pool.Get<Dictionary<string, float>>();
+                groupToDamage.Clear();
                 for (int i = 0; i < di.Keys.Count; i++)
                 {
                     var k = di.Keys[i];
-                    ulong team = k.Entry?.TeamID ?? 0;
-                    if (!teamToDamage.TryGetValue(team, out var sum)) sum = 0f;
+                    string memberId = k.Entry?.MemberId;
+                    string group = (string.IsNullOrEmpty(memberId) || memberId == LD_ZEROMEMBERID)
+                        ? "solo:" + k.UserId
+                        : "m:" + memberId;
+                    if (!groupToDamage.TryGetValue(group, out var sum)) sum = 0f;
                     sum += k.Entry?.DamageDealt ?? 0f;
-                    teamToDamage[team] = sum;
+                    groupToDamage[group] = sum;
                 }
-                ulong bestTeam = 0;
+                string bestGroup = null;
                 float best = -1f;
-                foreach (var kvp in teamToDamage)
+                foreach (var kvp in groupToDamage)
                 {
                     if (kvp.Value > best)
                     {
                         best = kvp.Value;
-                        bestTeam = kvp.Key;
+                        bestGroup = kvp.Key;
                     }
                 }
                 for (int i = 0; i < di.Keys.Count; i++)
                 {
                     var k = di.Keys[i];
-                    if ((k.Entry?.TeamID ?? 0) == bestTeam && k.UserId.IsSteamId()) owners.Add(k.UserId);
+                    string memberId = k.Entry?.MemberId;
+                    string group = (string.IsNullOrEmpty(memberId) || memberId == LD_ZEROMEMBERID)
+                        ? "solo:" + k.UserId
+                        : "m:" + memberId;
+                    if (group == bestGroup && k.UserId.IsSteamId()) owners.Add(k.UserId);
                 }
-                Pool.FreeUnmanaged(ref teamToDamage);
+                Pool.FreeUnmanaged(ref groupToDamage);
             }
             else
             {
@@ -3448,6 +3655,7 @@ namespace Oxide.Plugins
         private void LD_RecordDamage(BaseCombatEntity entity, BasePlayer attacker, HitInfo info)
         {
             if (attacker == null || entity == null || entity.IsDestroyed) return;
+            if (info?.Initiator == null) return; // WeakspotDestroyed bonus uses null initiator
             if (entity is BasePlayer) return; // ignore players for LD
 
             LDDamageType type = LDDamageType.None;
@@ -3456,55 +3664,24 @@ namespace Oxide.Plugins
             else if (entity is BaseNpc or BaseNPC2) type = LDDamageType.NPC;
             if (type == LDDamageType.None) return;
 
+            // Skin / location allowlists (no plugin API on hot path)
+            if (type == LDDamageType.Bradley && !CanLockBradley(entity)) return;
+            if (type == LDDamageType.Heli && !CanLockHeli(entity)) return;
+            if (type == LDDamageType.NPC && !CanLockNpc(entity)) return;
+
             // Check lockouts
             if (HasLockout(attacker, type, entity.skinID))
             {
-                // Block damage if locked out (unless BlockLootingOnly is true)
                 if (!config.LootDefender.BlockLootingOnly && info != null)
-                {
                     info.damageTypes.Clear();
-                }
                 return;
             }
 
             ulong id = entity.net?.ID.Value ?? 0;
             if (id == 0) return;
 
-            // Check damage threshold and permissions for locking
-            float damage = info.damageTypes?.Total() ?? 0f;
-            float maxHealth = entity.MaxHealth();
-            bool shouldLock = false;
-            
-            if (type == LDDamageType.Bradley && config.LootDefender.BradleyThreshold > 0f)
-            {
-                if (CanLockBradley(entity))
-                {
-                    if (damage >= maxHealth * config.LootDefender.BradleyThreshold && !permission.UserHasPermission(attacker.UserIDString, "truepve.lootdefender.bypassbradleylock"))
-                    {
-                        shouldLock = true;
-                    }
-                }
-            }
-            else if (type == LDDamageType.Heli && config.LootDefender.HeliThreshold > 0f)
-            {
-                if (CanLockHeli(entity))
-                {
-                    if (damage >= maxHealth * config.LootDefender.HeliThreshold && !permission.UserHasPermission(attacker.UserIDString, "truepve.lootdefender.bypasshelilock"))
-                    {
-                        shouldLock = true;
-                    }
-                }
-            }
-            else if (type == LDDamageType.NPC && config.LootDefender.NpcThreshold > 0f)
-            {
-                if (CanLockNpc(entity))
-                {
-                    if (damage >= maxHealth * config.LootDefender.NpcThreshold && !permission.UserHasPermission(attacker.UserIDString, "truepve.lootdefender.bypassnpclock"))
-                    {
-                        shouldLock = true;
-                    }
-                }
-            }
+            float hitDamage = info.damageTypes?.Total() ?? 0f;
+            if (hitDamage <= 0f) return;
 
             if (!_ldDamage.TryGetValue(id, out var di))
             {
@@ -3514,17 +3691,15 @@ namespace Oxide.Plugins
                 di = new LDDamageInfo(type, entity, DateTime.Now, lockTime, config.LootDefender.LockRadius);
                 _ldDamage[id] = di;
             }
-            // Get weapon name
+
             string weapon = "";
             if (info?.WeaponPrefab != null)
-            {
                 weapon = info.WeaponPrefab.ShortPrefabName;
-            }
             else if (attacker.GetHeldEntity() is HeldEntity held)
-            {
                 weapon = held.ShortPrefabName;
-            }
-            di.AddDamage(entity, attacker, damage, weapon);
+
+            string memberId = GetLootDefenderMemberId(attacker);
+            di.AddDamage(entity, attacker, hitDamage, memberId, weapon);
 
             // Periodic owner toast while fighting, for Bradley/Heli
             if (config.LootDefender.OwnerToastCombatSeconds > 0 && (type == LDDamageType.Bradley || type == LDDamageType.Heli))
@@ -3778,7 +3953,7 @@ namespace Oxide.Plugins
             }
             
             // Allow other plugins to override
-            object hookResult = Interface.CallHook("OnLootLockedEntity", player, crate);
+            object hookResult = HarmonyModInterface.CallHook("OnLootLockedEntity", player, crate);
             return hookResult == null;
         }
 
@@ -4190,7 +4365,7 @@ namespace Oxide.Plugins
             var isVictim = victim != null && !victim.IsDestroyed;
             var isVicId = isVictim && victim.userID.IsSteamId();
 
-            if (Interface.CallHook("CanEntityTakeDamage", new object[] { entity, info }) is bool val)
+            if (HarmonyModInterface.CallHook("CanEntityTakeDamage", new object[] { entity, info }) is bool val)
             {
                 if (val && config.options.ArmorDamage.Enabled && isAttacker && !isAtkId && isVicId)
                 {
@@ -5300,7 +5475,22 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private bool LootCanBypass(BasePlayer looter) => looter != null && (looter.isInvisible || looter.limitNetworking);
+        // Vanish sets limitNetworking (and optionally isInvisible). Also honor AdminCanLoot + bypass.loot.
+        // TruePVE loot runs via Harmony Dispatch (not CallHook), so Vanish's CallHook CanLootEntity short-circuit never fires here.
+        internal bool LootCanBypass(BasePlayer looter)
+        {
+            if (looter == null) return false;
+            if (looter.isInvisible || looter.limitNetworking) return true;
+            if (config?.PreventLooting != null && config.PreventLooting.AdminCanLoot && looter.IsAdmin) return true;
+            return permission != null && permission.UserHasPermission(looter.UserIDString, "truepve.lootdefender.bypass.loot");
+        }
+
+        private void LogLootDecision(BasePlayer player, BaseEntity entity, bool allowed, string reason)
+        {
+            if (config?.PreventLooting == null || !config.PreventLooting.Debug) return;
+            if (player == null || entity == null) return;
+            Puts($"[PreventLooting] {(allowed ? "ALLOW" : "BLOCK")} looter={player.displayName}({player.userID}) vanished={player.limitNetworking || player.isInvisible} admin={player.IsAdmin} target={entity.ShortPrefabName}/{entity.GetType().Name} owner={entity.OwnerID} reason={reason}");
+        }
 
         private object LootIsPlayerProtected(BasePlayer looter, BaseEntity target, ulong? ownerID, bool optionEnabled)
         {
@@ -5722,7 +5912,7 @@ namespace Oxide.Plugins
         private object OnSamSiteTarget(BaseEntity attacker, BaseEntity entity)
         {
             SamSite ss = attacker as SamSite;
-            if (Interface.CallHook("CanEntityBeTargeted", new object[] { entity, attacker }) is bool val)
+            if (HarmonyModInterface.CallHook("CanEntityBeTargeted", new object[] { entity, attacker }) is bool val)
             {
                 if (val)
                 {
@@ -5772,7 +5962,7 @@ namespace Oxide.Plugins
                 return true;
             }
 
-            if (Interface.CallHook("CanMlrsTargetLocation", new object[] { mlrs, player }) is bool val)
+            if (HarmonyModInterface.CallHook("CanMlrsTargetLocation", new object[] { mlrs, player }) is bool val)
             {
                 if (val)
                 {
@@ -5824,13 +6014,10 @@ namespace Oxide.Plugins
                 return;
             }
 
-            // Respect allowed skins list (0 means allow any)
-            if (config.SupplyDrops.AllowedSignalSkins != null && config.SupplyDrops.AllowedSignalSkins.Count > 0)
+            // Respect skin allowlist / Everywhere Else (LootDefender 2.2.8 semantics)
+            if (!config.SupplyDrops.CanLockSkin(ss.skinID))
             {
-                if (!config.SupplyDrops.AllowedSignalSkins.Contains(0) && !config.SupplyDrops.AllowedSignalSkins.Contains(ss.skinID))
-                {
-                    return;
-                }
+                return;
             }
 
             // If bypass is enabled, spawn a drop immediately in front of the player and skip planes entirely
@@ -5994,13 +6181,9 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                // Check allowed skins (0 in list means allow any)
-                if (config.SupplyDrops.AllowedSignalSkins != null && config.SupplyDrops.AllowedSignalSkins.Count > 0)
+                if (!config.SupplyDrops.CanLockSkin(ss.skinID))
                 {
-                    if (!config.SupplyDrops.AllowedSignalSkins.Contains(0) && !config.SupplyDrops.AllowedSignalSkins.Contains(ss.skinID))
-                    {
-                        return;
-                    }
+                    return;
                 }
 
                 ulong owner = 0;
@@ -6172,7 +6355,7 @@ namespace Oxide.Plugins
 
         private object OnEntityMarkHostile(BasePlayer player, float duration)
         {
-            if (player == null || Interface.CallHook("CanMarkEntityHostile", player, duration) is bool val && val)
+            if (player == null || HarmonyModInterface.CallHook("CanMarkEntityHostile", player, duration) is bool val && val)
             {
                 return null;
             }
@@ -6200,8 +6383,11 @@ namespace Oxide.Plugins
                     return;
                 // UsedAdminCheat is (now - LastAdminCheatTime < seconds). +1.9s matches 2.4.2's
                 // lastAdminCheatTime future-stamp; 2.4.3's -1.9s only covers ~0.1s and is too short.
-                ref AntiHack.PlayerState playerState = ref ((Span<AntiHack.PlayerState>)AntiHack.PlayerStates)[victim.ActivePlayerInd];
+                var states = AntiHack.PlayerStates;
+                int idx = victim.ActivePlayerInd;
+                var playerState = states[idx];
                 playerState.LastAdminCheatTime = UnityEngine.Time.realtimeSinceStartup + 1.9f;
+                states[idx] = playerState;
             }
             catch (TypeLoadException) { }
             catch (MissingFieldException) { }
@@ -6560,13 +6746,20 @@ namespace Oxide.Plugins
 
         private object OnCupboardAuthorize(BuildingPrivlidge priv, BasePlayer player)
         {
-            if (player == null || player.limitNetworking || player.isInvisible || priv == null || !priv.OwnerID.IsSteamId()) return null;
+            if (player == null || priv == null) return null;
+            if (LootCanBypass(player))
+            {
+                LogLootDecision(player, priv, true, "OnCupboardAuthorize bypass (vanish/admin)");
+                return null;
+            }
+            if (!priv.OwnerID.IsSteamId()) return null;
             // Allow admins to access TCs if AdminCanLoot is enabled - check early to bypass all restrictions
             if (player.IsAdmin && config?.PreventLooting != null && config.PreventLooting.AdminCanLoot) return null;
             // All TCs (vanilla and retro): only entity OwnerID or same clan/team may authorize or loot - run before any config that would allow (e.g. CanAuthorizeCupboard)
             ulong ownerId = priv.OwnerID;
             if (ownerId != 0 && ownerId != player.userID && !IsAlly(player, ownerId))
             {
+                LogLootDecision(player, priv, false, "OnCupboardAuthorize not owner/ally");
                 SendReply(player, GetMessage("OnTryAuthCB", player.UserIDString));
                 return false;
             }
@@ -6579,6 +6772,7 @@ namespace Oxide.Plugins
                 if (PreventLootingCheckHelper(player, entity)) return null;
                 if (entity.OwnerID != 0 && entity.OwnerID != player.userID && !PreventLootingIsFriend(entity.OwnerID, player.userID))
                 {
+                    LogLootDecision(player, priv, false, "OnCupboardAuthorize CanAuthorizeCupboard=false");
                     SendReply(player, GetMessage("OnTryAuthCB", player.UserIDString));
                     return false;
                 }
@@ -6587,13 +6781,27 @@ namespace Oxide.Plugins
             if (baseLock != null && baseLock.IsLocked()) return null;
             if (player.IsAdmin && config?.PreventLooting != null && config.PreventLooting.AdminCanLoot) return null;
             if (IsAlly(player, priv.OwnerID)) return null;
+            LogLootDecision(player, priv, false, "OnCupboardAuthorize Error_CannotAccessEntity");
             Message(player, "Error_CannotAccessEntity");
             return true;
         }
 
+        // Looting a TC must NOT reuse authorize rules alone — vanish/admin bypass applies here.
         private object CanLootEntity(BasePlayer player, BuildingPrivlidge priv)
         {
-            return OnCupboardAuthorize(priv, player);
+            if (player == null || priv == null) return null;
+            if (LootCanBypass(player))
+            {
+                LogLootDecision(player, priv, true, "CanLootEntity TC bypass (vanish/admin)");
+                return null;
+            }
+            if (!config.PreventLooting.Enabled)
+            {
+                LogLootDecision(player, priv, true, "PreventLooting disabled");
+                return null;
+            }
+            // Fall through to unified storage rules (owner/ally/cupboard auth)
+            return CanLootEntityUnified(player, priv);
         }
 
         private object OnVendingTransaction(InvisibleVendingMachine vm, BasePlayer buyer, int sellOrderId, int numberOfTransactions, ItemContainer targetContainer)
@@ -6602,7 +6810,7 @@ namespace Oxide.Plugins
             var sellOrder = vm.sellOrders.sellOrders[sellOrderId];
             var key = ItemManager.Items?.MasterKey ?? ItemManager.FindItemDefinition("apartment.master_key");
             if (key == null || key.itemid != sellOrder.itemToSellID) return null;
-            if (Interface.CallHook("CanPurchaseMasterKey", buyer, vm, sellOrderId, numberOfTransactions, targetContainer) is true) return null;
+            if (HarmonyModInterface.CallHook("CanPurchaseMasterKey", buyer, vm, sellOrderId, numberOfTransactions, targetContainer) is true) return null;
             if (buyer != null) Message(buyer, "Error_MasterKeyDisabled");
             return false;
         }
@@ -6612,7 +6820,7 @@ namespace Oxide.Plugins
             string actionString = responseNode.GetActionString();
             if (actionString == "PaidDoor" && !config.options.Apartments.Bribe)
             {
-                if (Interface.CallHook("CanBribeSecurityGuard", player, nas, conversationFor, responseNode) is true) return null;
+                if (HarmonyModInterface.CallHook("CanBribeSecurityGuard", player, nas, conversationFor, responseNode) is true) return null;
                 Message(player, "Error_BribeDisabled");
                 nas.ForceEndConversation(player);
                 return false;
@@ -6624,7 +6832,7 @@ namespace Oxide.Plugins
         {
             if (!config.options.Apartments.MasterKey)
             {
-                if (Interface.CallHook("CanPurchaseMasterKey", player) is true) return null;
+                if (HarmonyModInterface.CallHook("CanPurchaseMasterKey", player) is true) return null;
                 Message(player, "Error_MasterKeyDisabled");
                 return false;
             }
@@ -6635,14 +6843,14 @@ namespace Oxide.Plugins
 
         private object OnRentableShopBreakInComplete(RentableShop shop, BasePlayer player)
         {
-            if (Interface.CallHook("CanPlayerCompleteBreakIn", player, shop) is true) return null;
+            if (HarmonyModInterface.CallHook("CanPlayerCompleteBreakIn", player, shop) is true) return null;
             Message(player, "Error_MasterKeyDisabled");
             return true;
         }
 
         private object OnApartmentRoomBreakInComplete(ApartmentRoom apt, BasePlayer player, ApartmentDoor door)
         {
-            if (Interface.CallHook("CanPlayerCompleteBreakIn", player, door, apt) is true) return null;
+            if (HarmonyModInterface.CallHook("CanPlayerCompleteBreakIn", player, door, apt) is true) return null;
             Message(player, "Error_MasterKeyDisabled");
             return true;
         }
@@ -6664,7 +6872,7 @@ namespace Oxide.Plugins
 
             BuildingPrivlidge priv = planter.GetBuildingPrivilege(true);
             if (priv != null && priv.IsAuthed(looter)) return null;
-            if (Interface.CallHook("CanUsePlanterBox", looter, planter, plant, caller) is true) return null;
+            if (HarmonyModInterface.CallHook("CanUsePlanterBox", looter, planter, plant, caller) is true) return null;
             Message(looter, "Error_Harvest");
             return true;
         }
@@ -6681,6 +6889,7 @@ namespace Oxide.Plugins
         private object CanLootPlayer(BasePlayer target, BasePlayer looter)
         {
             if (target == null || looter == null) return null;
+            if (LootCanBypass(looter)) return null;
             if (config.options.Loot.Sleepers && LootIsPlayerProtected(looter, target, target?.userID, true) != null)
                 return false;
             if (!config.PreventLooting.Enabled)
@@ -6746,6 +6955,7 @@ namespace Oxide.Plugins
         {
             if (target == null || looter == null) return;
             if (!config.PreventLooting.Enabled) return;
+            if (LootCanBypass(looter)) return;
             if (config.PreventLooting.AdminCanLoot && looter.IsAdmin) return;
             if (config.PreventLooting.AllowLootPlayers) return;
             if (IsAlly(looter, target.userID)) return;
@@ -6769,6 +6979,12 @@ namespace Oxide.Plugins
         private object OnStartBeingLooted(DroppedItemContainer container, BasePlayer player)
         {
             if (container == null || player == null) return null;
+
+            if (LootCanBypass(player))
+            {
+                container.SetFlag(BaseEntity.Flags.Reserved2, true);
+                return true;
+            }
             
             // Admin override: admins can always loot DroppedItemContainer regardless of restrictions
             if (player.IsAdmin)
@@ -6894,6 +7110,7 @@ namespace Oxide.Plugins
         {
             if (player == null || plant == null) return true; // Block if invalid
 
+            if (LootCanBypass(player)) return null;
             // Admin bypass
             if (config.PreventLooting.AdminCanLoot && player.IsAdmin) return null;
 
@@ -6939,7 +7156,7 @@ namespace Oxide.Plugins
                 return _helicopterCrateLockComponentType;
 
             _helicopterCrateLockComponentType = CustomHelicopterTiers2.GetType().Assembly
-                .GetType("Oxide.Plugins.CustomHelicopterTiers2+HelicopterCrateLockComponent");
+                .GetType("Harmony.Plugins.CustomHelicopterTiers2+HelicopterCrateLockComponent");
 
             return _helicopterCrateLockComponentType;
         }
@@ -6947,6 +7164,10 @@ namespace Oxide.Plugins
         private object CanLootEntityUnified(BasePlayer player, BaseEntity entity)
         {
             if (player == null || entity == null || !entity.IsValid()) return null;
+
+            // Vanish / bypass.loot: allow before LootDefender locks and PreventLooting
+            if (LootCanBypass(player)) return null;
+            if (config.PreventLooting != null && config.PreventLooting.AdminCanLoot && player.IsAdmin) return null;
 
             // Early check: unowned entities (OwnerID == 0) are always allowed unless locked by LootDefender
             // This matches LootDefender's behavior
@@ -7097,7 +7318,7 @@ namespace Oxide.Plugins
                     else if (!li.CanInteract(player.userID, player, IsAlly))
                     {
                         // Call OnLootLockedEntity hook to allow other plugins to override (matches LootDefender)
-                        object hookResult = Interface.CallHook("OnLootLockedEntity", player, entity);
+                        object hookResult = HarmonyModInterface.CallHook("OnLootLockedEntity", player, entity);
                         if (hookResult != null && Convert.ToBoolean(hookResult))
                         {
                             // Another plugin overrode the lock
@@ -7609,6 +7830,7 @@ namespace Oxide.Plugins
         private bool PreventLootingCheckHelper(BasePlayer player, BaseEntity entity)
         {
             if (entity == null || player == null) return true;
+            if (LootCanBypass(player)) return true;
             if (player.IsAdmin && config.PreventLooting.AdminCanLoot) return true;
             if (config.PreventLooting.UsePermissions && permission.UserHasPermission(player.userID.ToString(), AdmPerm)) return true;
             if (config.PreventLooting.UseZoneManager && ZoneManager != null)
@@ -7768,6 +7990,7 @@ namespace Oxide.Plugins
             {
                 if ((config.PreventLooting.UseCupboard || config.PreventLooting.UseCupboardAuth || config.PreventLooting.OnlyInCupboardRange))
                     if (PreventLootingCheckAuthCupboard(entity, player)) return null;
+                LogLootDecision(player, entity, false, "PreventLootingCanLootEntity not owner");
                 SendReply(player, GetMessage("OnTryLootEntity", player.UserIDString));
                 return false;
             }
@@ -7998,7 +8221,7 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            if (Interface.CallHook("CanEntityBeTargeted", new object[] { target, entity }) is bool val)
+            if (HarmonyModInterface.CallHook("CanEntityBeTargeted", new object[] { target, entity }) is bool val)
             {
                 return val ? (object)null : true;
             }
@@ -8080,7 +8303,7 @@ namespace Oxide.Plugins
 
         private object OnEntityEnterInternal(BaseEntity entity, BasePlayer target)
         {
-            if (Interface.CallHook("CanEntityBeTargeted", new object[] { target, entity }) is bool val)
+            if (HarmonyModInterface.CallHook("CanEntityBeTargeted", new object[] { target, entity }) is bool val)
             {
                 return val ? (object)null : true;
             }
@@ -8206,7 +8429,7 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            if (Interface.CallHook("CanEntityTrapTrigger", new object[] { trap, player }) is bool val)
+            if (HarmonyModInterface.CallHook("CanEntityTrapTrigger", new object[] { trap, player }) is bool val)
             {
                 return val ? (object)null : true;
             }
@@ -8613,7 +8836,7 @@ namespace Oxide.Plugins
             {
                 SaveData();
                 SetExposedMappings();
-                Interface.CallHook("OnUpdatedMappings", _mappings);
+                HarmonyModInterface.CallHook("OnUpdatedMappings", _mappings);
             });
 
             return true;
@@ -8631,7 +8854,7 @@ namespace Oxide.Plugins
                 {
                     SaveData();
                     SetExposedMappings();
-                    Interface.CallHook("OnRemovedMappings", _mappings);
+                    HarmonyModInterface.CallHook("OnRemovedMappings", _mappings);
                 });
                 SetUseZones();
                 return true;
@@ -9450,8 +9673,26 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Bradley - Lock At Harbor")]
             public bool BradleyLockHarbor = false;
 
+            [JsonProperty(PropertyName = "Bradley - Lock At Launch Site")]
+            public bool BradleyLockLaunchSite = true;
+
             [JsonProperty(PropertyName = "Bradley - Lock From Monument Bradley Plugin")]
             public bool BradleyLockMonument = true;
+
+            [JsonProperty(PropertyName = "Bradley - Lock From Convoy Plugin")]
+            public bool BradleyLockConvoy = true;
+
+            [JsonProperty(PropertyName = "Bradley - Lock From Bradley Tiers Plugin")]
+            public bool BradleyLockTiers = false;
+
+            [JsonProperty(PropertyName = "Lock Bradley From Everywhere Else")]
+            public bool BradleyLockWorldly = true;
+
+            [JsonProperty(PropertyName = "Allow Locking Bradley With These Skins", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public HashSet<ulong> BradleyIncludedSkins = new();
+
+            [JsonProperty(PropertyName = "Automatically Detected Skins (Bradley - Review Only)", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public Dictionary<string, HashSet<ulong>> BradleyReviewableSkins = new();
 
             [JsonProperty(PropertyName = "Bradley - XP Reward")]
             public double BradleyXP = 0.0;
@@ -9472,6 +9713,18 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Helicopter - Lock At Harbor")]
             public bool? HeliLockHarbor = null; // null = use Bradley setting
 
+            [JsonProperty(PropertyName = "Helicopter - Lock From Convoy Plugin")]
+            public bool HeliLockConvoy = true;
+
+            [JsonProperty(PropertyName = "Lock Heli From Everywhere Else")]
+            public bool HeliLockWorldly = true;
+
+            [JsonProperty(PropertyName = "Allow Locking Helicopter With These Skins", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public HashSet<ulong> HeliIncludedSkins = new() { 420 };
+
+            [JsonProperty(PropertyName = "Automatically Detected Skins (Heli - Review Only)", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public Dictionary<string, HashSet<ulong>> HeliReviewableSkins = new();
+
             [JsonProperty(PropertyName = "Helicopter - Unlock When X Distance From Owner (meters, 0 = disabled)")]
             public float HeliUnlockDistance = 1500f;
 
@@ -9486,6 +9739,9 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Helicopter - ShoppyStock Shop Name")]
             public string HeliShoppyStockShopName = "";
+
+            internal bool CanLockBradleySkin(ulong skin) => skin == 0uL ? BradleyLockWorldly : BradleyIncludedSkins != null && BradleyIncludedSkins.Contains(skin);
+            internal bool CanLockHeliSkin(ulong skin) => skin == 0uL ? HeliLockWorldly : HeliIncludedSkins != null && HeliIncludedSkins.Contains(skin);
 
             // NPC Settings
             [JsonProperty(PropertyName = "NPC - Damage Lock Threshold")]
@@ -9724,7 +9980,10 @@ namespace Oxide.Plugins
         private class SupplyDropOptions
         {
             [JsonProperty(PropertyName = "Allow Locking Signals With These Skins", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<ulong> AllowedSignalSkins = new() { 0 };
+            public List<ulong> AllowedSignalSkins = new();
+
+            [JsonProperty(PropertyName = "Lock Supply Drops From Everywhere Else")]
+            public bool LockWorldly = true;
 
             [JsonProperty(PropertyName = "Lock Supply Drops To Players")]
             public bool LockSupplyDropsToPlayers = false;
@@ -9752,6 +10011,17 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Disable CH47 Gibs")]
             public bool DisableCH47Gibs = false;
+
+            internal bool CanLockSkin(ulong skin)
+            {
+                if (skin == 0uL)
+                {
+                    // Back-compat: list containing 0 previously meant "allow any"
+                    if (AllowedSignalSkins != null && AllowedSignalSkins.Contains(0)) return true;
+                    return LockWorldly;
+                }
+                return AllowedSignalSkins != null && AllowedSignalSkins.Contains(skin);
+            }
         }
 
         private class PreventLootingOptions
@@ -10525,7 +10795,7 @@ namespace Oxide.Plugins
             {
                 foreach (Rule rule in parsedRules)
                     if (!rule.valid)
-                        Interface.Oxide.LogWarning($"Warning - invalid rule: {rule.ruleText}");
+                        HarmonyModInterface.Mods.LogWarning($"Warning - invalid rule: {rule.ruleText}");
             }
 
             // add a rule
@@ -10564,8 +10834,10 @@ namespace Oxide.Plugins
                     return false;
 
                 string rs0 = splitStr[0];
-                string rs1 = splitStr[^1]; // Using index from end operator
-                string[] mid = splitStr[1..^1]; // Slicing the array
+                string rs1 = splitStr[splitStr.Length - 1];
+                string[] mid = new string[Math.Max(0, splitStr.Length - 2)];
+                if (mid.Length > 0)
+                    Array.Copy(splitStr, 1, mid, 0, mid.Length);
 
                 bool canHurt = !Array.Exists(mid, s => s.Equals("cannot", StringComparison.OrdinalIgnoreCase) || s.Equals("can't", StringComparison.OrdinalIgnoreCase));
 
@@ -10946,12 +11218,12 @@ namespace Oxide.Plugins
                 if (ts.Length > 2 && ts.StartsWith("*.", StringComparison.Ordinal))
                 {
                     isDaily = true;
-                    ts = ts[2..]; // Remove the "*." prefix
+                    ts = ts.Substring(2);
                 }
 
                 if (!TimeSpan.TryParse(ts, out TimeSpan span))
                 {
-                    string c = ts[^1].ToString();
+                    string c = ts.Substring(ts.Length - 1, 1);
                     if (!c.IsNumeric())
                     {
                         Puts("Invalid last character '{0}' in time format '{1}'", c, ts);

@@ -1,9 +1,15 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using HarmonyChat;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace RemoverToolHarmony
 {
@@ -30,8 +36,7 @@ namespace RemoverToolHarmony
         public RemoverTool Plugin => _plugin;
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
-        {
-            Instance = this;
+        {            Instance = this;
             string root = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, ".."));
             RemoverToolHost.Init(root);
             _plugin = new RemoverTool();

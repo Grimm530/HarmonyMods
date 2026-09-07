@@ -61,20 +61,6 @@ namespace Convoy.Patches
         }
     }
 
-    /// <summary>Last resort: never let the invalid-dismount Suicide path kill a convoy NPC.</summary>
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    public static class Patch_BaseCombatEntity_Hurt_BlockConvoySuicide
-    {
-        [HarmonyPrefix]
-        public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            if (info?.damageTypes == null) return true;
-            if (info.damageTypes.Get(DamageType.Suicide) <= 0f) return true;
-            if (!ConvoyDismountGuard.IsConvoyNpc(__instance as BasePlayer)) return true;
-            return false;
-        }
-    }
-
     public static class ConvoyDismountGuard
     {
         /// <summary>When true, intentional RoamAllNpc / cleanup dismounts are allowed through.</summary>
@@ -83,7 +69,9 @@ namespace Convoy.Patches
         public static bool IsConvoyNpc(BasePlayer player)
         {
             if (player == null) return false;
-            if (player.skinID == ConvoyGrimmNpc.CustomNpcSkinId) return true;
+            if (GrimmCoreBridge.IsMarkedCustomNpc(player) && player.net != null
+                && ConvoyGrimmNpc.IsConvoyNpc((ulong)player.net.ID.Value))
+                return true;
             if (player.net != null && ConvoyGrimmNpc.IsConvoyNpc((ulong)player.net.ID.Value)) return true;
             return false;
         }

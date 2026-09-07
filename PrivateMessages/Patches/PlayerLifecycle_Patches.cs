@@ -10,7 +10,7 @@ namespace PrivateMessagesHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = PrivateMessagesMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[PrivateMessages] OnDisconnected: " + ex.Message); }
         }

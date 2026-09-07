@@ -3,25 +3,6 @@ using RustEditStandalone.Features;
 
 namespace RustEditStandalone.Patches;
 
-[HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-public static class BaseCombatEntity_Hurt_Patch
-{
-    static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-    {
-        if (__instance == null) return true;
-        if (!DeployableFeature.ShouldBlockDamage(__instance) && !IoFeature.IsMapIo(__instance))
-            return true;
-
-        // Cancel damage for map-placed entities / IO
-        if (info != null)
-        {
-            info.damageTypes.ScaleAll(0f);
-            info.DidHit = false;
-        }
-        return false;
-    }
-}
-
 [HarmonyPatch(typeof(StabilityEntity), nameof(StabilityEntity.StabilityCheck))]
 public static class StabilityEntity_StabilityCheck_Patch
 {

@@ -1,6 +1,6 @@
 /*
- * Harmony shims so the ported RustVehiclesGUI 1.0.5 can run without Oxide/Carbon.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims so the ported RustVehiclesGUI 1.0.5 can run without legacy plugin host/Carbon.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -73,7 +73,7 @@ namespace RustVehiclesGUIHarmony
 
     #endregion
 
-    #region Hash (Oxide Hash<K,V> replacement)
+    #region Hash (compat Hash<K,V> replacement)
 
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
@@ -913,11 +913,11 @@ namespace RustVehiclesGUIHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public DataFileSystem DataFileSystem => Interface.DataFileSystem;
+        public DataFileSystem DataFileSystem => HarmonyModInterface.DataFileSystem;
         public string DataDirectory => RustVehiclesGUIHost.Instance?.DataDirectory ?? "";
         public string ConfigDirectory
         {
@@ -931,17 +931,17 @@ namespace RustVehiclesGUIHarmony
         }
         public void LogError(string message) => Debug.LogError("[RustVehiclesGUI] " + message);
         public object CallHook(string name, params object[] args) => null;
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
         public void UnloadPlugin(string name) =>
             Debug.LogWarning("[RustVehiclesGUI] UnloadPlugin is a no-op under Harmony (requested: " + name + ").");
         public void ReloadPlugin(string name) =>
             Debug.LogWarning("[RustVehiclesGUI] ReloadPlugin is a no-op under Harmony (requested: " + name + ").");
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         public static object CallHook(string name, params object[] args) => null;
         public static object Call(string name, params object[] args) => null;
@@ -1032,7 +1032,7 @@ namespace RustVehiclesGUIHarmony
                 }
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[RustVehiclesGUI] webrequest callback: " + ex.Message); }
@@ -1111,7 +1111,7 @@ namespace RustVehiclesGUIHarmony
             Directory.CreateDirectory(Path.Combine(modData, "players"));
             Instance.DataDirectory = dataDir;
             Instance.ModDataDirectory = modData;
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
 
             var configPath = Path.Combine(configDir, "RustVehiclesGUI.json");
             JToken data = null;
@@ -1155,17 +1155,15 @@ namespace RustVehiclesGUIHarmony
         /// <summary>
         /// Runs a registered server console command as the given player. Harmony mods register their
         /// commands in ConsoleSystem.Index.Server, and the client never forwards them, so plugin-to-plugin
-        /// UI refreshes (e.g. ServerPanel redraw) have to be dispatched here instead of via SendConsoleCommand.
+        /// UI refreshes have to be dispatched here instead of via SendConsoleCommand.
+        /// Cross-mod ServerPanel redraws should use API_OnServerPanelRefreshContent instead of this helper.
         /// </summary>
         public static void RunPlayerConsoleCommand(BasePlayer player, string command, params string[] args)
         {
             if (player?.net?.connection == null || string.IsNullOrEmpty(command)) return;
             try
             {
-                ConsoleSystem.Command cmd = null;
-                var dict = ConsoleSystem.Index.Server.Dict;
-                if (dict != null && !dict.TryGetValue(command, out cmd))
-                    dict.TryGetValue("global." + command, out cmd);
+                ConsoleSystem.Command cmd = FindServerConsoleCommand(command);
                 if (cmd == null)
                 {
                     Debug.LogWarning("[RustVehiclesGUI] Console command not registered: " + command);
@@ -1193,6 +1191,35 @@ namespace RustVehiclesGUIHarmony
             {
                 Debug.LogWarning("[RustVehiclesGUI] RunPlayerConsoleCommand(" + command + "): " + ex.Message);
             }
+        }
+
+        private static ConsoleSystem.Command FindServerConsoleCommand(string command)
+        {
+            if (string.IsNullOrEmpty(command)) return null;
+
+            var dict = ConsoleSystem.Index.Server.Dict;
+            var global = ConsoleSystem.Index.Server.GlobalDict;
+            string globalKey = command.IndexOf('.') >= 0 ? command : "global." + command;
+
+            ConsoleSystem.Command cmd;
+            if (dict != null)
+            {
+                if (dict.TryGetValue(command, out cmd) && cmd != null) return cmd;
+                if (dict.TryGetValue(globalKey, out cmd) && cmd != null) return cmd;
+                if (dict.TryGetValue(command.ToLowerInvariant(), out cmd) && cmd != null) return cmd;
+                if (dict.TryGetValue(globalKey.ToLowerInvariant(), out cmd) && cmd != null) return cmd;
+            }
+
+            if (global != null)
+            {
+                string name = command;
+                int dot = command.LastIndexOf('.');
+                if (dot >= 0 && dot < command.Length - 1) name = command.Substring(dot + 1);
+                if (global.TryGetValue(name, out cmd) && cmd != null) return cmd;
+                if (global.TryGetValue(name.ToLowerInvariant(), out cmd) && cmd != null) return cmd;
+            }
+
+            return null;
         }
 
         public void Puts(string message) => Debug.Log("[RustVehiclesGUI] " + message);

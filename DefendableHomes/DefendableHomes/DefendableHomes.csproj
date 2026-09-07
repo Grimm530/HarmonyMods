@@ -11,7 +11,7 @@
     <RootNamespace>DefendableHomes</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: Defendable Homes event (port of the DefendableHomes Oxide plugin). Requires 0GrimmNPC. Config: HarmonyConfig/DefendableHomes.json. Data: HarmonyData/DefendableHomes.json.</Description>
+    <Description>Harmony mod: Defendable Homes event (port of the DefendableHomes Harmony mod). Requires 0GrimmNPC. Config: HarmonyConfig/DefendableHomes.json. Data: HarmonyData/DefendableHomes.json.</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
@@ -94,5 +94,8 @@
     <Reference Include="UnityEngine.UnityWebRequestWWWModule">
       <HintPath>$(RustManaged)\UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
   </ItemGroup>
 </Project>

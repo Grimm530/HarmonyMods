@@ -44,7 +44,7 @@ namespace ZombieHorde
         public static string ConfigDirectory => Path.Combine(ServerRoot, "HarmonyConfig");
         public static string DataDirectory => Path.Combine(ServerRoot, "HarmonyData");
         public static string ConfigPath => Path.Combine(ConfigDirectory, "ZombieHorde.json");
-        public static string OxideConfigPath => Path.Combine(ServerRoot, "oxide", "config", "ZombieHorde.json");
+        public static string LegacyPluginConfigPath => Path.Combine(ServerRoot, "oxide", "config", "ZombieHorde.json");
 
         public static readonly TimerHelper Timer = new TimerHelper();
         public static readonly PermissionHelper Permission = new PermissionHelper();
@@ -189,7 +189,7 @@ namespace ZombieHorde
             private bool _loggedLink;
             private Action _readyCallback;
 
-            // Oxide Permission library fallback
+            // legacy permission library fallback
             private object _oxidePerm;
             private MethodInfo _userHasPermission;
             private MethodInfo _grantUserPermission;
@@ -260,7 +260,7 @@ namespace ZombieHorde
                         if (!_resolveAttempted)
                         {
                             _resolveAttempted = true;
-                            Debug.LogWarning("[ZombieHorde] 0Permissions not ready yet — will use Oxide/local until Permissions_ApiType is available.");
+                            Debug.LogWarning("[ZombieHorde] 0Permissions not ready yet — will use legacy/local until Permissions_ApiType is available.");
                         }
                         return;
                     }
@@ -331,7 +331,7 @@ namespace ZombieHorde
                 }
             }
 
-            private void ResolveOxide()
+            private void ResolveLegacyPermission()
             {
                 if (_oxideResolved) return;
                 _oxideResolved = true;
@@ -339,17 +339,17 @@ namespace ZombieHorde
                 {
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        Type iface = asm.GetType("Oxide.Core.Interface");
+                        Type iface = asm.GetType("Harmony.Core.HarmonyModInterface");
                         if (iface == null) continue;
-                        object oxide = iface.GetProperty("Oxide", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-                        if (oxide == null) continue;
+                        object modRuntime = iface.GetProperty("Mods", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                        if (modRuntime == null) continue;
 
-                        // OxideMod.GetLibrary<T>(string name = null) is generic — do not Invoke the open form.
-                        Type permLibType = asm.GetType("Oxide.Core.Libraries.Permission");
+                        // HarmonyModRuntime.GetLibrary<T>(string name = null) is generic — do not Invoke the open form.
+                        Type permLibType = asm.GetType("Harmony.Core.Libraries.Permission");
                         if (permLibType == null) continue;
 
                         MethodInfo getLibOpen = null;
-                        foreach (MethodInfo m in oxide.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                        foreach (MethodInfo m in modRuntime.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
                         {
                             if (m.Name != "GetLibrary" || !m.IsGenericMethodDefinition) continue;
                             ParameterInfo[] ps = m.GetParameters();
@@ -365,7 +365,7 @@ namespace ZombieHorde
                         object[] invokeArgs = getLib.GetParameters().Length == 0
                             ? Array.Empty<object>()
                             : new object[] { null };
-                        _oxidePerm = getLib.Invoke(oxide, invokeArgs);
+                        _oxidePerm = getLib.Invoke(modRuntime, invokeArgs);
                         if (_oxidePerm == null) continue;
 
                         Type t = _oxidePerm.GetType();
@@ -373,27 +373,27 @@ namespace ZombieHorde
                         _grantUserPermission = t.GetMethod("GrantUserPermission", new[] { typeof(string), typeof(string), typeof(object) });
                         _revokeUserPermission = t.GetMethod("RevokeUserPermission", new[] { typeof(string), typeof(string) });
                         _registerPermission = t.GetMethod("RegisterPermission", new[] { typeof(string), typeof(object) });
-                        _oxidePluginOwner = FindOxidePluginOwner(oxide);
-                        Debug.Log("[ZombieHorde] Linked to Oxide Permission library (perm.grant).");
+                        _oxidePluginOwner = FindHarmonyPluginOwner(modRuntime);
+                        Debug.Log("[ZombieHorde] Linked to legacy permission library (perm.grant).");
                         return;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning("[ZombieHorde] Oxide permission resolve: " + (ex.InnerException ?? ex).Message);
+                    Debug.LogWarning("[ZombieHorde] legacy permission resolve: " + (ex.InnerException ?? ex).Message);
                     _oxidePerm = null;
                 }
             }
 
             /// <summary>
-            /// Oxide RegisterPermission requires a real Plugin owner (dictionary key + OnRemovedFromManager).
+            /// compat RegisterPermission requires a real Plugin owner (dictionary key + OnRemovedFromManager).
             /// Prefer RustCore; otherwise any loaded plugin.
             /// </summary>
-            private static object FindOxidePluginOwner(object oxide)
+            private static object FindHarmonyPluginOwner(object modRuntime)
             {
                 try
                 {
-                    object rpm = oxide.GetType().GetProperty("RootPluginManager")?.GetValue(oxide);
+                    object rpm = modRuntime.GetType().GetProperty("RootModManager")?.GetValue(modRuntime);
                     if (rpm == null) return null;
                     MethodInfo getPlugins = rpm.GetType().GetMethod("GetPlugins", Type.EmptyTypes);
                     if (getPlugins?.Invoke(rpm, null) is not System.Collections.IEnumerable plugins)
@@ -470,20 +470,20 @@ namespace ZombieHorde
                     Debug.LogWarning("[ZombieHorde] 0Permissions RegisterPermission(" + name + "): " + (ex.InnerException ?? ex).Message);
                 }
 
-                ResolveOxide();
+                ResolveLegacyPermission();
                 if (_oxidePerm != null && _registerPermission != null)
                 {
-                    // Oxide RegisterPermission requires a real Oxide Plugin owner — never pass ZombieHordePlugin.
+                    // compat RegisterPermission requires a real Harmony Mod owner — never pass ZombieHordePlugin.
                     if (_oxidePluginOwner != null)
                     {
                         try { _registerPermission.Invoke(_oxidePerm, new object[] { name, _oxidePluginOwner }); }
                         catch (Exception ex)
                         {
-                            Debug.LogWarning("[ZombieHorde] Oxide RegisterPermission(" + name + "): " + (ex.InnerException ?? ex).Message);
+                            Debug.LogWarning("[ZombieHorde] compat RegisterPermission(" + name + "): " + (ex.InnerException ?? ex).Message);
                         }
                     }
                     else
-                        Debug.LogWarning("[ZombieHorde] Oxide Permission linked but no Plugin owner found — use: perm grant user <id> " + name);
+                        Debug.LogWarning("[ZombieHorde] legacy permission API linked but no Plugin owner found — use: perm grant user <id> " + name);
                 }
             }
 
@@ -513,7 +513,7 @@ namespace ZombieHorde
                     catch { }
                 }
 
-                ResolveOxide();
+                ResolveLegacyPermission();
                 if (_oxidePerm != null && _userHasPermission != null)
                 {
                     try { return (bool)_userHasPermission.Invoke(_oxidePerm, new object[] { userId, perm }); }
@@ -535,7 +535,7 @@ namespace ZombieHorde
                     catch { }
                 }
 
-                ResolveOxide();
+                ResolveLegacyPermission();
                 if (_oxidePerm != null && _grantUserPermission != null)
                 {
                     try { _grantUserPermission.Invoke(_oxidePerm, new object[] { userId, perm, owner }); return; }
@@ -559,7 +559,7 @@ namespace ZombieHorde
                     catch { }
                 }
 
-                ResolveOxide();
+                ResolveLegacyPermission();
                 if (_oxidePerm != null && _revokeUserPermission != null)
                 {
                     try { _revokeUserPermission.Invoke(_oxidePerm, new object[] { userId, perm }); return; }
@@ -656,11 +656,11 @@ namespace ZombieHorde
                 {
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        Type iface = asm.GetType("Oxide.Core.Interface");
+                        Type iface = asm.GetType("Harmony.Core.HarmonyModInterface");
                         if (iface == null) continue;
-                        object oxide = iface.GetProperty("Oxide", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-                        if (oxide == null) continue;
-                        object rpm = oxide.GetType().GetProperty("RootPluginManager")?.GetValue(oxide);
+                        object modRuntime = iface.GetProperty("Mods", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                        if (modRuntime == null) continue;
+                        object rpm = modRuntime.GetType().GetProperty("RootModManager")?.GetValue(modRuntime);
                         if (rpm == null) continue;
                         MethodInfo get = rpm.GetType().GetMethod("GetPlugin", new[] { typeof(string) });
                         _plugin = get?.Invoke(rpm, new object[] { _name });

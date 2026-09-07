@@ -1,9 +1,9 @@
 using HarmonyLib;
-using DHPlugin = Oxide.Plugins.DefendableHomes;
+using DHPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes.Patches
 {
-    /// <summary>Oxide OnPlayerDeath — exit the event zone when a participating player dies.</summary>
+    /// <summary>Harmony OnPlayerDeath — exit the event zone when a participating player dies.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Die), new[] { typeof(HitInfo) })]
     public static class Patch_BasePlayer_Die
     {

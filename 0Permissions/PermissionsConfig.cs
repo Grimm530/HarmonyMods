@@ -22,7 +22,7 @@ namespace PermissionsHarmony
 
             var cfg = new PermissionsConfig
             {
-                // Oxide-like: auth level (ownerid) does NOT imply every mod permission.
+                // Harmony-like: auth level (ownerid) does NOT imply every mod permission.
                 ServerAdminsBypassAllPermissions = false
             };
 

@@ -60,7 +60,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(PlayerBlueprints __instance, ItemDefinition itemDef)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || itemDef == null) return;
+            if (plugin == null || itemDef == null) return;
             try { plugin.NoteTechTreeUnlock(__instance.baseEntity, itemDef); }
             catch (System.Exception ex) { Debug.LogWarning("[DynamicCupShare] NoteTechTreeUnlock: " + ex.Message); }
         }
@@ -73,7 +73,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(PlayerBlueprints __instance, List<ItemDefinition> itemDefList)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || itemDefList == null) return;
+            if (plugin == null || itemDefList == null) return;
             try
             {
                 BasePlayer player = __instance.baseEntity;
@@ -85,7 +85,7 @@ namespace DynamicCupShareHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnNewSave — SaveRestore.Load when the save file does not exist (wipe / fresh map).
+    /// compat OnNewSave — SaveRestore.Load when the save file does not exist (wipe / fresh map).
     /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     internal static class SaveRestore_Load_BlueprintWipe_Patch

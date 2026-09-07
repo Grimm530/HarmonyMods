@@ -5,13 +5,13 @@ using System.IO;
 using System.Reflection;
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 
 namespace LootQoLHarmony
 {
     /// <summary>
-    /// Oxide SortButton 2.8.0 port (no Oxide runtime). Overlay sort CUI on supported storage.
+    /// Oxide SortButton 2.8.0 port (Harmony-only runtime). Overlay sort CUI on supported storage.
     /// </summary>
     public sealed class SortButtonFeature
     {
@@ -288,7 +288,7 @@ namespace LootQoLHarmony
             if (!Config.UseClans)
                 return false;
             return TryCallSocial("Clans_ApiType", "IsMemberOrAlly",
-                new[] { "ClansHarmony.ClansMod", "Clans", "Oxide.Plugins.Clans" },
+                new[] { "ClansHarmony.ClansMod", "Clans", "Harmony.Plugins.Clans" },
                 playerId, targetId);
         }
 
@@ -298,7 +298,7 @@ namespace LootQoLHarmony
                 return false;
             // Friends plugins typically take (owner, requester) as (target, player).
             return TryCallSocial("Friends_ApiType", "HasFriend",
-                new[] { "FriendsHarmony.FriendsMod", "Friends", "Oxide.Plugins.Friends" },
+                new[] { "FriendsHarmony.FriendsMod", "Friends", "Harmony.Plugins.Friends" },
                 targetId, playerId);
         }
 
@@ -433,7 +433,13 @@ namespace LootQoLHarmony
                 return;
             string lootPanelName = DetermineLootPanelName(entity);
             if (!TryDetermineYOffset(container, lootPanelName, out string offsetYString))
-                return;
+            {
+                // Game updates sometimes rename loot panels; keep the button visible with a capacity-based Y.
+                int numRows = Math.Min(1 + (container.capacity - 1) / 6, MaxRows);
+                if (numRows < 1) numRows = 1;
+                offsetYString = OffsetYByRow[numRows - 1];
+                Debug.LogWarning("[LootQoL] SortButton: unknown loot panel '" + lootPanelName + "', using row fallback Y=" + offsetYString);
+            }
             if (!HeightOverrideByLootPanel.TryGetValue(lootPanelName, out string heightString))
                 heightString = ButtonHeightString;
             CreateButtonUI(basePlayer, offsetXString, offsetYString, heightString, sortByCategory);
@@ -581,76 +587,87 @@ namespace LootQoLHarmony
         {
             if (player == null || player.net == null)
                 return;
-            ulong userId = GetUserId(player);
-            CuiHelper.DestroyUi(player, GUIPanelName);
-            _uiViewers.Add(userId);
-            if (_cachedUI == null)
+            try
             {
-                var elements = new CuiElementContainer();
-                elements.Add(new CuiPanel
+                ulong userId = GetUserId(player);
+                CuiHelper.DestroyUi(player, GUIPanelName);
+                _uiViewers.Add(userId);
+                if (_cachedUI == null)
                 {
-                    Image = { Color = "0 0 0 0" },
-                    RectTransform =
+                    var elements = new CuiElementContainer();
+                    elements.Add(new CuiPanel
                     {
-                        AnchorMin = "0.5 0",
-                        AnchorMax = "0.5 0",
-                        OffsetMin = "{0} {1}",
-                        OffsetMax = "{0} {1}",
-                    },
-                    CursorEnabled = false,
-                }, "Overlay", GUIPanelName, GUIPanelName);
+                        Image = { Color = "0 0 0 0" },
+                        RectTransform =
+                        {
+                            AnchorMin = "0.5 0",
+                            AnchorMax = "0.5 0",
+                            OffsetMin = "{0} {1}",
+                            OffsetMax = "{0} {1}",
+                        },
+                        CursorEnabled = false,
+                    }, "Overlay", GUIPanelName, GUIPanelName);
 
-                elements.Add(new CuiButton
-                {
-                    Button = { Command = "cui.endtest LOOTQOL order", Color = "{2}" },
-                    RectTransform =
+                    elements.Add(new CuiButton
                     {
-                        AnchorMin = "0 0",
-                        AnchorMax = "0 0",
-                        OffsetMin = "0 0",
-                        OffsetMax = SortOrderButtonWidth.ToString(CultureInfo.InvariantCulture) + " {3}",
-                    },
-                    Text =
-                    {
-                        Text = "{4}",
-                        FontSize = 12,
-                        Align = TextAnchor.MiddleCenter,
-                        Color = "0.77 0.92 0.67 0.8",
-                    },
-                }, GUIPanelName);
+                        Button = { Command = "cui.endtest LOOTQOL order", Color = "{2}" },
+                        RectTransform =
+                        {
+                            AnchorMin = "0 0",
+                            AnchorMax = "0 0",
+                            OffsetMin = "0 0",
+                            OffsetMax = SortOrderButtonWidth.ToString(CultureInfo.InvariantCulture) + " {3}",
+                        },
+                        Text =
+                        {
+                            Text = "{4}",
+                            FontSize = 12,
+                            Align = TextAnchor.MiddleCenter,
+                            Color = "0.77 0.92 0.67 0.8",
+                        },
+                    }, GUIPanelName);
 
-                elements.Add(new CuiButton
-                {
-                    Button = { Command = "cui.endtest LOOTQOL sort", Color = "0.41 0.50 0.25 0.8" },
-                    RectTransform =
+                    elements.Add(new CuiButton
                     {
-                        AnchorMin = "0 0",
-                        AnchorMax = "0 0",
-                        OffsetMin = SortOrderButtonWidth.ToString(CultureInfo.InvariantCulture) + " 0",
-                        OffsetMax = (SortOrderButtonWidth + SortButtonWidth).ToString(CultureInfo.InvariantCulture) + " {3}",
-                    },
-                    Text =
-                    {
-                        Text = "{5}",
-                        FontSize = 12,
-                        Align = TextAnchor.MiddleCenter,
-                        Color = "0.77 0.92 0.67 0.8",
-                    },
-                }, GUIPanelName);
+                        Button = { Command = "cui.endtest LOOTQOL sort", Color = "0.41 0.50 0.25 0.8" },
+                        RectTransform =
+                        {
+                            AnchorMin = "0 0",
+                            AnchorMax = "0 0",
+                            OffsetMin = SortOrderButtonWidth.ToString(CultureInfo.InvariantCulture) + " 0",
+                            OffsetMax = (SortOrderButtonWidth + SortButtonWidth).ToString(CultureInfo.InvariantCulture) + " {3}",
+                        },
+                        Text =
+                        {
+                            Text = "{5}",
+                            FontSize = 12,
+                            Align = TextAnchor.MiddleCenter,
+                            Color = "0.77 0.92 0.67 0.8",
+                        },
+                    }, GUIPanelName);
 
-                _cachedUI = CuiHelper.ToJson(elements);
-                _cachedUI = _cachedUI.Replace("{", "{{").Replace("}", "}}");
-                for (int i = 0; i < _uiArguments.Length; i++)
-                    _cachedUI = _cachedUI.Replace("{{" + i + "}}", "{" + i + "}");
+                    // Keep {0}..{5} placeholders as-is. Prefer Replace over string.Format so
+                    // unexpected braces from GrimmCUI ToJson / lang text cannot throw FormatException.
+                    _cachedUI = CuiHelper.ToJson(elements);
+                }
+
+                _uiArguments[0] = offsetXString ?? "0";
+                _uiArguments[1] = offsetYString ?? "0";
+                _uiArguments[2] = sortByCategory ? "0.75 0.43 0.18 0.8" : "0.26 0.58 0.80 0.8";
+                _uiArguments[3] = heightString ?? ButtonHeightString;
+                _uiArguments[4] = sortByCategory ? "C" : "N";
+                _uiArguments[5] = Lang("Format.ButtonText") ?? "Sort";
+
+                string json = _cachedUI;
+                for (int i = _uiArguments.Length - 1; i >= 0; i--)
+                    json = json.Replace("{" + i + "}", _uiArguments[i]);
+                CuiHelper.AddUi(player, json);
             }
-
-            _uiArguments[0] = offsetXString;
-            _uiArguments[1] = offsetYString;
-            _uiArguments[2] = sortByCategory ? "0.75 0.43 0.18 0.8" : "0.26 0.58 0.80 0.8";
-            _uiArguments[3] = heightString;
-            _uiArguments[4] = sortByCategory ? "C" : "N";
-            _uiArguments[5] = Lang("Format.ButtonText");
-            CuiHelper.AddUi(player, string.Format(_cachedUI, _uiArguments));
+            catch (Exception ex)
+            {
+                _cachedUI = null;
+                Debug.LogWarning("[LootQoL] SortButton CreateButtonUI: " + ex.Message);
+            }
         }
 
         private void RecreateSortButton(BasePlayer player)

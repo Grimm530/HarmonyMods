@@ -1,5 +1,5 @@
 using HarmonyLib;
-using DHPlugin = Oxide.Plugins.DefendableHomes;
+using DHPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes.Patches
 {
@@ -12,7 +12,7 @@ namespace DefendableHomes.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BaseEntity ent, Item ownerItem)
         {
-            if (__instance == null || ent == null) return;
+            if (ent == null) return;
             BasePlayer player = __instance.GetOwnerPlayer();
             if (player == null) player = ent.creatorEntity as BasePlayer;
             if (player == null) return;

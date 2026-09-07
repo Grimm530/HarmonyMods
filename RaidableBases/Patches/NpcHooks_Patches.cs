@@ -16,7 +16,7 @@ namespace RaidableBases
             {
                 return true;
             }
-            var result = Interface.CallHook("OnNpcDuck", npc);
+            var result = HarmonyModInterface.CallHook("OnNpcDuck", npc);
             // Oxide: returning non-null blocks the duck (RaidableBases returns true).
             return result == null;
         }
@@ -33,7 +33,7 @@ namespace RaidableBases
             {
                 return true;
             }
-            var result = Interface.CallHook("OnNpcDestinationSet", entity, pos);
+            var result = HarmonyModInterface.CallHook("OnNpcDestinationSet", entity, pos);
             return result == null;
         }
     }

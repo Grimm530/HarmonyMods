@@ -13,7 +13,7 @@ namespace DynamicCupShareHarmony
             if (ent is not BasePlayer player || player.IsNpc)
                 return;
 
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (player && this)
                     player.EnterTrigger(this);
@@ -272,7 +272,7 @@ namespace DynamicCupShareHarmony
         {
             if (!BuildingWorkbenchFeatureEnabled || !bench) return;
 
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (!bench) return;
                 BuildingWorkbenchBuildingState data = GetBuildingWorkbenchBuilding(bench.buildingID);

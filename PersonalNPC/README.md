@@ -1,8 +1,8 @@
 # PersonalNPC (Harmony)
 
-Three Oxide plugins merged into a single Harmony mod, with no Oxide runtime:
+Three Harmony mods merged into a single Harmony mod, with Harmony-only runtime:
 
-| Oxide plugin | Version | Class in this mod |
+| Harmony mod | Version | Class in this mod |
 | --- | --- | --- |
 | `PersonalNPC.cs` | 2.0.7 | `PersonalNPCHarmony.PersonalNPC` |
 | `PersonalNPCHelper.cs` | 1.3.0 | `PersonalNPCHarmony.PersonalNPCHelper` |
@@ -85,7 +85,7 @@ after that `PNPCAddonBuilder.json` is unused and kept only as a backup.
 
 ## CUI note
 
-Rust clients only forward commands that exist in `ConsoleGen`, so the Oxide-style `pnpc` and
+Rust clients only forward commands that exist in `ConsoleGen`, so the compat-style `pnpc` and
 `pnpchelper.*` commands on CUI buttons never reach the server. `RustCui.cs` rewrites button
 callbacks on the way out:
 
@@ -100,7 +100,7 @@ Harmony mods that use the same trick keep working.
 
 ## Hook coverage
 
-Oxide hooks are replaced by Harmony patches under `Patches/`:
+Harmony hooks are replaced by Harmony patches under `Patches/`:
 
 - `PlayerLifecycle_Patches.cs` - `OnPlayerConnected`, `OnPlayerDisconnected`, `OnPlayerRespawned`,
   `OnPlayerDeath`
@@ -114,9 +114,9 @@ Oxide hooks are replaced by Harmony patches under `Patches/`:
 
 ## Regenerating the ported sources
 
-`convert-from-oxide.ps1` rebuilds `PersonalNPC.cs`, `PersonalNPCHelper.cs` and `PNPCAddonBuilder.cs`
-from `.cursor/Oxide.Plugins.Cant-Use/`. It strips the Oxide usings and attributes, remaps
-`Oxide.Plugins` to `PersonalNPCHarmony`, swaps `RustPlugin` for `PersonalNPCPluginBase`, adds the
+`convert-from-legacy.ps1` rebuilds `PersonalNPC.cs`, `PersonalNPCHelper.cs` and `PNPCAddonBuilder.cs`
+from `.cursor/Harmony.Plugins.Cant-Use/`. It strips the Oxide usings and attributes, remaps
+`Harmony.Plugins` to `PersonalNPCHarmony`, swaps `RustPlugin` for `PersonalNPCPluginBase`, adds the
 `HarmonyInit` / `HarmonyServerInitialized` / `HarmonyUnload` entry points, and rewrites the data
 paths. Run it, then run `build.ps1`.
 
@@ -124,17 +124,17 @@ paths. Run it, then run `build.ps1`.
 
 - **Soft dependencies are stubs.** `Friends`, `Clans`, `ZoneManager`, `DeployableNature`,
   `VehicleDeployedLocks`, `PNPCAddonHeli`, `PNPCAddonHunter` and `RaidableBasesBuyableUI` resolve to
-  `null`, which is the same path the Oxide plugin takes when they are not installed. Features that
+  `null`, which is the same path the Harmony mod takes when they are not installed. Features that
   depend on them (friend/clan sharing checks, zone rules, heli and hunter addons, the buyable-base
   UI) are inactive.
 - **ImageLibrary is a built-in replacement, not the real plugin.** It downloads PNGs over HTTP into
   `HarmonyImages/PersonalNPC/`, caches them on disk and registers them with `FileStorage`. Images
   appear a moment after first load because the store is flushed on the main thread every 2 seconds.
   Without outbound network access, icons stay blank but nothing else breaks.
-- **`OnDispenserBonus` is folded into `OnDispenserGather`.** Both Oxide hooks end at
+- **`OnDispenserBonus` is folded into `OnDispenserGather`.** Both Harmony hooks end at
   `BasePlayer.GiveItem` with the `ResourceHarvested` reason, and the plugin's two handlers are
   mutually exclusive by config, so only the gather path is patched.
-- **`CanMoveItem` is approximated.** Oxide injects that hook inside the body of
+- **`CanMoveItem` is approximated.** compat injects that hook inside the body of
   `PlayerInventory.MoveItem`, which is not reachable without an IL transpiler, so the patch sits on
   `Item.MoveToContainer` and reconstructs the arguments. Moves with no source player are ignored,
   matching the plugin's own null check.

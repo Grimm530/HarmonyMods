@@ -1,6 +1,6 @@
 /*
- * Harmony shims so the ported Backpacks 2.3.8 logic can run without Oxide/Carbon.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims so the ported Backpacks 2.3.8 logic can run without legacy plugin host/Carbon.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -731,7 +731,7 @@ namespace BackpacksHarmony
             if (string.IsNullOrEmpty(id) || !ulong.TryParse(id, out var uid)) return null;
             var p = BasePlayer.FindByID(uid) ?? BasePlayer.FindSleeping(uid);
             if (p != null) return new BasePlayerWrapper(p);
-            // Allow admin commands by steam ID for offline players (Oxide covalence parity).
+            // Allow admin commands by steam ID for offline players (compat covalence parity).
             if (uid.IsSteamId()) return new OfflinePlayerWrapper(id);
             return null;
         }
@@ -827,7 +827,7 @@ namespace BackpacksHarmony
             set => AsObject()[key] = value == null ? JValue.CreateNull() : JToken.FromObject(value, JsonSerializer.Create(Settings));
         }
 
-        /// <summary>Oxide Config.Get(params string[] keys) — nested path lookup.</summary>
+        /// <summary>compat Config.Get(params string[] keys) — nested path lookup.</summary>
         public object Get(params string[] keys)
         {
             if (keys == null || keys.Length == 0) return null;
@@ -861,7 +861,7 @@ namespace BackpacksHarmony
         public void WriteObject(object obj, bool sync = true)
         {
             if (obj == null) return;
-            // Oxide stores both objects and arrays (e.g. DisabledAutoBackpacks is List<ulong>)
+            // legacy host stores both objects and arrays (e.g. DisabledAutoBackpacks is List<ulong>)
             _data = JToken.FromObject(obj, JsonSerializer.Create(Settings));
             if (sync) Save();
         }
@@ -915,7 +915,7 @@ namespace BackpacksHarmony
         }
     }
 
-    /// <summary>Data root = HarmonyData so Oxide paths like Backpacks/Players/x resolve correctly.</summary>
+    /// <summary>Data root = HarmonyData so legacy paths like Backpacks/Players/x resolve correctly.</summary>
     public class DataFileSystem
     {
         private readonly string _root;
@@ -955,7 +955,7 @@ namespace BackpacksHarmony
             {
                 try
                 {
-                    // Oxide data files may be objects (Backpacks.json) or arrays (DisabledAutoBackpacks.json)
+                    // legacy data files may be objects (Backpacks.json) or arrays (DisabledAutoBackpacks.json)
                     data = JToken.Parse(File.ReadAllText(path));
                 }
                 catch
@@ -1010,7 +1010,7 @@ namespace BackpacksHarmony
             }
         }
 
-        /// <summary>Returns full file paths ending in .json (Oxide-compatible for Backpacks PlayerData.GetFiles).</summary>
+        /// <summary>Returns full file paths ending in .json (Harmony-compatible for Backpacks PlayerData.GetFiles).</summary>
         public string[] GetFiles(string relativePath)
         {
             relativePath = (relativePath ?? "").Replace('\\', '/').Trim('/');
@@ -1024,11 +1024,11 @@ namespace BackpacksHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public DataFileSystem DataFileSystem => Interface.DataFileSystem;
+        public DataFileSystem DataFileSystem => HarmonyModInterface.DataFileSystem;
         public string DataDirectory => BackpacksHost.Instance?.DataDirectory ?? "";
         public string RootDirectory => BackpacksHost.Instance?.ServerRoot ?? "";
         public void LogDebug(string message) => Debug.Log("[Backpacks] " + message);
@@ -1036,7 +1036,7 @@ namespace BackpacksHarmony
         public void LogWarning(string message) => Debug.LogWarning("[Backpacks] " + message);
         public void LogError(string message) => Debug.LogError("[Backpacks] " + message);
         public object CallHook(string name, params object[] args) => null;
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
         public T GetLibrary<T>() where T : class
         {
             if (typeof(T) == typeof(HarmonyPermissionHelper))
@@ -1047,10 +1047,10 @@ namespace BackpacksHarmony
             Debug.LogWarning("[Backpacks] ReloadPlugin is a no-op under Harmony (restart/reload the mod instead).");
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         public static object CallHook(string name, params object[] args) => null;
 
@@ -1128,7 +1128,7 @@ namespace BackpacksHarmony
                 }
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[Backpacks] webrequest callback: " + ex.Message); }
@@ -1197,7 +1197,7 @@ namespace BackpacksHarmony
             
             Directory.CreateDirectory(Path.Combine(dataDir, "Backpacks", "logs"));
             Instance.DataDirectory = dataDir;
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
 
             var configPath = Path.Combine(configDir, "Backpacks.json");
             if (!File.Exists(configPath))
@@ -1208,7 +1208,7 @@ namespace BackpacksHarmony
                     try
                     {
                         File.Copy(oxideConfig, configPath);
-                        Debug.Log("[Backpacks] Migrated config from oxide/config/Backpacks.json");
+                        Debug.Log("[Backpacks] Migrated config from legacy/config/Backpacks.json");
                     }
                     catch (Exception ex)
                     {
@@ -1218,7 +1218,7 @@ namespace BackpacksHarmony
             }
 
             // Also migrate oxide/data/Backpacks/* into HarmonyData/Backpacks/ if Harmony data is empty
-            TryMigrateOxideData(serverRoot, dataDir);
+            TryMigrateLegacyData(serverRoot, dataDir);
 
             JToken data = null;
             if (File.Exists(configPath))
@@ -1232,7 +1232,7 @@ namespace BackpacksHarmony
             Debug.Log($"[Backpacks] DataFileSystem root: {Path.Combine(dataDir, "Backpacks")} (player data uses Custom backpack data directory from config when set)");
         }
 
-        private static void TryMigrateOxideData(string serverRoot, string harmonyDataRoot)
+        private static void TryMigrateLegacyData(string serverRoot, string harmonyDataRoot)
         {
             try
             {
@@ -1392,7 +1392,7 @@ namespace BackpacksHarmony
         private readonly HashSet<string> _subscribedHooks =
             new HashSet<string>(StringComparer.Ordinal);
 
-        /// <summary>Tracks Oxide Subscribe/Unsubscribe so Harmony patches can gate optional hooks.</summary>
+        /// <summary>Tracks compat Subscribe/Unsubscribe so Harmony patches can gate optional hooks.</summary>
         public bool IsSubscribed(string hook) =>
             !string.IsNullOrEmpty(hook) && _subscribedHooks.Contains(hook);
 

@@ -1,56 +1,63 @@
 ﻿using HarmonyLib;
+using Network;
+using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.Emit;
 
-// ReSharper disable InconsistentNaming
-
-namespace RustServerMetrics.HarmonyPatches;
-
-[HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PerformanceReport))]
-public class BasePlayer_PerformanceReport_Patch
+namespace RustServerMetrics.HarmonyPatches
 {
-    [HarmonyTranspiler]
-    public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> originalInstructions, 
-                                                         ILGenerator ilGenerator)
+    [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PerformanceReport))]
+    public class BasePlayer_PerformanceReport_Patch
     {
-        var instructionsList = originalInstructions.ToList();
-        var jumpLabel = ilGenerator.DefineLabel();
-        
-        CodeMatch[] needle = 
-        [
-            new(OpCodes.Ldloc_0),
-            new(OpCodes.Ldstr, "legacy"),
-            new(OpCodes.Call, AccessTools.Method(typeof(String), "op_Equality")),
-            new(OpCodes.Brfalse)
-        ];
-
-        CodeInstruction[] injection =
-        [
-            new(OpCodes.Ldsfld, AccessTools.Field(typeof(SingletonComponent<MetricsLogger>), nameof(SingletonComponent<MetricsLogger>.Instance))),
-            new(OpCodes.Ldloc_1),
-            new(OpCodes.Call, AccessTools.Method(typeof(MetricsLogger), nameof(MetricsLogger.OnClientPerformanceReport))),
-            new(OpCodes.Brtrue, jumpLabel)
-        ];
-
-        try
+        [HarmonyPrefix]
+        public static bool Prefix(BaseEntity.RPCMessage msg)
         {
-            var codeMatcher = new CodeMatcher(instructionsList);
+            if (msg.read == null)
+                return true;
 
-            codeMatcher.MatchEndForward(needle)
-                       .ThrowIfInvalid("Unable to find the expected injection point")
-                       .Advance(1)
-                       .InsertAndAdvance(injection)
-                       .End()
-                       .AddLabels([jumpLabel]);
+            long originalPosition = msg.read.Position;
+            try
+            {
+                // Keep stream alignment exactly as original code expects.
+                _ = msg.read.String();
+                string rawJson = msg.read.StringRaw();
+                var report = DeserializeClientPerformanceReport(rawJson);
+                if (!report.HasValue)
+                {
+                    return true;
+                }
 
-            return codeMatcher.Instructions();
+                var logger = SingletonComponent<MetricsLogger>.Instance;
+                if (logger != null && logger.OnClientPerformanceReport(report.Value))
+                {
+                    // Original method exits early when this returns true.
+                    return false;
+                }
+            }
+            catch
+            {
+                // Ignore parse/read failures and let vanilla handler process as usual.
+            }
+            finally
+            {
+                msg.read.Position = originalPosition;
+            }
+
+            return true;
         }
-        catch (Exception e)
+
+        private static ClientPerformanceReport? DeserializeClientPerformanceReport(string rawJson)
         {
-            UnityEngine.Debug.LogError($"[ServerMetrics] {nameof(BasePlayer_PerformanceReport_Patch)}: " + e.Message);
-            return instructionsList;
+            if (string.IsNullOrEmpty(rawJson))
+                return null;
+
+            try
+            {
+                return JsonConvert.DeserializeObject<ClientPerformanceReport>(rawJson);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }

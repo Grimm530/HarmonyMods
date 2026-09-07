@@ -1,4 +1,4 @@
-// Stub types for Harmony build (no Oxide). CUI types serialize to CommunityEntity JSON.
+// Stub types for Harmony build (Harmony-only). CUI types serialize to CommunityEntity JSON.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -8,7 +8,7 @@ using Newtonsoft.Json.Linq;
 
 namespace RaidableBases
 {
-    /// <summary>Stub for Oxide Timer (timer.Once returns this). Destroy() stops the timer without invoking the callback.</summary>
+    /// <summary>Stub for compat Timer (timer.Once returns this). Destroy() stops the timer without invoking the callback.</summary>
     public class Timer
     {
         public bool Destroyed { get; set; }
@@ -32,7 +32,7 @@ namespace RaidableBases
         public ConsoleCommandAttribute(string name) { Command = name; }
     }
 
-    /// <summary>Oxide-style CUI container that serializes to CommunityEntity AddUI JSON.</summary>
+    /// <summary>compat-style CUI container that serializes to CommunityEntity AddUI JSON.</summary>
     public class CuiElementContainer : List<object>
     {
         public string Add(CuiPanel panel, string parent = "Overlay", string name = null, string destroy = null)
@@ -101,11 +101,41 @@ namespace RaidableBases
                     converted.Add(MakeOutline(outline));
                     continue;
                 }
+                if (c is CuiTextComponent text)
+                {
+                    converted.Add(MakeText(text));
+                    continue;
+                }
+                if (c is CuiImageComponent image)
+                {
+                    converted.Add(MakeImage(image));
+                    continue;
+                }
+                if (c is CuiButtonComponent button)
+                {
+                    converted.Add(MakeButton(button));
+                    continue;
+                }
+                if (c is CuiInputFieldComponent input)
+                {
+                    converted.Add(MakeInput(input));
+                    continue;
+                }
+                if (c is CuiRectTransformComponent rect)
+                {
+                    converted.Add(MakeRect(rect));
+                    continue;
+                }
+                if (c is CuiRawImageComponent raw)
+                {
+                    converted.Add(MakeRawImage(raw));
+                    continue;
+                }
                 if (c is CuiComponentData d)
                 {
-                    if (!string.IsNullOrEmpty(d.Command) || d.Color != null && d.Text == null && d.FontSize == 0 && d.Distance == null)
+                    if (!string.IsNullOrEmpty(d.Command) || (d.Color != null && string.IsNullOrEmpty(d.Text) && d.FontSize == 0 && d.Distance == null))
                         converted.Add(d.Command != null || HasButtonShape(d) ? MakeButton(d) : MakeImage(d));
-                    else if (d.Text != null || d.FontSize > 0)
+                    else if (!string.IsNullOrEmpty(d.Text) || d.FontSize > 0)
                         converted.Add(MakeText(d));
                     else if (d.AnchorMin != null || d.OffsetMin != null)
                         converted.Add(MakeRect(d));
@@ -113,8 +143,18 @@ namespace RaidableBases
                         converted.Add(MakeImage(d));
                     continue;
                 }
-                if (c is CuiNeedsCursorComponent) { converted.Add(new JObject { ["type"] = "NeedsCursor" }); continue; }
-                if (c is CuiNeedsKeyboardComponent) { converted.Add(new JObject { ["type"] = "NeedsKeyboard" }); continue; }
+                if (c is CuiNeedsCursorComponent cursor)
+                {
+                    var cursorObj = new JObject { ["type"] = "NeedsCursor", ["enabled"] = cursor.Enabled };
+                    converted.Add(cursorObj);
+                    continue;
+                }
+                if (c is CuiNeedsKeyboardComponent keyboard)
+                {
+                    var keyboardObj = new JObject { ["type"] = "NeedsKeyboard", ["enabled"] = keyboard.Enabled };
+                    converted.Add(keyboardObj);
+                    continue;
+                }
                 if (c is CuiDraggableComponent drag)
                 {
                     converted.Add(MakeDraggable(drag));
@@ -123,10 +163,6 @@ namespace RaidableBases
                 converted.Add(c);
             }
             element.Components = converted;
-            if (element.Text != null && element.Text.Text != null)
-                element.Components.Add(MakeText(element.Text));
-            if (element.RectTransform != null && (element.RectTransform.AnchorMin != null || element.RectTransform.OffsetMin != null))
-                element.Components.Add(MakeRect(element.RectTransform));
             base.Add(element);
         }
 
@@ -150,6 +186,7 @@ namespace RaidableBases
                         ["parent"] = el.Parent
                     };
                     if (!string.IsNullOrEmpty(el.DestroyUi)) obj["destroyUi"] = el.DestroyUi;
+                    if (el.Update) obj["update"] = true;
                     if (el.FadeOut > 0f) obj["fadeOut"] = el.FadeOut;
                     var comps = new JArray();
                     foreach (var c in el.Components)
@@ -184,7 +221,7 @@ namespace RaidableBases
         {
             var o = new JObject
             {
-                ["type"] = "UnityEngine.UI.Draggable",
+                ["type"] = "Draggable",
                 ["limitToParent"] = drag.LimitToParent,
                 ["maxDistance"] = drag.MaxDistance,
                 ["allowSwapping"] = drag.AllowSwapping,
@@ -195,8 +232,9 @@ namespace RaidableBases
                 ["parentPadding"] = drag.ParentPadding ?? "0 0",
                 ["anchorOffset"] = drag.AnchorOffset ?? "0 0",
                 ["keepOnTop"] = drag.KeepOnTop,
-                ["positionRPC"] = (int)drag.PositionRPC
+                ["positionRPC"] = drag.PositionRPC.ToString()
             };
+            o["enabled"] = drag.Enabled;
             return o;
         }
 
@@ -213,6 +251,23 @@ namespace RaidableBases
             ["command"] = d.Command ?? "",
             ["color"] = d.Color ?? "1 1 1 1"
         };
+
+        private static JObject MakeInput(CuiInputFieldComponent d)
+        {
+            var o = new JObject
+            {
+                ["type"] = "UnityEngine.UI.InputField",
+                ["text"] = d.Text ?? "",
+                ["font"] = string.IsNullOrEmpty(d.Font) ? "robotocondensed-regular.ttf" : d.Font,
+                ["fontSize"] = d.FontSize > 0 ? d.FontSize : 14,
+                ["align"] = d.Align.ToString(),
+                ["color"] = d.Color ?? "1 1 1 1",
+                ["command"] = d.Command ?? ""
+            };
+            if (d.CharsLimit > 0) o["charsLimit"] = d.CharsLimit;
+            if (d.HudMenuInput) o["hudMenuInput"] = true;
+            return o;
+        }
 
         private static JObject MakeText(CuiComponentData d) => new JObject
         {
@@ -255,25 +310,33 @@ namespace RaidableBases
 
     public class CuiElement
     {
+        public bool Update;
         public string DestroyUi;
         public string Name;
         public string Parent;
         public float FadeOut;
         public List<object> Components = new List<object>();
-        public CuiComponentData Text = new CuiComponentData();
-        public CuiComponentData RectTransform = new CuiComponentData();
+        public CuiComponentData Text;
+        public CuiComponentData RectTransform;
     }
 
     public class CuiTextComponent : CuiComponentData { }
     public class CuiOutlineComponent : CuiComponentData { }
     public class CuiRectTransformComponent : CuiComponentData { }
-    public class CuiNeedsCursorComponent { }
-    public class CuiNeedsKeyboardComponent { }
+    public class CuiNeedsCursorComponent { public bool Enabled = true; }
+    public class CuiNeedsKeyboardComponent { public bool Enabled = true; }
     public class CuiImageComponent : CuiComponentData { }
     public class CuiRawImageComponent : CuiComponentData { }
+    public class CuiButtonComponent : CuiComponentData { }
+    public class CuiInputFieldComponent : CuiComponentData
+    {
+        public int CharsLimit;
+        public bool HudMenuInput;
+    }
 
     public class CuiDraggableComponent
     {
+        public bool Enabled = true;
         public bool LimitToParent;
         public float MaxDistance;
         public bool AllowSwapping;

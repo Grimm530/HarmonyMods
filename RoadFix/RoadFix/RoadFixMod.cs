@@ -21,7 +21,7 @@ public class RoadFixMod : IHarmonyModHooks
             $"SnapToTerrain={cfg?.RoadsSnapToTerrain} " +
             $"SpawnBridges={cfg?.SpawnCustomBridges} " +
             $"RiverReapply={cfg?.ReapplyRiverHeightAfterRoads} " +
-            $"RoadMap={cfg?.RoadBridgeMapPath} RailMap={cfg?.RailBridgeMapPath}");
+            $"BridgeMap={cfg?.RoadBridgeMapPath}");
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)

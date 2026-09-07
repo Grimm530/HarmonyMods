@@ -1,5 +1,5 @@
 using HarmonyLib;
-using GBPlugin = Oxide.Plugins.GrimmBoss;
+using GBPlugin = Harmony.Plugins.GrimmBoss;
 
 namespace GrimmBoss.Patches
 {

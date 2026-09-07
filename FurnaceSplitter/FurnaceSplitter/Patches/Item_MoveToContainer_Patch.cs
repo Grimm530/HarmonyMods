@@ -32,7 +32,7 @@ namespace FurnaceSplitter.Patches
                 return true;
 
             BaseOven oven = newcontainer.entityOwner as BaseOven;
-            if (oven == null || !oven.allowByproductCreation)
+            if (!FurnaceSplitterMod.IsSupportedOven(oven))
                 return true;
 
             bool debug = FurnaceSplitterConfig.Config?.debug == true;
@@ -40,13 +40,14 @@ namespace FurnaceSplitter.Patches
                 FurnaceSplitterConfig.Log($"MoveToContainer: item={__instance.info.shortname} x{__instance.amount} -> {oven.ShortPrefabName} targetPos={iTargetPos}");
 
             // Skip when moving fuel - we don't want to intercept our own AutoAddFuel
-            if (__instance.info == oven.fuelType)
+            if (oven.fuelType != null && __instance.info == oven.fuelType)
             {
                 if (debug) FurnaceSplitterConfig.Log($"  -> SKIP: item is fuel ({__instance.info.shortname})");
                 return true;
             }
 
-            var cookable = __instance.info.GetComponent<ItemModCookable>();
+            // Composters use ItemModCompostable (CookableItemInfo); furnaces use ItemModCookable.
+            var cookable = FurnaceSplitterMod.GetCookableInfo(oven, __instance.info);
             // IsOutputItem is private/protected in BaseOven - use reflection to avoid MethodAccessException
             bool isOutputItem = IsOutputItemMethod != null && (bool)(IsOutputItemMethod.Invoke(oven, new object[] { __instance }) ?? false);
             if (cookable == null || isOutputItem)

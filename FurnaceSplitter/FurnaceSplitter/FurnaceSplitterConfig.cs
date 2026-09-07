@@ -18,7 +18,9 @@ namespace FurnaceSplitter
 
         public Dictionary<string, OvenConfig> ovens = new Dictionary<string, OvenConfig>(StringComparer.OrdinalIgnoreCase)
         {
-            ["*"] = new OvenConfig { enabled = true, autoFuelTransfer = true }
+            ["*"] = new OvenConfig { enabled = true, autoFuelTransfer = true },
+            // Composters are BaseOven post-QoL update; no fuel, still split across input slots.
+            ["composter"] = new OvenConfig { enabled = true, autoFuelTransfer = false }
         };
 
         private static FurnaceSplitterConfig _config;
@@ -39,8 +41,20 @@ namespace FurnaceSplitter
                     _config = JsonConvert.DeserializeObject<FurnaceSplitterConfig>(json);
                     if (_config?.ovens == null)
                         _config = new FurnaceSplitterConfig();
-                    else if (json.IndexOf("\"debug\"", StringComparison.OrdinalIgnoreCase) < 0)
-                        Save(); // Migrate: add new fields (e.g. debug) to existing config
+                    else
+                    {
+                        bool migrated = false;
+                        if (json.IndexOf("\"debug\"", StringComparison.OrdinalIgnoreCase) < 0)
+                            migrated = true;
+                        // Ensure post-QoL composters are present even when "*" already covers them.
+                        if (!_config.ovens.ContainsKey("composter"))
+                        {
+                            _config.ovens["composter"] = new OvenConfig { enabled = true, autoFuelTransfer = false };
+                            migrated = true;
+                        }
+                        if (migrated)
+                            Save();
+                    }
                 }
                 else
                 {

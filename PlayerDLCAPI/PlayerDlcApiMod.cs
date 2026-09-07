@@ -6,7 +6,7 @@ using UnityEngine;
 namespace PlayerDlcApiHarmony
 {
     /// <summary>
-    /// Oxide-free DLC and paid-skin ownership API.
+    /// Harmony DLC and paid-skin ownership API.
     /// Uses Rust's ownership checks and only maintains the lookup indexes Rust does not expose.
     /// </summary>
     public sealed class PlayerDlcApiMod : IHarmonyModHooks

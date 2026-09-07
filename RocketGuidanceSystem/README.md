@@ -1,6 +1,6 @@
 # RocketGuidanceSystem (Harmony)
 
-Oxide **RocketGuidanceSystem 1.0.704** port as a standalone Harmony mod (no Oxide runtime).
+Legacy **RocketGuidanceSystem 1.0.704** port as a standalone Harmony mod (Harmony-only runtime).
 
 Rocket Guidance System 1.0.704 Harmony port. Homing rocket lock-on.
 

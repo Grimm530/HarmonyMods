@@ -12,7 +12,7 @@ namespace PveModeHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(HackableLockedCrate __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return true;
+            if (msg.player == null) return true;
             object result = PveModeManager.CanHackCrate(msg.player, __instance);
             return !(result is bool blocked && blocked);
         }

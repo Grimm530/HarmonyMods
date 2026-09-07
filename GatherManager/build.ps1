@@ -1,5 +1,5 @@
 # Build script for GatherManager Harmony Mod
-# Output: <workspace>\HarmonyMods\GatherManager.dll
+# Output: D:\!RustServer\HarmonyMods\GatherManager.dll
 
 Write-Host "Building GatherManager..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "Rust.HarmonyMods\Facepunch.Harmony.Gathe
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

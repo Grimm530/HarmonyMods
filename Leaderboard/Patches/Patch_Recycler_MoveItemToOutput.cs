@@ -7,7 +7,7 @@ public static class Patch_Recycler_MoveItemToOutput
 {
     static void Postfix(Recycler __instance, Item newItem)
     {
-        if (__instance == null || newItem?.info == null) return;
+        if (newItem?.info == null) return;
         var player = (__instance as StorageContainer)?.LastLootedByPlayer;
         if (player == null || !SteamIdHelper.IsSteamId(player.userID)) return;
 

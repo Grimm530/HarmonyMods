@@ -1,6 +1,6 @@
 # LimitEntities (Harmony)
 
-Oxide **LimitEntities 2.3.10** port as a standalone Harmony mod (no Oxide runtime).
+Legacy **LimitEntities 2.3.10** port as a standalone Harmony mod (Harmony-only runtime).
 
 ## Load order
 
@@ -27,7 +27,7 @@ Unload Oxide `LimitEntities` plugin first if present.
 |------|------|
 | Config | `HarmonyConfig/LimitEntities.json` (existing schema — do not invent keys) |
 | Data | `HarmonyData/LimitEntities.json` (`BuildingsOwners`) |
-| Lang | Embedded EN messages from the Oxide plugin |
+| Lang | Embedded EN messages from the Harmony mod |
 
 ## Permissions
 

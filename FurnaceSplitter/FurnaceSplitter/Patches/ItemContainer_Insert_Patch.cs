@@ -4,7 +4,7 @@ using UnityEngine;
 namespace FurnaceSplitter.Patches
 {
     /// <summary>
-    /// When a cookable is added to an oven via default game logic (not our split),
+    /// When a cookable/compostable is added to an oven via default game logic (not our split),
     /// auto-add fuel from the player who has the oven open.
     /// </summary>
     [HarmonyPatch(typeof(ItemContainer), "Insert", typeof(Item))]
@@ -22,10 +22,14 @@ namespace FurnaceSplitter.Patches
                 return;
 
             BaseOven oven = __instance.entityOwner as BaseOven;
-            if (oven == null || !oven.allowByproductCreation)
+            if (!FurnaceSplitterMod.IsSupportedOven(oven))
                 return;
 
-            var cookable = item.info.GetComponent<ItemModCookable>();
+            // Composters run without fuel — nothing to auto-transfer.
+            if (oven is Composter || oven.fuelType == null)
+                return;
+
+            var cookable = FurnaceSplitterMod.GetCookableInfo(oven, item.info);
             if (cookable == null)
                 return;
 

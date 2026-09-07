@@ -1,4 +1,4 @@
-// TruePVEDispatch.cs -- partial class Oxide.Plugins.TruePVE
+// TruePVEDispatch.cs -- partial class Harmony.Plugins.TruePVE
 // Provides:
 //   - static instance accessors (SetInstance/GetModInstance/ClearInstance)
 //   - lifecycle wrappers (CallInit/CallOnServerInitialized/CallUnload)
@@ -14,7 +14,7 @@ using System.Reflection;
 using UnityEngine;
 using Rust.Ai.Gen2;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class TruePVE
     {
@@ -33,7 +33,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Harmony OxideCompat defaults every hook to subscribed. Gate damage until Init/OnServerInitialized
+        /// Harmony HarmonyCompat defaults every hook to subscribed. Gate damage until Init/OnServerInitialized
         /// so AllowDamage cannot run with a null currentRuleSet during the load wait.
         /// </summary>
         public void GateDamageHookUntilInit()
@@ -54,7 +54,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Best-effort binding of [PluginReference] fields via PluginManager.Find (AppDomain *_ApiType / *_Plugin).
+        /// Best-effort binding of [PluginReference] fields via ModManager.Find (AppDomain *_ApiType / *_Plugin).
         /// Harmony first-class: Permissions, Economics, RustRewards, SkillTree, RaidableBases.
         /// </summary>
         public void ResolvePluginReferences()
@@ -164,6 +164,7 @@ namespace Oxide.Plugins
             if (inst == null || player == null || entity == null || !inst.IsSubscribed(nameof(CanLootEntity))) return null;
             try
             {
+                if (inst.LootCanBypass(player)) return null;
                 switch (entity)
                 {
                     case BuildingPrivlidge priv:   return inst.CanLootEntity(player, priv);
@@ -175,6 +176,13 @@ namespace Oxide.Plugins
                 }
             }
             catch (Exception ex) { Warn(nameof(CanLootEntity), ex); return null; }
+        }
+
+        /// <summary>True when vanished or AdminCanLoot admin — Patch_Loot uses this to skip TruePVE loot locks.</summary>
+        public static bool Dispatch_LootCanBypass(BasePlayer player)
+        {
+            var inst = Instance;
+            return inst != null && inst.LootCanBypass(player);
         }
 
         public static object Dispatch_CanLootPlayer(BasePlayer target, BasePlayer looter)
@@ -488,10 +496,20 @@ namespace Oxide.Plugins
             catch (Exception ex) { Warn(nameof(OnNewSave), ex); }
         }
 
+        // ---- Team / LootDefender MemberId --------------------------------
+
+        public static void Dispatch_OnTeamAcceptInvite(RelationshipManager.PlayerTeam team, BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null || player == null || team == null) return;
+            try { inst.UpdateLootDefenderMemberId(player, team.teamID.ToString()); }
+            catch (Exception ex) { Warn("OnTeamAcceptInvite", ex); }
+        }
+
         // ---- Supply drop / explosives ------------------------------------
 
         /// <summary>
-        /// TruePVE Harmony Interface.CallHook does not route IsBradleyDrop.
+        /// TruePVE Harmony HarmonyModInterface.CallHook does not route IsBradleyDrop.
         /// Ask BradleyDrops via Plugin.Call / AppDomain API, using the signal and/or thrown item skin.
         /// </summary>
         internal static bool Dispatch_IsBradleyDrop(ulong skinId, ThrownWeapon tw = null)

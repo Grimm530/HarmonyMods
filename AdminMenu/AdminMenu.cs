@@ -6,16 +6,16 @@ using UnityEngine;
 using System.Linq;
 using System.Globalization;
 using Newtonsoft.Json.Converters;
-using Oxide.Ext.Chaos.UIFramework;
-using Oxide.Ext.Chaos.Discord;
+using Ext.Chaos.UIFramework;
+using AdminMenuHarmony.Discord;
 using UnityEngine.UI;
 
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Font = Oxide.Ext.Chaos.UIFramework.Font;
-using GridLayoutGroup = Oxide.Ext.Chaos.UIFramework.GridLayoutGroup;
-using HorizontalLayoutGroup = Oxide.Ext.Chaos.UIFramework.HorizontalLayoutGroup;
-using VerticalLayoutGroup = Oxide.Ext.Chaos.UIFramework.VerticalLayoutGroup;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using Color = Ext.Chaos.UIFramework.Color;
+using Font = Ext.Chaos.UIFramework.Font;
+using GridLayoutGroup = Ext.Chaos.UIFramework.GridLayoutGroup;
+using HorizontalLayoutGroup = Ext.Chaos.UIFramework.HorizontalLayoutGroup;
+using VerticalLayoutGroup = Ext.Chaos.UIFramework.VerticalLayoutGroup;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 
 namespace AdminMenuHarmony
 {
@@ -349,7 +349,7 @@ namespace AdminMenuHarmony
 	    }
 
 	    /// <summary>
-	    /// Oxide GetUsersInGroup format is "steamid (Nickname)". 0Permissions may return a bare id.
+	    /// legacy GetUsersInGroup format is "steamid (Nickname)". 0Permissions may return a bare id.
 	    /// Never assume a fixed steamid length (Substring(18) crashes on bare 17-char ids).
 	    /// </summary>
 	    private static string GetPermissionUserDisplayName(string userEntry)
@@ -427,7 +427,7 @@ namespace AdminMenuHarmony
 			    ["Label.CopyUsers"] = "Copy Users",
 			    ["Label.DeleteConfirm"] = "Are you sure you want to delete {0}?",
 			    ["Label.DeleteUsersConfirm"] = "Are you sure you want to clear users from the usergroup {0}?",
-			    ["Label.ViewGroups"] = "Viewing Oxide user groups",
+			    ["Label.ViewGroups"] = "Viewing user groups",
 			    ["Label.GiveToPlayer"] = "Select a item to give to {0}",
 			    ["Label.ViewGroupUsers"] = "Viewing users in group {0}",
 			    ["Label.OfflinePlayers"] = "Offline Players",
@@ -4772,7 +4772,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        Interface.Oxide.LoadPlugin(t.FileName);
+												        HarmonyModInterface.Mods.LoadPlugin(t.FileName);
 												        CreateAdminMenu(uiUser.Player);
 											        }, $"{uiUser.Player.UserIDString}.loadplugin.{i}");
 								        });
@@ -4792,7 +4792,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        Interface.Oxide.UnloadPlugin(t.FileName);
+												        HarmonyModInterface.Mods.UnloadPlugin(t.FileName);
 												        CreateAdminMenu(uiUser.Player);
 											        }, $"{uiUser.Player.UserIDString}.unloadplugin.{i}");
 								        });
@@ -4810,7 +4810,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        Interface.Oxide.ReloadPlugin(t.FileName);
+												        HarmonyModInterface.Mods.ReloadPlugin(t.FileName);
 												        CreateAdminMenu(uiUser.Player);
 											        }, $"{uiUser.Player.UserIDString}.reloadplugin.{i}");
 								        });
@@ -4856,7 +4856,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        Interface.Oxide.LoadPlugin(t.FileName);
+												        HarmonyModInterface.Mods.LoadPlugin(t.FileName);
 												        CreateAdminMenu(uiUser.Player);
 											        }, $"{uiUser.Player.UserIDString}.loadplugin.{i}");
 								        });
@@ -4876,7 +4876,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        Interface.Oxide.UnloadPlugin(t.FileName);
+												        HarmonyModInterface.Mods.UnloadPlugin(t.FileName);
 												        CreateAdminMenu(uiUser.Player);
 											        }, $"{uiUser.Player.UserIDString}.unloadplugin.{i}");
 								        });
@@ -4896,7 +4896,7 @@ namespace AdminMenuHarmony
 										        .WithColor(Color.Clear)
 										        .WithCallback(m_CallbackHandler, arg =>
 											        {
-												        Interface.Oxide.ReloadPlugin(t.FileName);
+												        HarmonyModInterface.Mods.ReloadPlugin(t.FileName);
 												        CreateAdminMenu(uiUser.Player);
 											        }, $"{uiUser.Player.UserIDString}.reloadplugin.{i}");
 								        });
@@ -4915,7 +4915,7 @@ namespace AdminMenuHarmony
         private void GetPlugins(List<PluginInfo> list)
         {
 	        List<Plugin> loadedPlugins = Pool.Get<List<Plugin>>();
-	        loadedPlugins.AddRange(Interface.Oxide.RootPluginManager.GetPlugins());
+	        loadedPlugins.AddRange(HarmonyModInterface.Mods.RootModManager.GetPlugins());
 	        loadedPlugins.RemoveAll(x => x.IsCorePlugin);
 	        
 	        loadedPluginNames.Clear();
@@ -4927,9 +4927,9 @@ namespace AdminMenuHarmony
 	        #if CARBON
 	        
 	        #else 
-	        foreach (PluginLoader loader in Interface.Oxide.GetPluginLoaders())
+	        foreach (PluginLoader loader in HarmonyModInterface.Mods.GetPluginLoaders())
 	        {
-		        foreach (string name in loader.ScanDirectory(Interface.Oxide.PluginDirectory).Except(loadedPluginNames))
+		        foreach (string name in loader.ScanDirectory(HarmonyModInterface.Mods.ModDirectory).Except(loadedPluginNames))
 			        unloadedPluginErrors[name] = loader.PluginErrors.TryGetValue(name, out string msg) ? "Failed to compile" : "Unloaded";
 	        }
 	        #endif

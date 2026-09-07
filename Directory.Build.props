@@ -36,4 +36,16 @@
       <HintPath>$(RustManaged)\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
   </ItemGroup>
+
+  <!-- BaseEntity.SetFlag removed from main-branch Assembly-CSharp; compile the FlagsUpdateScope shim into every mod. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\BaseEntityFlagCompat.cs" Link="Shared\BaseEntityFlagCompat.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\NavVector3Compat.cs" Link="Shared\NavVector3Compat.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RustManaged)' != ''">
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>

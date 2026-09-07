@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: KillFeed 2.1.2 Harmony port. Death feed CUI + admin editor. Config: HarmonyConfig/KillFeed.json</Description>
+    <Description>Harmony mod: KillFeed 2.2.2 Harmony port. Death feed CUI + Discord + admin editor. Config: HarmonyConfig/KillFeed.json</Description>
     <Nullable>disable</Nullable>
     <!-- OXIDE_PUBLICIZED: enable #if blocks that need publicized game fields (e.g. RidableHorse ragdoll). -->
     <DefineConstants>$(DefineConstants);OXIDE_PUBLICIZED</DefineConstants>
@@ -148,4 +148,10 @@
            Text="Could not find Rust Managed folder (Assembly-CSharp.dll). Build with: dotnet build -p:RustManaged=&quot;D:\your\RustDedicated_Data\Managed&quot;" />
   </Target>
   <!-- SDK auto-includes all *.cs files; no explicit Compile items needed. -->
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
+  <ItemGroup><None Remove="_port_*" /><None Remove="_adaptations.txt" /></ItemGroup>
 </Project>

@@ -10,16 +10,16 @@ Harmony mod that is an **NpcSpawn 3.3.04** port. Previous GrimmNPC sources were 
 | **Source folder** | `.cursor/HarmonyMods/0GrimmNPC/` |
 | **C# type / namespace** | `GrimmNPC.GrimmNPC` (unchanged for consumers) |
 | **AppDomain keys** | `GrimmNPC.Type`, `GrimmNPC.Instance` |
-| **Config** | `HarmonyConfig/GrimmNPC.json` (migrates from `oxide/config/NpcSpawn.json` if present) |
+| **Config** | `HarmonyConfig/GrimmNPC.json` (migrates from `legacy/config/NpcSpawn.json` if present) |
 | **Data** | `HarmonyConfig/NpcSpawn/` (Preset, NavMesh) |
 | **Log tag** | `[GrimmNPC]` |
 
-## What changed vs Oxide NpcSpawn (only Harmony necessities)
+## What changed vs original NpcSpawn (only Harmony necessities)
 
 - `RustPlugin` → `GrimmNPC : IHarmonyModHooks` (`OnLoaded` / `OnUnloaded`)
-- Config/data under `HarmonyConfig/` instead of `oxide/config` + `oxide/data`
-- Oxide hooks → Harmony patches in `OxideHooksPatches.cs`
-- `timer.Once` / `Puts` / `PluginReference` / `Interface.CallHook` → `OxideCompat` shims
+- Config/data under `HarmonyConfig/` instead of `legacy/config` + `oxide/data`
+- Harmony hooks → Harmony patches in `HarmonyHooksPatches.cs`
+- `timer.Once` / `Puts` / `PluginReference` / `HarmonyModInterface.CallHook` → `HarmonyCompat` shims
 - Commands `npccount` / `npcdiag` registered via `ConsoleSystem`
 - Swim patches no longer defer to a separate GrimmNPC assembly (this mod *is* GrimmNPC)
 

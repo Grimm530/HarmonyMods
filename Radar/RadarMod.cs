@@ -1,12 +1,19 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using ConVar;
+using GrimmCuiHarmony;
 using Facepunch;
-using HarmonyChat;
+using GrimmCuiHarmony;
 using Network;
+using GrimmCuiHarmony;
 using Newtonsoft.Json.Linq;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace Radar;
 
@@ -31,20 +38,12 @@ public class RadarMod : IHarmonyModHooks
     private const float MaxDistance = 300f;
     private const float ScanRadius = 400f;
 
-    private static MethodInfo _clientRpcString;
-    private static readonly Vector3 VoiceArrowFrom = new Vector3(0f, 5f);
-    private static readonly Vector3 VoiceArrowTo = new Vector3(0f, 2.5f);
-    private static readonly List<ulong> _voiceCleanupRadarIds = new List<ulong>(8);
-    private static readonly List<ulong> _voiceCleanupSpeakerIds = new List<ulong>(16);
-
     internal readonly Dictionary<ulong, RadarState> PlayerStates = new Dictionary<ulong, RadarState>();
-    private readonly Dictionary<ulong, Dictionary<ulong, float>> _voices = new Dictionary<ulong, Dictionary<ulong, float>>();
-    private float _nextVoiceCleanupTime;
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
         Instance = this;
-        _clientRpcString = typeof(BaseEntity).GetMethod("ClientRPC", new[] { typeof(RpcTarget), typeof(string) });
         try
         {
             RadarConfig.LoadConfig();
@@ -92,7 +91,6 @@ public class RadarMod : IHarmonyModHooks
         {
             UnityEngine.Debug.LogWarning($"[Radar] Command registration failed: {ex.Message}");
         }
-        ChatSayBridge.Register("Radar", OnChatSay);
         UnityEngine.Debug.Log("[Radar] Loaded. Use /radar to toggle. Admin only.");
     }
 
@@ -102,17 +100,7 @@ public class RadarMod : IHarmonyModHooks
         if (player == null) return;
         var mod = Instance;
         if (mod == null) return;
-        mod.HandleCuiCommand(player, ToStringArray(arg.Args));
-    }
-
-    private static string[] ToStringArray(StringView[] args)
-    {
-        if (args == null || args.Length == 0) return Array.Empty<string>();
-
-        var result = new string[args.Length];
-        for (int i = 0; i < args.Length; i++)
-            result[i] = args[i].ToString();
-        return result;
+        mod.HandleCuiCommand(player, arg.Args.AsStringArray());
     }
 
     /// <summary>Handler for console command "radar" (e.g. /radar in chat). Client looks up "radar" by name; RADAR_CMD alone would show "unknown command".</summary>
@@ -122,12 +110,11 @@ public class RadarMod : IHarmonyModHooks
         if (player == null) return;
         var mod = Instance;
         if (mod == null) return;
-        mod.HandleRadarCommand(player, ToStringArray(arg.Args));
+        mod.ToggleRadar(player);
     }
 
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
     {
-        try { ChatSayBridge.Unregister("Radar"); } catch { }
         foreach (var kv in PlayerStates)
         {
             var p = BasePlayer.FindByID(kv.Key);
@@ -158,8 +145,6 @@ public class RadarMod : IHarmonyModHooks
         _radarCmdCommand = null;
         _radarChatCommand = null;
         _replicatedList = null;
-        _clientRpcString = null;
-        _voices.Clear();
         Instance = null;
     }
 
@@ -169,33 +154,7 @@ public class RadarMod : IHarmonyModHooks
         var msg = message?.Trim();
         if (string.IsNullOrEmpty(msg)) return false;
         if (msg.StartsWith("/")) msg = msg.Substring(1).Trim();
-        if (!IsRadarChatCommand(msg)) return false;
-
-        return HandleRadarCommand(player, SplitRadarArgs(msg));
-    }
-
-    private static bool IsRadarChatCommand(string msg)
-    {
-        if (msg.Equals("radar", StringComparison.OrdinalIgnoreCase))
-            return true;
-        return msg.Length > 6 && msg.StartsWith("radar ", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Tokens after the leading "radar" command name. Empty array means toggle.</summary>
-    private static string[] SplitRadarArgs(string msg)
-    {
-        var parts = msg.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length <= 1)
-            return Array.Empty<string>();
-        var rest = new string[parts.Length - 1];
-        Array.Copy(parts, 1, rest, 0, rest.Length);
-        return rest;
-    }
-
-    /// <returns>True if Radar handled the command (caller should skip original).</returns>
-    internal bool HandleRadarCommand(BasePlayer player, string[] args)
-    {
-        if (player == null) return false;
+        if (!msg.Equals("radar", StringComparison.OrdinalIgnoreCase)) return false;
 
         if (!player.IsAdmin && !player.IsDeveloper)
         {
@@ -203,119 +162,12 @@ public class RadarMod : IHarmonyModHooks
             return true;
         }
 
-        if (args != null && args.Length > 0 && string.Equals(args[0], "findbyitem", StringComparison.OrdinalIgnoreCase))
-        {
-            CommandFindByItem(player, args);
-            return true;
-        }
-
         ToggleRadar(player);
         return true;
     }
 
-    /// <summary>AdminRadar 5.4.312: map item shortname → entity shortname for Options → Boxes.</summary>
-    private static void CommandFindByItem(BasePlayer player, string[] args)
-    {
-        if (args == null || args.Length < 2)
-        {
-            SendMessage(player, "Item shortname not specified. Usage: radar findbyitem industrial.storage");
-            return;
-        }
-
-        var search = string.Join(" ", args, 1, args.Length - 1);
-        if (!RadarBehaviour.TryFindDeployables(search, out var results, out var count))
-        {
-            SendMessage(player, $"No deployable matches found for '{search}'.");
-            return;
-        }
-
-        SendMessage(player, "\nResults:\n" + results);
-        if (count >= RadarBehaviour.FindByItemMaxResults)
-            SendMessage(player, $"(showing first {RadarBehaviour.FindByItemMaxResults})");
-    }
-
-    /// <summary>
-    /// AdminRadar voice ESP: yellow arrow on nearby speakers. Game method is <c>ServerMgr.OnPlayerVoice</c>
-    /// (<c>ArraySegment&lt;byte&gt;</c> / <c>ReadOnlySpan&lt;byte&gt;</c>); this path does not read voice bytes.
-    /// </summary>
-    internal void OnPlayerVoice(BasePlayer speaker)
-    {
-        var voice = RadarConfig.Config?.VoiceDetection;
-        if (voice == null || !voice.Enabled || voice.Distance <= 0f)
-            return;
-        if (speaker == null || speaker.IsDestroyed)
-            return;
-        if (PlayerStates.Count == 0)
-            return;
-
-        Vector3 a = speaker.transform.position;
-        float currentTime = UnityEngine.Time.time;
-        float sqrMax = voice.SqrDistance;
-        float interval = voice.Interval < 3 ? 3f : voice.Interval;
-        ulong speakerId = speaker.userID;
-
-        if (currentTime >= _nextVoiceCleanupTime)
-            CleanupVoices(currentTime);
-
-        foreach (var kv in PlayerStates)
-        {
-            if (!kv.Value.Enabled)
-                continue;
-
-            var observer = BasePlayer.FindByID(kv.Key);
-            if (observer == null || !observer.IsConnected || observer.transform == null)
-                continue;
-            if ((a - observer.transform.position).sqrMagnitude > sqrMax)
-                continue;
-
-            if (!_voices.TryGetValue(kv.Key, out var speakers))
-            {
-                speakers = new Dictionary<ulong, float>();
-                _voices[kv.Key] = speakers;
-            }
-
-            if (speakers.TryGetValue(speakerId, out float expiry) && currentTime < expiry)
-                continue;
-
-            speakers[speakerId] = currentTime + interval;
-            observer.Command("ddraw.arrow", interval + 0.02f, Color.yellow, a + VoiceArrowFrom, a + VoiceArrowTo, 0.5f);
-        }
-    }
-
-    private void CleanupVoices(float currentTime)
-    {
-        _nextVoiceCleanupTime = currentTime + 30f;
-        if (_voices.Count == 0)
-            return;
-
-        _voiceCleanupRadarIds.Clear();
-        foreach (var radarId in _voices.Keys)
-            _voiceCleanupRadarIds.Add(radarId);
-
-        for (int r = 0; r < _voiceCleanupRadarIds.Count; r++)
-        {
-            var radarId = _voiceCleanupRadarIds[r];
-            if (!_voices.TryGetValue(radarId, out var speakers) || speakers.Count == 0)
-            {
-                _voices.Remove(radarId);
-                continue;
-            }
-
-            _voiceCleanupSpeakerIds.Clear();
-            foreach (var speakerId in speakers.Keys)
-                _voiceCleanupSpeakerIds.Add(speakerId);
-
-            for (int s = 0; s < _voiceCleanupSpeakerIds.Count; s++)
-            {
-                var speakerId = _voiceCleanupSpeakerIds[s];
-                if (speakers.TryGetValue(speakerId, out float expiry) && currentTime >= expiry)
-                    speakers.Remove(speakerId);
-            }
-
-            if (speakers.Count == 0)
-                _voices.Remove(radarId);
-        }
-    }
+    /// <summary>AdminRadar voice hook — bytes unused; reserved for future speaking-player overlay.</summary>
+    internal void OnPlayerVoice(BasePlayer player) { }
 
     /// <returns>True if Radar handled the command (caller should skip original).</returns>
     /// <param name="args">From cui.endtest: ["RADAR", action]; from RADAR_CMD: [action]. Caller guarantees player and args non-null.</param>
@@ -521,13 +373,6 @@ public class RadarMod : IHarmonyModHooks
         SendMessage(player, $"Radar {(state.Enabled ? "ON" : "OFF")}");
     }
 
-    internal static bool IsRadarActive(ulong userId)
-    {
-        return Instance != null
-            && Instance.PlayerStates.TryGetValue(userId, out var state)
-            && state.Enabled;
-    }
-
     internal RadarState GetOrCreateState(BasePlayer player)
     {
         if (player == null) return null;
@@ -552,7 +397,6 @@ public class RadarMod : IHarmonyModHooks
         if (comp != null)
             UnityEngine.Object.Destroy(comp);
         player.Command("ddraw.clear");
-        _voices.Remove(player.userID);
     }
 
     internal void OpenUI(BasePlayer player)
@@ -594,7 +438,7 @@ public class RadarMod : IHarmonyModHooks
     private static readonly GridButton[] GridButtonOrder =
     {
         new GridButton("All", "TOGGLE_ALL", null, false, true),
-        new GridButton("Sleepers", "TOGGLE_Sleepers", RadarEntityType.Sleepers),
+        new GridButton("Player name", "TOGGLE_Sleepers", RadarEntityType.Sleepers),
         new GridButton("TC", "TOGGLE_TC", RadarEntityType.TC),
         new GridButton("Bag", "TOGGLE_Bags", RadarEntityType.Bags),
         new GridButton("Box", "TOGGLE_Box", RadarEntityType.Box),
@@ -774,7 +618,7 @@ public class RadarMod : IHarmonyModHooks
         if (player?.net?.connection == null || string.IsNullOrEmpty(json)) return;
         var ce = CommunityEntity.ServerInstance;
         if (ce == null || ce.IsDestroyed) return;
-        InvokeClientRpcString(ce, RpcTarget.Player("AddUI", player.net.connection), json);
+        ce.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json);
     }
 
     internal void DestroyUI(BasePlayer player)
@@ -782,7 +626,7 @@ public class RadarMod : IHarmonyModHooks
         if (player?.net?.connection == null) return;
         var ce = CommunityEntity.ServerInstance;
         if (ce != null && !ce.IsDestroyed)
-            InvokeClientRpcString(ce, RpcTarget.Player("DestroyUI", player.net.connection), UI_PANEL);
+            ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), UI_PANEL);
     }
 
     internal void DestroyMoveUI(BasePlayer player)
@@ -790,21 +634,7 @@ public class RadarMod : IHarmonyModHooks
         if (player?.net?.connection == null) return;
         var ce = CommunityEntity.ServerInstance;
         if (ce != null && !ce.IsDestroyed)
-            InvokeClientRpcString(ce, RpcTarget.Player("DestroyUI", player.net.connection), UI_MOVE_PANEL);
-    }
-
-    private static void InvokeClientRpcString(BaseEntity entity, RpcTarget target, string arg)
-    {
-        if (entity == null || _clientRpcString == null)
-            return;
-        try
-        {
-            _clientRpcString.Invoke(entity, new object[] { target, arg });
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning("[Radar] ClientRPC failed: " + ex.Message);
-        }
+            ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), UI_MOVE_PANEL);
     }
 
     private void OpenMoveUI(BasePlayer player)

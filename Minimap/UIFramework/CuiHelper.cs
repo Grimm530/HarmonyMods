@@ -1,4 +1,4 @@
-namespace Oxide.Game.Rust.Cui;
+namespace Game.Rust.Cui;
 
 public static class CuiHelper
 {

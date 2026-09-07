@@ -2,15 +2,15 @@ using System;
 using System.Collections.Generic;
 using ConVar;
 using MinimapHarmony;
-using Oxide.Ext.Chaos.UIFramework;
-using Oxide.Plugins;
+using global::Ext.Chaos.UIFramework;
+using Harmony.Plugins;
 using Unity.Collections;
 using UnityEngine;
 
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
-using UILayer = Oxide.Ext.Chaos.UIFramework.Layer;
+using UIAnchor = global::Ext.Chaos.UIFramework.Anchor;
+using UILayer = global::Ext.Chaos.UIFramework.Layer;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public abstract class ChaosMapPlugin
 {
@@ -32,10 +32,10 @@ public abstract class ChaosMapPlugin
 	protected string PluginIdentifier;
 	public CommandCallbackHandler CallbackHandler;
 
-	protected Oxide.Ext.Chaos.UIFramework.Color BorderColor;
-	protected Oxide.Ext.Chaos.UIFramework.Color MarkerColor;
-	protected Oxide.Ext.Chaos.UIFramework.Color ForegroundColor;
-	protected Oxide.Ext.Chaos.UIFramework.Color TextColor;
+	protected global::Ext.Chaos.UIFramework.Color BorderColor;
+	protected global::Ext.Chaos.UIFramework.Color MarkerColor;
+	protected global::Ext.Chaos.UIFramework.Color ForegroundColor;
+	protected global::Ext.Chaos.UIFramework.Color TextColor;
 
 	private static readonly List<Overlay> Overlays = new List<Overlay>();
 	protected static event Action onAvailableOverlaysChanged;
@@ -49,7 +49,7 @@ public abstract class ChaosMapPlugin
 	protected const int FogCellsPerRow = 4;
 	protected const string FogMaterial = "assets/content/ui/gameui/map/maplayers.mat";
 	protected const string FogOverlay = "{0}.fogoverlay";
-	protected static Oxide.Ext.Chaos.UIFramework.Color FogColor = new Oxide.Ext.Chaos.UIFramework.Color(0.16f, 0.16f, 0.14f);
+	protected static global::Ext.Chaos.UIFramework.Color FogColor = new global::Ext.Chaos.UIFramework.Color(0.16f, 0.16f, 0.14f);
 
 	private readonly Queue<(BaseMapUser mapUser, BasePlayer.FogMode fogMode, int x, int y, byte[] bytes)> _fogCellUpdateQueue
 		= new Queue<(BaseMapUser, BasePlayer.FogMode, int, int, byte[])>();
@@ -168,7 +168,7 @@ public abstract class ChaosMapPlugin
 			}
 
 			ButtonContainer.Create(close, UIAnchor.FullStretch, Offset.zero)
-				.WithColor(Oxide.Ext.Chaos.UIFramework.Color.Clear)
+				.WithColor(global::Ext.Chaos.UIFramework.Color.Clear)
 				.WithCallback(CallbackHandler, _ => ToggleOverlayState(mapUser, overlay.Name),
 					mapUser.Player.UserIDString + ".toggle." + overlay.Name);
 		});
@@ -312,7 +312,7 @@ public abstract class ChaosMapPlugin
 
 		var update = ChaosUI.PrepareUpdate<ImageComponent>(string.Format(FogOverlay, PluginIdentifier));
 		update.Component.PNG = crc.ToString();
-		update.Component.Color = player.ShouldRunFogOfWar ? FogColor : Oxide.Ext.Chaos.UIFramework.Color.Clear;
+		update.Component.Color = player.ShouldRunFogOfWar ? FogColor : global::Ext.Chaos.UIFramework.Color.Clear;
 		update.MarkFieldsDirty(nameof(ImageComponent.PNG));
 		update.Send(player);
 	}

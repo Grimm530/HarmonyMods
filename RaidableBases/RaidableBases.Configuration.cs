@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -17,6 +23,7 @@ using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.SceneManagement;
+using Color = UnityEngine.Color;
 using static RaidableBases.RaidableBasesExtensionMethods.ExtensionMethods;
 
 namespace RaidableBases
@@ -27,12 +34,56 @@ namespace RaidableBases
         #region Configuration
 
         private const string en_ru_compressed_64 = "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";
-        
+
         private Dictionary<string, Dictionary<string, string>> DecompressedLanguageMessages() => JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, string>>>(Encoding.UTF8.GetString(Facepunch.Utility.Compression.Uncompress(Convert.FromBase64String(en_ru_compressed_64))));
 
         protected void RegisterLanguageMessages()
         {
             var m = DecompressedLanguageMessages();
+
+            m["en"]["BuyablePVE"] = "PVE";
+            m["ru"]["BuyablePVE"] = "PVE";
+            m["en"]["BuyablePVP"] = "PVP";
+            m["ru"]["BuyablePVP"] = "PVP";
+            m["en"]["BuyableConfirmTitle"] = "Confirm Purchase";
+            m["ru"]["BuyableConfirmTitle"] = "Подтверждение покупки";
+            m["en"]["BuyableConfirmQuestion"] = "Purchase {0} {1}?";
+            m["ru"]["BuyableConfirmQuestion"] = "Купить {0} {1}?";
+            m["en"]["BuyableConfirm"] = "Confirm";
+            m["ru"]["BuyableConfirm"] = "Подтвердить";
+            m["en"]["BuyableBack"] = "Back";
+            m["ru"]["BuyableBack"] = "Назад";
+            m["en"]["BuyableFree"] = "Free";
+            m["ru"]["BuyableFree"] = "Бесплатно";
+            m["en"]["BuyableTypeUnavailable"] = "That purchase type is not available.";
+            m["ru"]["BuyableTypeUnavailable"] = "Этот тип покупки недоступен.";
+            m["en"]["ItemNotAccepted"] = "That weapon or ammunition is not allowed for this raid.";
+            m["ru"]["ItemNotAccepted"] = "Это оружие или боеприпасы запрещены для этого рейда.";
+            m["en"]["UIFormatLockoutSeconds"] = "{0}s";
+            m["ru"]["UIFormatLockoutSeconds"] = "{0}с";
+            m["en"]["UIDelayTitle"] = "PVP Delay";
+            m["ru"]["UIDelayTitle"] = "Задержка PVP";
+            m["en"]["Elevator Health"] = "Elevator Health";
+            m["ru"]["Elevator Health"] = "Прочность лифта";
+            m["en"]["UIStatusTitle"] = "Raid Status";
+            m["ru"]["UIStatusTitle"] = "Статус рейда";
+            m["en"]["UIStatusActive"] = "Active";
+            m["ru"]["UIStatusActive"] = "Активен";
+            m["en"]["UIStatusComplete"] = "Complete";
+            m["ru"]["UIStatusComplete"] = "Завершен";
+            m["en"]["UIStatusCompleted"] = "Completed";
+            m["ru"]["UIStatusCompleted"] = "Завершено";
+            m["en"]["UIStatusState"] = "status";
+            m["ru"]["UIStatusState"] = "статус";
+            m["en"]["UIStatusRemaining"] = "remaining";
+            m["ru"]["UIStatusRemaining"] = "осталось";
+            m["en"]["UIStatusMove"] = "MOVE";
+            m["ru"]["UIStatusMove"] = "ПЕРЕМ.";
+            m["en"]["UIStatusDone"] = "DONE";
+            m["ru"]["UIStatusDone"] = "ГОТОВО";
+            m["en"]["UIPasteProgressTitle"] = "Raid Setup";
+            m["ru"]["UIPasteProgressTitle"] = "Подготовка рейда";
+
             foreach (var mode in GetRaidableModes())
             {
                 m["en"][$"Mode{mode}"] = mode;
@@ -42,294 +93,333 @@ namespace RaidableBases
             {
                 lang.RegisterMessages(messages, this, language);
             }
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-                ["This sleeper cannot be looted."] = "This sleeper cannot be looted."
-            }, this);
-            // User-editable HarmonyLanguage file wins over embedded defaults.
-            lang.ReloadHarmonyLanguageOverrides();
         }
 
-        public void TryMessage(BasePlayer player, string key, params object[] args)
-        {
-            if (player.IsValid() && !waiting.Contains(player.userID))
-            {
-                ulong userid = player.userID;
+        private Messenger _messages;
 
-                waiting.Add(userid);
-                QueueNotification(player, key, args);
-                timer.Once(10f, () => waiting.Remove(userid));
+        public void Reply(IPlayer user, string key, params object[] args) => _messages.Reply(user, key, args);
+
+        public void SendNotification(IPlayer user, string key, params object[] args) => _messages.Notify(user, key, args);
+
+        public void SendNotification(BasePlayer player, string key, params object[] args) => _messages.Notify(player, key, args);
+
+        public void NotifyOnce(BasePlayer player, string key, params object[] args) => _messages.NotifyOnce(player, key, args);
+
+        private class Messenger : IDisposable
+        {
+            private const double DefaultCooldown = 10d;
+            private const double CooldownCleanupInterval = 60d;
+            private const int ToastCharacterLimit = 140;
+            private const int NewLineLength = 2;
+
+            private RaidableBases _plugin;
+            private Dictionary<ulong, double> _cooldowns = new();
+            private Dictionary<ulong, List<Notification>> _pending = new();
+            private double _nextCooldownCleanup;
+
+            public Messenger(RaidableBases plugin)
+            {
+                _plugin = plugin;
             }
-        }
 
-        public void Message(BasePlayer player, string key, params object[] args)
-        {
-            if (player.IsNetworked())
+            public void Reply(IPlayer user, string key, params object[] args)
             {
-                QueueNotification(player, key, args);
+                user?.Reply(_plugin.mx(key, null, args));
             }
-        }
 
-        public void Message(IPlayer user, string key, params object[] args)
-        {
-            if (user != null)
+            public void Notify(IPlayer user, string key, params object[] args)
             {
-                user.Reply(mx(key, null, args));
-            }
-        }
-
-        private void CheckNotifications()
-        {
-            if (_notifications.Count == 0)
-                return;
-
-            for (int i = 0; i < _notifications.Count; i++)
-            {
-                var (userid, notes) = _notifications.ElementAt(i);
-
-                if (notes.Count > 0)
+                if (user == null)
                 {
-                    var n = notes[0];
-                    int take = 1;
-                    int len = n.messageBare.Length;
-                    using var sbBare = DisposableBuilder.Get();
-                    using var sbFull = DisposableBuilder.Get();
-                    sbBare.Append(n.messageBare);
-                    sbFull.Append(n.messageFull);
+                    return;
+                }
 
-                    for (int j = 1; j < notes.Count; j++)
+                if (user.Object is BasePlayer player)
+                {
+                    Notify(player, key, args);
+                }
+                else
+                {
+                    user.Reply(_plugin.mx(key, user.Id, args));
+                }
+            }
+
+            public void NotifyOnce(BasePlayer player, string key, params object[] args)
+            {
+                if (TakeCooldown(player, DefaultCooldown))
+                {
+                    Notify(player, key, args);
+                }
+            }
+
+            public void Notify(BasePlayer player, string key, params object[] args)
+            {
+                if (player == null || !player.IsConnected)
+                {
+                    return;
+                }
+
+                if (_plugin.config.EventMessages.Message)
+                {
+                    string message = _plugin.m(key, player.UserIDString, args);
+
+                    if (string.IsNullOrWhiteSpace(message))
                     {
-                        if (len + 2 + notes[j].messageBare.Length > 140) break;
-
-                        sbBare.AppendLine().Append(notes[j].messageBare);
-                        sbFull.AppendLine().Append(notes[j].messageFull);
-                        len += 2 + notes[j].messageBare.Length;
-                        take++;
+                        return;
                     }
 
-                    n.messageBare = sbBare.ToString();
-                    n.messageFull = sbFull.ToString();
-                    SendNotification(n);
+                    Player.Message(player, message, _plugin.config.Settings.ChatID);
+                }
 
-                    for (int j = 0; j < take; j++)
+                if (!HasQueuedDelivery())
+                {
+                    return;
+                }
+
+                string full = _plugin.mx(key, player.UserIDString, args);
+                if (string.IsNullOrWhiteSpace(full))
+                {
+                    return;
+                }
+
+                if (!_pending.TryGetValue(player.userID, out var notifications))
+                {
+                    _pending[player.userID] = notifications = Pool.Get<List<Notification>>();
+                }
+
+                Notification notification = Pool.Get<Notification>();
+                notification.Player = player;
+                notification.Full = full;
+                notification.Bare = rf(full);
+                notifications.Add(notification);
+            }
+
+            public void ProcessQueue()
+            {
+                if (_pending.Count == 0)
+                {
+                    return;
+                }
+
+                using var completed = DisposableList<ulong>();
+
+                foreach (var entry in _pending)
+                {
+                    List<Notification> notifications = entry.Value;
+
+                    if (notifications.Count > 0)
                     {
-                        var obj = notes[0];
-                        notes.RemoveAt(0);
-                        Pool.Free(ref obj);
+                        ProcessNext(notifications);
+                    }
+
+                    if (notifications.Count == 0)
+                    {
+                        completed.Add(entry.Key);
                     }
                 }
 
-                if (notes.Count == 0)
+                for (int i = 0; i < completed.Count; i++)
                 {
-                    _notifications.Remove(userid);
-                    Pool.Free(ref notes);
-                    i--;
-                }
-            }
-        }
-
-        private void QueueNotification(IPlayer user, string key, params object[] args)
-        {
-            if (user.Object is BasePlayer player)
-            {
-                QueueNotification(player, key, args);
-            }
-            else user.Reply(mx(key, user.Id, args));
-        }
-
-        private void DebugNotify(string format, params object[] args)
-        {
-            if (config?.EventMessages == null || !config.EventMessages.Debug)
-                return;
-            Puts("[Notify] " + (args != null && args.Length > 0 ? string.Format(format, args) : format));
-        }
-
-        /// <summary>Lang-key path (enter/exit/etc).</summary>
-        private void QueueNotification(BasePlayer player, string key, params object[] args)
-        {
-            if (player == null || !player.IsOnline())
-            {
-                DebugNotify("skip key={0}: player offline/null", key);
-                return;
-            }
-
-            string message = m(key, player.UserIDString, args);
-
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                DebugNotify("skip key={0}: lang returned empty (missing string?)", key);
-                return;
-            }
-
-            EnqueuePlayerNotification(player, message, mx(key, player.UserIDString, args), key);
-        }
-
-        /// <summary>Pre-rendered text path (opened-base announcements already formatted).</summary>
-        private void QueueNotificationText(BasePlayer player, string message)
-        {
-            if (player == null || !player.IsOnline())
-            {
-                DebugNotify("skip text: player offline/null");
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                DebugNotify("skip text: empty");
-                return;
-            }
-            EnqueuePlayerNotification(player, message, message, "(raw)");
-        }
-
-        private void EnqueuePlayerNotification(BasePlayer player, string chatText, string tipFull, string debugKey)
-        {
-            string tipBare = rf(tipFull ?? chatText);
-
-            // Immediate chat — assembly BasePlayer.ChatMessage → chat.add 2, 0, msg
-            if (config.EventMessages.Message)
-                player.ChatMessage(chatText);
-
-            // Send tip immediately (do not wait for CheckNotifications timer).
-            if (config.EventMessages.RustStyle != EventMessageSettings.NoRustStyle
-                || config.GUIAnnouncement.Enabled || config.UI.AA.Enabled
-                || config.EventMessages.NotifyType != -1)
-            {
-                var n = Pool.Get<Notification>();
-                n.player = player;
-                n.messageFull = tipFull ?? chatText;
-                n.messageBare = tipBare;
-                SendNotification(n);
-                Pool.Free(ref n);
-            }
-        }
-
-        private void SendNotification(Notification notification)
-        {
-            if (notification?.player == null || !notification.player.IsOnline())
-                return;
-
-            string tipText = config.EventMessages.StripRustTip ? notification.messageBare : notification.messageFull;
-            if (string.IsNullOrWhiteSpace(tipText))
-                tipText = notification.messageFull;
-
-            bool messageWasSent = false;
-            var p = notification.player;
-
-            if (config.GUIAnnouncement.Enabled && GUIAnnouncements.CanCall())
-            {
-                GUIAnnouncements?.Call("CreateAnnouncement", tipText, config.GUIAnnouncement.TintColor, config.GUIAnnouncement.TextColor, p);
-                messageWasSent = true;
-            }
-
-            if (config.UI.AA.Enabled && AdvancedAlerts.CanCall())
-            {
-                AdvancedAlerts?.Call("SpawnAlert", p, "hook", tipText, config.UI.AA.AnchorMin, config.UI.AA.AnchorMax, config.UI.AA.Time);
-                messageWasSent = true;
-            }
-
-            if (config.EventMessages.NotifyType != -1 && Notify.CanCall())
-            {
-                Notify?.Call("SendNotify", p, config.EventMessages.NotifyType, tipText);
-                messageWasSent = true;
-            }
-
-            // Assembly-RUST BasePlayer.ShowToast → gametip.showtoast_translated(style, token, english, overlay, args)
-            if (config.EventMessages.RustStyle != EventMessageSettings.NoRustStyle)
-            {
-                string toast = ClearColorAndSize(tipText);
-                if (string.IsNullOrWhiteSpace(toast))
-                    toast = tipText ?? string.Empty;
-                var style = config.EventMessages.RustStyle;
-
-                bool toastSent = false;
-                try
-                {
-                    // Exact Facepunch path (same as TCUpgradeHelpers.ShowToast / BasePlayer.ShowToast).
-                    p.ShowToast(style, new Translate.Phrase("raidablebases.tip", toast), false);
-                    toastSent = true;
-                    messageWasSent = true;
-                }
-                catch
-                {
-                    try
+                    if (_pending.Remove(completed[i], out var notifications))
                     {
-                        p.SendConsoleCommand("gametip.showtoast_translated", (int)style, "raidablebases.tip", toast, false, System.Array.Empty<string>());
-                        toastSent = true;
-                        messageWasSent = true;
+                        Pool.FreeUnmanaged(ref notifications);
                     }
-                    catch { }
                 }
+            }
 
-                // Plain banner fallback only when styled toast failed. Do not call hidegametip
-                // after a successful ShowToast -- it dismisses the styled tip immediately.
-                if (!toastSent)
+            public void Dispose()
+            {
+                foreach (var notifications in _pending.Values)
                 {
-                    try
+                    for (int i = 0; i < notifications.Count; i++)
                     {
-                        p.SendConsoleCommand("gametip.hidegametip");
-                        p.SendConsoleCommand("gametip.showgametip", toast);
-                        messageWasSent = true;
-                        ulong userId = (ulong)p.userID;
-                        int generation = NextGameTipGeneration(userId);
-                        var mgr = ServerMgr.Instance;
-                        if (mgr != null)
-                            mgr.StartCoroutine(HideGameTipDelayed(p, userId, generation, 3f));
+                        Notification notification = notifications[i];
+                        Pool.Free(ref notification);
                     }
-                    catch { }
+
+                    List<Notification> pooled = notifications;
+                    Pool.FreeUnmanaged(ref pooled);
+                }
+
+                _pending.Clear();
+                _cooldowns.Clear();
+            }
+
+            private bool TakeCooldown(BasePlayer player, double duration)
+            {
+                if (!player.IsValid())
+                {
+                    return false;
+                }
+
+                double now = Time.realtimeSinceStartupAsDouble;
+
+                if (_cooldowns.TryGetValue(player.userID, out double expiresAt) && now < expiresAt)
+                {
+                    return false;
+                }
+
+                CleanupCooldowns(now);
+                _cooldowns[player.userID] = now + duration;
+                return true;
+            }
+
+            private void CleanupCooldowns(double now)
+            {
+                if (now < _nextCooldownCleanup)
+                {
+                    return;
+                }
+
+                _nextCooldownCleanup = now + CooldownCleanupInterval;
+
+                using var expired = DisposableList<ulong>();
+
+                foreach (var entry in _cooldowns)
+                {
+                    if (now >= entry.Value)
+                    {
+                        expired.Add(entry.Key);
+                    }
+                }
+
+                for (int i = 0; i < expired.Count; i++)
+                {
+                    _cooldowns.Remove(expired[i]);
                 }
             }
 
-            if (!messageWasSent && !config.EventMessages.Message)
-                Player.Message(p, tipText, config.Settings.ChatID);
-        }
-
-        /// <summary>Strip rich text — toast / showgametip reject color/size tags.</summary>
-        private static string ClearColorAndSize(string message)
-        {
-            if (string.IsNullOrEmpty(message))
-                return message;
-            message = message.Replace("</color>", string.Empty);
-            message = message.Replace("</size>", string.Empty);
-            while (message.Contains("<color="))
+            private bool HasQueuedDelivery()
             {
-                int index = message.IndexOf("<color=", StringComparison.Ordinal);
-                int end = message.IndexOf('>', index);
-                if (index < 0 || end < 0) break;
-                message = message.Remove(index, end - index + 1);
+                return _plugin.config.GUIAnnouncement.Enabled || _plugin.config.UI.AA.Enabled || _plugin.config.EventMessages.NotifyType != -1 || _plugin.config.EventMessages.RustStyle != EventMessageSettings.NoRustStyle;
             }
-            while (message.Contains("<size="))
+
+            private void ProcessNext(List<Notification> notifications)
             {
-                int index = message.IndexOf("<size=", StringComparison.Ordinal);
-                int end = message.IndexOf('>', index);
-                if (index < 0 || end < 0) break;
-                message = message.Remove(index, end - index + 1);
+                int take = 1;
+                int length = notifications[0].Bare.Length;
+
+                for (int i = 1; i < notifications.Count; i++)
+                {
+                    if (length + NewLineLength + notifications[i].Bare.Length > ToastCharacterLimit)
+                    {
+                        break;
+                    }
+
+                    length += NewLineLength + notifications[i].Bare.Length;
+                    take++;
+                }
+
+                using var notification = notifications[0];
+                notifications[0] = null;
+
+                if (take > 1)
+                {
+                    Combine(notification, notifications, take);
+                }
+
+                Deliver(notification);
+                notifications.RemoveRange(0, take);
             }
-            return message;
-        }
 
-        private readonly Dictionary<ulong, int> _gameTipGenerations = new();
-
-        private int NextGameTipGeneration(ulong userId)
-        {
-            _gameTipGenerations.TryGetValue(userId, out int generation);
-            generation++;
-            _gameTipGenerations[userId] = generation;
-            return generation;
-        }
-
-        private System.Collections.IEnumerator HideGameTipDelayed(BasePlayer player, ulong userId, int generation, float seconds)
-        {
-            yield return CoroutineEx.waitForSeconds(seconds);
-
-            if (!_gameTipGenerations.TryGetValue(userId, out int currentGeneration) || currentGeneration != generation)
-                yield break;
-
-            _gameTipGenerations.Remove(userId);
-            try
+            private static void Combine(Notification first, List<Notification> notifications, int take)
             {
-                if (player != null && player.IsConnected)
-                    player.SendConsoleCommand("gametip.hidegametip");
+                using var bare = DisposableBuilder.Get();
+                using var full = DisposableBuilder.Get();
+
+                bare.Append(first.Bare);
+                full.Append(first.Full);
+
+                for (int i = 1; i < take; i++)
+                {
+                    using var next = notifications[i];
+                    notifications[i] = null;
+
+                    bare.AppendLine().Append(next.Bare);
+                    full.AppendLine().Append(next.Full);
+                }
+
+                first.Bare = bare.ToString();
+                first.Full = full.ToString();
             }
-            catch { }
+
+            private void Deliver(Notification notification)
+            {
+                if (!notification.IsConnected)
+                {
+                    return;
+                }
+
+                bool delivered = _plugin.config.EventMessages.Message;
+
+                if (_plugin.config.GUIAnnouncement.Enabled && _plugin.GUIAnnouncements.CanCall())
+                {
+                    _plugin.GUIAnnouncements?.Call("CreateAnnouncement", notification.Full, _plugin.config.GUIAnnouncement.TintColor, _plugin.config.GUIAnnouncement.TextColor, notification.Player);
+                    delivered = true;
+                }
+
+                if (_plugin.config.UI.AA.Enabled && _plugin.AdvancedAlerts.CanCall())
+                {
+                    _plugin.AdvancedAlerts?.Call("SpawnAlert", notification.Player, "hook", notification.Full, _plugin.config.UI.AA.AnchorMin, _plugin.config.UI.AA.AnchorMax, _plugin.config.UI.AA.Time);
+                    delivered = true;
+                }
+
+                if (_plugin.config.EventMessages.NotifyType != -1 && _plugin.Notify.CanCall())
+                {
+                    _plugin.Notify?.Call("SendNotify", notification.Player, _plugin.config.EventMessages.NotifyType, notification.Full);
+                    delivered = true;
+                }
+
+                if (_plugin.config.EventMessages.RustStyle == EventMessageSettings.NoRustStyle)
+                {
+                    return;
+                }
+
+                if (notification.Bare.Length > ToastCharacterLimit)
+                {
+                    if (!delivered)
+                    {
+                        Player.Message(notification.Player, notification.Full, _plugin.config.Settings.ChatID);
+                    }
+
+                    return;
+                }
+
+                notification.Player.ShowToast(_plugin.config.EventMessages.RustStyle, _plugin.config.EventMessages.StripRustTip ? notification.Bare : notification.Full);
+            }
+
+            private class Notification : Pool.IPooled, IDisposable
+            {
+                public bool IsConnected => Player != null && Player.IsConnected;
+                public BasePlayer Player;
+                public string Bare;
+                public string Full;
+                private bool _disposed;
+
+                public void Dispose()
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
+                    _disposed = true;
+                    Notification notification = this;
+                    Pool.Free(ref notification);
+                }
+
+                public void EnterPool()
+                {
+                    Player = null;
+                    Bare = null;
+                    Full = null;
+                }
+
+                public void LeavePool()
+                {
+                    _disposed = false;
+                }
+            }
         }
 
         public string m(string key, string id = null, params object[] args)
@@ -355,13 +445,12 @@ namespace RaidableBases
 
             _sb2.Append(message);
 
-            return args.Length > 0 ? string.Format(_sb2.ToString(), args) : _sb2.ToString();
+            try { return args.Length > 0 ? string.Format(_sb2.ToString(), args) : _sb2.ToString(); }
+            catch (Exception ex) { Puts(ex); return _sb2.ToString(); }
         }
 
         public string mx(string key, string id = null, params object[] args)
         {
-            using var _sb2 = DisposableBuilder.Get();
-
             string message = lang.GetMessage(key, this, id);
 
             if (string.IsNullOrWhiteSpace(message))
@@ -369,49 +458,24 @@ namespace RaidableBases
                 return string.Empty;
             }
 
-            _sb2.Append(id == null || id == "server_console" ? rf(message) : message);
-
-            return args.Length > 0 ? string.Format(_sb2.ToString(), args) : _sb2.ToString();
+            try { if (id == null || id == "server_console") message = rf(message); return args.Length > 0 ? string.Format(message, args) : message; }
+            catch (Exception ex) { Puts(ex); return message; }
         }
 
         public static Regex HtmlTagRegex;
 
-        public static string rf(string source) => source.Contains('>') && HtmlTagRegex != null ? HtmlTagRegex.Replace(source, string.Empty) : source;
-
-        public class Notification : Pool.IPooled
-        {
-            public BasePlayer player;
-            public string messageBare;
-            public string messageFull;
-            public void Reset()
-            {
-                player = null;
-                messageBare = null;
-                messageFull = null;
-            }
-            public void EnterPool()
-            {
-                Reset();
-            }
-            public void LeavePool()
-            {
-            }
-        }
-
-        private Dictionary<ulong, List<Notification>> _notifications = new();
-
-        private List<ulong> waiting = new();
+        public static string rf(string source) => source.IndexOf('<') >= 0 && HtmlTagRegex != null ? HtmlTagRegex.Replace(source, string.Empty) : source;
 
         protected static void Puts(Exception ex)
         {
             UnityEngine.Debug.Log($"[{Name}] {ex}");
         }
 
-        protected static void Puts(string format, params object[] args)
+        protected new static void Puts(string format, params object[] args)
         {
             if (!string.IsNullOrWhiteSpace(format))
             {
-                UnityEngine.Debug.Log($"[{Name}] {((args.Length != 0) ? string.Format(format, args) : format)}");
+                UnityEngine.Debug.Log($"[{nameof(RaidableBases)}] {((args.Length != 0) ? string.Format(format, args) : format)}");
             }
         }
 
@@ -441,7 +505,6 @@ namespace RaidableBases
         private static List<PasteOption> DefaultPasteOptions() => new()
         {
             new() { Key = "stability", Value = "false" },
-            new() { Key = "autoheight", Value = "false" },
             new() { Key = "height", Value = "1.0" },
         };
 
@@ -565,9 +628,9 @@ namespace RaidableBases
                 return false;
             }
 
-            public HashSet<string> All()
+            public PooledHashSet<string> All()
             {
-                HashSet<string> values = new();
+                PooledHashSet<string> values = DisposableHashSet<string>();
                 foreach (var wipeList in Dictionary.Values)
                 {
                     foreach (var wipeTime in wipeList)
@@ -707,7 +770,7 @@ namespace RaidableBases
 
                 if (CanMerge && !Merges.ContainsKey(mode) && !instance.CanSpawnDifficultyToday(type, mode))
                 {
-                    List<string> modes = instance.GetRaidableModes().ToList();
+                    using var modes = instance.GetRaidableModes().ToPooledList();
                     modes.Reverse();
 
                     foreach (var otherMode in modes)
@@ -802,7 +865,7 @@ namespace RaidableBases
                     }
                 }
 
-                return modes.GetRandom();
+                return modes.GetSecureRandom();
             }
 
             // Selects a raidable mode based on individual probabilities, with each mode having an independent chance of being chosen directly by comparing against a random value.
@@ -832,7 +895,7 @@ namespace RaidableBases
                     }
                 }
 
-                return modes.GetRandom();
+                return modes.GetSecureRandom();
             }
         }
 
@@ -1010,11 +1073,18 @@ namespace RaidableBases
 
         public class BuildingOptionsSetupSettings
         {
+            [JsonProperty(PropertyName = en ? "When An Entity Fails To Paste (1 = Undo, 2 = Continue)" : "When An Entity Fails To Paste (1 = Undo, 2 = Continue)")]
+            [DefaultValue((int)RaidableBases.PasteErrorMode.Continue)]
+            public int PasteErrorHandling = (int)RaidableBases.PasteErrorMode.Continue;
+
             [JsonProperty(PropertyName = en ? "Amount Of Entities To Spawn Per Batch" : "Количество объектов для спавна")]
             public int SpawnLimit = 1;
 
             [JsonProperty(PropertyName = en ? "Amount Of Entities To Despawn Per Batch" : "Количество объектов для удаления")]
             public int DespawnLimit = 1;
+
+            [JsonProperty(PropertyName = en ? "Sky bases (Ensure you set global height accordingly below or per base height)" : "Sky bases (Ensure you set global height accordingly below or per base height)")]
+            public bool Sky;
 
             [JsonProperty(PropertyName = en ? "Height Adjustment Applied To This Paste" : "Регулировка высота для данной базы")]
             public float PasteHeightAdjustment;
@@ -1059,7 +1129,7 @@ namespace RaidableBases
         protected void ProcessExtensions(ExtOp op)
         {
             RaidableModes.Clear();
-            var modes = GetRaidableModes().ToList();
+            using var modes = GetRaidableModes().ToPooledList();
 
             if (op == ExtOp.Validate || op == ExtOp.Init)
             {
@@ -1082,7 +1152,7 @@ namespace RaidableBases
                         }
                         if (!ext.Validate(modes))
                         {
-                            Puts("Add profile JSON under HarmonyData/RaidableBases/Profiles (Difficulty must match config), or delete that folder and reload to generate defaults.");
+                            Puts("Please read the documentation on how to properly add or remove a difficulty.");
                             return;
                         }
                         break;
@@ -1186,7 +1256,7 @@ namespace RaidableBases
                 {
                     if (!Dictionary.Keys.Exists(key => IsMatch(mode, key)))
                     {
-                        Puts($"Difficulty '{mode}' is missing from '{string.Join(", ", Dictionary.Keys)}' in the configuration section '{GetParentName()}'");
+                        Puts($"'{mode}' is missing from '{string.Join(", ", Dictionary.Keys)}' in the configuration section '{GetParentName()}'");
                         return false;
                     }
                 }
@@ -1194,7 +1264,7 @@ namespace RaidableBases
                 {
                     if (key != RaidableMode.Points && !modes.Exists(mode => IsMatch(mode, key)))
                     {
-                        Puts($"Difficulty `{key}` is in the configuration file, but does not exist in any of the profiles.");
+                        Puts($"`{key}` is in the configuration file, but does not exist in any of the profiles.");
                         return false;
                     }
                 }
@@ -1269,7 +1339,9 @@ namespace RaidableBases
             {
                 _cache = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
 
-                foreach (var extension in _extensionData.ToList())
+                using var extensions = _extensionData.ToPooledList();
+
+                foreach (var extension in extensions)
                 {
                     try
                     {
@@ -1286,7 +1358,7 @@ namespace RaidableBases
                         {
                             Puts($"[INFO] Key: '{extension.Key}' value ({extension.Value}) is '{extension.Value?.Type}' when expecting '{typeof(T)}'");
                         }
-                        Puts("Json Error: Missing commas, unquoted keys, or improperly formatted values: {0}\n{1}", extension.Key, ex);
+                        Puts($"Json Error ({VersionString}): Missing commas, unquoted keys, or improperly formatted values: {0}\n{1}", extension.Key, ex);
                     }
                     catch (JsonException ex)
                     {
@@ -1294,6 +1366,8 @@ namespace RaidableBases
                     }
                 }
             }
+
+            internal const string VersionString = "3.1.5";
 
             private void EnsureInitialized()
             {
@@ -1527,7 +1601,7 @@ namespace RaidableBases
             public ManagementDropSettings DropLoot = new();
 
             [JsonProperty(PropertyName = en ? "Additional Blocked Colliders" : "Коллайдеры для блокировок", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<string> AdditionalBlockedColliders = new() { "cubes" };
+            public List<string> IgnoredColliderNames = new() { "cubes" };
 
             [JsonProperty(PropertyName = en ? "Allow Teleport" : "Разрешить телепортацию")]
             public bool AllowTeleport;
@@ -1715,8 +1789,8 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Move Food Into BBQ Or Fridge" : "Перемещать Еду в Мангалы или Холодильники")]
             public bool Food = true;
 
-            [JsonProperty(PropertyName = en ? "Blacklist For BBQ And Fridge" : "Черный Список для Мангалов и Холодильников")]
-            public HashSet<string> Foods = new() { "syrup", "pancakes" };
+            [JsonProperty(PropertyName = en ? "Blacklist For BBQ And Fridge" : "Черный Список для Мангалов и Холодильников", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public List<string> Foods = new() { "syrup", "pancakes" };
 
             [JsonProperty(PropertyName = en ? "Move Resources Into Tool Cupboard" : "Перемещать Ресурсы в Шкаф для Инструментов")]
             public bool Cupboard = true;
@@ -1731,7 +1805,9 @@ namespace RaidableBases
             public bool UseOwners = true;
 
             [JsonProperty(PropertyName = en ? "Lock Treasure Max Inactive Time (Minutes)" : "Время Неактивности до снятия блокировки с Базы (Минуты)")]
-            public float LockTime = 20f;
+            public double LockTime = 20d;
+
+            internal float LockTimeFloat => (float)LockTime;
 
             [JsonProperty(PropertyName = en ? "Assign Lockout When Lock Treasure Max Inactive Time Expires" : "Назначить Блокировку при Истечении Максимального Времени Неактивности Сокровища")]
             public bool SetLockout;
@@ -1758,7 +1834,7 @@ namespace RaidableBases
             public bool PVPDelayAnywhere;
 
             [JsonProperty(PropertyName = en ? "PVP Delay Between Zone Hopping" : "Задержка PVP Между Перемещениями по Зонам")]
-            public float PVPDelay = 10f;
+            public double PVPDelay = 10d;
 
             [JsonProperty(PropertyName = en ? "PVP Delay Between Zone Hopping Persists After Despawn" : "Задержка PVP между переходами по зонам сохраняется после исчезновения")]
             public bool PVPDelayPersists;
@@ -1803,7 +1879,7 @@ namespace RaidableBases
             public bool NightLantern;
 
             [JsonProperty(PropertyName = en ? "Ignore List For Turn Lights On" : "Список исключений для включения света", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<string> IgnoredLights = new() { "laserlight", "weaponrack", "lightswitch", "soundlight", "xmas" };
+            public List<string> IgnoredLights = new() { "lightswitch", "soundlight", "xmas" };
 
             [JsonProperty(PropertyName = en ? "Traps And Turrets Ignore Users Using NOCLIP" : "Ловушки и Турели Игнорируют Пользователей в Режиме NOCLIP")]
             public bool IgnoreFlying;
@@ -1837,7 +1913,7 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = "Max Amount Of Players Allowed To Enter (0 = infinite, -1 = none)", NullValueHandling = NullValueHandling.Ignore)]
             public ManagementPlayerAmountsSettings _Players = null;
-            
+
             public bool Any() => Dictionary.Count > 0 && Dictionary.All(x => x.Value != null);
 
             public override bool Create(List<string> modes)
@@ -1895,29 +1971,6 @@ namespace RaidableBases
             public bool Manual = true;
         }
 
-        public class ExperimentalSettings
-        {
-            [JsonProperty(PropertyName = en ? "Apply Custom Auto Height To" : "Применить Пользовательскую Автоматическую Высоту к", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<string> AutoHeight = new();
-
-            [JsonProperty(PropertyName = en ? "Bunker Bases Or Profiles" : "Бункерные Базы или Профили", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<string> Bunker = new();
-
-            [JsonProperty(PropertyName = en ? "Multi Foundation Bases Or Profiles" : "Базы или Профили с Многоуровневым Фундаментом", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<string> MultiFoundation = new();
-
-            public enum Type { AutoHeight, Bunker, MultiFoundation };
-
-            public bool Contains(Type type, RandomBase rb) => type switch
-            {
-                Type.AutoHeight => Contains(AutoHeight, rb),
-                Type.Bunker => Contains(Bunker, rb),
-                _ => Contains(MultiFoundation, rb),
-            };
-
-            public bool Contains(List<string> m, RandomBase rb) => m.Contains("*") || m.Contains(rb.BaseName) || m.Contains(rb.Profile.ProfileName);
-        }
-
         public class WipeSettings
         {
             [JsonProperty(PropertyName = "Wipe triggers when Rust protocol changes")]
@@ -1943,9 +1996,6 @@ namespace RaidableBases
         {
             [JsonProperty(PropertyName = "Wipe Management (/data/RaidableBases.json)")]
             public WipeSettings Wipe = new();
-
-            [JsonProperty(PropertyName = en ? "Experimental [* = everything]" : "Экспериментальные Настройки [* = все]")]
-            public ExperimentalSettings Experimental = new();
 
             [JsonProperty(PropertyName = en ? "Raid Management" : "Управление Рейдами")]
             public ManagementSettings Management = new(
@@ -2169,9 +2219,6 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Send Messages To Player" : "Отправлять Сообщения Игроку")]
             public bool Message = true;
 
-            [JsonProperty(PropertyName = en ? "Debug Notifications (console)" : "Отладка уведомлений (консоль)")]
-            public bool Debug;
-
             [JsonProperty(PropertyName = en ? "Save Thieves To Log File" : "Сохранить Воров в Лог-файл")]
             public bool LogThieves;
 
@@ -2231,6 +2278,12 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Spawn On Rugs With Skin Only" : "Создавать на Коврах Только с Скином")]
             public ulong SpawnOnRugsSkin = 1;
 
+            [JsonProperty(PropertyName = en ? "Allow Scientists To Roam Inside" : "Разрешить Ученым Бродить Внутри")]
+            public bool Roam = true;
+
+            [JsonProperty(PropertyName = en ? "Maximum Total Roam Distance" : "Максимальная Общая Дистанция Блуждания")]
+            public float MaximumRoamDistance = 30f;
+
             [JsonProperty(PropertyName = en ? "Bed Health Multiplier" : "Множитель Здоровья Кровати")]
             public float BedHealthMultiplier = 1f;
 
@@ -2248,6 +2301,8 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Maximum Inside (-1 = ignore)" : "Максимум Внутри (-1 = игнорировать)")]
             public int Max = -1;
+
+            internal bool Any => SpawnOnFloors || SpawnOnBeds || SpawnOnRugs;
         }
 
         public class NpcKitSettings
@@ -2291,27 +2346,48 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Call OnCorpsePopulate Hook (some plugins require this)" : "Call OnCorpsePopulate Hook (some plugins require this)")]
             public bool CallHook;
 
-            public uint GetRandom(List<string> ids) => ids.GetRandom() switch
+            public bool GetRandom(List<string> ids, out uint prefabID)
             {
-                "cargo" => 3623670799u,
-                "turret_any" => 1639447304u,
-                "ch47_gunner" => 1017671955u,
-                "excavator" => 4293908444u,
-                "full_any" => 1539172658u,
-                "heavy" => 1536035819u,
-                "junkpile_pistol" => 2066159302u,
-                "cargo_turret" => 881071619u,
-                "oilrig" => 548379897u,
-                "patrol" => 4272904018u,
-                "peacekeeper" => 2390854225u,
-                "roam" => 4199494415u,
-                "roamtethered" => 529928930u,
-                "roamexcavator" => 529928930u,
-                "scarecrow" => 3473349223u,
-                "scarecrow_dungeon" => 3019050354u,
-                "scarecrow_dungeonnoroam" => 70161046u,
-                _ => 1536035819u
-            };
+                prefabID = ids.GetRandom() switch
+                {
+                    "gingerbread_dungeon" => 2992757580u,
+                    "gingerbread_meleedungeon" => 1172642608u,
+                    "npc_bandit_guard" => 412745708u,
+                    "npc_tunneldweller" => 732025282u,
+                    "npc_tunneldwellerspawned" => 1934869703u,
+                    "npc_underwaterdweller" => 1605597847u,
+                    "scarecrow" => 3473349223u,
+                    "scarecrow_dungeon" => 3019050354u,
+                    "scarecrow_dungeonnoroam" => 70161046u,
+                    "scientistnpc_arena" => 3430609603u,
+                    "scientistnpc_bradley" => 1126473739u,
+                    "scientistnpc_bradley_heavy" => 3572389335u,
+                    "scientistnpc_cargo" or "cargo" => 3623670799u,
+                    "scientistnpc_cargo_turret_any" or "turret_any" => 1639447304u,
+                    "scientistnpc_cargo_turret_lr300" => 881071619u,
+                    "scientistnpc_ch47_gunner" or "ch47_gunner" => 1017671955u,
+                    "scientistnpc_excavator" or "excavator" => 4293908444u,
+                    "scientistnpc_full_any" or "full_any" => 1539172658u,
+                    "scientistnpc_full_lr300" => 3763080634u,
+                    "scientistnpc_full_mp5" => 3595426380u,
+                    "scientistnpc_full_pistol" => 712785714u,
+                    "scientistnpc_full_shotgun" => 1410044857u,
+                    "scientistnpc_heavy" or "heavy" => 1536035819u,
+                    "scientistnpc_junkpile_pistol" or "junkpile_pistol" => 2066159302u,
+                    "scientistnpc_oilrig" or "oilrig" => 548379897u,
+                    "scientistnpc_outbreak" => 2392284122u,
+                    "scientistnpc_patrol" or "patrol" => 4272904018u,
+                    "scientistnpc_patrol_arctic" => 387319993u,
+                    "scientistnpc_peacekeeper" or "peacekeeper" => 2390854225u,
+                    "scientistnpc_ptboat" => 499806986u,
+                    "scientistnpc_rhib" => 1361476945u,
+                    "scientistnpc_roam" or "roam" => 4199494415u,
+                    "scientistnpc_roamtethered" or "roamtethered" => 529928930u,
+                    "scientistnpc_roam_nvg_variant" => 4134517186u,
+                    _ => 0u
+                };
+                return prefabID != 0u;
+            }
         }
 
         public class NpcMultiplierSettings
@@ -2418,7 +2494,9 @@ namespace RaidableBases
                 COMPOUND_BOW = CROSSBOW = 50;
             }
 
-            public double Get(HumanoidBrain brain) => brain.AttackName switch
+            public double Get(HumanoidBrain brain) => Get(brain.AttackName);
+
+            public double Get(string attackName) => attackName switch
             {
                 "ak47u.entity" or "ak47u_med.entity" or "ak47u_diver.entity" or "sks.entity" => AK47,
                 "ak47u_ice.entity" => AK47ICE,
@@ -2746,15 +2824,29 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Random Building Skin List" : "Список случайных скинов для здания", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public List<ulong> Skins = new() { 0, 2, 10220, 10221, 10223, 10225, 10232 };
 
+            [JsonProperty(PropertyName = en ? "Do not upgrade twig" : "Не обновляйте Twig")]
+            public bool SkipTwig = true;
+
             public ulong GetSkin(BuildingBlock block, BuildingGrade.Enum grade, ulong skinID)
             {
-                List<ulong> skins = new();
+                using var skins = DisposableList<ulong>();
                 if (RandomEvery || RandomWhole)
                 {
-                    skins.AddRange(Skins.Where(skin => HasSkin(block, grade, skin)));
+                    foreach (ulong skin in Skins)
+                    {
+                        if (HasSkin(block, grade, skin))
+                        {
+                            skins.Add(skin);
+                        }
+                    }
+
                     if (skins.Count > 0) return skins.GetRandom();
                 }
-                foreach (var map in GetMappings())
+
+                using var mappings = DisposableList<Mapping>();
+                GetMappings(mappings);
+
+                foreach (var map in mappings)
                 {
                     if (map.Grade < 0 || map.Grade >= (int)BuildingGrade.Enum.Count)
                     {
@@ -2780,15 +2872,19 @@ namespace RaidableBases
 
             public List<Mapping> GetMappings()
             {
-                List<Mapping> maps = new()
-                {
-                    new("Adobe", Adobe, 10220, (int)BuildingGrade.Enum.Stone),
-                    new("Shipping Container", Shipping, 10221, (int)BuildingGrade.Enum.Metal),
-                    new("Brick", Brick, 10223, (int)BuildingGrade.Enum.Stone),
-                    new("Brutalist", Brutalist, 10225, (int)BuildingGrade.Enum.Stone),
-                    new("Legacy Wood", Frontier, 10232, (int)BuildingGrade.Enum.Wood),
-                    new("Gingerbread", Gingerbread, 2, (int)BuildingGrade.Enum.Wood),
-                };
+                List<Mapping> maps = new();
+                GetMappings(maps);
+                return maps;
+            }
+
+            private void GetMappings(List<Mapping> maps)
+            {
+                maps.Add(new("Adobe", Adobe, 10220, (int)BuildingGrade.Enum.Stone));
+                maps.Add(new("Shipping Container", Shipping, 10221, (int)BuildingGrade.Enum.Metal));
+                maps.Add(new("Brick", Brick, 10223, (int)BuildingGrade.Enum.Stone));
+                maps.Add(new("Brutalist", Brutalist, 10225, (int)BuildingGrade.Enum.Stone));
+                maps.Add(new("Legacy Wood", Frontier, 10232, (int)BuildingGrade.Enum.Wood));
+                maps.Add(new("Gingerbread", Gingerbread, 2, (int)BuildingGrade.Enum.Wood));
                 construction ??= PrefabAttribute.server.Find<Construction>(870964632u);
                 foreach (var map in AdditionalMappings)
                 {
@@ -2805,7 +2901,6 @@ namespace RaidableBases
                     }
                     maps.Add(map);
                 }
-                return maps;
             }
 
             public bool HasSkin(BuildingBlock block, BuildingGrade.Enum grade, ulong skin)
@@ -2977,8 +3072,6 @@ namespace RaidableBases
             public float Max() => Mathf.Max(Buyable, Maintained, Manual, Scheduled);
 
             public float Min() => Mathf.Min(Buyable, Maintained, Manual, Scheduled);
-
-            public float Auto() => Mathf.Max(Maintained, Scheduled);
         }
 
         public class BuildingOptionsBradleySettings
@@ -3046,14 +3139,7 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Torpedo Damage Multiplier (Max)" : "Множитель урона торпеды (макс)")]
             public float TorpedoMax = 3f;
 
-            internal float OceanLevel;
-            internal bool IsWaterSpawn;
-
-            internal CacheType FromCacheType => IsWaterSpawn ? CacheType.Seabed : CacheType.Generic;
-
-            internal CacheType ToCacheType => IsWaterSpawn ? CacheType.Seabed2 : CacheType.Generic2;
-
-            internal bool Random => Seabed > 0f && UnityEngine.Random.Range(0f, 100f) <= Seabed;
+            internal bool Random => Seabed >= 100f || Seabed > 0f && UnityEngine.Random.Range(0f, 100f) < Seabed;
         }
 
         public class BuildingOptionsDifficultySpawns
@@ -3102,6 +3188,8 @@ namespace RaidableBases
             internal float BuyableTeleportRadius;
 
             internal List<Vector3> BuyableTeleportPositions = new();
+
+            internal bool Any => BuyableTeleportPrefabs.Count > 0;
 
             //internal List<Vector3> SpawnPointPositions = new();
 
@@ -3204,9 +3292,7 @@ namespace RaidableBases
 
             internal float amount => UnityEngine.Random.Range(Min, Max);
 
-            internal DamageType[] _damageTypes;
-
-            internal DamageType index => Array.Find(_damageTypes ??= (DamageType[])Enum.GetValues(typeof(DamageType)), type => type.ToString().Equals(Type, StringComparison.OrdinalIgnoreCase));
+            internal DamageType index => Enum.TryParse(Type, true, out DamageType type) ? type : DamageType.Generic;
 
             public PlayerDamageMultiplier() { }
 
@@ -3293,7 +3379,7 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Damage Multiplier (Cannon)" : "Множитель урона (Cannon)")]
             public float CannonMultiplier = 1f;
-            
+
             [JsonProperty(PropertyName = en ? "Damage Multiplier (Catapult)" : "Множитель урона (Catapult)")]
             public float CatapultMultiplier = 1f;
 
@@ -3304,23 +3390,23 @@ namespace RaidableBases
 
             internal bool Any => BallistaMultiplier != 1 || CatapultMultiplier != 1 || RamMultiplier != 1 || CannonMultiplier != 1;
 
-            public void Scale(BasePlayer attacker, HitInfo info, bool isHuman)
+            public void Scale(DamageContext c)
             {
-                if (BallistaMultiplier != 1f && isHuman && !info.IsProjectile() && !(info.WeaponPrefab is TimedExplosive) && attacker.GetMounted() is BallistaGun)
+                if (BallistaMultiplier != 1f && c.IsHuman && !c.Info.IsProjectile() && !(c.Info.WeaponPrefab is TimedExplosive) && c.Attacker.GetMounted() is BallistaGun)
                 {
-                    info.damageTypes.ScaleAll(BallistaMultiplier);
+                    c.Info.damageTypes.ScaleAll(BallistaMultiplier);
                 }
-                else if (CatapultMultiplier != 1f && info.WeaponPrefab != null && info.WeaponPrefab.ShortPrefabName.Contains("boulder_"))
+                else if (CatapultMultiplier != 1f && c.Info.WeaponPrefab != null && c.Info.WeaponPrefab.ShortPrefabName.Contains("boulder_"))
                 {
-                    info.damageTypes.ScaleAll(CatapultMultiplier);
+                    c.Info.damageTypes.ScaleAll(CatapultMultiplier);
                 }
-                else if (RamMultiplier != 1f && info.WeaponPrefab is BatteringRam)
+                else if (RamMultiplier != 1f && c.Info.WeaponPrefab is BatteringRam)
                 {
-                    info.damageTypes.ScaleAll(RamMultiplier);
+                    c.Info.damageTypes.ScaleAll(RamMultiplier);
                 }
-                else if (CannonMultiplier != 1f && info.WeaponPrefab is Cannon)
+                else if (CannonMultiplier != 1f && c.Info.WeaponPrefab is Cannon)
                 {
-                    info.damageTypes.ScaleAll(CannonMultiplier);
+                    c.Info.damageTypes.ScaleAll(CannonMultiplier);
                 }
             }
 
@@ -3381,6 +3467,24 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Difficulty Level" : "Уровень сложности")]
             public int Level = -1;
 
+            [DefaultValue(-1)]
+            [JsonProperty(PropertyName = en ? "Allow players to raid with items up to what workbench level?" : "До какого уровня верстака разрешать предметы для рейда?")]
+            public int WorkbenchLevel = -1;
+
+            [JsonProperty(PropertyName = en ? "Apply Workbench Level To (Weapon And Ammo, Weapon Only, Ammo Only)" : "Применять уровень верстака к (оружию и боеприпасам, только оружию, только боеприпасам)")]
+            public string WorkbenchLevelAppliesTo = "Weapon And Ammo";
+
+            [JsonProperty(PropertyName = en ? "Allowed Weapon And Ammo Item Shortnames (Overrides Workbench Level)" : "Разрешенные shortname оружия и боеприпасов (переопределяет уровень верстака)", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public List<string> AllowedWeaponAndAmmoShortnames = new();
+
+            internal bool RestrictByAcceptedItems() => AllowedWeaponAndAmmoShortnames.Count > 0;
+
+            internal bool RestrictByWorkbenchLevel(int max) => !RestrictByAcceptedItems() && WorkbenchLevel >= 0 && WorkbenchLevel < max;
+
+            internal bool CheckWeaponWorkbenchLevel() => !string.Equals(WorkbenchLevelAppliesTo, "Ammo Only", StringComparison.OrdinalIgnoreCase);
+
+            internal bool CheckAmmoWorkbenchLevel() => !string.Equals(WorkbenchLevelAppliesTo, "Weapon Only", StringComparison.OrdinalIgnoreCase);
+
             [JsonProperty(PropertyName = en ? "Allow Players To Build" : "Разрешить строить игрокам")]
             public bool AllowBuilding = true;
 
@@ -3439,7 +3543,7 @@ namespace RaidableBases
             public Dictionary<string, List<PasteOption>> _AdditionalBases = null;
 
             [JsonProperty(PropertyName = en ? "Additional Bases" : "Дополнительные базы", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public Dictionary<string, AdditionalBaseOptions> AdditionalBases = new();
+            public Dictionary<string, AdditionalBaseOptions> AdditionalBases = new(StringComparer.OrdinalIgnoreCase);
 
             [JsonProperty(PropertyName = en ? "Paste Options" : "Параметры вставки", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public List<PasteOption> PasteOptions = new();
@@ -3512,12 +3616,6 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Profile Enabled" : "Профиль включен")]
             public bool Enabled = true;
-
-            [DefaultValue(2.5f)]
-            [JsonProperty(PropertyName = en ? "Maximum Land Level" : "Максимальный уровень земли", DefaultValueHandling = DefaultValueHandling.Include)]
-            public float LandLevel = 2.5f;
-
-            internal float GetLandLevel => Mathf.Clamp(LandLevel, 0.5f, 3f);
 
             [JsonProperty(PropertyName = en ? "Allow Players To Use MLRS" : "Разрешить игрокам использовать МЛРС")]
             public bool MLRS = true;
@@ -3723,6 +3821,12 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Minimum Respawn Npc X Seconds After Death" : "Минимальное время возрождения NPC после смерти (в секундах)")]
             public float RespawnRateMin;
 
+            [JsonProperty(PropertyName = en ? "Maximum Number Of Times Each NPC Can Respawn (-1 = No Limit)" : "Максимальное количество возрождений каждого NPC (-1 = без ограничений)")]
+            public int RespawnAmountMax = -1;
+
+            [JsonProperty(PropertyName = en ? "Minimum Number Of Times Each NPC Can Respawn" : "Минимальное количество возрождений каждого NPC")]
+            public int RespawnAmountMin;
+
             [JsonProperty(PropertyName = en ? "No Item Input For Boxes And TC" : "Запрет складирования предметов в ящики")]
             public bool NoItemInput = true;
 
@@ -3768,7 +3872,7 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Always Spawn Base Loot Table" : "Всегда генерировать базовую таблицу добычи")]
             public bool AlwaysSpawnBaseLoot;
 
-            public BuildingOptions Clone() => MemberwiseClone() as BuildingOptions;
+            public BuildingOptions Clone() => MemberwiseClone() as BuildingOptions; // BuyableBases plugin requires this.
 
             public float ProtectionRadius(RaidableType type) => Mathf.Max(CELL_SIZE, ProtectionRadii.Get(type));
 
@@ -3818,7 +3922,7 @@ namespace RaidableBases
             public bool IncludePVP = true;
 
             [JsonProperty(PropertyName = en ? "Minimum Required Players Online" : "Минимальное количество игроков онлайн")]
-            public int PlayerLimitMin = 0;
+            public int PlayerLimitMin = 1;
 
             [JsonProperty(PropertyName = en ? "Maximum Limit Of Players Online" : "Максимальное количество игроков онлайн")]
             public int PlayerLimitMax = 300;
@@ -3874,8 +3978,16 @@ namespace RaidableBases
 
         public class BuyableCooldownDifficultySettings
         {
-            [JsonProperty(PropertyName = en ? "VIP Permission: raidablebases.vipcooldown" : "VIP Разрешение: raidablebases.vipcooldown")]
-            public double VIP = 1800;
+            [JsonProperty(PropertyName = en ? "VIP Permissions" : "VIP Разрешения")]
+            public Dictionary<string, double> Permissions = new()
+            {
+                ["raidablebases.vip1"] = 1800,
+                ["raidablebases.vip2"] = 1200,
+                ["raidablebases.vip3"] = 600
+            };
+
+            [JsonProperty(PropertyName = en ? "VIP Permission: raidablebases.vipcooldown" : "VIP Разрешение: raidablebases.vipcooldown", NullValueHandling = NullValueHandling.Ignore)]
+            public double? VIP = null;
 
             [JsonProperty(PropertyName = en ? "Admin Permission: raidablebases.allow" : "Админ Разрешение: raidablebases.allow")]
             public double Allow;
@@ -3917,8 +4029,10 @@ namespace RaidableBases
             [JsonProperty(PropertyName = en ? "Apply Cooldown When Rewards Are Given" : "Подавайте заявку, когда выдаются вознаграждения.")]
             public bool ApplyOnRewards = true;
 
-            [JsonProperty(PropertyName = en ? "Cooldown Override Applied To All Other Difficulties" : "Переопределение перезарядки для всех остальных уровней сложности")]
+            [JsonProperty(PropertyName = en ? "Apply Cooldown When Base Despawns" : "Применять кулдаун при деспауне базы")]
+            public bool ApplyOnDespawn = true;
 
+            [JsonProperty(PropertyName = en ? "Cooldown Override Applied To All Other Difficulties" : "Переопределение перезарядки для всех остальных уровней сложности")]
             public float OtherOverrideCooldown;
 
             public bool Any() => Dictionary.Count > 0 && Dictionary.All(x => x.Value != null);
@@ -3933,130 +4047,144 @@ namespace RaidableBases
                 return false;
             }
 
-            public bool Has(StoredData data, ulong userid, string mode) => Process(data, userid, mode, false);
+            public bool CanBeApplied(ulong userid, string mode) => TryGetLowestCooldown(userid, mode, out _);
 
-            public void Set(RaidableBases m, HashSet<ulong> alliance, ulong userid, string mode, bool set)
+            public void Process(RaidableBases m, HashSet<ulong> alliance, ulong userid, IClan clan, string mode, bool set)
             {
-                HashSet<ulong> members = new() { userid };
+                using var members = DisposableHashSet<ulong>();
+                members.Add(userid);
+
                 if (ApplyAlly)
                 {
                     members.UnionWith(alliance);
-                    members.UnionWith(m.GetMembers(userid));
+                    using var allies = m.GetMembers(userid, clan, out _);
+                    members.UnionWith(allies);
                 }
 
-                foreach (var member in members.ToList())
+                using var modes = DisposableList<string>();
+                if (ApplyAll)
                 {
-                    using var modes = DisposableList<string>();
-                    modes.AddRange(ApplyAll ? m.GetRaidableModes() : new[] { mode });
+                    modes.AddRange(m.GetRaidableModes());
+                }
+                else
+                {
+                    modes.Add(mode);
+                }
 
+                foreach (var member in members)
+                {
                     foreach (string other in modes)
                     {
-                        if (set && other != mode && OtherOverrideCooldown > 0)
+                        if (set && TryApplyOverrideCooldown(m.data, member, mode, other))
                         {
-                            if (!m.data.BuyableCooldowns.TryGetValue(member, out var info))
-                            {
-                                m.data.BuyableCooldowns[member] = info = new();
-                            }
-
-                            var newExpiry = DateTime.Now.AddSeconds(OtherOverrideCooldown);
-                            if (!info.Modes.TryGetValue(other, out var oldExpiry) || newExpiry > oldExpiry)
-                            {
-                                info.Modes[other] = newExpiry;
-                            }
                             continue;
                         }
 
-                        if (Process(m.data, member, other, set))
+                        if (!TryGetLowestCooldown(member, other, out double cooldown))
                         {
-                            members.Add(member);
-                            alliance.Add(member);
+                            continue;
                         }
+
+                        if (set)
+                        {
+                            SetCooldown(m.data, member, other, cooldown);
+                        }
+
+                        alliance.Add(member);
                     }
                 }
 
                 m.UpdateUI();
             }
 
-            private Dictionary<string, bool> _cache = new();
-
-            private bool Cache(string key, bool value)
+            private bool TryGetLowestCooldown(ulong userid, string mode, out double cooldown)
             {
-                _cache[key] = value;
-                if (_cache.Count == 1) InvokeHandler.Instance.Invoke(_cache.Clear, 2f);
-                return value;
-            }
-
-            private bool Process(StoredData data, ulong userid, string mode, bool set)
-            {
-                string key = $"{userid}_{mode}";
-                if (_cache.TryGetValue(key, out bool value))
-                {
-                    return value;
-                }
-
+                cooldown = 0;
                 if (userid.HasPermission("raidablebases.buyable.bypass.cooldown"))
                 {
-                    return Cache(key, false);
+                    return false;
                 }
 
                 var diff = Get(mode);
                 if (diff == null || diff.Cooldown <= 0)
                 {
-                    return Cache(key, false);
+                    return false;
                 }
 
                 using var cooldowns = DisposableList<double>();
-                cooldowns.Add(diff.Cooldown);
+                var target = RelationshipManager.FindByID(userid);
 
-                BasePlayer player = BasePlayer.FindByID(userid);
-                if (player != null)
+                switch (target)
                 {
-                    if (player.IsFlying || player.limitNetworking)
-                    {
-                        return Cache(key, false);
-                    }
+                    case { IsFlying: true } or { limitNetworking: true } or { isInvisible: true }:
+                        return false;
 
-                    if (player.IsAdmin || player.IsDeveloper)
-                    {
+                    case { IsAdmin: true } or { IsDeveloper: true }:
+                    case null when userid.BelongsToGroup("admin"):
+                        if (diff.Admin <= 0) return false;
                         cooldowns.Add(diff.Admin);
-                    }
+                        break;
                 }
 
-                if (userid.HasPermission("raidablebases.vipcooldown"))
+                foreach (var perm in diff.Permissions)
                 {
-                    cooldowns.Add(diff.VIP);
+                    if (perm.Key.Contains('.') ? userid.HasPermission(perm.Key) : userid.BelongsToGroup(perm.Key))
+                    {
+                        if (perm.Value <= 0) return false;
+                        cooldowns.Add(perm.Value);
+                    }
                 }
 
                 if (userid.HasPermission("raidablebases.allow"))
                 {
+                    if (diff.Allow <= 0) return false;
                     cooldowns.Add(diff.Allow);
                 }
 
-                double cooldown = double.MaxValue;
+                cooldown = diff.Cooldown;
 
-                foreach (double val in cooldowns)
+                foreach (double value in cooldowns)
                 {
-                    if (val < cooldown)
+                    if (value < cooldown)
                     {
-                        cooldown = val;
-                    }
-                    if (val <= 0)
-                    {
-                        return Cache(key, false);
+                        cooldown = value;
                     }
                 }
 
-                if (set)
-                {
-                    if (!data.BuyableCooldowns.TryGetValue(userid, out var info))
-                    {
-                        data.BuyableCooldowns[userid] = info = new();
-                    }
+                return true;
+            }
 
-                    info.Modes[mode] = DateTime.Now.AddSeconds(cooldown);
+            private bool TryApplyOverrideCooldown(StoredData data, ulong userid, string mode, string other)
+            {
+                if (other == mode || OtherOverrideCooldown <= 0)
+                {
+                    return false;
                 }
 
-                return Cache(key, true);
+                BuyableInfo info = Get(data, userid);
+                DateTime expiry = DateTime.Now.AddSeconds(OtherOverrideCooldown);
+
+                if (!info.Modes.TryGetValue(other, out DateTime previous) || expiry > previous)
+                {
+                    info.Modes[other] = expiry;
+                }
+
+                return true;
+            }
+
+            private void SetCooldown(StoredData data, ulong userid, string mode, double cooldown)
+            {
+                Get(data, userid).Modes[mode] = DateTime.Now.AddSeconds(cooldown);
+            }
+
+            private BuyableInfo Get(StoredData data, ulong userid)
+            {
+                if (!data.BuyableCooldowns.TryGetValue(userid, out var info))
+                {
+                    data.BuyableCooldowns[userid] = info = new();
+                }
+
+                return info;
             }
         }
 
@@ -4139,6 +4267,9 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = "Use Raids Can Spawn On Options")]
             public bool UseCanSpawnOnOptions = true;
+
+            [JsonProperty(PropertyName = en ? "Force Random Difficulty For Purchased Raids (Not Advised)" : "Принудительно выбирать случайную сложность покупных рейдов (не рекомендуется)")]
+            public bool RandomOnly;
         }
 
         public class ManualSettings
@@ -4350,6 +4481,9 @@ namespace RaidableBases
         {
             [JsonProperty(PropertyName = en ? "Custom Currency" : "Пользовательская валюта")]
             public CustomCostOptions Custom = new(0);
+
+            //[JsonProperty(PropertyName = en ? "Clan Score Points" : "Clan Score Points")]
+            internal int ClanScorePoints; // implement when Rust makes it possible
 
             [JsonProperty(PropertyName = en ? "Economics Money" : "Деньги Economics")]
             public double Money;
@@ -4581,8 +4715,6 @@ namespace RaidableBases
 
             public bool HasProbability() => UnityEngine.Random.value <= probability;
 
-            public LootItem Clone() => new(shortname, amountMin, amount, skin, isBlueprint, probability, stacksize, name, text, hasPriority, slots);
-
             public bool Equals(LootItem other) => shortname == other.shortname && amount == other.amount && skin == other.skin && amountMin == other.amountMin && text == other.text;
 
             public override bool Equals(object obj) => obj is LootItem ti && Equals(ti);
@@ -4640,23 +4772,27 @@ namespace RaidableBases
         public bool RequiresOwnership(ItemDefinition def, ulong skin)
         {
             if (!config.BlockPaidContent) return false;
+            if (skin == GRIMM_PAPER_SKIN) return false;
             if (skin != 0uL && !_ownershipReady) return true;
             if (skin != 0uL && _ownershipIds.Contains(skin)) return true;
             if (def != null && !_ownershipReady) return RequiresOwnership(def);
             return def != null && _dlcItemIds.Contains(def.itemid);
         }
 
-        public bool RequiresOwnership(ItemDefinition def) => def switch
+        public bool RequiresOwnership(ItemDefinition def)
         {
-            null => false,
-            { steamItem: { id: not 0 } } => true,
-            { steamDlc: { dlcAppID: not 0 } } => true,
-            { Blueprint: { NeedsSteamDLC: true } } => true,
-            { Parent: { Blueprint: { NeedsSteamDLC: true } } } => true,
-            { isRedirectOf: { Blueprint: { NeedsSteamDLC: true } } } => true,
-            { isRedirectOf: not null } => true,
-            _ => false
-        };
+            if (def == null) return false;
+            var parent = def.Parent;
+            return def switch
+            {
+                _ when def.steamItem != null && def.steamItem.id != 0 => true,
+                _ when def.steamDlc != null && def.steamDlc.dlcAppID != 0 => true,
+                _ when def.Blueprint != null && def.steamDlc != null => true,
+                _ when parent != null && parent.Blueprint != null && parent.steamDlc != null => true,
+                _ when def.isRedirectOf != null => true,
+                _ => false
+            };
+        }
 
         public bool HasUnlocked(BasePlayer player, ItemDefinition def)
         {
@@ -4830,28 +4966,40 @@ namespace RaidableBases
             [JsonProperty(PropertyName = "Anchor Max", Order = 3)]
             public string AnchorMax;
 
-            [JsonProperty(PropertyName = en ? "Required Access Level" : "Требуемый уровень доступа", Order = 5)]
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета интерфейса", Order = 4)]
+            public bool UseThemeColors = true;
+
+            [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта", Order = 5)]
+            public int FontSize = 12;
+
+            [JsonProperty(PropertyName = en ? "Show Health Bar" : "Показывать шкалу здоровья", Order = 6)]
+            public bool ShowHealthBar = true;
+
+            [JsonProperty(PropertyName = en ? "Health UI Distance" : "Дистанция интерфейса здоровья", Order = 7)]
+            public float HealthUiDistance = 3f;
+
+            [JsonProperty(PropertyName = en ? "Required Access Level" : "Требуемый уровень доступа", Order = 8)]
             public int RequiredAccessLevel;
 
-            [JsonProperty(PropertyName = en ? "Required Access Level Grants Permanent Use" : "Уровень доступа предоставляет постоянное использование", Order = 6)]
+            [JsonProperty(PropertyName = en ? "Required Access Level Grants Permanent Use" : "Уровень доступа предоставляет постоянное использование", Order = 9)]
             public bool RequiredAccessLevelOnce;
 
-            [JsonProperty(PropertyName = en ? "Required Keycard Skin ID" : "ID Скина ключа доступа", Order = 7)]
+            [JsonProperty(PropertyName = en ? "Required Keycard Skin ID" : "ID Скина ключа доступа", Order = 10)]
             public ulong SkinID = 2690554489;
 
-            [JsonProperty(PropertyName = en ? "Requires Building Permission" : "Требуется разрешение на строительство", Order = 8)]
+            [JsonProperty(PropertyName = en ? "Requires Building Permission" : "Требуется разрешение на строительство", Order = 11)]
             public bool RequiresBuildingPermission;
 
-            [JsonProperty(PropertyName = en ? "Button Health" : "Прочность кнопки", Order = 9)]
+            [JsonProperty(PropertyName = en ? "Button Health" : "Прочность кнопки", Order = 12)]
             public float ButtonHealth = 1000f;
 
-            [JsonProperty(PropertyName = en ? "Elevator Health" : "Прочность лифта", Order = 10)]
+            [JsonProperty(PropertyName = en ? "Elevator Health" : "Прочность лифта", Order = 13)]
             public float ElevatorHealth = 600f;
 
-            [JsonProperty(PropertyName = en ? "Requires Power Source" : "Требуется источник питания")]
+            [JsonProperty(PropertyName = en ? "Requires Power Source" : "Требуется источник питания", Order = 14)]
             public bool RequiresPower;
 
-            [JsonProperty(PropertyName = "Use Static Elevators Only (bmgjet)")]
+            [JsonProperty(PropertyName = "Use Static Elevators Only (bmgjet)", Order = 15)]
             public bool BMGOnly;
         }
 
@@ -4859,14 +5007,30 @@ namespace RaidableBases
         {
             public UIDelaySettings()
             {
-                (OffsetMin, OffsetMax, PanelAlpha) = (new(-34.488f, 87.056f), new(179.631f, 124.804f), 0.98f);
+                (OffsetMin, OffsetMax, PanelAlpha) = (new(-120f, 88f), new(120f, 136f), 0.98f);
             }
 
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
+
             [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта", Order = 4)]
-            public int FontSize = 14;
+            public int FontSize = 12;
 
             [JsonProperty(PropertyName = en ? "Text Color" : "Цвет текста", Order = 5)]
-            public string TextColor = "#FF0000";
+            public string TextColor = "#E5484D";
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Allow Dragging While Any Cursor Is Open" : "Разрешить перетаскивание при открытом курсоре")]
+            public bool AllowDraggingWithCursor = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
         }
 
         public class UILockoutSettings
@@ -4899,6 +5063,25 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Title Panel Color" : "Цвет панели заголовка")]
             public string TitlePanelColor = "#000000";
+
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
+
+            [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта")]
+            public int FontSize = 12;
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Allow Dragging While Any Cursor Is Open" : "Разрешить перетаскивание при открытом курсоре")]
+            public bool AllowDraggingWithCursor = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
         }
 
         public class UICooldownSettings
@@ -4931,6 +5114,77 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Title Panel Color" : "Цвет панели заголовка")]
             public string TitlePanelColor = "#000000";
+
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
+
+            [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта")]
+            public int FontSize = 12;
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Allow Dragging While Any Cursor Is Open" : "Разрешить перетаскивание при открытом курсоре")]
+            public bool AllowDraggingWithCursor = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
+        }
+
+
+        public class UIBuyablePanicCloseSettings
+        {
+            [JsonProperty(PropertyName = en ? "Enabled" : "Включено")]
+            public bool Enabled;
+
+            [JsonProperty(PropertyName = en ? "Jump Presses To Close (0 = disabled)" : "Нажатий прыжка для закрытия (0 = отключено)")]
+            public int JumpPresses = 3;
+
+            [JsonProperty(PropertyName = en ? "Movement Key Presses To Close (0 = disabled)" : "Нажатий клавиш движения для закрытия (0 = отключено)")]
+            public int MovementPresses = 5;
+
+            [JsonProperty(PropertyName = en ? "Reset Counts After X Seconds Without Input (0 = never)" : "Сбросить счетчики после X секунд без ввода (0 = никогда)")]
+            public float ResetSeconds = 3f;
+        }
+
+        public class UIBuyableTypeSelectorSettings
+        {
+            [JsonProperty(PropertyName = en ? "Enabled" : "Включено")]
+            public bool Enabled;
+
+            [JsonProperty(PropertyName = en ? "Require Confirmation" : "Требовать подтверждение")]
+            public bool RequireConfirmation = true;
+
+            [JsonProperty(PropertyName = en ? "Show Unavailable Buttons" : "Показывать недоступные кнопки")]
+            public bool ShowUnavailableButtons = true;
+
+            [JsonProperty(PropertyName = en ? "PVE Button Color" : "Цвет кнопки PVE")]
+            public string PVEButtonColor = "#2E8B57";
+
+            [JsonProperty(PropertyName = en ? "PVP Button Color" : "Цвет кнопки PVP")]
+            public string PVPButtonColor = "#B22222";
+
+            [JsonProperty(PropertyName = en ? "Button Text Color" : "Цвет текста кнопки")]
+            public string ButtonTextColor = "#FFFFFF";
+
+            [JsonProperty(PropertyName = en ? "Disabled Button Color" : "Цвет отключенной кнопки")]
+            public string DisabledButtonColor = "#4A4A4A";
+
+            [JsonProperty(PropertyName = en ? "Disabled Text Color" : "Цвет текста отключенной кнопки")]
+            public string DisabledTextColor = "#9A9A9A";
+
+            [JsonProperty(PropertyName = en ? "PVE/PVP Button Width" : "Ширина кнопок PVE/PVP")]
+            public float ButtonWidth = 50f;
+
+            [JsonProperty(PropertyName = en ? "PVE/PVP Button Spacing" : "Расстояние между кнопками PVE/PVP")]
+            public float ButtonSpacing = 5f;
+
+            [JsonProperty(PropertyName = en ? "Panic Close" : "Экстренное закрытие")]
+            public UIBuyablePanicCloseSettings Panic = new();
         }
 
         public class UIBuyableSettings : ConfigurationExtension<string>
@@ -4959,6 +5213,22 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Enabled" : "Включено")]
             public bool Enabled = true;
+
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
+
+            [JsonProperty(PropertyName = en ? "Purchase Type Selector (PVE/PVP)" : "Выбор типа покупки (PVE/PVP)")]
+            public UIBuyableTypeSelectorSettings TypeSelector = new();
 
             [JsonProperty(PropertyName = en ? "Sort By Price Instead Of Difficulty Level" : "Сортировать по цене вместо уровня трудности")]
             public bool Price;
@@ -5025,40 +5295,183 @@ namespace RaidableBases
             }
         }
 
+        public class UIThemeSettings
+        {
+            [JsonProperty(PropertyName = en ? "Background Color" : "Цвет фона")]
+            public string BackgroundColor = "#1B1B1B";
+
+            [JsonProperty(PropertyName = en ? "Background Alpha" : "Прозрачность фона")]
+            public float BackgroundAlpha = 0.98f;
+
+            [JsonProperty(PropertyName = en ? "Panel Color" : "Цвет панели")]
+            public string PanelColor = "#252525";
+
+            [JsonProperty(PropertyName = en ? "Cell Color" : "Цвет ячейки")]
+            public string CellColor = "#1F1F1F";
+
+            [JsonProperty(PropertyName = en ? "Divider Color" : "Цвет разделителя")]
+            public string DividerColor = "#333333";
+
+            [JsonProperty(PropertyName = en ? "Progress Background Color" : "Цвет фона прогресса")]
+            public string ProgressBackgroundColor = "#2E2E2E";
+
+            [JsonProperty(PropertyName = en ? "Accent Color" : "Акцентный цвет")]
+            public string AccentColor = "#5865F2";
+
+            [JsonProperty(PropertyName = en ? "Text Color" : "Цвет текста")]
+            public string TextColor = "#E8E8E8";
+
+            [JsonProperty(PropertyName = en ? "Muted Text Color" : "Цвет приглушенного текста")]
+            public string MutedTextColor = "#A3A8B3";
+        }
+
+        public class UITargetInfoSettings
+        {
+            [JsonProperty(PropertyName = en ? "Enabled" : "Включено")]
+            public bool Enabled = true;
+
+            [JsonProperty(PropertyName = en ? "Seconds Shown" : "Время показа в секундах")]
+            public float SecondsShown = 30f;
+
+            [JsonProperty(PropertyName = en ? "Width" : "Ширина")]
+            public float Width = 1160f;
+
+            [JsonProperty(PropertyName = en ? "Height" : "Высота")]
+            public float Height = 560f;
+        }
+
         public class UIStatusSettings : UIBaseSettings
         {
             public UIStatusSettings()
             {
-                (OffsetMin, OffsetMax, PanelColor, PanelAlpha) = (new(191.957f, 17.056f), new(327.626f, 79.024f), "#252121", 0.98f);
+                (OffsetMin, OffsetMax, PanelColor, TitlePanelColor, PanelAlpha) = (new(154f, 18f), new(406f, 112f), "#1B1B1B", "#252525", 0.98f);
             }
+
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
 
             [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта")]
             public int FontSize = 12;
 
+            [JsonProperty(PropertyName = en ? "Content Layout" : "Макет содержимого")]
+            public string ContentLayout = "Rows";
+
             [JsonProperty(PropertyName = en ? "PVP Color" : "Цвет PVP")]
-            public string ColorPVP = "#FF0000";
+            public string ColorPVP = "#E5484D";
 
             [JsonProperty(PropertyName = en ? "PVE Color" : "Цвет PVE")]
-            public string ColorPVE = "#008000";
+            public string ColorPVE = "#56C596";
 
             [JsonProperty(PropertyName = en ? "No Owner Color" : "Цвет без владельца", Order = 7)]
-            public string NoneColor = "#FFFFFF";
+            public string NoneColor = "#E8E8E8";
 
             [JsonProperty(PropertyName = en ? "Negative Color" : "Отрицательный цвет", Order = 7)]
-            public string NegativeColor = "#FF0000";
+            public string NegativeColor = "#E5484D";
 
             [JsonProperty(PropertyName = en ? "Positive Color" : "Положительный цвет", Order = 8)]
-            public string PositiveColor = "#008000";
+            public string PositiveColor = "#56C596";
+
+            [JsonProperty(PropertyName = en ? "Show Raid Details" : "Показывать сведения о рейде")]
+            public bool ShowRaidDetails = true;
+
+            [JsonProperty(PropertyName = en ? "Raid Details Format" : "Формат сведений о рейде")]
+            public string RaidDetailsFormat = "{type} • {difficulty} • {mode} • {state}";
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Allow Dragging While Any Cursor Is Open" : "Разрешить перетаскивание при открытом курсоре")]
+            public bool AllowDraggingWithCursor = true;
 
             [JsonProperty(PropertyName = en ? "Show Loot Left" : "Показывать оставшийся лут")]
             public bool ShowLootLeft = true;
 
             [JsonProperty(PropertyName = en ? "Hide Loot Left Number When There Is No Owner" : "Скрыть оставшуюся добычу, если нет владельца")]
             public bool HideWithoutOwner;
+
+            [JsonProperty(PropertyName = en ? "Show Despawn Time" : "Показывать время до исчезновения")]
+            public bool ShowDespawnTime = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
+        }
+
+
+        public class UITeleportSettings : UIBaseSettings
+        {
+            public UITeleportSettings()
+            {
+                (OffsetMin, OffsetMax, PanelAlpha) = (new(-140f, 88f), new(140f, 218f), 0.98f);
+            }
+
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
+
+            [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта")]
+            public int FontSize = 12;
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Allow Dragging While Any Cursor Is Open" : "Разрешить перетаскивание при открытом курсоре")]
+            public bool AllowDraggingWithCursor = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
+        }
+
+        public class UIPasteProgressSettings : UIBaseSettings
+        {
+            public UIPasteProgressSettings()
+            {
+                (OffsetMin, OffsetMax, PanelAlpha) = (new(-190f, 382f), new(190f, 458f), 0.94f);
+            }
+
+            [JsonProperty(PropertyName = "Normalized Anchor")]
+            [JsonConverter(typeof(Vector2Converter))]
+            public Vector2 NormalizedAnchor;
+
+            [JsonProperty(PropertyName = en ? "Use Shared UI Theme Colors" : "Использовать общие цвета темы UI")]
+            public bool UseThemeColors = true;
+
+            [JsonProperty(PropertyName = en ? "Font Size" : "Размер шрифта", Order = 7)]
+            public int FontSize = 12;
+
+            [JsonProperty(PropertyName = en ? "Text Color" : "Цвет текста", Order = 8)]
+            public string TextColor = "#FFFFFF";
+
+            [JsonProperty(PropertyName = en ? "Progress Color" : "Цвет прогресса", Order = 9)]
+            public string ProgressColor = "#FFD60A";
+
+            [JsonProperty(PropertyName = en ? "Show File Name" : "Показывать имя файла")]
+            public bool ShowFileName = true;
+
+            [JsonProperty(PropertyName = en ? "Show Move Button" : "Показывать кнопку перемещения")]
+            public bool ShowMoveButton = true;
+
+            [JsonProperty(PropertyName = en ? "Allow Dragging While Any Cursor Is Open" : "Разрешить перетаскивание при открытом курсоре")]
+            public bool AllowDraggingWithCursor = true;
+
+            [JsonProperty(PropertyName = en ? "Move Mode Seconds" : "Время режима перемещения в секундах")]
+            public float MoveModeSeconds = 10f;
         }
 
         public class UISettings
         {
+            [JsonProperty(PropertyName = en ? "Theme" : "Тема")]
+            public UIThemeSettings Theme = new();
+
+            [JsonProperty(PropertyName = en ? "Target Information UI (rb.info)" : "Интерфейс информации о цели (rb.info)")]
+            public UITargetInfoSettings TargetInfo = new();
+
             [JsonProperty(PropertyName = en ? "Advanced Alerts UI" : "Расширенные оповещения UI")]
             public UIAdvancedAlertSettings AA = new();
 
@@ -5073,6 +5486,12 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = en ? "Lockouts UI" : "Блокировки UI")]
             public UILockoutSettings Lockout = new();
+
+            [JsonProperty(PropertyName = en ? "Paste Progress UI" : "Paste Progress UI")]
+            public UIPasteProgressSettings PasteProgress = new();
+
+            [JsonProperty(PropertyName = en ? "Buyable Teleport UI" : "Интерфейс телепорта покупки")]
+            public UITeleportSettings Teleport = new();
 
             [JsonProperty(PropertyName = en ? "Status UI" : "Статус UI")]
             public UIStatusSettings Status = new();
@@ -5117,7 +5536,7 @@ namespace RaidableBases
         public class WeaponSettingsSamSite
         {
             [JsonProperty(PropertyName = en ? "Repairs Every X Minutes (0.0 = disabled)" : "Восстановление каждые X минут (0.0 = отключено)")]
-            public float Repair = 5f;
+            public float Repair;
 
             [JsonProperty(PropertyName = en ? "Range (350.0 = Rust default)" : "Дальность (350.0 = значение по умолчанию в Rust)")]
             public float Range = 75f;
@@ -5237,69 +5656,36 @@ namespace RaidableBases
         }
 
         private bool BuoyantBox;
-        private string _configFilePath;
         private bool isInitialized = true;
         private Exception exConf;
         private const bool en = true;
-#pragma warning disable CS0649
+        private const float StatusUiMinimumWidth = 252f;
+        private const float StatusUiMinimumHeight = 94f;
+        private const float PasteProgressUiMinimumWidth = 380f;
+        private const float PasteProgressUiMinimumHeight = 76f;
+        private const float DelayUiWidth = 240f;
+        private const float DelayUiHeight = 48f;
+        private const float TeleportUiMinimumWidth = 280f;
+        private const float TeleportUiMinimumHeight = 130f;
         private bool InstallationError;
-#pragma warning restore CS0649
+
+        private string _configFilePath;
 
         protected void LoadConfig()
         {
-            if (RaidableBasesHost.Instance != null)
-            {
-                LoadConfigHarmony();
-                return;
-            }
-            LoadConfigLegacy();
-        }
-
-        private void LoadConfigHarmony()
-        {
+            _extensions.Clear();
             isInitialized = false;
-            var path = HarmonyDataLayer.GetPreferredConfigPath();
-            _configFilePath = path;
-            var configDir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(configDir) && !Directory.Exists(configDir)) Directory.CreateDirectory(configDir);
+            exConf = null;
             try
             {
+                var path = HarmonyDataLayer.GetPreferredConfigPath();
+                _configFilePath = path;
+                var configDir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(configDir) && !Directory.Exists(configDir)) Directory.CreateDirectory(configDir);
                 if (File.Exists(path))
-                {
                     config = JsonConvert.DeserializeObject<Configuration>(File.ReadAllText(path));
-                    if (config == null)
-                        UnityEngine.Debug.LogWarning("[RaidableBases] Config file exists but deserialized to null: " + path);
-                }
-                else
-                    UnityEngine.Debug.Log("[RaidableBases] No config at " + path + " - creating defaults.");
-                if (config == null)
-                {
-                    config = new Configuration();
-                    LoadDefaultConfig();
-                    isInitialized = true; // persist defaults to HarmonyConfig/RaidableBases.json
-                }
+                if (config == null) { config = new Configuration(); LoadDefaultConfig(); }
                 else isInitialized = true;
-            }
-            catch (Exception ex)
-            {
-                exConf = ex;
-                UnityEngine.Debug.LogError("[RaidableBases] Config load failed, using defaults: " + ex);
-                config = new Configuration();
-                LoadDefaultConfig();
-                isInitialized = true;
-            }
-            ProcessConfigAfterLoad();
-            if (isInitialized) SaveConfig();
-        }
-
-        private void LoadConfigLegacy()
-        {
-            isInitialized = false;
-            try
-            {
-                config = new Configuration();
-                LoadDefaultConfig();
-                isInitialized = true;
             }
             catch (Exception ex)
             {
@@ -5307,11 +5693,21 @@ namespace RaidableBases
                 LoadDefaultConfig();
                 Puts(ex.ToString());
             }
-            ProcessConfigAfterLoad();
-        }
 
-        private void ProcessConfigAfterLoad()
-        {
+            config.UI ??= new();
+            config.UI.Theme ??= new();
+            config.UI.TargetInfo ??= new();
+            config.UI.AA ??= new();
+            config.UI.Buyable ??= new();
+            config.UI.BuyableCooldowns ??= new();
+            config.UI.Delay ??= new();
+            config.UI.Lockout ??= new();
+            config.UI.PasteProgress ??= new();
+            config.UI.Teleport ??= new();
+            config.UI.Status ??= new();
+
+            MigrateRewrittenUiConfiguration();
+
             if (config.DestroyDlcContainerOnceLooted == null)
             {
                 config.DestroyDlcContainerOnceLooted = config.BlockPaidContent;
@@ -5326,11 +5722,56 @@ namespace RaidableBases
                 allowBuildingBlockExceptions = config.Settings.Management._AllowedBuildingBlocks.ToList();
                 config.Settings.Management._AllowedBuildingBlocks = null;
             }
-            if (config.UI.Status.OffsetMin == new Vector2(43.957f, 87.056f))
+            if (config.UI.Status.PanelColor == "#252121")
             {
-                config.UI.Status.OffsetMin = new(191.957f, 17.056f);
-                config.UI.Status.OffsetMax = new(327.626f, 79.024f);
+                config.UI.Status.PanelColor = "#1B1B1B";
             }
+
+            if (config.UI.Status.TitlePanelColor == "#000000")
+            {
+                config.UI.Status.TitlePanelColor = "#252525";
+            }
+
+            if (config.UI.Status.ColorPVP == "#FF0000")
+            {
+                config.UI.Status.ColorPVP = "#E5484D";
+            }
+
+            if (config.UI.Status.ColorPVE == "#008000")
+            {
+                config.UI.Status.ColorPVE = "#56C596";
+            }
+
+            if (config.UI.Status.NoneColor == "#FFFFFF")
+            {
+                config.UI.Status.NoneColor = "#E8E8E8";
+            }
+
+            if (config.UI.Status.NegativeColor == "#FF0000")
+            {
+                config.UI.Status.NegativeColor = "#E5484D";
+            }
+
+            if (config.UI.Status.PositiveColor == "#008000")
+            {
+                config.UI.Status.PositiveColor = "#56C596";
+            }
+
+            if (!string.Equals(config.UI.Status.ContentLayout, "Rows", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(config.UI.Status.ContentLayout, "Cards", StringComparison.OrdinalIgnoreCase))
+            {
+                config.UI.Status.ContentLayout = "Rows";
+            }
+
+            config.UI.Status.RaidDetailsFormat ??= "{type} â€¢ {difficulty} â€¢ {mode} â€¢ {state}";
+            config.UI.Buyable.MoveModeSeconds = Mathf.Max(1f, config.UI.Buyable.MoveModeSeconds);
+            config.UI.BuyableCooldowns.MoveModeSeconds = Mathf.Max(1f, config.UI.BuyableCooldowns.MoveModeSeconds);
+            config.UI.Delay.MoveModeSeconds = Mathf.Max(1f, config.UI.Delay.MoveModeSeconds);
+            config.UI.Lockout.MoveModeSeconds = Mathf.Max(1f, config.UI.Lockout.MoveModeSeconds);
+            config.UI.PasteProgress.MoveModeSeconds = Mathf.Max(1f, config.UI.PasteProgress.MoveModeSeconds);
+            config.UI.Status.MoveModeSeconds = Mathf.Max(1f, config.UI.Status.MoveModeSeconds);
+            config.UI.Teleport.MoveModeSeconds = Mathf.Max(1f, config.UI.Teleport.MoveModeSeconds);
+
             if (config.Settings.Management._RequireCupboardLooted != null)
             {
                 config.Settings.Management.RequireCupboardLooted = config.Settings.Management._RequireCupboardLooted.Value;
@@ -5342,12 +5783,85 @@ namespace RaidableBases
                 const string choices = "abcdefghijklmnopqrstuvwxyz";
                 char[] buffer = new char[len];
                 for (int i = 0; i < len; i++)
-                    buffer[i] = choices[UnityEngine.Random.Range(0, choices.Length)];
+                    buffer[i] = choices[Core.Random.Range(0, choices.Length)];
                 config.Settings.EditCommand = new string(buffer);
             }
+            config.Settings.Management.BlockedMonumentMarkers.RemoveAll(string.IsNullOrWhiteSpace);
             config.Settings.Management.Inherit.RemoveAll(string.IsNullOrWhiteSpace);
             UndoSettings = new(config.Settings.Management, config.LogToFile);
             config.Settings.Management._Players = null;
+            if (isInitialized) SaveConfig();
+            HarmonyModInterface.CallHook("OnRaidableConfigLoaded", Version, IsPremium(), en, config.Settings.Buyable.RandomOnly, ArePurchasesConfigured(), exConf);
+        }
+
+        private bool MigrateRewrittenUiConfiguration()
+        {
+            bool changed = false;
+            UIStatusSettings status = config.UI.Status;
+            UIDelaySettings delay = config.UI.Delay;
+            UIPasteProgressSettings paste = config.UI.PasteProgress;
+            UITeleportSettings teleport = config.UI.Teleport;
+
+            changed |= MigrateUiRectangle(ref status.OffsetMin, ref status.OffsetMax, new(191.957f, 17.056f), new(327.626f, 79.024f), new(154f, 18f), new(406f, 112f), StatusUiMinimumWidth, StatusUiMinimumHeight);
+            changed |= MigrateUiRectangle(ref delay.OffsetMin, ref delay.OffsetMax, new(-34.488f, 87.056f), new(179.631f, 124.804f), new(-120f, 88f), new(120f, 136f), DelayUiWidth, DelayUiHeight);
+            changed |= EnsureUiRectangle(ref paste.OffsetMin, ref paste.OffsetMax, new(-190f, 382f), new(190f, 458f), PasteProgressUiMinimumWidth, PasteProgressUiMinimumHeight);
+            changed |= EnsureUiRectangle(ref teleport.OffsetMin, ref teleport.OffsetMax, new(-140f, 88f), new(140f, 218f), TeleportUiMinimumWidth, TeleportUiMinimumHeight);
+
+            return changed;
+        }
+
+        private static bool MigrateUiRectangle(ref Vector2 min, ref Vector2 max, Vector2 legacyMin, Vector2 legacyMax, Vector2 currentMin, Vector2 currentMax, float minimumWidth, float minimumHeight)
+        {
+            if (Approximately(min, legacyMin) && Approximately(max, legacyMax))
+            {
+                min = currentMin;
+                max = currentMax;
+                return true;
+            }
+
+            return EnsureUiRectangle(ref min, ref max, currentMin, currentMax, minimumWidth, minimumHeight);
+        }
+
+        private static bool EnsureUiRectangle(ref Vector2 min, ref Vector2 max, Vector2 currentMin, Vector2 currentMax, float minimumWidth, float minimumHeight)
+        {
+            if (!IsFinite(min) || !IsFinite(max) || min.x >= max.x || min.y >= max.y)
+            {
+                min = currentMin;
+                max = currentMax;
+                return true;
+            }
+
+            float width = max.x - min.x;
+            float height = max.y - min.y;
+            float migratedWidth = Mathf.Max(width, minimumWidth);
+            float migratedHeight = Mathf.Max(height, minimumHeight);
+
+            if (Mathf.Approximately(width, migratedWidth) && Mathf.Approximately(height, migratedHeight))
+            {
+                return false;
+            }
+
+            Vector2 center = (min + max) * 0.5f;
+            Vector2 half = new(migratedWidth * 0.5f, migratedHeight * 0.5f);
+            min = center - half;
+            max = center + half;
+            return true;
+        }
+
+        private static bool Approximately(Vector2 a, Vector2 b) => Mathf.Abs(a.x - b.x) <= 0.01f && Mathf.Abs(a.y - b.y) <= 0.01f;
+
+        private static bool IsFinite(Vector2 value) => !float.IsNaN(value.x) && !float.IsInfinity(value.x) && !float.IsNaN(value.y) && !float.IsInfinity(value.y);
+
+        private bool ArePurchasesConfigured()
+        {
+            var settings = config.Settings;
+            if (settings.Buyable.Max <= 0)
+            {
+                return false;
+            }
+
+            var include = settings.Include;
+            return (include.Economics && settings.Economics.Any()) || (include.ServerRewards && settings.ServerRewards.Any()) || (include.Custom && settings.AnyCustomCost());
         }
 
         protected void SaveConfig()
@@ -5364,7 +5878,7 @@ namespace RaidableBases
         protected void LoadDefaultConfig()
         {
             config = new();
-            Puts("Loaded default configuration file. Writing HarmonyConfig/RaidableBases.json. Profiles go in HarmonyData/RaidableBases/Profiles/.");
+            Puts("Created default configuration file. Please allow a few moments for it to populate with your profiles.");
         }
 
         private bool? allowBuilding = null;

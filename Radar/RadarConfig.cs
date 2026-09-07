@@ -333,88 +333,21 @@ namespace Radar
         }
 
         [Serializable]
-        public class TrackAdminStatusConfig
-        {
-            [JsonProperty("Radar")]
-            public bool Radar { get; set; }
-
-            [JsonProperty("Radar Text")]
-            public string RadarText { get; set; } = "<color=#00FF00>R</color>";
-
-            [JsonProperty("Console Godmode")]
-            public bool God { get; set; }
-
-            [JsonProperty("Console Godmode Text")]
-            public string GodText { get; set; } = "<color=#89CFF0>G</color>";
-
-            [JsonProperty("Plugin Godmode")]
-            public bool GodPlugin { get; set; }
-
-            [JsonProperty("Plugin Godmode Text")]
-            public string GodPluginText { get; set; } = "<color=#0000CD>G</color>";
-
-            [JsonProperty("Vanish")]
-            public bool Vanish { get; set; } = true;
-
-            [JsonProperty("Vanish Text")]
-            public string VanishText { get; set; } = "<color=#FF00FF>V</color>";
-
-            [JsonProperty("NOCLIP")]
-            public bool NoClip { get; set; }
-
-            [JsonProperty("NOCLIP Text")]
-            public string NoClipText { get; set; } = "<color=#FFFF00>F</color>";
-
-            [JsonProperty("Spectating")]
-            public bool Spectating { get; set; }
-
-            [JsonProperty("Spectating Text")]
-            public string SpectatingText { get; set; } = "<color=#00FFFF>S</color>";
-
-            [JsonIgnore]
-            public bool Any =>
-                Radar || God || GodPlugin || Vanish || NoClip || Spectating;
-        }
-
-        [Serializable]
         public class OptionsConfig
         {
-            /// <summary>Item or entity shortnames. Empty list disables box tracking (AdminRadar 5.4.312).</summary>
-            [JsonProperty("Boxes", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<string> Boxes { get; set; } = CreateDefaultBoxes();
-
-            /// <summary>Legacy key from older Radar/AdminRadar configs.</summary>
             [JsonProperty("Additional Boxes")]
-            private List<string> LegacyAdditionalBoxes
+            public List<string> AdditionalBoxes { get; set; } = new List<string>
             {
-                set
-                {
-                    if (value == null || value.Count == 0)
-                        return;
-                    if (Boxes == null || Boxes.Count == 0)
-                        Boxes = value;
-                }
-            }
-
-            public static List<string> CreateDefaultBoxes() => new List<string>
-            {
-                "abyss_barrel",
-                "bamboo_barrel",
-                "box.wooden.large",
-                "coffinstorage",
-                "dropbox.deployed",
-                "heli_crate",
-                "krieg_storage",
-                "mailbox.deployed",
-                "medieval.box.wooden.large",
-                "missionstash",
-                "small_stash_deployed",
                 "storage_barrel",
                 "vendingmachine.deployed",
-                "wicker_barrel",
                 "woodbox_deployed",
-                "industrial_storage_horizontal",
-                "industrial_storage_vertical"
+                "box.wooden.large",
+                "dropbox.deployed",
+                "coffinstorage",
+                "small_stash_deployed",
+                "mailbox.deployed",
+                "missionstash",
+                "heli_crate"
             };
 
             [JsonProperty("Additional Traps")]
@@ -539,28 +472,6 @@ namespace Radar
 
             [JsonProperty("Settings")]
             public SettingsConfig Settings { get; set; } = new SettingsConfig();
-
-            [JsonProperty("Track Admin Status")]
-            public TrackAdminStatusConfig TrackAdminStatus { get; set; } = new TrackAdminStatusConfig();
-
-            [JsonProperty("Voice Detection")]
-            public VoiceDetectionConfig VoiceDetection { get; set; } = new VoiceDetectionConfig();
-        }
-
-        [Serializable]
-        public class VoiceDetectionConfig
-        {
-            [JsonProperty("Enabled")]
-            public bool Enabled { get; set; } = true;
-
-            [JsonProperty("Timeout After X Seconds")]
-            public int Interval { get; set; } = 3;
-
-            [JsonProperty("Detection Radius")]
-            public float Distance { get; set; } = 30f;
-
-            [JsonIgnore]
-            public float SqrDistance => Distance * Distance;
         }
 
         public static ConfigData Config { get; private set; }
@@ -589,7 +500,6 @@ namespace Radar
                     if (cfg != null)
                     {
                         Config = cfg;
-                        NormalizeVoiceDetection();
                         _configPath = p;
                         UnityEngine.Debug.Log("[Radar] Config loaded from " + p);
                         return;
@@ -598,7 +508,6 @@ namespace Radar
 
                 // Create default config in HarmonyConfig on first load.
                 Config = new ConfigData();
-                NormalizeVoiceDetection();
                 _configPath = Path.Combine(serverRoot, "HarmonyConfig", "Radar.json");
                 var dir = Path.GetDirectoryName(_configPath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -611,17 +520,7 @@ namespace Radar
             {
                 UnityEngine.Debug.LogError("[Radar] Config load error: " + ex.Message);
                 Config ??= new ConfigData();
-                NormalizeVoiceDetection();
             }
-        }
-
-        private static void NormalizeVoiceDetection()
-        {
-            if (Config == null)
-                return;
-            Config.VoiceDetection ??= new VoiceDetectionConfig();
-            if (Config.VoiceDetection.Interval < 3)
-                Config.VoiceDetection.Interval = 3;
         }
 
         public static void SaveConfig()

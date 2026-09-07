@@ -9,7 +9,7 @@ namespace RustLeagueHarmony.Patches
         private static bool Prefix(BaseMountable __instance, BasePlayer player)
         {
             var plugin = RustLeagueMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || player == null) return true;
+            if (plugin == null || player == null) return true;
             return !plugin.TryBlockDismount(player, __instance);
         }
     }
@@ -21,7 +21,7 @@ namespace RustLeagueHarmony.Patches
         private static bool Prefix(BaseMountable __instance, BaseEntity.RPCMessage msg)
         {
             var plugin = RustLeagueMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return true;
+            if (plugin == null) return true;
             var player = msg.player;
             if (player == null) return true;
             if (plugin.TryHandleDismountFailed(player, __instance))
@@ -37,7 +37,7 @@ namespace RustLeagueHarmony.Patches
         private static bool Prefix(ModularCarSeat __instance, BasePlayer player, ref bool __result)
         {
             var plugin = RustLeagueMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || player == null) return true;
+            if (plugin == null || player == null) return true;
             if (!plugin.TryBlockSeatSwap(player, __instance)) return true;
             __result = false;
             return false;

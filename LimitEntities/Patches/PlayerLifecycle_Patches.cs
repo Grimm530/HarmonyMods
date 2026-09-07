@@ -11,12 +11,12 @@ namespace LimitEntities.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var service = LimitEntitiesMod.Service;
-            if (service == null || !service.IsReady || __instance == null) return;
+            if (service == null || !service.IsReady) return;
             service.OnPlayerConnected(__instance);
         }
     }
 
-    /// <summary>Oxide OnNewSave — clear BuildingsOwners on wipe id change.</summary>
+    /// <summary>compat OnNewSave — clear BuildingsOwners on wipe id change.</summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     internal static class SaveRestore_Load_Patch
     {

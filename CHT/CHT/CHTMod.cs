@@ -1,8 +1,15 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using UnityEngine;
-using PluginBody = Oxide.Plugins.CustomHelicopterTiers2;
+using GrimmCuiHarmony;
+using CHT.Patches;
+using GrimmCuiHarmony;
+using PluginBody = Harmony.Plugins.CustomHelicopterTiers2;
+using GrimmCuiHarmony;
 
 namespace CHT
 {
@@ -29,7 +36,9 @@ namespace CHT
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
             try
@@ -52,8 +61,6 @@ namespace CHT
                 }
 
                 // PatchAll on cui.endtest can drop Shop/Kits handlers when CHT loads after them.
-                Patches.CuiEndtestRebind.EnsureForeignPrefixes();
-
                 _init = ModRunner.Instance.StartCoroutine(InitRoutine());
                 Debug.Log("[CHT] Loaded. Config: HarmonyConfig/CHT.json. Tiers: HarmonyData/CHT/. Open UI: F1 `" + _shopCommandName + "` or Shop command `cht.openshop <steamid>`");
             }
@@ -75,9 +82,7 @@ namespace CHT
                 PermissionsBridge.Initialize(PluginBody.GetRegisteredPermissions());
                 Plugin.CallOnServerInitialized();
                 RegisterShopCommand();
-                // Second pass after other mods finish init (covers odd load races).
-                Patches.CuiEndtestRebind.EnsureForeignPrefixes();
-            }
+                            }
             catch (Exception e)
             {
                 Debug.LogError("[CHT] Init failed: " + e);
@@ -107,6 +112,7 @@ namespace CHT
             ModRunner.Destroy();
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); } catch { }
             Plugin = null;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[CHT] Unloaded.");
         }

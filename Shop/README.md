@@ -1,6 +1,6 @@
 # Shop Harmony Mod (2.4.201)
 
-Oxide-free Harmony port of **Shop 2.4.201** (Grimm530 / Mevent). Exact logic replica; hosting uses HarmonyConfig / HarmonyData / Permissions / Economics.
+Harmony Harmony port of **Shop 2.4.201** (Grimm530 / Mevent). Exact logic replica; hosting uses HarmonyConfig / HarmonyData / Permissions / Economics.
 
 ## Paths
 
@@ -85,5 +85,5 @@ Copies only `Shop.dll` to `HarmonyMods/`.
 - Command product `bdgive Easy %steamid% 1` is dispatched to BradleyDrops (`BradleyDrops_ApiType`) so shop purchases grant the signal.
 - Command product `cht.openshop %steamid%` closes Shop UI and calls CHT via `CHT_ApiType` (heli menu lives on OverlayNonScaled).
 - Command product `giveflare 2888602635 %steamid%` (and medium/hard skins) is dispatched to DefendableHomes (`DefendableHomes_ApiType`) so shop purchases grant the raid flare.
-- Other optional Oxide plugins (ServerPanel, Notify, NoEscape, Duel) remain
+- Other optional Harmony mods (ServerPanel, Notify, NoEscape, Duel) remain
   stubs unless a Harmony equivalent is wired later.

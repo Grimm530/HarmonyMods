@@ -13,7 +13,7 @@ using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using KitsHarmony.KitsExtensionMethods;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -25,7 +25,7 @@ using Random = UnityEngine.Random;
 namespace KitsHarmony
 {
     /// <summary>
-    /// Kits 2.3.8 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// Kits 2.3.8 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public class Kits : KitsPluginBase
     {
@@ -6767,7 +6767,7 @@ namespace KitsHarmony
 
             try
             {
-                _disablesAutoKits = Interface.Oxide.DataFileSystem.ReadObject<List<ulong>>($"{Name}/DisabledAutoKits");
+                _disablesAutoKits = HarmonyModInterface.Mods.DataFileSystem.ReadObject<List<ulong>>($"{Name}/DisabledAutoKits");
             }
             catch (Exception e)
             {
@@ -6781,7 +6781,7 @@ namespace KitsHarmony
         {
             if (!_config.UseChangeAutoKit) return;
 
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/DisabledAutoKits", _disablesAutoKits);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/DisabledAutoKits", _disablesAutoKits);
         }
 
         #endregion
@@ -6794,7 +6794,7 @@ namespace KitsHarmony
         {
             try
             {
-                _data = Interface.Oxide.DataFileSystem.ReadObject<PluginData>($"{Name}/Kits");
+                _data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PluginData>($"{Name}/Kits");
             }
             catch (Exception e)
             {
@@ -6807,7 +6807,7 @@ namespace KitsHarmony
 
         private void SaveKits()
         {
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/Kits", _data);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/Kits", _data);
         }
 
         #region Classes
@@ -7736,7 +7736,7 @@ namespace KitsHarmony
 
             _instance = null;
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -8810,7 +8810,7 @@ MainKitsContentUI(player, container); });
 
             SendReply(arg, $"Player '{nameOrSteamID}' successfully received a kit '{kitName}'");
 
-            Interface.CallHook("OnKitRedeemed", target, kit.Name);
+            HarmonyModInterface.CallHook("OnKitRedeemed", target, kit.Name);
 
             PlayerData.Save(target.UserIDString);
 
@@ -9246,8 +9246,10 @@ MainKitsContentUI(player, container); });
 
                     if (string.IsNullOrEmpty(kit.Category) || categories.Contains(kit.Category)) continue;
 
-                    if (IsAdmin(player) || (!kit.Hide &&
-                                            permission.UserHasPermission(player.UserIDString, $"kits.{kit.Category}")))
+                    // Show a category if the player can see at least one kit in it (kit permission),
+                    // not only when they have the category group perm (e.g. kits.vip).
+                    if (IsAdmin(player) || IsKitAvailable(player, openedKits.npcID.ToString(), true, true, kit,
+                            DEFAULT_MAIN_TARGET_ID.ToString()))
                         categories.Add(kit.Category);
                 }
 
@@ -13031,7 +13033,7 @@ MainKitsContentUI(player, container); });
 
             if (!kit.DisableNotify) SendNotify(player, KitClaimed, 0, kit.DisplayName);
 
-            Interface.CallHook("OnKitRedeemed", player, kit.Name);
+            HarmonyModInterface.CallHook("OnKitRedeemed", player, kit.Name);
 
             PlayerData.Save(player.UserIDString);
 
@@ -13083,7 +13085,7 @@ MainKitsContentUI(player, container); });
         {
             if (player == null || kit == null) return false;
 
-            if (Interface.Oxide.CallHook("canRedeemKit", player) != null || Interface.Oxide.CallHook("CanRedeemAutoKit", player) != null)
+            if (HarmonyModInterface.Mods.CallHook("canRedeemKit", player) != null || HarmonyModInterface.Mods.CallHook("CanRedeemAutoKit", player) != null)
                 return false;
 
             if (force) return true;
@@ -13195,7 +13197,7 @@ MainKitsContentUI(player, container); });
 
             UpdatePlayerData(player, kit, false);
 
-            Interface.CallHook("OnKitRedeemed", player, kit.Name);
+            HarmonyModInterface.CallHook("OnKitRedeemed", player, kit.Name);
         }
 
         private const int _itemsPerTick = 10;
@@ -13218,7 +13220,7 @@ MainKitsContentUI(player, container); });
 
         private double GetCooldown(double cooldown, BasePlayer player)
         {
-            var cd = Interface.CallHook("OnKitCooldown", player, cooldown);
+            var cd = HarmonyModInterface.CallHook("OnKitCooldown", player, cooldown);
             return cd != null ? Convert.ToDouble(cd) : cooldown;
         }
 
@@ -13879,7 +13881,7 @@ MainKitsContentUI(player, container); });
         private IEnumerator LoadImage(string name, string path)
         {
             // Oxide: oxide/data/{path}  →  Harmony: HarmonyData/{path} (DataDirectory)
-            var url = "file://" + Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + path;
+            var url = "file://" + HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + path;
             using var www = UnityWebRequestTexture.GetTexture(url);
 
             yield return www.SendWebRequest();
@@ -14625,7 +14627,7 @@ MainKitsContentUI(player, container); });
         private void SendNotify(BasePlayer player, string key, int type, params object[] obj)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, Msg(player, key, obj));
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, Msg(player, key, obj));
             else
                 Reply(player, key, obj);
         }
@@ -14633,7 +14635,7 @@ MainKitsContentUI(player, container); });
         private void SendNotifyOrUI(BasePlayer player, string key, int type, bool chat, params object[] obj)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, Msg(player, key, obj));
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, Msg(player, key, obj));
             else if (chat)
                 Reply(player, key, obj);
             else
@@ -14643,7 +14645,7 @@ MainKitsContentUI(player, container); });
         private void SendMessageToNotifyOrUI(BasePlayer player, string message, int type, bool chat)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, message);
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, message);
             else if (chat)
                 SendReply(player, message);
             else
@@ -14965,7 +14967,7 @@ MainKitsContentUI(player, container); });
 
             try
             {
-                oldKits = Interface.Oxide.DataFileSystem.ReadObject<OldData>("Kits/kits_data");
+                oldKits = HarmonyModInterface.Mods.DataFileSystem.ReadObject<OldData>("Kits/kits_data");
             }
             catch (Exception e)
             {
@@ -15048,7 +15050,7 @@ MainKitsContentUI(player, container); });
             SaveKits();
 
             PrintWarning("Reloading kits plugin to apply changes...");
-            Interface.Oxide.ReloadPlugin(Name);
+            HarmonyModInterface.Mods.ReloadPlugin(Name);
         }
 
         private static KitItem FromOldItem(ItemData item, string container)
@@ -15255,7 +15257,7 @@ MainKitsContentUI(player, container); });
             try
             {
                 players =
-                    Interface.Oxide.DataFileSystem.ReadObject<Dictionary<ulong, Dictionary<string, OldKitData>>>(
+                    HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<ulong, Dictionary<string, OldKitData>>>(
                         $"{Name}/Data");
             }
             catch (Exception e)
@@ -15376,7 +15378,7 @@ MainKitsContentUI(player, container); });
                 }
                 catch (Exception e)
                 {
-                    Interface.Oxide.LogError(e.ToString());
+                    HarmonyModInterface.Mods.LogError(e.ToString());
                 }
 
                 return load
@@ -15416,7 +15418,7 @@ MainKitsContentUI(player, container); });
                 if (_instance._config.DisableDataFiles)
                     return;
 
-                Interface.Oxide.DataFileSystem.WriteObject(BaseFolder() + userId, data);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject(BaseFolder() + userId, data);
             }
 
             public static void SaveAndUnload(string userId)
@@ -15445,7 +15447,7 @@ MainKitsContentUI(player, container); });
                 try
                 {
                     var json = ".json".Length;
-                    var paths = Interface.Oxide.DataFileSystem.GetFiles(baseFolder);
+                    var paths = HarmonyModInterface.Mods.DataFileSystem.GetFiles(baseFolder);
                     for (var i = 0; i < paths.Length; i++)
                     {
                         var path = paths[i];
@@ -15466,8 +15468,8 @@ MainKitsContentUI(player, container); });
 
             private static PlayerData ReadOnlyObject(string name)
             {
-                return Interface.Oxide.DataFileSystem.ExistsDatafile(name)
-                    ? Interface.Oxide.DataFileSystem.GetFile(name).ReadObject<PlayerData>()
+                return HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(name)
+                    ? HarmonyModInterface.Mods.DataFileSystem.GetFile(name).ReadObject<PlayerData>()
                     : null;
             }
 
@@ -15498,17 +15500,17 @@ MainKitsContentUI(player, container); });
                             kitData.Value.Cooldown = 0;
                         }
 
-                        Interface.Oxide.DataFileSystem.WriteObject(BaseFolder() + userId, data);
+                        HarmonyModInterface.Mods.DataFileSystem.WriteObject(BaseFolder() + userId, data);
                     }
                     else
                     {
-                        Interface.Oxide.DataFileSystem.DeleteDataFile(BaseFolder() + userId);
+                        HarmonyModInterface.Mods.DataFileSystem.DeleteDataFile(BaseFolder() + userId);
                         _instance._usersData.Remove(userId);
                     }
                 }
                 else
                 {
-                    Interface.Oxide.DataFileSystem.DeleteDataFile(BaseFolder() + userId);
+                    HarmonyModInterface.Mods.DataFileSystem.DeleteDataFile(BaseFolder() + userId);
                     _instance._usersData.Remove(userId);
                 }
             }
@@ -15519,7 +15521,7 @@ MainKitsContentUI(player, container); });
                 if (data == null || !data.Kits.Remove(kitName)) return false;
 
                 if (!_instance._config.DisableDataFiles)
-                    Interface.Oxide.DataFileSystem.WriteObject(BaseFolder() + userId, data);
+                    HarmonyModInterface.Mods.DataFileSystem.WriteObject(BaseFolder() + userId, data);
                 return true;
             }
 

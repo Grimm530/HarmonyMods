@@ -56,7 +56,7 @@ Settings persist across restarts. Modify via the console commands above, or edit
 
 ## Compatibility
 
-- **Oxide chat commands:** The mod never intercepts `chat.say`, `chat.teamsay`, or `chat.localsay`. Oxide plugin chat commands (e.g. `/kit`, `/spawn`) work for all players including the default group.
+- **Oxide chat commands:** The mod never intercepts `chat.say`, `chat.teamsay`, or `chat.localsay`. Harmony mod chat commands (e.g. `/kit`, `/spawn`) work for all players including the default group.
 - **Console command scope:** GatherManager only handles its own commands; all other commands pass through to the game/Oxide unchanged.
 
 ## Related / Reference

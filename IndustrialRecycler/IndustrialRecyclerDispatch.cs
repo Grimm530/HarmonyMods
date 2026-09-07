@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class IndustrialRecycler
     {

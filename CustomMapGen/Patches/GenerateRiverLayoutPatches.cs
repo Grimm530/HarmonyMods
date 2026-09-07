@@ -6,8 +6,9 @@ namespace CustomMapGen.Patches
 {
     /// <summary>
     /// When TrySpawningOutpostInCenter is on, rivers are laid out before the outpost is
-    /// redirected to map center. Without clipping, a rare center-crossing river keeps its
-    /// full path and ends up as floating river mesh/terrain on top of the outpost.
+    /// redirected to the snapped center slot. Clip around that slot (not geographic 0,0)
+    /// so a river start does not carve through the outpost; PlaceRiverObjects then
+    /// SpawnStart's the source at the new path start.
     /// </summary>
     [HarmonyPatch(typeof(GenerateRiverLayout), nameof(GenerateRiverLayout.Process))]
     public static class GenerateRiverLayout_Process_Patch
@@ -17,6 +18,12 @@ namespace CustomMapGen.Patches
         /// (8 + 64) do not carve into the center outpost footprint (~180m clear).
         /// </summary>
         private const float CenterExclusionRadius = 250f;
+
+        /// <summary>
+        /// Extra meters past the exclusion rim before the new river start. Without this,
+        /// SpawnStart puts the source on the height cliff at the cut edge (OuterFade=64).
+        /// </summary>
+        private const float StartInsetMeters = 100f;
 
         /// <summary>PathInterpolator requires at least 2 points; keep a usable stub minimum.</summary>
         private const int MinRemainingPoints = 8;
@@ -61,8 +68,10 @@ namespace CustomMapGen.Patches
             if (rivers == null || rivers.Count == 0)
                 return;
 
-            Vector3 mapCenter = TerrainMeta.Position + TerrainMeta.Size * 0.5f;
+            Vector3 exclusionCenter = World_AddPrefab_Patch.GetCenterOutpostPositionForSystems(debugLogging);
             float radiusSq = CenterExclusionRadius * CenterExclusionRadius;
+            float insetRadius = CenterExclusionRadius + StartInsetMeters;
+            float insetRadiusSq = insetRadius * insetRadius;
             int truncated = 0;
             int removed = 0;
 
@@ -77,18 +86,28 @@ namespace CustomMapGen.Patches
                 }
 
                 Vector3[] points = river.Path.Points;
-                if (!TryFindLongestSegmentOutsideRadius(points, mapCenter, radiusSq, out int segStart, out int segEndExclusive))
+                if (!TryFindLongestSegmentOutsideRadius(points, exclusionCenter, radiusSq, out int segStart, out int segEndExclusive))
                 {
                     if (debugLogging)
-                        UnityEngine.Debug.Log($"[CustomMapGen] Removing {river.Name}: entirely inside center outpost exclusion ({CenterExclusionRadius:F0}m).");
+                        UnityEngine.Debug.Log($"[CustomMapGen] Removing {river.Name}: entirely inside center outpost exclusion ({CenterExclusionRadius:F0}m around {exclusionCenter}).");
                     rivers.RemoveAt(i);
                     removed++;
                     continue;
                 }
 
-                // Full path already clear of center.
+                // Full path already clear of center — still inset if the start sits on the rim.
                 if (segStart == 0 && segEndExclusive == points.Length)
-                    continue;
+                {
+                    if (IsOutsideExclusion(points[0], exclusionCenter, insetRadiusSq)
+                        && IsOutsideExclusion(points[points.Length - 1], exclusionCenter, insetRadiusSq))
+                        continue;
+                }
+
+                // Push the new start past the exclusion rim so the source is not perched on the cut cliff.
+                int insetStart = AdvancePastInset(points, segStart, segEndExclusive, exclusionCenter, insetRadiusSq);
+                if (insetStart != segStart && debugLogging)
+                    UnityEngine.Debug.Log($"[CustomMapGen] {river.Name}: inset river start {segStart}→{insetStart} (+{StartInsetMeters:F0}m past exclusion rim).");
+                segStart = insetStart;
 
                 int keepCount = segEndExclusive - segStart;
                 float keepLength = MeasureLength(points, segStart, segEndExclusive);
@@ -105,19 +124,42 @@ namespace CustomMapGen.Patches
                 for (int p = 0; p < keepCount; p++)
                     kept[p] = points[segStart + p];
 
+                // Seat the new start on terrain so SpawnStart does not leave the source on a ridge.
+                if (TerrainMeta.HeightMap != null && kept.Length > 0)
+                {
+                    kept[0].y = TerrainMeta.HeightMap.GetHeight(kept[0]);
+                    if (kept.Length > 1)
+                        kept[1].y = Mathf.Lerp(kept[0].y, TerrainMeta.HeightMap.GetHeight(kept[1]), 0.5f);
+                }
+
                 river.Path.Points = kept;
                 river.Path.MinIndex = river.Path.DefaultMinIndex;
                 river.Path.MaxIndex = river.Path.DefaultMaxIndex;
-                river.Path.Smoothen(2, new Vector3(1f, 0f, 1f));
+                // Stronger Y smooth so the new head does not drop as a vertical wall into the bed.
+                river.Path.Smoothen(4, new Vector3(1f, 0f, 1f));
+                river.Path.Smoothen(8, new Vector3(0f, 1f, 0f));
                 river.Path.RecalculateTangents();
                 truncated++;
 
                 if (debugLogging)
-                    UnityEngine.Debug.Log($"[CustomMapGen] Truncated {river.Name} around center outpost: kept pts [{segStart}..{segEndExclusive}) of {points.Length} ({keepLength:F0}m).");
+                {
+                    Vector3 start = kept[0];
+                    UnityEngine.Debug.Log($"[CustomMapGen] Truncated {river.Name} around center outpost at ({exclusionCenter.x:F0},{exclusionCenter.z:F0}): kept pts [{segStart}..{segEndExclusive}) of {points.Length} ({keepLength:F0}m), newStart=({start.x:F0},{start.y:F1},{start.z:F0}).");
+                }
             }
 
             if (truncated > 0 || removed > 0)
-                UnityEngine.Debug.Log($"[CustomMapGen] Center-outpost river clip: truncated={truncated}, removed={removed}, remaining={rivers.Count} (exclusion={CenterExclusionRadius:F0}m).");
+                UnityEngine.Debug.Log($"[CustomMapGen] Center-outpost river clip: truncated={truncated}, removed={removed}, remaining={rivers.Count} (exclusion={CenterExclusionRadius:F0}m + inset={StartInsetMeters:F0}m around ({exclusionCenter.x:F0},{exclusionCenter.z:F0})).");
+        }
+
+        /// <summary>Advance along the kept segment until the point is outside the inset radius.</summary>
+        private static int AdvancePastInset(Vector3[] points, int segStart, int segEndExclusive, Vector3 exclusionCenter, float insetRadiusSq)
+        {
+            int i = segStart;
+            while (i < segEndExclusive - MinRemainingPoints
+                   && !IsOutsideExclusion(points[i], exclusionCenter, insetRadiusSq))
+                i++;
+            return i;
         }
 
         /// <summary>

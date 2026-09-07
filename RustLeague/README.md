@@ -1,6 +1,6 @@
 # RustLeague (Harmony Mod)
 
-Oxide-free Harmony port of **RustLeague** (car/ball arena). The Oxide plugin needed a hand-placed ZoneManager arena. This mod **spawns the arena 700m in the sky** at a random map location (same idea as AirEvent), opens a join window, teleports players in, then despawns the structure when the event ends.
+Harmony Harmony port of **RustLeague** (car/ball arena). The Harmony mod needed a hand-placed ZoneManager arena. This mod **spawns the arena 700m in the sky** at a random map location (same idea as AirEvent), opens a join window, teleports players in, then despawns the structure when the event ends.
 
 ## Load order
 
@@ -12,7 +12,7 @@ harmony.load 0Permissions
 harmony.load RustLeague
 ```
 
-Unload the Oxide plugin if it is still present:
+Unload the Harmony mod if it is still present:
 
 ```text
 o.unload RustLeague
@@ -82,7 +82,7 @@ Permission: `rustleague.admin` (server admins always pass).
 | Arena cache | `HarmonyData/RustLeague/Arena.json` |
 | Arena source | `maps/prefabs/RustLeagueArena.map` |
 
-On first load, `oxide/config/RustLeague.json` is copied if the Harmony config is missing.
+On first load, `legacy/config/RustLeague.json` is copied if the Harmony config is missing.
 
 ## Build
 

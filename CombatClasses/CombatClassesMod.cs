@@ -1,5 +1,5 @@
 // CombatClassesMod.cs — Harmony entry point for CombatClasses 1.0.0131
-// Hosts Oxide.Plugins.CombatClasses, lifecycle, chat + console commands.
+// Hosts Harmony.Plugins.CombatClasses, lifecycle, chat + console commands.
 
 using System;
 using System.Collections;
@@ -7,9 +7,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.CombatClasses;
+using HarmonyPlugin = Harmony.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony
 {
@@ -55,7 +56,7 @@ namespace CombatClassesHarmony
     public class CombatClassesMod : IHarmonyModHooks
     {
         public static CombatClassesMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -74,13 +75,15 @@ namespace CombatClassesHarmony
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -105,7 +108,7 @@ namespace CombatClassesHarmony
             _permissionsReadyCallback = OnPermissionsReady;
             PermissionsBridge.RegisterReadyCallback(_permissionsReadyCallback);
 
-            _betterChatTitle = p => OxidePlugin.GetModInstance()?.HarmonyGetChatTitle(p);
+            _betterChatTitle = p => HarmonyPlugin.GetModInstance()?.HarmonyGetChatTitle(p);
             _betterChatReadyCallback = BindBetterChat;
             RegisterBetterChatReadyCallback(_betterChatReadyCallback);
 
@@ -118,9 +121,9 @@ namespace CombatClassesHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
-                var mi = typeof(OxidePlugin).GetMethod("HandlePermissions", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                var mi = typeof(HarmonyPlugin).GetMethod("HandlePermissions", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 mi?.Invoke(plugin, null);
             }
             catch (Exception ex)
@@ -214,8 +217,8 @@ namespace CombatClassesHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
 
             UnregisterConsoleCommands();
 
@@ -223,7 +226,8 @@ namespace CombatClassesHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[CombatClasses] Harmony mod unloaded.");
         }
@@ -284,13 +288,13 @@ namespace CombatClassesHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
 
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player, command, args }); return; }
@@ -321,11 +325,11 @@ namespace CombatClassesHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -468,17 +472,23 @@ namespace CombatClassesHarmony
             }
         }
 
-        public void HandleCuiEndtest(ConsoleSystem.Arg args, Array a)
+        public void HandleCuiEndtest(ConsoleSystem.Arg args, Array a = null)
         {
-            if (Plugin == null || a == null || a.Length < 2) return;
+            if (Plugin == null || args == null) return;
+            // endtest payload: [0]=CC marker, [1]=command, [2…]=args — prefer GetString (Args is StringView[])
+            if (!args.HasArgs(2)) return;
             var player = args.Connection?.player as BasePlayer ?? args.Player();
             if (player == null || player.IsDestroyed || !player.IsConnected) return;
 
-            var sb = new StringBuilder();
-            for (int i = 1; i < a.Length; i++)
+            string cmdName = args.GetString(1) ?? string.Empty;
+            if (string.IsNullOrEmpty(cmdName)) return;
+
+            int argCount = args.Args?.Length ?? 0;
+            var sb = new StringBuilder(cmdName);
+            for (int i = 2; i < argCount; i++)
             {
-                if (i > 1) sb.Append(' ');
-                string s = a.GetValue(i)?.ToString() ?? string.Empty;
+                sb.Append(' ');
+                string s = args.GetString(i) ?? string.Empty;
                 if (s.IndexOfAny(new[] { ' ', '"' }) >= 0)
                     sb.Append('"').Append(s.Replace("\"", "\\\"")).Append('"');
                 else
@@ -486,8 +496,6 @@ namespace CombatClassesHarmony
             }
 
             string full = sb.ToString();
-            string cmdName = a.GetValue(1)?.ToString() ?? "";
-            if (string.IsNullOrEmpty(cmdName)) return;
 
             try
             {
@@ -538,7 +546,7 @@ namespace CombatClassesHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName,
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 mi?.Invoke(plugin, new object[] { arg });
             }
@@ -564,6 +572,7 @@ namespace CombatClassesHarmony
                 FullName = fullName,
                 Variable = false,
                 ServerAdmin = serverAdmin,
+                ServerUser = !serverAdmin,
                 AllowRunFromServer = true,
                 Replicated = false,
                 Call = a =>

@@ -21,7 +21,7 @@ namespace LootQoLHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnLootEntityEnd fires from PlayerStoppedLooting, which PlayerLoot.Clear
+    /// compat OnLootEntityEnd fires from PlayerStoppedLooting, which PlayerLoot.Clear
     /// invokes for every loot close (ESC, walk-away Check, EndLooting, swapping targets).
     /// Destroy overlay CUI in the prefix even when Clear is a no-op, so a stuck Sort button
     /// (Overlay parent) is still removed. LootBouncer only runs when a loot session was active.
@@ -34,7 +34,8 @@ namespace LootQoLHarmony.Patches
         {
             var plugin = LootQoLMod.Plugin;
             var player = __instance?.baseEntity;
-            if (plugin == null || player == null) return;
+            if (plugin == null || player == null || player.IsDestroyed || !player.IsConnected)
+                return;
             try
             {
                 if (__instance.IsLooting())

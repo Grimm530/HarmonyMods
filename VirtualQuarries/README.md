@@ -1,6 +1,6 @@
 # VirtualQuarries (Harmony port)
 
-Port of Oxide `VirtualQuarries` **2.6.0** to a Harmony mod. No Oxide.Core reference; images use **FileStorage** instead of ImageLibrary.
+Port of Oxide `VirtualQuarries` **2.6.0** to a Harmony mod. No Harmony.Core reference; images use **FileStorage** instead of ImageLibrary.
 
 ## Paths
 
@@ -24,12 +24,12 @@ Copies **only** `VirtualQuarries.dll` to root `HarmonyMods/`.
 ## Load
 
 - Auto-loads with other Harmony mods. Requires **Permissions** (`0Permissions.dll`).
-- Do **not** run the Oxide plugin at the same time — unload `oxide/plugins/VirtualQuarries.cs` (file is left in place).
+- Do **not** run the Harmony mod at the same time — unload `oxide/plugins/VirtualQuarries.cs` (file is left in place).
 - Chat commands come from config (`commandList`) plus `/vqtip`.
 - CUI buttons bridge via `cui.endtest VIRTUALQUARRIES …`.
 
 ## Notes
 
-- Economy plugins (Economics, ServerRewards, IQEconomic, BankSystem, ShoppyStock), PopUpAPI, and RedeemStorageAPI are optional Harmony/AppDomain bridges; missing refs log warnings like the Oxide plugin.
+- Economy plugins (Economics, ServerRewards, IQEconomic, BankSystem, ShoppyStock), PopUpAPI, and RedeemStorageAPI are optional Harmony/AppDomain bridges; missing refs log warnings like the Harmony mod.
 - Static quarry / excavator hooks patch `EngineSwitch`, `ExcavatorArm.RPC_SetResourceTarget`, and `ExcavatorSignalComputer.RequestSupplies`.
 - Excavator supply calls spawn a **per-player** crate at the monument (BetterAirDrop-style sky drop, no cargo plane). Harmony mods do not hot-reload from a file copy — restart or `harmony.unload` / `harmony.load` VirtualQuarries after a build.

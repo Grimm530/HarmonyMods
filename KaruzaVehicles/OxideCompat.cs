@@ -1167,16 +1167,30 @@ namespace KaruzaVehicles
                 var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
                 req.Method = method.ToString();
                 req.Timeout = (int)(timeout * 1000f);
+                req.AllowAutoRedirect = true;
                 req.AutomaticDecompression = decompressionMethod;
+                req.Credentials = System.Net.CredentialCache.DefaultCredentials;
+                req.Proxy = null;
+                req.KeepAlive = false;
+                req.ServicePoint.Expect100Continue = false;
+                // Cloudflare in front of Karuza's API allows Oxide's UA and 403s the default .NET one.
+                req.UserAgent = "Oxide Mod (v2.0.0; https://umod.org)";
                 if (headers != null)
                 {
                     foreach (var kv in headers)
                     {
+                        if (string.IsNullOrEmpty(kv.Key))
+                            continue;
                         if (string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
                             req.ContentType = kv.Value;
-                        else if (string.Equals(kv.Key, "Accept", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(kv.Key, "Accept-Type", StringComparison.OrdinalIgnoreCase))
+                        else if (string.Equals(kv.Key, "Accept", StringComparison.OrdinalIgnoreCase))
                             req.Accept = kv.Value;
+                        else if (string.Equals(kv.Key, "User-Agent", StringComparison.OrdinalIgnoreCase))
+                            req.UserAgent = kv.Value;
+                        else if (string.Equals(kv.Key, "Accept-Encoding", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        else if (string.Equals(kv.Key, "Authorization", StringComparison.OrdinalIgnoreCase))
+                            req.Headers["Authorization"] = kv.Value;
                         else
                             req.Headers[kv.Key] = kv.Value;
                     }

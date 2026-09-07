@@ -1,6 +1,6 @@
 # DefendableHomes (Harmony port)
 
-A near-verbatim Harmony port of the **DefendableHomes** Oxide plugin (KpucTaJl 1.2.2). Players throw a custom flare at their base to start a multi-wave NPC raid; GrimmNPC scientists attack the foundations. A CH47 drops a hackable crate on success.
+A near-verbatim Harmony port of the **DefendableHomes** Harmony mod (KpucTaJl 1.2.2). Players throw a custom flare at their base to start a multi-wave NPC raid; GrimmNPC scientists attack the foundations. A CH47 drops a hackable crate on success.
 
 The original plugin body is retained in `DefendableHomesPlugin.cs`; Oxide is replaced by a compatibility shim plus Harmony patches (same approach as **ArmoredTrain**).
 
@@ -12,7 +12,7 @@ The original plugin body is retained in `DefendableHomesPlugin.cs`; Oxide is rep
 | **Harmony ID** | `com.facepunch.rust_dedicated.DefendableHomes` |
 | **Entry point** | `DefendableHomes.DefendableHomesMod : IHarmonyModHooks` |
 | **Target framework** | `net48` |
-| **Config** | `HarmonyConfig/DefendableHomes.json` (same schema as the Oxide plugin) |
+| **Config** | `HarmonyConfig/DefendableHomes.json` (same schema as the Harmony mod) |
 | **Data** | `HarmonyData/DefendableHomes.json` (player cooldowns) |
 | **Images** | `HarmonyData/Images/` (copied from the original pack: `Tab_KpucTaJl.png`, `Clock_KpucTaJl.png`, `Npc_KpucTaJl.png`, `Foundation_KpucTaJl.png`). Also `HarmonyData/DefendableHomes/Images/` and `oxide/data/Images/`. Flare skin previews: `flare_easy.png` / `flare_medium.png` / `flare_hard.png` under `HarmonyData/DefendableHomes/Images/`. |
 
@@ -33,9 +33,9 @@ The original plugin body is retained in `DefendableHomesPlugin.cs`; Oxide is rep
 | `defstop` | Stop the event you are standing in (admin, or `defendablehomes.defstop` permission + event owner). |
 | Config `CheckCommand` (default `checkfoundations`) | In-game: draw foundation validity for the cupboard you are looking at. |
 
-## Harmony patches (Oxide hook map)
+## Harmony patches (Harmony hook map)
 
-| Patch (game method) | Oxide hook(s) |
+| Patch (game method) | Harmony hook(s) |
 |---------------------|----------------|
 | `BaseCombatEntity.Hurt(HitInfo)` prefix | `OnEntityTakeDamage(ScientistNPC)` |
 | `BaseCombatEntity.Die(HitInfo)` postfix | `OnEntityDeath(ScientistNPC)` |
@@ -57,7 +57,7 @@ GrimmNPC-originated hooks (`OnCustomNpcTarget`, `OnBomberExplosion`, `OnCustomNp
 ## Soft-disabled vs Oxide
 
 - **Friends / GUIAnnouncements / Notify / ServerRewards / IQEconomic / XPerience** — skipped when absent. Team/clan sharing uses vanilla teams plus Facepunch `ClanManager`. Optional Harmony Clans/Friends mods still bind via AppDomain if present.
-- `Interface.CallHook` is a no-op (no Oxide hook bus). Core event logic does not depend on it.
+- `HarmonyModInterface.CallHook` is a no-op (no Harmony hook bus). Core event logic does not depend on it.
 - Remote version check is disabled.
 
 ## Build / deploy

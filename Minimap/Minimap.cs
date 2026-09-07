@@ -1,11 +1,11 @@
-﻿using Facepunch;
+using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos;
-using Oxide.Ext.Chaos.Data;
-using Oxide.Ext.Chaos.Json;
-using Oxide.Ext.Chaos.Map;
-using Oxide.Ext.Chaos.UIFramework;
-using Oxide.Plugins;
+using Grimm.Chaos;
+using Grimm.Chaos.Data;
+using Ext.Chaos.Json;
+using Grimm.Chaos.Map;
+using Ext.Chaos.UIFramework;
+using Harmony.Plugins;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -16,12 +16,12 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
 
-using Chaos = Oxide.Ext.Chaos;
+using Chaos = Grimm.Chaos;
 using Color = UnityEngine.Color;
 using Debug = UnityEngine.Debug;
-using Layer = Oxide.Ext.Chaos.UIFramework.Layer;
+using Layer = Ext.Chaos.UIFramework.Layer;
 using Time = UnityEngine.Time;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 
 namespace MinimapHarmony
 {
@@ -826,7 +826,7 @@ namespace MinimapHarmony
 	        mapUser.MouseHelperOpen = true;
 	        
 	        BaseContainer root = ButtonContainer.Create(UI_MOUSE_HELPER, Layer.Hud, UIAnchor.Center, new Offset(2560, 1440))
-		        .WithColor(Chaos.UIFramework.Color.Clear)
+		        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 		        .WithCallback(CallbackHandler, arg => DestroyMouseHelper(mapUser), $"{mapUser.Player.UserIDString}.mousehelper")
 		        .WithParent(UI_MOUSE_HELPER_PARENT)
 		        .DestroyExisting()
@@ -839,7 +839,7 @@ namespace MinimapHarmony
         private void DestroyMouseHelper(MinimapUser mapUser)
         {
 	        BaseContainer mouseOverlay = ButtonContainer.Create(UI_MOUSE_OVERLAY, Layer.Hud, UIAnchor.FullStretch, Offset.zero)
-		        .WithColor(Chaos.UIFramework.Color.Clear)
+		        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 		        .WithCallback(CallbackHandler, arg => CreateMouseHelper(mapUser), $"{mapUser.Player.UserIDString}.mouseoverlay")
 		        .WithParent(UI_MOUSE_OVERLAY_PARENT)
 		        .DestroyExisting();
@@ -872,7 +872,7 @@ namespace MinimapHarmony
 			        
 			        // ScrollView
 			        ImageContainer.Create(minimap, UIAnchor.FullStretch, new Offset(1f, 2f, -3.5f, -2f))
-				        .WithColor(Chaos.UIFramework.Color.Clear)
+				        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 				        .WithName(UI_SCROLLVIEW)
 				        .WithScrollView(_scrollView.WithContentTransform(UIAnchor.Center, mapOffset))
 				        .WithChildren(content =>
@@ -895,7 +895,7 @@ namespace MinimapHarmony
 
 								        if (!string.IsNullOrEmpty(markerImage))
 									        markers.WithPNG(markerImage);
-								        else markers.WithColor(Oxide.Ext.Chaos.UIFramework.Color.Clear);
+								        else markers.WithColor(Ext.Chaos.UIFramework.Color.Clear);
 							        }
 
 							        if (ShouldRenderFogOfWar(BasePlayer.FogMode.Mainland) || ShouldRenderFogOfWar(BasePlayer.FogMode.DeepSea))
@@ -906,7 +906,7 @@ namespace MinimapHarmony
 								        
 								        ImageContainer.Create(image, CalculateFogOverlaySize(fogMode), Offset.zero)
 									        .WithPNG(mapUser.CurrentFogCrc.ToString())
-									        .WithColor(mapUser.Player.ShouldRunFogOfWar ? FogColor : Chaos.UIFramework.Color.Clear)
+									        .WithColor(mapUser.Player.ShouldRunFogOfWar ? FogColor : Ext.Chaos.UIFramework.Color.Clear)
 									        .WithMaterial(FogMaterial)
 									        .WithName(string.Format(FogOverlay, PluginIdentifier));
 							        }
@@ -940,7 +940,7 @@ namespace MinimapHarmony
 				        .WithChildren(parent =>
 				        {
 					        ButtonContainer.Create(parent, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg => CreateMouseHelper(mapUser), $"{mapUser.Player.UserIDString}.mouseoverlay")
 						        .WithName(UI_MOUSE_OVERLAY);
 				        });
@@ -959,7 +959,7 @@ namespace MinimapHarmony
 								        .WithColor(TextColor);
 
 							        ButtonContainer.Create(close, UIAnchor.FullStretch, Offset.zero)
-								        .WithColor(Chaos.UIFramework.Color.Clear)
+								        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 								        .WithCallback(CallbackHandler, arg =>
 									        {
 										        mapUser.IsActive = false;
@@ -985,7 +985,7 @@ namespace MinimapHarmony
 								        .WithColor(TextColor);
 
 							        ButtonContainer.Create(close, UIAnchor.FullStretch, Offset.zero)
-								        .WithColor(Chaos.UIFramework.Color.Clear)
+								        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 								        .WithCallback(CallbackHandler, arg => CreateSettingsOverlay(mapUser), $"{mapUser.Player.UserIDString}.settings");
 						        });
 				        });
@@ -1004,7 +1004,7 @@ namespace MinimapHarmony
 								        .WithColor(TextColor);
 
 							        ButtonContainer.Create(zoomIn, UIAnchor.FullStretch, Offset.zero)
-								        .WithColor(Chaos.UIFramework.Color.Clear)
+								        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 								        .WithCallback(CallbackHandler, arg =>
 									        {
 										        OnZoomChanged(mapUser, 1);
@@ -1022,7 +1022,7 @@ namespace MinimapHarmony
 								        .WithColor(TextColor);
 
 							        ButtonContainer.Create(zoomOut, UIAnchor.FullStretch, Offset.zero)
-								        .WithColor(Chaos.UIFramework.Color.Clear)
+								        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 								        .WithCallback(CallbackHandler, arg =>
 									        {
 										        OnZoomChanged(mapUser, -1);
@@ -1081,7 +1081,7 @@ namespace MinimapHarmony
 								        .WithColor(TextColor);
 
 							        ButtonContainer.Create(close, UIAnchor.FullStretch, Offset.zero)
-								        .WithColor(Chaos.UIFramework.Color.Clear)
+								        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 								        .WithCallback(CallbackHandler, 
 									        arg => ChaosUI.Destroy(mapUser.Player, UI_MINIMAP_SETTINGS), 
 									        $"{mapUser.Player.UserIDString}.settings.close");
@@ -1101,7 +1101,7 @@ namespace MinimapHarmony
 								        .WithColor(TextColor);
 
 							        ButtonContainer.Create(close, UIAnchor.FullStretch, Offset.zero)
-								        .WithColor(Chaos.UIFramework.Color.Clear)
+								        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 								        .WithCallback(CallbackHandler, arg =>
 									        {
 										        if (mapUser.SetPosition(Configuration.UI.Position) || mapUser.SetSize(Configuration.UI.Size))
@@ -1121,7 +1121,7 @@ namespace MinimapHarmony
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        
 					        ButtonContainer.Create(up, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(mapUser.Position + VerticalMovement))
@@ -1138,7 +1138,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(down, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(mapUser.Position - VerticalMovement))
@@ -1155,7 +1155,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(left, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(mapUser.Position - HorizontalMovement))
@@ -1172,7 +1172,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(right, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(mapUser.Position + HorizontalMovement))
@@ -1191,7 +1191,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(down, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(new float2(-(640 - halfSize), -(360 - halfSize))))
@@ -1208,7 +1208,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(down, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(new float2(640 - halfSize, -(360 - halfSize))))
@@ -1225,7 +1225,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(down, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(new float2(-(640 - halfSize), (360 - halfSize))))
@@ -1242,7 +1242,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor)
 						        .WithAlignment(TextAnchor.MiddleCenter);
 					        ButtonContainer.Create(down, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetPosition(new float2((640 - halfSize), (360 - halfSize))))
@@ -1259,7 +1259,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor);
 
 					        ButtonContainer.Create(scaleIn, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg =>
 							        {
 								        if (mapUser.SetSize(mapUser.Size + 5f))
@@ -1276,7 +1276,7 @@ namespace MinimapHarmony
 						        .WithColor(TextColor);
 
 					        ButtonContainer.Create(scaleOut, UIAnchor.FullStretch, Offset.zero)
-						        .WithColor(Chaos.UIFramework.Color.Clear)
+						        .WithColor(Ext.Chaos.UIFramework.Color.Clear)
 						        .WithCallback(CallbackHandler, arg => {
 								        if (mapUser.SetSize(mapUser.Size - 5f))
 									        UpdateSizeAndOffset(mapUser);
@@ -1385,13 +1385,13 @@ namespace MinimapHarmony
 			        if (!string.IsNullOrEmpty(markers))
 			        {
 				        markerImage.Component.PNG = markers;
-				        markerImage.Component.Color = Chaos.UIFramework.Color.White;
+				        markerImage.Component.Color = Ext.Chaos.UIFramework.Color.White;
 				        markerImage.MarkFieldsDirty(nameof(RawImageComponent.PNG));
 				        markerImage.MarkFieldsDirty(nameof(RawImageComponent.Color));
 			        }
 			        else
 			        {
-				        markerImage.Component.Color = Chaos.UIFramework.Color.Clear;
+				        markerImage.Component.Color = Ext.Chaos.UIFramework.Color.Clear;
 				        markerImage.MarkFieldsDirty(nameof(RawImageComponent.Color));
 			        }
 			        
@@ -1675,7 +1675,7 @@ namespace MinimapHarmony
 		        else if (File.Exists(oxideFallback))
 		        {
 			        Configuration = JsonConvert.DeserializeObject<ConfigData>(File.ReadAllText(oxideFallback));
-			        Debug.Log("[Minimap] Migrated config from oxide/config/Minimap.json");
+			        Debug.Log("[Minimap] Migrated config from legacy/config/Minimap.json");
 		        }
 	        }
 	        catch (Exception ex)

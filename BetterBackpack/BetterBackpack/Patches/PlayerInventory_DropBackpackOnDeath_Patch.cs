@@ -8,7 +8,7 @@ internal class PlayerInventory_DropBackpackOnDeath_Patch
     [HarmonyPrefix]
     private static void Prefix(PlayerInventory __instance, bool wounded)
     {
-        var player = __instance?.baseEntity;
+        var player = __instance?.GetComponent<BasePlayer>();
         if (!LootDebug.ShouldLog(player)) return;
         LootDebug.DumpInventory(player, wounded ? "DropBackpackOnDeath wounded" : "DropBackpackOnDeath");
     }
@@ -16,7 +16,7 @@ internal class PlayerInventory_DropBackpackOnDeath_Patch
     [HarmonyPostfix]
     private static void Postfix(PlayerInventory __instance)
     {
-        var player = __instance?.baseEntity;
+        var player = __instance?.GetComponent<BasePlayer>();
         if (!LootDebug.ShouldLog(player)) return;
         var bag = __instance.GetBackpackWithInventory();
         LootDebug.Log(player, bag == null
@@ -31,7 +31,7 @@ internal class PlayerInventory_TryDropBackpack_Patch
     [HarmonyPrefix]
     private static void Prefix(PlayerInventory __instance)
     {
-        var player = __instance?.baseEntity;
+        var player = __instance?.GetComponent<BasePlayer>();
         if (!LootDebug.ShouldLog(player)) return;
         var bag = __instance.GetBackpackWithInventory();
         if (bag == null)

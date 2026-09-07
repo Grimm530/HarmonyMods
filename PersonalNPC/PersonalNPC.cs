@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 using System.Collections;
 using System;
 using System.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine.Events;
 using UnityEngine.AI;
 using PersonalNPCHarmony.PersonalNPCex;
@@ -14,7 +14,7 @@ using Rust.Ai.Gen2;
 namespace PersonalNPCHarmony
 {
     /// <summary>
-    /// PersonalNPC 2.0.7 ported for Harmony (no Oxide). Logic matches the Oxide plugin;
+    /// PersonalNPC 2.0.7 ported for Harmony (Harmony-only). Logic matches the Harmony mod;
     /// only hosting, config/data I/O and cross-plugin calls differ.
     /// </summary>
     public class PersonalNPC : PersonalNPCPluginBase
@@ -51,7 +51,8 @@ namespace PersonalNPCHarmony
 
         #region Config
 
-        private Configuration _config; 
+        private Configuration _config;
+        internal bool ClearConsoleOfSpam => _config != null && _config.clearConsoleOfSpam;
 
         public class Configuration
         {
@@ -68,7 +69,7 @@ namespace PersonalNPCHarmony
             public List<ItemInfo> installItem = new List<ItemInfo>();
 
             [JsonProperty(!ru ? "How many seconds will the bot update the information? (affects the performance and operation of the bot)" : "Сколько секунд будет обновлять информацию бот? (влияет на производительность и работу бота)")]
-            public float mainProcessTimer = 0.01f;
+            public float mainProcessTimer = 0.1f;
 
             [JsonProperty(!ru ? "Spawn a backpack with his items when a bot dies? (otherwise his corpse will spawn)" : "Создавать рюкзак с его предметами при смерти бота? (иначе его труп будет спавнить)")]
             public bool enableBackpackOnDeath = false;
@@ -912,6 +913,8 @@ namespace PersonalNPCHarmony
             {
                 _config = Config.ReadObject<Configuration>();
                 if (_config == null) throw new Exception();
+                if (_config.mainProcessTimer < 0.05f)
+                    _config.mainProcessTimer = 0.1f;
 
                 SaveConfig();
             }
@@ -952,7 +955,7 @@ namespace PersonalNPCHarmony
         {
             try
             {
-                _botInventoryData = Interface.Oxide.DataFileSystem.ReadObject<BotInventoryData>(BotInventoryDataPath) ?? new BotInventoryData();
+                _botInventoryData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<BotInventoryData>(BotInventoryDataPath) ?? new BotInventoryData();
                 if (_botInventoryData.Players == null)
                     _botInventoryData.Players = new Dictionary<ulong, SavedBotInventory>();
                 if (_botInventoryData.PendingPluginRespawn == null)
@@ -967,7 +970,7 @@ namespace PersonalNPCHarmony
 
         private void SaveBotInventoryData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject(BotInventoryDataPath, _botInventoryData);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(BotInventoryDataPath, _botInventoryData);
         }
 
         private static bool HasContainerItems(ItemContainer container)
@@ -1490,10 +1493,26 @@ namespace PersonalNPCHarmony
         
         internal void Init()
         {
-            if(_config.clearConsoleOfSpam)
+            RepairConsoleLogHandlers("init");
+        }
+
+        /// <summary>
+        /// Older builds replaced Application.logMessageReceived and often left
+        /// Facepunch.Output.LogHandler still subscribed, doubling ServerConsole
+        /// output. Tear that down and leave Facepunch as the sole handler.
+        /// Spam filtering is now HarmonyPatch on Facepunch.Output.LogHandler.
+        /// </summary>
+        private static void RepairConsoleLogHandlers(string reason)
+        {
+            try
             {
-                UnityEngine.Application.logMessageReceived += HandleLog;
+                UnityEngine.Application.logMessageReceived -= HandleLog;
                 UnityEngine.Application.logMessageReceived -= Facepunch.Output.LogHandler;
+                UnityEngine.Application.logMessageReceived += Facepunch.Output.LogHandler;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[PersonalNPC] Console log handler repair ({reason}) failed: {ex.Message}");
             }
         }
 
@@ -1706,7 +1725,7 @@ namespace PersonalNPCHarmony
 
             var initiatorBotOwner = attacker.net != null ? GetOwnerComponent(attacker.net.ID.Value) : null;
 
-            if(initiatorBotOwner != null && initiatorBotOwner?.controller != null)
+            if(initiatorBotOwner != null && initiatorBotOwner.controller != null)
             {
                 info.damageTypes?.ScaleAll(initiatorBotOwner.controller.botSetup.target.botDamageRate);
 
@@ -1729,27 +1748,19 @@ namespace PersonalNPCHarmony
                 {
                     var heldItem = activeItem.GetHeldEntity();
 
-                    if(heldItem != null)
+                    if(heldItem is BaseMelee melee)
                     {
-                        if(heldItem is BaseMelee)
+                        if(activeItem.hasCondition)
                         {
-                            var melee = heldItem as BaseMelee;
-
-                            if(melee != null)
+                            float conditionLoss = melee.GetConditionLoss();
+                            float num = 0f;
+                            
+                            foreach (Rust.DamageTypeEntry damageType in melee.damageTypes)
                             {
-                                if(activeItem.hasCondition)
-                                {
-                                    float conditionLoss = melee.GetConditionLoss();
-                                    float num = 0f;
-                                    
-                                    foreach (Rust.DamageTypeEntry damageType in melee.damageTypes)
-                                    {
-                                        if (damageType.amount > 0.0) num += Mathf.Clamp(damageType.amount - info.damageTypes.Get(damageType.type), 0.0f, damageType.amount);
-                                    }
-
-                                    activeItem.LoseCondition(conditionLoss + num * 0.2f);
-                                }
+                                if (damageType.amount > 0.0) num += Mathf.Clamp(damageType.amount - info.damageTypes.Get(damageType.type), 0.0f, damageType.amount);
                             }
+
+                            activeItem.LoseCondition(conditionLoss + num * 0.2f);
                         }
                     }
                 }
@@ -1794,7 +1805,7 @@ namespace PersonalNPCHarmony
 
             var controller = entity.net != null ? GetController(entity.net.ID.Value) : null;
 
-            if(controller != null && controller?.bot != null) 
+            if(controller != null && controller.bot != null) 
             {
                 if(attacker == controller.bot) 
                 {
@@ -1806,7 +1817,7 @@ namespace PersonalNPCHarmony
                 return null;
             }
             
-            if(ownerComponent != null && ownerComponent?.controller != null && ownerComponent?.controller?.owner != null) 
+            if(ownerComponent != null && ownerComponent.controller != null && ownerComponent.controller.owner != null) 
             {
                 ownerComponent.controller.RenderMenu();
 
@@ -1991,11 +2002,7 @@ namespace PersonalNPCHarmony
         {
             _isUnloading = true;
 
-            if(_config.clearConsoleOfSpam)
-            {
-                UnityEngine.Application.logMessageReceived += Facepunch.Output.LogHandler;
-                UnityEngine.Application.logMessageReceived -= HandleLog;
-            }
+            RepairConsoleLogHandlers("unload");
 
             var controllers = new List<PlayerBotController>(_existsControllers.Values);
 
@@ -2032,7 +2039,7 @@ namespace PersonalNPCHarmony
             CollectibleHelper.UnloadPlugin();
             UnloadHelperPlugin();
         }
-        // ---- Harmony lifecycle (replaces Oxide LoadConfig / Init / Loaded / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy LoadConfig / Init / Loaded / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -2054,13 +2061,13 @@ namespace PersonalNPCHarmony
         private void EnsureHelperPlugin()
         {
             if (!plugins.Exists(HelperPluginName))
-                Interface.Oxide.LoadPlugin(HelperPluginName);
+                HarmonyModInterface.Mods.LoadPlugin(HelperPluginName);
         }
 
         private void UnloadHelperPlugin()
         {
             if (plugins.Exists(HelperPluginName))
-                Interface.Oxide.UnloadPlugin(HelperPluginName);
+                HarmonyModInterface.Mods.UnloadPlugin(HelperPluginName);
         }
 
         internal object OnItemAction(Item item, string action, BasePlayer player)
@@ -2652,7 +2659,7 @@ namespace PersonalNPCHarmony
             return text + Convert.ToChar(65 + num3);
         }
 
-        private void HandleLog(string message, string stackTrace, UnityEngine.LogType type)
+        private static void HandleLog(string message, string stackTrace, UnityEngine.LogType type)
         {
             if (!string.IsNullOrEmpty(message) && !message.Contains("ownerPlayer is not player"))
             {
@@ -4298,6 +4305,7 @@ namespace PersonalNPCHarmony
 
             private float _recoverTime = 6f;
             private float _lastTimeGathered, _lastTimeGUI, _nextShootTime, _lastConditionWhileGather, _lastTimeSwitchTarget, _lastTimeAIMovement, _lastTimeInput, _lastDoorOpenTime;
+            private float _nextUpdateWork;
             private float _lastNoWeaponNotifyTime;
             private float _nextCombatStrafeTime, _nextCoverCheckTime;
             private int _strafeLateralSign;
@@ -5223,7 +5231,7 @@ namespace PersonalNPCHarmony
 
                             if(vehicle != null)
                             {
-                                if((enableCopterLocksAPI ? (((bool)Interface.Oxide.CallHook("API_CanAccessVehicle", bot, vehicle.GetEntity(), false)) == true) : true))
+                                if((enableCopterLocksAPI ? (((bool)HarmonyModInterface.Mods.CallHook("API_CanAccessVehicle", bot, vehicle.GetEntity(), false)) == true) : true))
                                 {
                                     int maxSeats = vehicle.MaxMounted();
 
@@ -5462,7 +5470,7 @@ namespace PersonalNPCHarmony
                             }
                         }
                     }
-                }, _config.mainProcessTimer, false, true));
+                }, Mathf.Max(0.05f, _config.mainProcessTimer), false, true));
 
                 RenderMenu(true);
                 if(_config.gui.showShortcutButtons) RenderHierarchy();
@@ -5481,13 +5489,18 @@ namespace PersonalNPCHarmony
                     plugin.HandleOwnerDisconnect(this);
                     return;
                 }
-                else 
+
+                // Throttle frame work to mainProcessTimer (min 50ms) — disconnect check above stays every frame.
+                float now = Time.realtimeSinceStartup;
+                float tick = _config.mainProcessTimer < 0.05f ? 0.05f : _config.mainProcessTimer;
+                if (now < _nextUpdateWork)
+                    return;
+                _nextUpdateWork = now + tick;
+
+                if(owner.inventory.loot.entitySource != null)
                 {
-                    if(owner.inventory.loot.entitySource != null)
-                    {
-                        var corpse = owner.inventory.loot.entitySource as LootableCorpse;
-                        if(corpse?.playerName == bot.displayName && Vector3.Distance(owner.transform.position, bot.transform.position) > 3f && !botSetup.inventoryCommand) owner.EndLooting();
-                    }
+                    var corpse = owner.inventory.loot.entitySource as LootableCorpse;
+                    if(corpse?.playerName == bot.displayName && Vector3.Distance(owner.transform.position, bot.transform.position) > 3f && !botSetup.inventoryCommand) owner.EndLooting();
                 }
                 
                 OnPlayerInput(owner, owner.serverInput);
@@ -6039,7 +6052,7 @@ namespace PersonalNPCHarmony
                     for (int i = 0; i < target.capacity; i++)
                     {
                         if (target.GetSlot(i) != null) continue;
-                        if (!target.canAcceptItem(item, i)) continue;
+                        if (target.canAcceptItem != null && !target.canAcceptItem(owner, item, i)) continue;
 
                         if (TryMoveItemToSlot(item, target, i, debug))
                             return true;
@@ -6080,7 +6093,7 @@ namespace PersonalNPCHarmony
                     return false;
                 }
 
-                if (!target.canAcceptItem(item, slot))
+                if (target.canAcceptItem != null && !target.canAcceptItem(owner, item, slot))
                 {
                     DepositDebug(debug, $"Move failed for {item.info?.shortname}: target rejected item in slot {slot}.");
                     return false;
@@ -7517,9 +7530,8 @@ namespace PersonalNPCHarmony
 
                     Item axe = null, pickaxe = null;
 
-                    if(closestResourceObj is ResourceDispenser)
+                    if(closestResourceObj is ResourceDispenser closestResource)
                     {
-                        var closestResource = closestResourceObj as ResourceDispenser;
 
                         if(_dispenserTarget != null)
                         {
@@ -7760,6 +7772,8 @@ namespace PersonalNPCHarmony
 
             private IEnumerator Timer(Action action, float time, bool once = true, bool checkForBuilder = false)
             {
+                int consecutiveFailures = 0;
+                const int maxConsecutiveFailures = 5;
                 for(;;)
                 {
                     yield return CoroutineEx.waitForSeconds(time);
@@ -7777,14 +7791,22 @@ namespace PersonalNPCHarmony
                                     _isFollowPlayer = false;
                                     _statusIcon = Icon.Idle;
 
+                                    consecutiveFailures = 0;
                                     continue;
                                 }
                             }
                         }
                        
                         action();
+                        consecutiveFailures = 0;
                     }
-                    catch {}
+                    catch (Exception ex)
+                    {
+                        consecutiveFailures++;
+                        Debug.LogWarning($"[PersonalNPC] Timer action failed ({consecutiveFailures}/{maxConsecutiveFailures}): {ex.Message}");
+                        if (consecutiveFailures >= maxConsecutiveFailures)
+                            yield break;
+                    }
 
                     if(once) break;
                 }
@@ -8194,10 +8216,10 @@ namespace PersonalNPCHarmony
             private int GetResourceStage(StagedResourceEntity ent)
             {
                 float num = Mathf.InverseLerp(0f, ent.MaxHealth(), ent.Health());
-                StagedResourceEntity.ResourceStage[] array = ent.stages.ToArray();
+                StagedDestructionEntityInfo.ResourceStage[] array = ent.GetInfo().Stages;
                 for (int i = 0; i < array.Length; i++)
                 {
-                    if (num >= array[i].health)
+                    if (num >= array[i].Health)
                     {
                         return i;
                     }
@@ -8232,7 +8254,7 @@ namespace PersonalNPCHarmony
                 Vector3 velocity = Vector3.zero;
 
                 if (target is BaseNpc npc && npc.NavAgent != null && npc.NavAgent.enabled)
-                    velocity = npc.NavAgent.velocity;
+                    velocity = (Vector3)npc.NavAgent.velocity;
                 else if (target is BasePlayer player && player.IsRunning())
                     velocity = player.estimatedVelocity;
 

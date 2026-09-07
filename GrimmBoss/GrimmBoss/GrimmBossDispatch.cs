@@ -1,9 +1,9 @@
 using System;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
-    /// Harmony glue: exposes lifecycle, commands, and Oxide-style hooks (private on GrimmBoss)
+    /// Harmony glue: exposes lifecycle, commands, and compat-style hooks (private on GrimmBoss)
     /// to GrimmBossMod and Harmony patches.
     /// </summary>
     public partial class GrimmBoss
@@ -87,6 +87,20 @@ namespace Oxide.Plugins
                 return null;
             }
             return null;
+        }
+
+        /// <summary>Side-effect path: barricade cover + combat engagement even when a prefix blocks damage.</summary>
+        public static void Dispatch_HurtSideEffect(BaseCombatEntity entity, HitInfo info)
+        {
+            if (!Ready || entity == null || info == null) return;
+            if (entity is not ScientistNPC scientist) return;
+            if (!_ins._controllers.TryGetValue(scientist.net.ID.Value, out var bossCtrl)) return;
+            if (bossCtrl.NpcHelpersActive) return;
+            bossCtrl.RefreshProximityPlayers();
+            bossCtrl.PlaceGrimmCoverBarricade(info.InitiatorPlayer, info);
+            BasePlayer attacker = info.InitiatorPlayer;
+            if (attacker != null && !attacker.IsNpc && attacker.IsConnected)
+                _ins.EnsureBossCombatEngagement(scientist, attacker);
         }
 
         // ----- player death -----

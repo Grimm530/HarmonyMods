@@ -1,3 +1,4 @@
+using GrimmCuiHarmony;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -25,6 +26,7 @@ namespace Trade
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             try

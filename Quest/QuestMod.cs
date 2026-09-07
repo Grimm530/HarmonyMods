@@ -1,15 +1,24 @@
 // QuestMod.cs — Harmony entry point for CombatClasses 1.0.0131
-// Hosts Oxide.Plugins.Quest, lifecycle, chat + console commands.
+// Hosts Harmony.Plugins.Quest, lifecycle, chat + console commands.
 
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
+using GrimmCuiHarmony;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.Quest;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.Quest;
+using GrimmCuiHarmony;
 
 namespace QuestHarmony
 {
@@ -55,7 +64,7 @@ namespace QuestHarmony
     public class QuestMod : IHarmonyModHooks
     {
         public static QuestMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -73,14 +82,15 @@ namespace QuestHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -115,7 +125,7 @@ namespace QuestHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.HarmonyRegisterPermissions();
             }
@@ -210,8 +220,8 @@ namespace QuestHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
 
             UnregisterConsoleCommands();
 
@@ -219,7 +229,7 @@ namespace QuestHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[Quest] Harmony mod unloaded.");
         }
@@ -268,10 +278,10 @@ namespace QuestHarmony
                 var types = args == null || args.Length == 0
                     ? Type.EmptyTypes
                     : Array.ConvertAll(args, a => a?.GetType() ?? typeof(object));
-                var mi = typeof(OxidePlugin).GetMethod(method, bf, null, types, null);
+                var mi = typeof(HarmonyPlugin).GetMethod(method, bf, null, types, null);
                 if (mi == null)
                 {
-                    foreach (var candidate in typeof(OxidePlugin).GetMethods(bf))
+                    foreach (var candidate in typeof(HarmonyPlugin).GetMethods(bf))
                     {
                         if (candidate.Name != method) continue;
                         var ps = candidate.GetParameters();
@@ -315,13 +325,13 @@ namespace QuestHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
 
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player, command, args }); return; }
@@ -352,11 +362,11 @@ namespace QuestHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -386,11 +396,11 @@ namespace QuestHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var name = attr.Command.Trim().ToLowerInvariant();
@@ -597,10 +607,10 @@ namespace QuestHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var mi = typeof(OxidePlugin).GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
                 if (mi == null)
                 {
-                    foreach (var candidate in typeof(OxidePlugin).GetMethods(bf))
+                    foreach (var candidate in typeof(HarmonyPlugin).GetMethods(bf))
                     {
                         if (candidate.Name != methodName) continue;
                         var ps = candidate.GetParameters();

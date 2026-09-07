@@ -3,6 +3,7 @@ using System.Reflection;
 using Facepunch.Nexus;
 using Facepunch.Nexus.Models;
 using HarmonyLib;
+using NexusSelfHost;
 using UnityEngine;
 
 namespace NexusSelfHost.Patches
@@ -12,64 +13,273 @@ namespace NexusSelfHost.Patches
     /// <c>blueprints.12</c> blob on the in-memory <c>NexusPlayer</c>. <c>PlayerInit</c> runs earlier; patching here
     /// matches when operators look at the log right after spawn.
     /// Disable: <c>NEXUS_LOG_BLUEPRINT_CONNECT=0</c>.
+    /// Patched from <see cref="ServerMgr_Initialize_DeferredEnterGamePatch"/> after <c>ServerMgr.Initialize</c>
+    /// so <c>FileStorage</c> is not initialized during early <c>PatchAll</c> (see HARMONY_MODS_GUIDE.md).
     /// </summary>
-    [HarmonyPatch]
     public static class BasePlayer_EnterGame_NexusBlueprintLog_Patch
     {
         private const string BlueprintKey = "blueprints.12";
-        private static bool _targetLoggedOnce;
+        private const float TransferRescueLiftMeters = 2f;
+        private const float PortalRescueMatchDistanceMeters = 12f;
 
-        static MethodBase TargetMethod()
+        [ThreadStatic]
+        private static bool _enteredFromTransfer;
+
+        public static void Prefix(object __instance)
         {
-            var t = AccessTools.TypeByName("BasePlayer");
-            if (t == null)
-            {
-                if (!_targetLoggedOnce)
-                {
-                    _targetLoggedOnce = true;
-                    Debug.Log("[NexusSelfHost] BasePlayer not found, skipping EnterGame blueprint log patch.");
-                }
-                return null;
-            }
-
-            var m = AccessTools.Method(t, "EnterGame");
-            if (m == null)
-            {
-                if (!_targetLoggedOnce)
-                {
-                    _targetLoggedOnce = true;
-                    Debug.Log("[NexusSelfHost] BasePlayer.EnterGame not found, skipping blueprint log patch.");
-                }
-                return null;
-            }
-
-            if (!_targetLoggedOnce)
-            {
-                _targetLoggedOnce = true;
-                Debug.Log("[NexusSelfHost] Patching BasePlayer.EnterGame -> Nexus blueprint connect log (after \"has spawned\"; disable: NEXUS_LOG_BLUEPRINT_CONNECT=0).");
-            }
-
-            return m;
-        }
-
-        static void Postfix(object __instance)
-        {
-            if (string.Equals(Environment.GetEnvironmentVariable("NEXUS_LOG_BLUEPRINT_CONNECT"), "0", StringComparison.OrdinalIgnoreCase))
-                return;
-
+            _enteredFromTransfer = false;
             try
             {
-                LogBlueprintStatus(__instance);
+                _enteredFromTransfer = ReadBool(__instance, "LoadingAfterTransfer") ||
+                                       InvokeBool(__instance, "IsLoadingAfterTransfer") ||
+                                       InvokeBool(__instance, "IsTransferProtected");
+            }
+            catch
+            {
+                _enteredFromTransfer = false;
+            }
+        }
+
+        public static void Postfix(object __instance)
+        {
+            try
+            {
+                if (_enteredFromTransfer)
+                    RescueUnsafeTransferSpawn(__instance);
+
+                if (NexusSelfHostOptions.LogBlueprintOnConnect)
+                    LogBlueprintStatus(__instance);
             }
             catch (Exception ex)
             {
-                Debug.LogError("[NexusSelfHost] Nexus blueprint connect log failed: " + ex);
+                Debug.LogError("[NexusSelfHost] EnterGame post-processing failed: " + ex);
             }
+            finally
+            {
+                _enteredFromTransfer = false;
+            }
+        }
+
+        private static void RescueUnsafeTransferSpawn(object __instance)
+        {
+            if (__instance == null)
+                return;
+
+            if (!TryGetPlayerPosition(__instance, out var currentPos))
+                return;
+
+            if (!NeedsTransferRescue(currentPos, out var surfaceY, out var surfaceSource))
+                return;
+
+            if (TryFindNearbyPortalRescue(currentPos, out var portalRescuePos, out var portalRescueRot, out var portalSource))
+            {
+                ApplyTeleport(__instance, portalRescuePos, portalRescueRot);
+                Debug.LogWarning("[NexusSelfHost] Transfer rescue: moved transferred player from " + FormatVec(currentPos) +
+                                 " to nearby portal rescue " + FormatVec(portalRescuePos) + " because spawn was below safe surface " +
+                                 "(surfaceY=" + surfaceY.ToString("F2") + ", source=" + surfaceSource + ", portalSource=" +
+                                 portalSource + ", lift=" + TransferRescueLiftMeters.ToString("F2") + "m).");
+                return;
+            }
+
+            if (!TryFindFallbackSpawn(out var fallbackPos, out var fallbackRot, out var spawnSource))
+            {
+                Debug.LogWarning("[NexusSelfHost] Transfer rescue: unsafe transferred spawn detected at " +
+                                 FormatVec(currentPos) + " but no fallback spawn point was available.");
+                return;
+            }
+
+            var liftedFallbackPos = fallbackPos + new Vector3(0f, TransferRescueLiftMeters, 0f);
+            ApplyTeleport(__instance, liftedFallbackPos, fallbackRot);
+            Debug.LogWarning("[NexusSelfHost] Transfer rescue: moved transferred player from " + FormatVec(currentPos) +
+                             " to fallback spawn " + FormatVec(liftedFallbackPos) + " because spawn was below safe surface " +
+                             "(surfaceY=" + surfaceY.ToString("F2") + ", source=" + surfaceSource + ", spawnSource=" +
+                             spawnSource + ", lift=" + TransferRescueLiftMeters.ToString("F2") + "m).");
+        }
+
+        private static bool NeedsTransferRescue(Vector3 currentPos, out float surfaceY, out string surfaceSource)
+        {
+            surfaceY = 0f;
+            surfaceSource = "none";
+
+            if (currentPos.y < -5f)
+            {
+                surfaceSource = "position.y<-5";
+                return true;
+            }
+
+            if (!TryGetSurfaceY(currentPos.x, currentPos.z, currentPos.y, out surfaceY, out surfaceSource))
+                return false;
+
+            return currentPos.y < surfaceY - 3f;
+        }
+
+        private static bool TryFindFallbackSpawn(out Vector3 pos, out Quaternion rot, out string source)
+        {
+            pos = default;
+            rot = Quaternion.identity;
+            source = "none";
+
+            var serverMgrType = AccessTools.TypeByName("ServerMgr");
+            var basePlayerType = AccessTools.TypeByName("BasePlayer");
+            if (serverMgrType == null || basePlayerType == null)
+                return false;
+
+            var findSpawnPoint = AccessTools.Method(serverMgrType, "FindSpawnPoint", new[] { basePlayerType, typeof(ulong) });
+            if (findSpawnPoint == null)
+                return false;
+
+            var spawnPoint = findSpawnPoint.Invoke(null, new object[] { null, 0UL });
+            if (spawnPoint == null)
+                return false;
+
+            var tr = Traverse.Create(spawnPoint);
+            var rawPos = tr.Property("pos").GetValue() ?? tr.Field("pos").GetValue();
+            var rawRot = tr.Property("rot").GetValue() ?? tr.Field("rot").GetValue();
+            if (rawPos is not Vector3 spawnPos)
+                return false;
+
+            pos = spawnPos;
+            rot = rawRot is Quaternion spawnRot ? spawnRot : Quaternion.identity;
+            source = "ServerMgr.FindSpawnPoint";
+            return true;
+        }
+
+        private static bool TryFindNearbyPortalRescue(Vector3 currentPos, out Vector3 pos, out Quaternion rot, out string source)
+        {
+            pos = default;
+            rot = Quaternion.identity;
+            source = "none";
+
+            if (!PortalTransferRouting.TryResolveNearestDestination(currentPos, PortalRescueMatchDistanceMeters, out var resolution, out var error) ||
+                resolution == null)
+            {
+                source = error ?? "no nearby portal resolution";
+                return false;
+            }
+
+            if (!TryGetSurfaceY(resolution.Destination.x, resolution.Destination.z, resolution.Destination.y, out var surfaceY, out var surfaceSource))
+            {
+                source = "portal '" + resolution.PortalName + "' surface lookup failed";
+                return false;
+            }
+
+            pos = new Vector3(resolution.Destination.x, surfaceY + TransferRescueLiftMeters, resolution.Destination.z);
+            rot = resolution.PortalRotation;
+            source = "portal=" + resolution.PortalName + " surface=" + surfaceSource;
+            return true;
+        }
+
+        private static void ApplyTeleport(object player, Vector3 position, Quaternion rotation)
+        {
+            var playerType = player.GetType();
+            var teleport = AccessTools.Method(playerType, "Teleport", new[] { typeof(Vector3) });
+            teleport?.Invoke(player, new object[] { position });
+
+            var transform = Traverse.Create(player).Property("transform").GetValue() as Transform;
+            if (transform != null)
+                transform.rotation = rotation;
+
+            var sendUpdate = AccessTools.Method(playerType, "SendNetworkUpdateImmediate", Type.EmptyTypes);
+            sendUpdate?.Invoke(player, null);
+
+            var clientRpc = AccessTools.Method(playerType, "ClientRPC", new[] { AccessTools.TypeByName("RpcTarget"), typeof(string), typeof(Vector3) });
+            var rpcTargetType = AccessTools.TypeByName("RpcTarget");
+            if (clientRpc != null && rpcTargetType != null)
+            {
+                var playerFactory = AccessTools.Method(rpcTargetType, "Player", new[] { typeof(string), playerType });
+                if (playerFactory != null)
+                {
+                    var target = playerFactory.Invoke(null, new[] { "ForceViewAnglesTo", player });
+                    clientRpc.Invoke(player, new[] { target, "ForceViewAnglesTo", rotation.eulerAngles });
+                }
+            }
+        }
+
+        private static bool TryGetPlayerPosition(object player, out Vector3 pos)
+        {
+            pos = default;
+            var transform = Traverse.Create(player).Property("transform").GetValue() as Transform;
+            if (transform == null)
+                return false;
+
+            pos = transform.position;
+            return true;
+        }
+
+        private static bool TryGetSurfaceY(float x, float z, float referenceY, out float surfaceY, out string source)
+        {
+            surfaceY = 0f;
+            source = "none";
+
+            var startY = Mathf.Max(referenceY + 64f, 750f);
+            var probe = new Vector3(x, startY, z);
+
+            var transformUtil = AccessTools.TypeByName("TransformUtil");
+            if (transformUtil != null)
+            {
+                var groundInfo = AccessTools.Method(transformUtil, "GetGroundInfo", new[]
+                {
+                    typeof(Vector3),
+                    typeof(Vector3).MakeByRefType(),
+                    typeof(Vector3).MakeByRefType(),
+                    typeof(float),
+                    typeof(Transform)
+                });
+                if (groundInfo != null)
+                {
+                    var args = new object[] { probe, Vector3.zero, Vector3.zero, 2000f, null };
+                    if (groundInfo.Invoke(null, args) is bool ok && ok && args[1] is Vector3 hitPos)
+                    {
+                        surfaceY = hitPos.y;
+                        source = "TransformUtil.GetGroundInfo";
+                        return true;
+                    }
+                }
+            }
+
+            var terrainMetaType = AccessTools.TypeByName("TerrainMeta");
+            var heightMap = terrainMetaType != null ? AccessTools.Property(terrainMetaType, "HeightMap")?.GetValue(null, null) : null;
+            if (heightMap == null)
+                return false;
+
+            var getHeight = AccessTools.Method(heightMap.GetType(), "GetHeight", new[] { typeof(Vector3) });
+            if (getHeight == null)
+                return false;
+
+            if (getHeight.Invoke(heightMap, new object[] { new Vector3(x, 0f, z) }) is not float fy)
+                return false;
+
+            surfaceY = fy;
+            source = "TerrainMeta.HeightMap.GetHeight";
+            return true;
+        }
+
+        private static bool ReadBool(object instance, string propertyName)
+        {
+            if (instance == null)
+                return false;
+
+            var value = Traverse.Create(instance).Property(propertyName).GetValue()
+                        ?? Traverse.Create(instance).Field(propertyName).GetValue();
+            return value is bool b && b;
+        }
+
+        private static bool InvokeBool(object instance, string methodName)
+        {
+            if (instance == null)
+                return false;
+
+            var method = AccessTools.Method(instance.GetType(), methodName, Type.EmptyTypes);
+            return method?.Invoke(instance, null) is bool b && b;
+        }
+
+        private static string FormatVec(Vector3 v)
+        {
+            return "(" + v.x.ToString("F2") + ", " + v.y.ToString("F2") + ", " + v.z.ToString("F2") + ")";
         }
 
         private static void LogBlueprintStatus(object __instance)
         {
-            if (__instance == null) return;
 
             var isBotProp = AccessTools.Property(__instance.GetType(), "IsBot");
             if (isBotProp?.GetValue(__instance, null) is bool isBot && isBot)

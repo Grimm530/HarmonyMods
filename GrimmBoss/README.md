@@ -1,10 +1,10 @@
 # GrimmBoss (Harmony port)
 
-Near-verbatim Harmony port of the **GrimmBoss** Oxide plugin (v2.4.9). The original plugin body
+Near-verbatim Harmony port of the **GrimmBoss** Harmony mod (v2.4.9). The original plugin body
 (`ControllerBoss`, spawn position system, AOE abilities, loot, economy/alerts) lives in
 `GrimmBossPlugin.cs`; an Oxide compat shim + Harmony patches drive it instead of the Oxide runtime.
 
-Bosses and helper NPCs spawn through **0GrimmNPC** — the Harmony port of Oxide **NpcSpawn**
+Bosses and helper NPCs spawn through **0GrimmNPC** — the Harmony port of Legacy **NpcSpawn**
 (`SpawnNpc(Vector3, JObject|NpcConfig)`). Do not use the older RegisterPending-based
 `.cursor/HarmonyMods/GrimmNPC` for this mod.
 
@@ -24,7 +24,7 @@ Bosses and helper NPCs spawn through **0GrimmNPC** — the Harmony port of Oxide
 - **Kits** (optional Harmony Kits mod) — kit loadouts via `GiveKit`.
 - **AnimalSpawn** (optional Harmony mod) — Gen1 Animal Ability only (`Bear` / `PolarBear` via `SpawnAnimal`). Wolf is Gen2 (`wolf2.prefab`) and is spawned by GrimmBoss. Source:
   `.cursor/HarmonyMods/AnimalSpawn/`. Horse shop limits stay in **Shop**, not AnimalSpawn.
-- Soft-null optional Oxide plugins: Economics, ServerRewards, IQEconomic, XPerience,
+- Soft-null optional Harmony mods: Economics, ServerRewards, IQEconomic, XPerience,
   GUIAnnouncements, DiscordMessages, Notify.
 
 ## Commands
@@ -68,7 +68,7 @@ Or rely on startup autoload (`0GrimmNPC.dll` sorts before `GrimmBoss.dll`). Unlo
 
 ## Harmony patches
 
-| Patch | Oxide hook(s) |
+| Patch | Harmony hook(s) |
 | --- | --- |
 | `BaseCombatEntity.Hurt(HitInfo)` prefix | `OnEntityTakeDamage` (player / ScientistNPC / BaseAnimalNPC) |
 | `BasePlayer.Die(HitInfo)` postfix | `OnPlayerDeath` |

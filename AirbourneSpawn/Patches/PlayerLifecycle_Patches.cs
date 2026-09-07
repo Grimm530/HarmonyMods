@@ -10,7 +10,7 @@ namespace AirbourneSpawnHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDeath(__instance); }
             catch (System.Exception ex) { Hooks.Warn("OnPlayerDeath", ex); }
         }
@@ -23,7 +23,7 @@ namespace AirbourneSpawnHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Hooks.Warn("OnPlayerDisconnected", ex); }
         }
@@ -36,7 +36,7 @@ namespace AirbourneSpawnHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerRespawned(__instance); }
             catch (System.Exception ex) { Hooks.Warn("OnPlayerRespawned", ex); }
         }

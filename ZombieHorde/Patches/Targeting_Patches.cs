@@ -69,7 +69,7 @@ namespace ZombieHorde.Patches
         [HarmonyPostfix]
         private static void Postfix(HumanNPC __instance, ref BaseEntity __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             // Block CH47 / vanilla scientists from selecting horde zombies
             if (ZombieNPC.Get(__result as BasePlayer) == null) return;
             if (ConfigData.Configuration?.Member != null && ConfigData.Configuration.Member.TargetedByNPCs)
@@ -116,7 +116,7 @@ namespace ZombieHorde.Patches
         [HarmonyPrefix]
         private static bool Prefix(BaseNpc __instance, BaseEntity target, ref float __result)
         {
-            if (__instance == null || target == null) return true;
+            if (target == null) return true;
             object r = ZombieHordePlugin.Instance?.OnNpcTarget(__instance, target);
             if (r != null)
             {
@@ -172,29 +172,4 @@ namespace ZombieHorde.Patches
         }
     }
 
-    /// <summary>
-    /// GunTrap/FlameTurret have no Oxide-style CanBeTargeted entry; cancel damage from traps when config forbids targeting.
-    /// GrimmNPC NpcConfig flags also apply for CustomScientistNpc skin NPCs.
-    /// </summary>
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), typeof(HitInfo))]
-    internal static class TrapDamage_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        private static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            if (info?.Initiator == null || __instance == null) return true;
-            if (!(info.Initiator is GunTrap or FlameTurret)) return true;
-
-            ZombieNPC zombie = ZombieNPC.Get(__instance as BasePlayer);
-            if (zombie == null) return true;
-
-            object result = ZombieHordePlugin.Instance?.CanBeTargeted(__instance, info.Initiator);
-            if (result is bool b && !b)
-            {
-                info.damageTypes.ScaleAll(0f);
-                return false;
-            }
-            return true;
-        }
-    }
 }

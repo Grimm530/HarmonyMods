@@ -1,4 +1,4 @@
-namespace Oxide.Ext.Chaos.Pooling;
+namespace Ext.Chaos.Pooling;
 
 public interface IPoolable
 {

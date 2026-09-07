@@ -12,8 +12,8 @@ namespace TCUpgrade;
 
 /// <summary>
 /// Full Harmony mod for TCUpgrade - upgrade, repair, reskin, wallpaper.
-/// Loaded by HarmonyLoader from HarmonyMods/. No Oxide plugin required.
-/// Config: HarmonyConfig/TCUpgrade.json or oxide/config/TCUpgrade.json
+/// Loaded by HarmonyLoader from HarmonyMods/. No Harmony mod required.
+/// Config: HarmonyConfig/TCUpgrade.json or legacy/config/TCUpgrade.json
 /// </summary>
 public class TCUpgradeMod : IHarmonyModHooks
 {
@@ -34,8 +34,8 @@ public class TCUpgradeMod : IHarmonyModHooks
     private TCUpgradeData _data;
     private int _maxGradeTier = 4;
 
-    private static Type _cachedOxideModType;
-    private static object _cachedOxideModInstance;
+    private static Type _cachedHarmonyModRuntimeType;
+    private static object _cachedHarmonyModRuntimeInstance;
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
@@ -190,7 +190,7 @@ public class TCUpgradeMod : IHarmonyModHooks
             UnityEngine.Debug.Log($"[TCUpgrade] {msg}");
     }
 
-    /// <summary>Grant all TCUpgrade perms by default. Admin Steam IDs bypass raid blocks etc. No Oxide permission system.</summary>
+    /// <summary>Grant all TCUpgrade perms by default. Admin Steam IDs bypass raid blocks etc. Harmony-only permission system.</summary>
     public bool HasPermission(string userId, string perm)
     {
         if (string.IsNullOrEmpty(perm)) return true;
@@ -1279,27 +1279,27 @@ public class TCUpgradeMod : IHarmonyModHooks
         if (!(TCUpgradeConfig.Config?.UseNoEscape ?? false) && !(TCUpgradeConfig.Config?.UseRaidBlock ?? false)) return false;
         try
         {
-            var mod = _cachedOxideModType;
+            var mod = _cachedHarmonyModRuntimeType;
             if (mod == null)
             {
-                mod = Type.GetType("Oxide.Core.OxideMod, Oxide.Core");
+                mod = Type.GetType("Harmony.Core.HarmonyModRuntime, Harmony.Core");
                 if (mod == null)
                 {
                     foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        mod = asm.GetType("Oxide.Core.OxideMod");
+                        mod = asm.GetType("Harmony.Core.HarmonyModRuntime");
                         if (mod != null) break;
                     }
                 }
-                if (mod != null) _cachedOxideModType = mod;
+                if (mod != null) _cachedHarmonyModRuntimeType = mod;
             }
             if (mod == null) return false;
 
-            var instance = _cachedOxideModInstance;
+            var instance = _cachedHarmonyModRuntimeInstance;
             if (instance == null)
             {
                 instance = mod.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-                if (instance != null) _cachedOxideModInstance = instance;
+                if (instance != null) _cachedHarmonyModRuntimeInstance = instance;
             }
             if (instance == null) return false;
 

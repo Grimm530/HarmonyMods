@@ -10,7 +10,7 @@ namespace AirbourneSpawnHarmony.Patches
         private static void Prefix(Item __instance)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnItemRemove(__instance); }
             catch (System.Exception ex) { Hooks.Warn("OnItemRemove", ex); }
         }

@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using VQ = Oxide.Plugins.VirtualQuarries;
+using VQ = Harmony.Plugins.VirtualQuarries;
 
 namespace VirtualQuarriesHarmony.Patches
 {
@@ -53,22 +53,11 @@ namespace VirtualQuarriesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BaseEntity ent)
         {
-            if (__instance == null || ent == null) return;
+            if (ent == null) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             try { VQ.Dispatch_OnExplosiveThrown(player, ent, __instance); }
             catch (System.Exception ex) { Debug.LogWarning("[VirtualQuarries] OnExplosiveThrown: " + ex.Message); }
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    public static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            object result = VQ.Dispatch_OnEntityTakeDamage(__instance, info);
-            return result == null;
         }
     }
 
@@ -132,7 +121,7 @@ namespace VirtualQuarriesHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(StorageContainer __instance, BasePlayer player, ref bool __result)
         {
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             if (__instance is not DieselEngine && __instance is not ExcavatorOutputPile && __instance is not ResourceExtractorFuelStorage)
                 return true;
             object blocked = VQ.Dispatch_CanLootEntity(player, __instance);
@@ -151,7 +140,7 @@ namespace VirtualQuarriesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (!__result || __instance == null || targetEntity is not BoxStorage box) return;
+            if (!__result || targetEntity is not BoxStorage box) return;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return;
             try { VQ.Dispatch_OnLootEntity(player, box); }

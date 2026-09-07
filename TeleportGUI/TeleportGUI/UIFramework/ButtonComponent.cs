@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using UnityEngine.UI;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class ButtonComponent : BaseCuiComponent, ICuiColorComponent, ICuiCommandComponent, ICuiGraphicComponent, IStyleComponent
 {

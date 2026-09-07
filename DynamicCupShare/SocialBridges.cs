@@ -109,7 +109,7 @@ namespace DynamicCupShareHarmony
             {
                 "FriendsHarmony.FriendsMod",
                 "Friends",
-                "Oxide.Plugins.Friends"
+                "Harmony.Plugins.Friends"
             };
 
             public bool HasFriend(ulong owner, ulong player)
@@ -173,7 +173,7 @@ namespace DynamicCupShareHarmony
             {
                 "ClansHarmony.ClansMod",
                 "Clans",
-                "Oxide.Plugins.Clans"
+                "Harmony.Plugins.Clans"
             };
 
             public bool PluginLoaded => IsLoaded;

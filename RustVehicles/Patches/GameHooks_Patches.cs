@@ -21,7 +21,7 @@ namespace RustVehiclesHarmony.Patches
         private static void Postfix(BaseCombatEntity __instance, HitInfo info)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnEntityDeath(__instance, info); }
             catch (Exception ex) { Hooks.Warn("OnEntityDeath", ex); }
         }
@@ -34,7 +34,7 @@ namespace RustVehiclesHarmony.Patches
         private static void Prefix(BaseNetworkable __instance)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             if (__instance is not BaseCombatEntity entity) return;
             try { plugin.OnEntityKill(entity); }
             catch (Exception ex) { Hooks.Warn("OnEntityKill", ex); }
@@ -48,7 +48,7 @@ namespace RustVehiclesHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (Exception ex) { Hooks.Warn("OnPlayerDisconnected", ex); }
         }
@@ -67,7 +67,7 @@ namespace RustVehiclesHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnNewSave — fire when WipeId changes after a successful Load.</summary>
+    /// <summary>compat OnNewSave — fire when WipeId changes after a successful Load.</summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     internal static class SaveRestore_Load_Patch
     {
@@ -101,7 +101,7 @@ namespace RustVehiclesHarmony.Patches
         private static void Prefix(AutoTurret __instance, ref BaseCombatEntity targ)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null || targ == null) return;
+            if (plugin == null || targ == null) return;
             try
             {
                 if (plugin.OnTurretTarget(__instance, targ) != null)
@@ -118,13 +118,13 @@ namespace RustVehiclesHarmony.Patches
         private static void Postfix(ElectricSwitch __instance, BaseEntity.RPCMessage msg)
         {
             var plugin = Hooks.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnSwitchToggled(__instance, msg.player); }
             catch (Exception ex) { Hooks.Warn("OnSwitchToggled", ex); }
         }
     }
 
-    /// <summary>Oxide OnServerCommand for inventory.lighttoggle (minicopter search light).</summary>
+    /// <summary>Harmony OnServerCommand for inventory.lighttoggle (minicopter search light).</summary>
     [HarmonyPatch(typeof(ConsoleSystem), nameof(ConsoleSystem.Run), new[] { typeof(ConsoleSystem.Option), typeof(string), typeof(object[]) })]
     internal static class ConsoleSystem_Run_Patch
     {
@@ -151,7 +151,7 @@ namespace RustVehiclesHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnEntityReskin — block reskinning licensed vehicles.</summary>
+    /// <summary>compat OnEntityReskin — block reskinning licensed vehicles.</summary>
     [HarmonyPatch(typeof(SprayCan), nameof(SprayCan.ValidateReskin))]
     internal static class SprayCan_ValidateReskin_Patch
     {
@@ -185,7 +185,7 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("CanMountEntity")) return true;
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             try
             {
                 if (plugin.CanMountEntity(player, __instance) != null)
@@ -193,20 +193,6 @@ namespace RustVehiclesHarmony.Patches
             }
             catch (Exception ex) { Hooks.Warn("CanMountEntity", ex); }
             return true;
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    internal static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        private static void Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            var plugin = Hooks.Plugin;
-            if (plugin == null || !plugin.IsSubscribed("OnEntityTakeDamage")) return;
-            if (__instance == null || info == null) return;
-            try { plugin.OnEntityTakeDamage(__instance, info); }
-            catch (Exception ex) { Hooks.Warn("OnEntityTakeDamage", ex); }
         }
     }
 
@@ -218,7 +204,7 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnEntityEnter")) return true;
-            if (__instance == null || ent is not BasePlayer player) return true;
+            if (ent is not BasePlayer player) return true;
             try
             {
                 if (plugin.OnEntityEnter(__instance, player) != null)
@@ -261,7 +247,7 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("CanLootEntity")) return true;
-            if (__instance == null || targetEntity == null) return true;
+            if (targetEntity == null) return true;
             var player = __instance.GetComponent<BasePlayer>() ?? __instance.entitySource as BasePlayer;
             // PlayerLoot lives on the player
             try
@@ -309,7 +295,6 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnEntitySpawned")) return;
-            if (__instance == null) return;
             try
             {
                 switch (__instance)
@@ -333,7 +318,7 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnRidableAnimalClaimed")) return;
-            if (__instance == null || msg.player == null) return;
+            if (msg.player == null) return;
             try { plugin.OnRidableAnimalClaimed(__instance, msg.player); }
             catch (Exception ex) { Hooks.Warn("OnRidableAnimalClaimed", ex); }
         }
@@ -347,7 +332,6 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnEntityDismounted")) return;
-            if (__instance == null) return;
             try { plugin.OnEntityDismounted(__instance, player); }
             catch (Exception ex) { Hooks.Warn("OnEntityDismounted", ex); }
         }
@@ -361,7 +345,6 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnEngineStarted")) return;
-            if (__instance == null) return;
             try { plugin.OnEngineStarted(__instance, player); }
             catch (Exception ex) { Hooks.Warn("OnEngineStarted", ex); }
         }
@@ -375,7 +358,7 @@ namespace RustVehiclesHarmony.Patches
         {
             var plugin = Hooks.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnVehiclePush")) return true;
-            if (__instance == null || player == null) return true;
+            if (player == null) return true;
             try
             {
                 if (plugin.OnVehiclePush(__instance, player) != null)

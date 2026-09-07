@@ -5,7 +5,7 @@ namespace LoadingMessages.Patches
 {
     /// <summary>
     /// Oxide OnUserApprove equivalent.
-    /// Oxide injects IOnUserApprove into ConnectionAuth.OnNewConnection (after basic
+    /// compat injects IOnUserApprove into ConnectionAuth.OnNewConnection (after basic
     /// reject checks, before Steam/EAC auth) — not ConnectionAuth.Approve.
     /// Approve runs only after auth, when the client has already left the connecting
     /// screen that displays Message.Type.Message.

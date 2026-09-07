@@ -10,6 +10,7 @@
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
 | **Oxide** | None — unload the Oxide Karuza plugins listed below |
 | **API** | `AppDomain.SetData("KaruzaVehicles_ApiType", typeof(KaruzaVehicles.KaruzaVehiclesMod))` |
+| **Upstream** | CustomEntities 1.0.20, Common 1.11.00, RustCar 1.25.0, RustHelicopter 1.31.0, RustPlane 1.37.0 |
 
 ## Load order
 
@@ -57,6 +58,18 @@ Copied from Oxide with original filenames:
 | `oxide/config/RustPlane.json` + dir | `HarmonyConfig/RustPlane.json` + `HarmonyConfig/RustPlane/` |
 | `oxide/data/CustomEntities/` | `HarmonyData/CustomEntities/` |
 | lang | `HarmonyLanguage/KaruzaVehicles.json` (en), `KaruzaVehicles.<locale>.json` |
+
+## Karuza API (auto-update vehicle JSON)
+
+On every server start and every `harmony.load KaruzaVehicles`, if `HarmonyConfig/KaruzaEntitiesCommon.json` has `APIPath`, `APIId`, and `APISecret`, the mod fetches owned entity configs and (when `SaveApiConfigsToDisk` is true) writes them to:
+
+- planes → `HarmonyConfig/RustPlane/{Name}.json` (type `1`)
+- helicopters → `HarmonyConfig/RustHelicopter/{Name}.json` (type `2`)
+- cars → `HarmonyConfig/RustCar/{Name}.json` (type `3`)
+
+New purchases only appear after they are added on the KPC Dashboard (**+ Add All Missing**). Credentials live in `HarmonyConfig/KaruzaEntitiesCommon.json` only — do not put the server secret in git commits or docs.
+
+Look for `API is configured: True` then `Entity Configs for RustCar Received!` / `Saved N RustCar configs`.
 
 ## Commands
 

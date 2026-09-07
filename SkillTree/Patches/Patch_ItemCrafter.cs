@@ -6,13 +6,13 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
     /// <summary>
     /// OnItemCraft — postfix after the task is queued so Craft_Speed can clone/modify the blueprint
-    /// before ServerUpdate calls GetScaledDuration. Mirrors Oxide CallHook("OnItemCraft", ...).
+    /// before ServerUpdate calls GetScaledDuration. Mirrors compat CallHook("OnItemCraft", ...).
     /// </summary>
     [HarmonyPatch(typeof(ItemCrafter), nameof(ItemCrafter.CraftItem))]
     public static class ItemCrafter_CraftItem_Patch
@@ -20,7 +20,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ItemCrafter __instance, BasePlayer owner, Item fromTempBlueprint, bool __result)
         {
-            if (!__result || owner == null || __instance == null) return;
+            if (!__result || owner == null) return;
             var queue = __instance.queue;
             if (queue == null || queue.Count == 0) return;
             var task = queue.Last?.Value;
@@ -31,7 +31,7 @@ namespace SkillTreeHarmony.Patches
     }
 
     /// <summary>
-    /// OnItemCraftFinished must run at the Oxide CallHook site — after amountToCreate is applied,
+    /// OnItemCraftFinished must run at the compat CallHook site — after amountToCreate is applied,
     /// before GiveItem. A FinishCrafting postfix is too late: stacking zeros item.amount and
     /// Remove()s the Item, so Craft_Duplicate calls ItemManager.Create with amount 0
     /// ("Creating item with less than 1 amount!").
@@ -53,7 +53,7 @@ namespace SkillTreeHarmony.Patches
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemCraftFinished: " + ex.Message); }
         }
 
-        // Oxide: Interface.CallHook("OnItemCraftFinished", task, item, this)
+        // Oxide: HarmonyModInterface.CallHook("OnItemCraftFinished", task, item, this)
         public static object CallHookShim(string hook, object task, object item, object crafter)
         {
             try { STPlugin.Dispatch_OnItemCraftFinished(task as ItemCraftTask, item as Item, crafter as ItemCrafter); }

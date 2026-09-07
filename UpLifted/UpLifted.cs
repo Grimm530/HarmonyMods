@@ -25,21 +25,21 @@ using System;
 using System.Collections.Generic;
 using System.Collections;
 using System.Text;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Configuration;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Configuration;
 using UnityEngine;
 using Network;
 using Network.Visibility;
 using Facepunch;
 using Facepunch.Extend;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using HarmonyLib;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("UpLifted", "Grimm530", "1.2.9", ResourceId = 110)]
     // Thanks to the original author, FuJiCuRa.
@@ -496,7 +496,7 @@ namespace Oxide.Plugins
                     {
                         PrintWarning("Loading problem detected at:" + ex.ToString());
                         PrintWarning("Plugin HALTED to protect the datafile. Contact the Developer");
-                        Interface.Oxide.UnloadPlugin(UpL.Title);
+                        HarmonyModInterface.Mods.UnloadPlugin(UpL.Title);
                         return;
                     }
                     PrintWarning($"Failed loading of lift at '{ent.transform.position.ToString()}': {ex.Message}");
@@ -526,7 +526,7 @@ namespace Oxide.Plugins
         // Read data file; supports old format (values as strings) and new readable format (values as objects). Key = lift netId as string.
         private Dictionary<string, ELStorage> ReadDataFileReadable()
         {
-            var raw = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, object>>(Title) ?? new Dictionary<string, object>();
+            var raw = HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<string, object>>(Title) ?? new Dictionary<string, object>();
             var result = new Dictionary<string, ELStorage>();
             foreach (var kvp in raw)
             {
@@ -550,7 +550,7 @@ namespace Oxide.Plugins
         // Write data file in readable format (each elevator is a full JSON object, not a string).
         private void WriteDataFileReadable(Dictionary<string, ELStorage> data)
         {
-            Interface.Oxide.DataFileSystem.WriteObject(Title, data);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(Title, data);
         }
 
         // Save only a single new elevator to disk (called when elevator becomes Ready). Does not run on every server save.
@@ -1138,7 +1138,7 @@ namespace Oxide.Plugins
 
         public class Elevator : FacepunchBehaviour
         {
-            private Oxide.Core.Libraries.Time time = Interface.Oxide.GetLibrary<Core.Libraries.Time>();
+            private Harmony.Core.Libraries.Time time = HarmonyModInterface.Mods.GetLibrary<Core.Libraries.Time>();
 
             private string msg(string key, string id = null)
             {

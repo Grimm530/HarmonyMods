@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AdminMenuHarmony.Patches
 {
-    /// <summary>Oxide OnServerSave → SaveRestore.Save(bool) postfix.</summary>
+    /// <summary>Harmony OnServerSave → SaveRestore.Save(bool) postfix.</summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Save), typeof(bool))]
     public static class ServerSave_Patch
     {

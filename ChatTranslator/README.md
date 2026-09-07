@@ -1,6 +1,6 @@
 # ChatTranslator Harmony Mod
 
-Standalone Harmony mod that translates chat messages to each player's language preference. **No Oxide required.** Works on servers without Oxide.
+Standalone Harmony mod that translates chat messages to each player's language preference. **Harmony-only required.** Works on servers without legacy plugin host.
 
 ## Requirements
 
@@ -39,14 +39,23 @@ Players set their language with the chat command:
 
 Languages are stored in `HarmonyConfig/ChatTranslator_languages.json`.
 
-## BetterChat
-
-If the **BetterChat** Harmony mod is loaded, ChatTranslator does **not** take over sending. BetterChat already formats titles/colours and broadcasts the line. Translation of titled chat is not applied in that configuration.
+## Supported Channels
 
 - **Global chat** – Translated per recipient
 - **Team chat** – Translated per team member
 - **Local chat** – Translated for nearby players
 - **Card game chat** – Passed to original handler (no translation)
+
+## BetterChat integration
+
+When **BetterChat** is loaded it owns `Chat.say` / `sayImpl` (titles + colours) and sets `BetterChat_SkipTranslator`. ChatTranslator then:
+
+- Does **not** send its own `chat.add2` lines (avoids double chat)
+- Still provides `Translate(...)` — BetterChat calls this per recipient before formatting
+- Still handles `/lang` via shared `ChatSayBridge`
+- Translates the RCON/`Chat.Record` relay line to the server default language (`en`) for Discord logs
+
+Without BetterChat, ChatTranslator patches `sayImpl` itself as before.
 
 ## Building
 

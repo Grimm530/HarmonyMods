@@ -153,7 +153,7 @@ namespace NexusStaticPortals
             {
                 Normalize(config);
                 Save(config);
-                Debug.Log("[NexusStaticPortals] Imported config from oxide/config/Portals.json into HarmonyConfig/NexusStaticPortals.json.");
+                Debug.Log("[NexusStaticPortals] Imported config from legacy/config/Portals.json into HarmonyConfig/NexusStaticPortals.json.");
                 return config;
             }
 

@@ -6,7 +6,7 @@ namespace GrimmBoss
 {
     /// <summary>
     /// Bridges GrimmBoss NpcSpawn.Call / SpawnNpc reflection to 0GrimmNPC
-    /// (Harmony port of Oxide NpcSpawn). Resolves GrimmNPC.GrimmNPC via AppDomain keys.
+    /// (Harmony port of original NpcSpawn). Resolves GrimmNPC.GrimmNPC via AppDomain keys.
     /// </summary>
     public static class GrimmBossGrimmNpc
     {
@@ -140,8 +140,13 @@ namespace GrimmBoss
 
         public static object SpawnNpc(Vector3 position, object jObjectConfig)
         {
-            if (_spawnNpc == null)
+            object live = null;
+            try { live = AppDomain.CurrentDomain.GetData(DataInstanceKey); } catch { }
+            if (_spawnNpc == null || _grimmType == null || live == null || !_grimmType.IsInstanceOfType(live))
+            {
+                _bound = false;
                 Bind();
+            }
             if (_spawnNpc == null || !TryResolveInstance())
             {
                 Debug.LogWarning("[GrimmBoss] GrimmNPC not available - cannot spawn NPC.");
@@ -161,13 +166,13 @@ namespace GrimmBoss
     }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     /// <summary>
     /// NpcSpawn stand-in. GrimmBoss resolves SpawnNpc via reflection on this type and/or Call.
     /// Both route to 0GrimmNPC through GrimmBossGrimmNpc.
     /// </summary>
-    public class NpcSpawnBridge : Oxide.Core.Plugins.Plugin
+    public class NpcSpawnBridge : Harmony.Core.Plugins.Plugin
     {
         public NpcSpawnBridge() { Name = "NpcSpawn"; IsLoaded = true; }
 

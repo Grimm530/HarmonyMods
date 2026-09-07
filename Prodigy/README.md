@@ -1,6 +1,6 @@
 # Prodigy (Harmony Mod)
 
-Prodigy is a Harmony mod that provides detailed entity information (“prod” info) when you look at an entity and run the `prodigy` command. It shows owner, position, prefab, type, health, code lock, auth list, build date (for blocks/TC), and entity-specific details. No Oxide dependency.
+Prodigy is a Harmony mod that provides detailed entity information (“prod” info) when you look at an entity and run the `prodigy` command. It shows owner, position, prefab, type, health, code lock, auth list, build date (for blocks/TC), and entity-specific details. Harmony-only dependency.
 
 ## Mod identity
 
@@ -10,7 +10,7 @@ Prodigy is a Harmony mod that provides detailed entity information (“prod” i
 | **Type** | Harmony mod (IL patching + console commands + CUI) |
 | **Load** | `harmony.load Prodigy` (not `o.load`) |
 | **Unload** | `harmony.unload Prodigy` |
-| **Origin** | Ported from Oxide plugin Prodigy by nivex |
+| **Origin** | Ported from Harmony mod Prodigy by nivex |
 
 ## Project structure
 
@@ -29,7 +29,7 @@ Prodigy is a Harmony mod that provides detailed entity information (“prod” i
 
 ## Persistent data model
 
-- **File:** `HarmonyData/Prodigy/ProdigyData.json` (path from config `DataFolder`).
+- **File:** `HarmonyMods_Data/Prodigy/ProdigyData.json` (path from config `DataFolder`).
 - **Contents:** `Blocks` (per-user build logs by position), `TC` (per-user TC logs), `Offsets` (per-user UI position/size), `WipeId`.
 - **New wipe:** On load, if `SaveRestore.WipeId` != stored `WipeId`, `Blocks` and `TC` are cleared and `WipeId` is updated.
 - **Save:** Every 300 seconds and on unload; only when `Changed` is true.
@@ -55,7 +55,7 @@ Then press **P** while looking at an entity to run prodigy. Use `bind p "chat.sa
 | `AdminOnly` | If true, only admins can use prodigy; else `AllowedSteamIds` apply (admins always allowed). |
 | `AllowedSteamIds` | Steam IDs allowed when `AdminOnly` is false. |
 | `AllowedMlrsSteamIds` | Steam IDs allowed to use MLRS repair (hammer on MLRS). |
-| `DataFolder` | Folder under server root for `ProdigyData.json` (e.g. `HarmonyData/Prodigy`). |
+| `DataFolder` | Folder under server root for `ProdigyData.json` (e.g. `HarmonyMods_Data/Prodigy`). |
 
 ## Patches
 
@@ -77,9 +77,9 @@ Then press **P** while looking at an entity to run prodigy. Use `bind p "chat.sa
 
 ## What is not included (vs Oxide Prodigy)
 
-- No Oxide permissions (`prodigy.allow`, `prodigy.mlrs`); use config `AdminOnly` / `AllowedSteamIds` / `AllowedMlrsSteamIds`.
-- No Oxide plugin refs (AbandonedBases, Clans, RaidableBases); no “Abandoned Base”, “Raidable Base”, or clan tag (shows “Clan Tag: N/A”).
-- No Oxide CUI; uses game CommunityEntity AddUI/DestroyUI with JSON CUI.
+- Harmony-only permissions (`prodigy.allow`, `prodigy.mlrs`); use config `AdminOnly` / `AllowedSteamIds` / `AllowedMlrsSteamIds`.
+- No Harmony mod refs (AbandonedBases, Clans, RaidableBases); no “Abandoned Base”, “Raidable Base”, or clan tag (shows “Clan Tag: N/A”).
+- Harmony-only CUI; uses game CommunityEntity AddUI/DestroyUI with JSON CUI.
 
 ## Performance
 

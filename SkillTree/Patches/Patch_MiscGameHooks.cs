@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -13,11 +13,19 @@ namespace SkillTreeHarmony.Patches
     [HarmonyPatch(typeof(Planner), "DoBuild", new[] { typeof(Construction.Target), typeof(Construction) })]
     public static class Planner_DoBuild_Patch
     {
-        [HarmonyPostfix]
-        public static void Postfix(Planner __instance, BaseEntity __result)
+        // Oxide fires OnEntityBuilt before PayForPlacement. Our postfix runs after, so the
+        // last seed/clone in a stack is already consumed — capture shortname in a prefix.
+        [HarmonyPrefix]
+        public static void Prefix(Planner __instance, out string __state)
         {
-            if (__instance == null || __result == null) return;
-            try { STPlugin.Dispatch_OnEntityBuilt(__instance, __result.gameObject); }
+            __state = __instance?.GetItem()?.info?.shortname;
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix(Planner __instance, BaseEntity __result, string __state)
+        {
+            if (__result == null) return;
+            try { STPlugin.Dispatch_OnEntityBuilt(__instance, __result.gameObject, __state); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityBuilt: " + ex.Message); }
         }
     }
@@ -36,7 +44,7 @@ namespace SkillTreeHarmony.Patches
     }
 
     // ---- Item repair (MaxRepair / Free_Repairs) ----------------------------
-    // Oxide CallHook("OnItemRepair") only reaches Oxide plugins; Harmony SkillTree must patch here.
+    // compat CallHook("OnItemRepair") only reaches Harmony mods; Harmony SkillTree must patch here.
 
     [HarmonyPatch(typeof(RepairBench), nameof(RepairBench.RepairAnItem))]
     public static class RepairBench_RepairAnItem_Patch
@@ -62,7 +70,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { STPlugin.Dispatch_OnEntityMounted(__instance, player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityMounted: " + ex.Message); }
         }
@@ -74,14 +82,14 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMountable __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { STPlugin.Dispatch_OnEntityDismounted(__instance, player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntityDismounted: " + ex.Message); }
         }
     }
 
     // ---- Player input (boat turbo) ----------------------------------------
-    // No BasePlayer.ServerInput — Oxide OnPlayerInput comes from OnReceiveTick.
+    // No BasePlayer.ServerInput — Harmony OnPlayerInput comes from OnReceiveTick.
 
     [HarmonyPatch(typeof(BasePlayer), "OnReceiveTick", new[] { typeof(PlayerTick), typeof(bool) })]
     public static class BasePlayer_OnReceiveTick_Patch
@@ -89,7 +97,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || __instance.serverInput == null) return;
+            if (__instance.serverInput == null) return;
             if (!STPlugin.IsHookSubscribed("OnPlayerInput")) return;
             try { STPlugin.Dispatch_OnPlayerInput(__instance, __instance.serverInput); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerInput: " + ex.Message); }
@@ -104,7 +112,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
         {
-            if (__instance == null || __instance is BasePlayer) return;
+            if (__instance is BasePlayer) return;
             try { STPlugin.Dispatch_OnEntitySpawned(__instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntitySpawned: " + ex.Message); }
         }
@@ -118,7 +126,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance, BasePlayer fromPlayer, bool canRevive)
         {
-            if (__instance == null || fromPlayer == null || !canRevive) return;
+            if (fromPlayer == null || !canRevive) return;
             if (fromPlayer == __instance) return;
             try { STPlugin.Dispatch_OnPlayerRevive(fromPlayer, __instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerRevive: " + ex.Message); }
@@ -159,7 +167,6 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance, Item __state)
         {
-            if (__instance == null) return;
             var newItem = __instance.GetActiveItem();
             if (__state == newItem) return;
             try { STPlugin.Dispatch_OnActiveItemChanged(__instance, __state, newItem); }
@@ -177,7 +184,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(BaseMelee __instance, HitInfo info)
         {
-            if (__instance == null || info == null || __instance is Hammer) return;
+            if (info == null || __instance is Hammer) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             try { STPlugin.Dispatch_OnMeleeAttack(player, info); }
@@ -215,7 +222,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BaseEntity ent)
         {
-            if (__instance == null || ent is not TimedExplosive timed) return;
+            if (ent is not TimedExplosive timed) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             try { STPlugin.Dispatch_OnExplosiveThrown(player, timed, __instance); }
@@ -232,7 +239,6 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(TimedExplosive __instance)
         {
-            if (__instance == null) return;
             try { STPlugin.Dispatch_OnTimedExplosiveExplode(__instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnTimedExplosiveExplode: " + ex.Message); }
         }
@@ -246,7 +252,6 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(MixingTable __instance, BasePlayer player)
         {
-            if (__instance == null) return;
             try { STPlugin.Dispatch_OnMixingTableToggle(__instance, player); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnMixingTableToggle: " + ex.Message); }
         }
@@ -261,7 +266,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(MedicalTool __instance, BasePlayer fromPlayer)
         {
-            if (__instance == null || fromPlayer == null) return true;
+            if (fromPlayer == null) return true;
             object r = null;
             try { r = STPlugin.Dispatch_OnHealingItemUse(__instance, fromPlayer); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnHealingItemUse: " + ex.Message); }
@@ -277,7 +282,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(BasePlayer __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null || !__instance.IsWounded()) return;
+            if (msg.player == null || !__instance.IsWounded()) return;
             try { STPlugin.Dispatch_OnPlayerRevive(msg.player, __instance); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnPlayerAssist/Revive: " + ex.Message); }
         }
@@ -291,7 +296,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseMission __instance, BaseMission.MissionInstance instance, BasePlayer assignee)
         {
-            if (__instance == null || assignee == null) return;
+            if (assignee == null) return;
             try { STPlugin.Dispatch_OnMissionSucceeded(__instance, instance, assignee); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnMissionSucceeded: " + ex.Message); }
         }
@@ -317,7 +322,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ItemContainer __instance, Item item, bool __result)
         {
-            if (!__result || __instance == null || item == null) return;
+            if (!__result || item == null) return;
             try { STPlugin.Dispatch_OnItemAddedToContainer(__instance, item); }
             catch (Exception ex) { Debug.LogWarning("[SkillTree] OnItemAddedToContainer: " + ex.Message); }
         }
@@ -331,7 +336,6 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
-            if (__instance == null) return;
             try
             {
                 switch (__instance)

@@ -11,7 +11,7 @@ namespace Convoy
     /// </summary>
     public static class ConvoyGrimmNpc
     {
-        public const ulong CustomNpcSkinId = 11162132011012UL;
+        public const ulong CustomNpcSkinId = GrimmCoreBridge.CustomEntitySkinId;
         private const string DataTypeKey = "GrimmNPC.Type";
         private const string DataInstanceKey = "GrimmNPC.Instance";
 
@@ -232,8 +232,13 @@ namespace Convoy
 
         private static bool TryGetInstance()
         {
-            if (!_available)
+            object live = null;
+            try { live = AppDomain.CurrentDomain.GetData(DataInstanceKey); } catch { }
+            if (!_available || _grimmType == null || live == null || !_grimmType.IsInstanceOfType(live))
+            {
+                _bound = false;
                 Bind();
+            }
             if (!_available || _grimmType == null) return false;
             return TryResolveInstance() && _spawnNpc != null;
         }
@@ -365,6 +370,8 @@ namespace Convoy
                 UnityEngine.Debug.LogWarning("[Convoy] GrimmNPC.SpawnNpc returned null for preset '" + cfg.PresetName + "'.");
                 return null;
             }
+
+            try { GrimmCoreBridge.TagCustomEntity(npc); } catch { }
 
             try
             {

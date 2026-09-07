@@ -1,6 +1,6 @@
 # Build script for CommunityTab Harmony Mod
-# Output: <server root>\HarmonyMods\CommunityTab.dll
-# Strips modded/oxide/carbon browser tags so server lists in Community tab
+# Output: D:\!RustServer\HarmonyMods\CommunityTab.dll
+# Strips "modded" from server tags so server lists in Community tab
 #
 Write-Host "Building CommunityTab Harmony mod..." -ForegroundColor Cyan
 
@@ -8,8 +8,7 @@ $projectPath = Join-Path $PSScriptRoot "CommunityTab.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
-    $harmonyModsPath = Join-Path $root "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
@@ -22,8 +21,8 @@ if ($LASTEXITCODE -eq 0) {
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! CommunityTab.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "Load with: harmony.load CommunityTab" -ForegroundColor Yellow
-    Write-Host "Strips compressed ^z/^o/^y (and legacy modded) from GameTags for Community tab" -ForegroundColor Gray
+    Write-Host "Load with: harmony.load CommunityTab (or automatic at startup)" -ForegroundColor Yellow
+    Write-Host "Strips 'modded' from server tags so server lists in Community tab" -ForegroundColor Gray
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

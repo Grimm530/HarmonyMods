@@ -1,6 +1,6 @@
 # UberTool (Harmony)
 
-Oxide **UberTool 1.4.50** port as a standalone Harmony mod (no Oxide runtime).
+Legacy **UberTool 1.4.50** port as a standalone Harmony mod (Harmony-only runtime).
 
 UberTool 1.4.50 Harmony port. Admin build/remove/hammer tool. Overlay scale is built-in (not the Scale plugin).
 

@@ -4,7 +4,7 @@ using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public static class ImageUtility
 {

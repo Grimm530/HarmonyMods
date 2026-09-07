@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"frametime","columns":["time","avg_ms","max_ms","min_ms","p95","p99"],"values":[[1788666300000,26.520123811959085,61.00262,18.72028,36.35256,58.95083]]}]}]}

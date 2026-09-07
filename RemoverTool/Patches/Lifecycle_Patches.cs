@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace RemoverToolHarmony.Patches
 {
-    /// <summary>Oxide OnServerSave — SaveRestore.Save(bool) postfix.</summary>
+    /// <summary>Harmony OnServerSave — SaveRestore.Save(bool) postfix.</summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Save), typeof(bool))]
     internal static class SaveRestore_Save_Patch
     {
@@ -22,7 +22,7 @@ namespace RemoverToolHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnEntitySpawned — BaseNetworkable.Spawn postfix (only when subscribed).</summary>
+    /// <summary>compat OnEntitySpawned — BaseNetworkable.Spawn postfix (only when subscribed).</summary>
     [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     internal static class BaseNetworkable_Spawn_Patch
     {

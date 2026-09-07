@@ -11,7 +11,7 @@
     <RootNamespace>GrimmBoss</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: GrimmBoss (port of GrimmBoss Oxide plugin). Requires 0GrimmNPC. Config: HarmonyConfig/GrimmBoss.json. Data: HarmonyData/GrimmBoss/.</Description>
+    <Description>Harmony mod: GrimmBoss (port of GrimmBoss Harmony mod). Requires 0GrimmNPC. Config: HarmonyConfig/GrimmBoss.json. Data: HarmonyData/GrimmBoss/.</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
@@ -73,5 +73,8 @@
     <Reference Include="UnityEngine.TerrainPhysicsModule">
       <HintPath>$(RustManaged)\UnityEngine.TerrainPhysicsModule.dll</HintPath>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
   </ItemGroup>
 </Project>

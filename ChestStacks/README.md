@@ -1,6 +1,6 @@
 # ChestStacks (Harmony)
 
-Oxide **ChestStacks 1.4.6** port as a standalone Harmony mod. Right-click a matching chest while holding another to stack it.
+Legacy **ChestStacks 1.4.6** port as a standalone Harmony mod. Right-click a matching chest while holding another to stack it.
 
 ## Load order
 

@@ -1,6 +1,6 @@
 # Build script for Rustcord Harmony Mod
-# Output: <workspace>\HarmonyMods\Rustcord.dll
-# No Oxide. Uses Discord webhooks for Game->Discord. Compatible with ticket-support-system-discord relay.
+# Output: D:\!RustServer\HarmonyMods\Rustcord.dll
+# Harmony-only. Uses Discord webhooks for Game->Discord. Compatible with ticket-support-system-discord relay.
 
 Write-Host "Building Rustcord Harmony mod..." -ForegroundColor Cyan
 
@@ -12,8 +12,7 @@ if ($LASTEXITCODE -eq 0) {
     if (-not (Test-Path $dllPath)) {
         $dllPath = Join-Path $PSScriptRoot "bin\Release\Rustcord.dll"
     }
-    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

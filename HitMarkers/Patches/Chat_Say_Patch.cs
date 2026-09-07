@@ -1,7 +1,7 @@
 using System;
 using ConVar;
 using HarmonyLib;
-using Oxide.Plugins;
+using Harmony.Plugins;
 
 namespace HitMarkersHarmony.Patches
 {

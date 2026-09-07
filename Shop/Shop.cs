@@ -14,7 +14,7 @@ using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using ShopHarmony.ShopExtensionMethods;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -27,7 +27,7 @@ using Time = UnityEngine.Time;
 namespace ShopHarmony
 {
     /// <summary>
-    /// Shop 2.4.201 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// Shop 2.4.201 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class Shop : ShopPluginBase
     {
@@ -2050,7 +2050,7 @@ namespace ShopHarmony
                             var localPath = _instance.GetLocalImagePath(Image);
                             if (!string.IsNullOrEmpty(localPath))
                             {
-                                var localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                                var localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                                 if (File.Exists(localFilePath))
                                 {
                                     // Local file exists, use Png (FileStorage) instead of Url
@@ -2131,7 +2131,7 @@ namespace ShopHarmony
                             var localPath = _instance.GetLocalImagePath(Image);
                             if (!string.IsNullOrEmpty(localPath))
                             {
-                                var localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                                var localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                                 if (File.Exists(localFilePath))
                                 {
                                     // Local file exists, use Png (FileStorage) instead of Url
@@ -2435,7 +2435,7 @@ namespace ShopHarmony
                 if (string.IsNullOrEmpty(Kit)) return;
 
                 for (var i = 0; i < count; i++)
-                    Interface.Oxide.CallHook("GiveKit", player, Kit);
+                    HarmonyModInterface.Mods.CallHook("GiveKit", player, Kit);
             }
 
             private void ToItem(BasePlayer player, int count)
@@ -4109,7 +4109,7 @@ namespace ShopHarmony
         private (bool expertFullscreen, bool expertInMenu, string fullscreenName, string inMenuName, bool hasFullscreen,
             bool hasInMenu) LoadTemplateForMigration()
         {
-            var filePath = Path.Combine(Interface.Oxide.DataDirectory, Name, "UI.json");
+            var filePath = Path.Combine(HarmonyModInterface.Mods.DataDirectory, Name, "UI.json");
             if (!File.Exists(filePath))
                 return (false, false, null, null, false, false);
 
@@ -4143,7 +4143,7 @@ namespace ShopHarmony
                     return;
                 }
 
-                var filePath = Path.Combine(Interface.Oxide.DataDirectory, Name, "UI.json");
+                var filePath = Path.Combine(HarmonyModInterface.Mods.DataDirectory, Name, "UI.json");
 
                 if (!File.Exists(filePath))
                 {
@@ -4208,7 +4208,7 @@ namespace ShopHarmony
 
                 _templateMigrationInProgress = false;
 
-                timer.In(1f, () => Interface.Oxide.ReloadPlugin(Name));
+                timer.In(1f, () => HarmonyModInterface.Mods.ReloadPlugin(Name));
             });
         }
 
@@ -4225,10 +4225,10 @@ namespace ShopHarmony
 
         private void BackupTemplateData()
         {
-            var sourcePath = Path.Combine(Interface.Oxide.DataDirectory, Name, "UI.json");
+            var sourcePath = Path.Combine(HarmonyModInterface.Mods.DataDirectory, Name, "UI.json");
             if (!File.Exists(sourcePath)) return;
 
-            var backupDir = Path.Combine(Interface.Oxide.DataDirectory, Name, "Backups");
+            var backupDir = Path.Combine(HarmonyModInterface.Mods.DataDirectory, Name, "Backups");
             Directory.CreateDirectory(backupDir);
 
             var backupPath = Path.Combine(backupDir, $"UI_backup_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json");
@@ -4464,7 +4464,7 @@ namespace ShopHarmony
                 }
                 catch (Exception e)
                 {
-                    Interface.Oxide.LogError(e.ToString());
+                    HarmonyModInterface.Mods.LogError(e.ToString());
                 }
 
                 return load
@@ -4497,7 +4497,7 @@ namespace ShopHarmony
                 if (!_instance._usersData.TryGetValue(userId, out var data))
                     return;
 
-                Interface.Oxide.DataFileSystem.WriteObject(BaseFolder() + userId, data);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject(BaseFolder() + userId, data);
             }
 
             public static void SaveAndUnload(ulong userId)
@@ -4524,7 +4524,7 @@ namespace ShopHarmony
                 try
                 {
                     var json = ".json".Length;
-                    var paths = Interface.Oxide.DataFileSystem.GetFiles(baseFolder);
+                    var paths = HarmonyModInterface.Mods.DataFileSystem.GetFiles(baseFolder);
                     for (var i = 0; i < paths.Length; i++)
                     {
                         var path = paths[i];
@@ -4545,8 +4545,8 @@ namespace ShopHarmony
 
             private static PlayerData ReadOnlyObject(string userId)
             {
-                return Interface.Oxide.DataFileSystem.ExistsDatafile(userId)
-                    ? Interface.Oxide.DataFileSystem.GetFile(userId).ReadObject<PlayerData>()
+                return HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(userId)
+                    ? HarmonyModInterface.Mods.DataFileSystem.GetFile(userId).ReadObject<PlayerData>()
                     : null;
             }
 
@@ -4554,7 +4554,7 @@ namespace ShopHarmony
             {
                 if (carts && cooldowns && limits)
                 {
-                    Interface.Oxide.DataFileSystem.DeleteDataFile(BaseFolder() + userId);
+                    HarmonyModInterface.Mods.DataFileSystem.DeleteDataFile(BaseFolder() + userId);
                 }
                 else
                 {
@@ -4830,14 +4830,14 @@ namespace ShopHarmony
 
         private void SaveItemsData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/Shops/Default", _itemsData);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/Shops/Default", _itemsData);
         }
 
         private void LoadItemsData()
         {
             try
             {
-                _itemsData = Interface.Oxide.DataFileSystem.ReadObject<ItemsData>($"{Name}/Shops/Default");
+                _itemsData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<ItemsData>($"{Name}/Shops/Default");
             }
             catch (Exception e)
             {
@@ -4855,7 +4855,7 @@ namespace ShopHarmony
 
         private void SaveUIData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/UI", _uiData);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{Name}/UI", _uiData);
         }
 
         private void LoadUIData()
@@ -4877,7 +4877,7 @@ namespace ShopHarmony
 
         private T ReadOnlyDataObject<T>(string name)
         {
-            var targetFile = Interface.Oxide.DataFileSystem.GetFile(name);
+            var targetFile = HarmonyModInterface.Mods.DataFileSystem.GetFile(name);
             if (targetFile == null || !targetFile.Exists()) return default;
 
             var settings = new JsonSerializerSettings
@@ -6089,7 +6089,7 @@ namespace ShopHarmony
                 _instance = null;
             }
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -8105,7 +8105,7 @@ namespace ShopHarmony
                 }
             }
 
-            Interface.Oxide.ReloadPlugin("Shop");
+            HarmonyModInterface.Mods.ReloadPlugin("Shop");
         }
 
         internal void CmdConsoleRemoveItem(ConsoleSystem.Arg arg)
@@ -12893,7 +12893,7 @@ namespace ShopHarmony
                 var localPath = GetLocalImagePath(url);
                 if (!string.IsNullOrEmpty(localPath))
                 {
-                    var localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                    var localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                     if (File.Exists(localFilePath))
                     {
                         // Local file exists, load from filesystem instead of URL
@@ -12948,7 +12948,7 @@ namespace ShopHarmony
                     var localPath = GetLocalImagePath(name);
                     if (!string.IsNullOrEmpty(localPath))
                     {
-                        var localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                        var localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                         if (File.Exists(localFilePath))
                         {
                             // Local file exists, load from filesystem
@@ -13085,7 +13085,7 @@ namespace ShopHarmony
                 }
             }
 
-            // Return relative path for use with Interface.Oxide.DataDirectory
+            // Return relative path for use with HarmonyModInterface.Mods.DataDirectory
             return $"Shop{Path.DirectorySeparatorChar}Images{Path.DirectorySeparatorChar}{filename}";
         }
 
@@ -13095,7 +13095,7 @@ namespace ShopHarmony
             var localPath = GetLocalImagePath(url);
             if (!string.IsNullOrEmpty(localPath))
             {
-                var localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                var localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                 if (File.Exists(localFilePath))
                 {
                     // Load from local file
@@ -13150,7 +13150,7 @@ namespace ShopHarmony
                         {
                             try
                             {
-                                var localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                                var localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                                 var localDir = Path.GetDirectoryName(localFilePath);
                                 if (!string.IsNullOrEmpty(localDir) && !Directory.Exists(localDir))
                                 {
@@ -13204,7 +13204,7 @@ namespace ShopHarmony
                         try
                         {
                             imageBytes = www.downloadHandler.data;
-                            localFilePath = Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + localPath;
+                            localFilePath = HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + localPath;
                             var localDir = Path.GetDirectoryName(localFilePath);
                             if (!string.IsNullOrEmpty(localDir) && !Directory.Exists(localDir))
                             {
@@ -13286,7 +13286,7 @@ namespace ShopHarmony
 
         private IEnumerator LoadImage(string name, string path, string originalUrl = null, string directUrl = null)
         {
-            var url = "file://" + Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + path;
+            var url = "file://" + HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + path;
             using var www = UnityWebRequestTexture.GetTexture(url);
 
             yield return www.SendWebRequest();
@@ -13718,7 +13718,7 @@ namespace ShopHarmony
             
             try
             {
-                var logDirectory = Path.Combine(Interface.Oxide.DataDirectory, "Shop", "logs");
+                var logDirectory = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "Shop", "logs");
                 PrintWarning($"[DEBUG] Looking for log files in: {logDirectory}");
                 PrintWarning($"[DEBUG] Directory exists: {Directory.Exists(logDirectory)}");
                 
@@ -13948,7 +13948,7 @@ namespace ShopHarmony
             report.AppendLine("**🏁 SHOP WIPE SUMMARY REPORT**");
             
             // Get the actual wipe times from log data
-            var logDirectory = Path.Combine(Interface.Oxide.DataDirectory, "Shop", "logs");
+            var logDirectory = Path.Combine(HarmonyModInterface.Mods.DataDirectory, "Shop", "logs");
             if (!Directory.Exists(logDirectory))
             {
                 Directory.CreateDirectory(logDirectory);
@@ -14939,7 +14939,7 @@ namespace ShopHarmony
         private void SendNotify(BasePlayer player, string key, int type, params object[] obj)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, Msg(player, key, obj));
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, Msg(player, key, obj));
             else
                 Reply(player, key, obj);
         }
@@ -15407,7 +15407,7 @@ namespace ShopHarmony
 
                 _instance.LoadImages();
 
-                Interface.Oxide.ReloadPlugin("Shop");
+                HarmonyModInterface.Mods.ReloadPlugin("Shop");
             }
 
             #endregion Installing
@@ -17324,7 +17324,7 @@ namespace ShopHarmony
             foreach (var invalidFileNameChar in Path.GetInvalidFileNameChars())
                 langKey = langKey.Replace(invalidFileNameChar, '_');
 
-            var path = Path.Combine(Interface.Oxide.LangDirectory,
+            var path = Path.Combine(HarmonyModInterface.Mods.LangDirectory,
                 string.Format("{0}{1}{2}.json", langKey, Path.DirectorySeparatorChar, plugin));
             return !File.Exists(path)
                 ? null
@@ -17343,7 +17343,7 @@ namespace ShopHarmony
 
                 var str1 = $"{(object) langKey}{(object) Path.DirectorySeparatorChar}{(object) _instance.Name}.json";
 
-                File.WriteAllText(Path.Combine(Interface.Oxide.LangDirectory, str1),
+                File.WriteAllText(Path.Combine(HarmonyModInterface.Mods.LangDirectory, str1),
                     JsonConvert.SerializeObject(existingMessages, Formatting.Indented));
             }
         }

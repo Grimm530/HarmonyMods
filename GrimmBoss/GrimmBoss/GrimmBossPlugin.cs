@@ -1,9 +1,9 @@
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Plugins.GrimmBossExtensionMethods;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Harmony.Plugins.GrimmBossExtensionMethods;
 using Rust;
 using System;
 using System.Collections;
@@ -15,13 +15,13 @@ using UnityEngine;
 using UnityEngine.AI;
 using Rust.Ai.Gen2;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public enum Gender { Random, Male, Female }
     public enum SkinTone { Random, Lightest, Light, Dark, Darkest }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("GrimmBoss", "Grimm530", "2.4.9")]
     public partial class GrimmBoss : RustPlugin
@@ -107,7 +107,7 @@ namespace Oxide.Plugins
             if (_config.PluginVersion < new VersionNumber(2, 3, 0))
                 Puts("GrimmBoss 2.4.0: Bosses and helper NPCs use the NpcSpawn plugin. The GrimmNPC Harmony mod is no longer required. Data: oxide/data/GrimmBoss/ (legacy oxide/data/BossMonster/ is optional if those folders exist).");
             if (_config.PluginVersion < new VersionNumber(2, 4, 1))
-                Puts("GrimmBoss 2.4.1: Optional Debug: NavMesh in oxide/config/GrimmBoss.json — logs boss AreaMask/agent resolution and helper path placement (stairs / dock debugging).");
+                Puts("GrimmBoss 2.4.1: Optional Debug: NavMesh in legacy/config/GrimmBoss.json — logs boss AreaMask/agent resolution and helper path placement (stairs / dock debugging).");
             if (_config.PluginVersion < new VersionNumber(2, 4, 2))
                 Puts("GrimmBoss 2.4.2: CustomMap monument mesh outside OBB counts as monument context; NavWatch (Debug + NavMesh) logs vertical mismatch, drops, PathPartial.");
             if (_config.PluginVersion < new VersionNumber(2, 4, 3))
@@ -117,7 +117,7 @@ namespace Oxide.Plugins
             if (_config.PluginVersion < new VersionNumber(2, 4, 5))
             {
                 _config.NavMeshAutoVerticalRecover = true;
-                Puts("GrimmBoss 2.4.5: NavMeshAutoVerticalRecover — throttled Warp+PlaceOnNavMesh when boss is below nearest agent-mask NavMesh sample (set false in oxide/config/GrimmBoss.json to disable).");
+                Puts("GrimmBoss 2.4.5: NavMeshAutoVerticalRecover — throttled Warp+PlaceOnNavMesh when boss is below nearest agent-mask NavMesh sample (set false in legacy/config/GrimmBoss.json to disable).");
             }
             if (_config.PluginVersion < new VersionNumber(2, 4, 6))
             {
@@ -514,6 +514,13 @@ namespace Oxide.Plugins
         }
 
         internal HashSet<NpcConfig> Configs = new HashSet<NpcConfig>();
+        private readonly Dictionary<string, NpcConfig> _configsByName = new Dictionary<string, NpcConfig>();
+
+        private NpcConfig FindNpcConfig(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            return _configsByName.TryGetValue(name, out var config) ? config : null;
+        }
 
         private const string GrimmBossDataDir = "GrimmBoss";
         private const string LegacyBossMonsterDataDir = "BossMonster";
@@ -522,21 +529,23 @@ namespace Oxide.Plugins
 
         private void EnsureGrimmBossDataDirectories()
         {
-            string root = Path.Combine(Interface.Oxide.DataDirectory, GrimmBossDataDir);
+            string root = Path.Combine(HarmonyModInterface.Mods.DataDirectory, GrimmBossDataDir);
             Directory.CreateDirectory(Path.Combine(root, DataSubBosses));
             Directory.CreateDirectory(Path.Combine(root, DataSubCustomMap));
         }
 
         private static string BossesFolderPhysicalPath(string dataRoot) =>
-            Path.Combine(Interface.Oxide.DataDirectory, dataRoot, DataSubBosses);
+            Path.Combine(HarmonyModInterface.Mods.DataDirectory, dataRoot, DataSubBosses);
 
         private static string CustomMapFolderPhysicalPath(string dataRoot) =>
-            Path.Combine(Interface.Oxide.DataDirectory, dataRoot, DataSubCustomMap);
+            Path.Combine(HarmonyModInterface.Mods.DataDirectory, dataRoot, DataSubCustomMap);
 
         private void LoadConfigs()
         {
             EnsureGrimmBossDataDirectories();
             Puts($"Loading boss configs from HarmonyData/{GrimmBossDataDir}/{DataSubBosses}/ (optional legacy: HarmonyData/{LegacyBossMonsterDataDir}/{DataSubBosses}/ if that folder exists)...");
+            Configs.Clear();
+            _configsByName.Clear();
             HashSet<string> allNamesForBosses = new HashSet<string>();
             HashSet<string> loadedFileStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -549,11 +558,11 @@ namespace Oxide.Plugins
                     PrintWarning($"Boss data folder missing: HarmonyData/{dataRoot}/{DataSubBosses}/ — skipped.");
                     return;
                 }
-                foreach (string name in Interface.Oxide.DataFileSystem.GetFiles($"{dataRoot}/{DataSubBosses}/"))
+                foreach (string name in HarmonyModInterface.Mods.DataFileSystem.GetFiles($"{dataRoot}/{DataSubBosses}/"))
                 {
                     string fileName = Path.GetFileNameWithoutExtension(name);
                     if (loadedFileStems.Contains(fileName)) continue;
-                    NpcConfig config = Interface.Oxide.DataFileSystem.ReadObject<NpcConfig>($"{dataRoot}/{DataSubBosses}/{fileName}");
+                    NpcConfig config = HarmonyModInterface.Mods.DataFileSystem.ReadObject<NpcConfig>($"{dataRoot}/{DataSubBosses}/{fileName}");
                     if (config == null)
                     {
                         PrintError($"File {fileName} is corrupted and cannot be loaded!");
@@ -606,11 +615,12 @@ namespace Oxide.Plugins
                     if (config.RadiusActions.AnimalAbility.Time == 0) config.RadiusActions.AnimalAbility.Time = -1;
                     if (config.RadiusActions.NpcAbility.Time == 0) config.RadiusActions.NpcAbility.Time = -1;
 
-                    Interface.Oxide.DataFileSystem.WriteObject($"{GrimmBossDataDir}/{DataSubBosses}/{fileName}", config);
+                    HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{GrimmBossDataDir}/{DataSubBosses}/{fileName}", config);
 
                     if (!config.Enabled) continue;
 
                     Configs.Add(config);
+                    _configsByName[config.Name] = config;
                     Puts($"File {fileName} has been loaded successfully!");
                 }
             }
@@ -645,10 +655,10 @@ namespace Oxide.Plugins
         private string GetMessage(string langKey, string userID, params object[] args) => (args.Length == 0) ? GetMessage(langKey, userID) : string.Format(GetMessage(langKey, userID), args);
         #endregion Lang
 
-        #region Oxide Hooks
+        #region Harmony Hooks
         // Harmony port: NpcSpawn is backed by a bridge that forwards SpawnNpc(...) to 0GrimmNPC.
         internal Plugin NpcSpawn = new NpcSpawnBridge();
-        // Soft-disabled optional plugins (never assigned by Oxide PluginReference injection in Harmony).
+        // Soft-disabled optional plugins (never assigned by Harmony ModReference injection in Harmony).
 #pragma warning disable CS0649, CS0169
         [PluginReference] private Plugin PveMode = new PveModePluginBridge();
         [PluginReference] private Plugin AnimalSpawn = new AnimalSpawnPluginBridge();
@@ -661,17 +671,68 @@ namespace Oxide.Plugins
         private void Init()
         {
             _ins = this;
-            if (_scientistNpcGetBestTarget == null)
-                _scientistNpcGetBestTarget = typeof(ScientistNPC).GetMethod("GetBestTarget", BindingFlags.Public | BindingFlags.Instance);
-            if (_scientistNpcSetKnown == null)
-                _scientistNpcSetKnown = typeof(ScientistNPC).GetMethod("SetKnown", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
         }
 
         private bool _bossWorldInitialized;
         private int _terrainWaitAttempts;
+        private int _navWaitAttempts;
         private const int MaxTerrainWaitAttempts = 30;
 
         private void OnServerInitialized() => InitializeBossWorldAndNpcSpawn();
+
+        /// <summary>True when AI nav is active and NavMesh can be sampled (not only at world origin).</summary>
+        private static bool IsWorldNavMeshReady()
+        {
+            try
+            {
+                if (!ConVar.AI.move) return false;
+                if (Rust.Ai.AiManager.nav_disable) return false;
+                if (TerrainMeta.HeightMap == null || !TerrainMeta.HeightMap.isInitialized || World.Size <= 0)
+                    return false;
+                if (IsAnyMonumentNavMeshBuilding())
+                    return false;
+
+                if (TerrainMeta.Path?.Monuments != null)
+                {
+                    int tested = 0;
+                    foreach (MonumentInfo monument in TerrainMeta.Path.Monuments)
+                    {
+                        if (monument == null) continue;
+                        Vector3 p = monument.transform.position;
+                        if (NavMesh.SamplePosition(p, out NavMeshHit hit, 80f, NavMesh.AllAreas) && hit.distance <= 40f)
+                            return true;
+                        if (++tested >= 12) break;
+                    }
+                }
+
+                Vector3 probe = Vector3.zero;
+                probe.y = TerrainMeta.HeightMap.GetHeight(probe);
+                return NavMesh.SamplePosition(probe, out NavMeshHit centerHit, 500f, NavMesh.AllAreas);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsAnyMonumentNavMeshBuilding()
+        {
+            try
+            {
+                if (TerrainMeta.Path?.Monuments == null) return false;
+                PropertyInfo isBuildingProp = typeof(MonumentNavMesh).GetProperty("IsBuilding", BindingFlags.Public | BindingFlags.Instance);
+                if (isBuildingProp == null) return false;
+                foreach (MonumentInfo monument in TerrainMeta.Path.Monuments)
+                {
+                    if (monument == null || !monument.HasNavmesh) continue;
+                    MonumentNavMesh mnm = monument.GetComponentInChildren<MonumentNavMesh>(true);
+                    if (mnm != null && (bool)isBuildingProp.GetValue(mnm))
+                        return true;
+                }
+            }
+            catch { }
+            return false;
+        }
 
         private void InitializeBossWorldAndNpcSpawn()
         {
@@ -688,6 +749,19 @@ namespace Oxide.Plugins
             }
 
             _terrainWaitAttempts = 0;
+
+            if (!IsWorldNavMeshReady())
+            {
+                _navWaitAttempts++;
+                if (_navWaitAttempts == 6 || _navWaitAttempts == 24)
+                    PrintWarning("GrimmBoss: waiting for AI NavMesh (AI.move / monument bakes / aimanager.nav_wait) before boss spawns...");
+                timer.Once(5f, InitializeBossWorldAndNpcSpawn);
+                return;
+            }
+
+            if (_navWaitAttempts > 0)
+                Puts($"GrimmBoss: NavMesh ready after ~{_navWaitAttempts * 5}s wait — scheduling boss spawns.");
+            _navWaitAttempts = 0;
 
             if (NpcSpawn == null || !plugins.Exists("NpcSpawn"))
             {
@@ -746,19 +820,17 @@ namespace Oxide.Plugins
             if (bossCtrl.NpcHelpersActive)
                 return true;
 
-            bossCtrl.PlaceGrimmCoverBarricade(info.InitiatorPlayer, info);
-
             BasePlayer attacker = info.InitiatorPlayer;
             BaseEntity weaponPrefab = info.WeaponPrefab;
 
-            if (!attacker.IsPlayer()) return null;
+            if (attacker == null || !attacker.IsPlayer()) return null;
 
             if (info.damageTypes != null
                 && (weaponPrefab == null || weaponPrefab.ShortPrefabName == "grenade.molotov.deployed" || weaponPrefab.ShortPrefabName == "rocket_fire")
                 && info.damageTypes.GetMajorityDamageType() == Rust.DamageType.Heat)
                 return true;
 
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == entity.displayName);
+            NpcConfig config = FindNpcConfig(entity.displayName);
             if (config == null) return null;
 
             if (config.PreventDamageRange > 0f && Vector3.Distance(attacker.transform.position, entity.transform.position) > config.PreventDamageRange)
@@ -796,15 +868,12 @@ namespace Oxide.Plugins
             ControllerBoss controller = _controllers.Values.FirstOrDefault(x => x.Players.Contains(player));
             if (controller != null) controller.Players.Remove(player);
         }
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region NpcSpawn integration
         private const int NavAreaTerrain = 1;
         private const int NavAreaMonument = 25;
         private const int NavAgentTerrain = -1372625422;
-
-        private static MethodInfo _scientistNpcGetBestTarget;
-        private static MethodInfo _scientistNpcSetKnown;
 
         private static string Vector3ToHomeString(Vector3 v) => $"{v.x} {v.y} {v.z}";
 
@@ -914,7 +983,7 @@ namespace Oxide.Plugins
                 ["HomePosition"] = trustExactPosition ? Vector3ToHomeString(homePosition) : string.Empty,
                 ["MemoryDuration"] = config.MemoryDuration,
                 ["States"] = states,
-                ["TrustPosition"] = trustExactPosition,
+                ["TrustPosition"] = true,
                 ["CustomMapAbsolutePosition"] = trustExactPosition,
                 ["AggressiveCombatStrafe"] = true
             };
@@ -1115,7 +1184,7 @@ namespace Oxide.Plugins
                 if (npcRef == null || npcRef.IsDestroyed) return;
                 EquipNpcWearAndBelt(npcRef, wearItems, beltItems, logName);
                 if (!string.IsNullOrEmpty(kit) && plugins.Exists("Kits"))
-                    Interface.CallHook("GiveKit", npcRef, kit);
+                    HarmonyModInterface.CallHook("GiveKit", npcRef, kit);
             });
         }
 
@@ -1407,13 +1476,13 @@ namespace Oxide.Plugins
                 if (_config.Pve && plugins.Exists("PveMode")) PveMode.Call("ScientistAddPveMode", npc);
                 if (config.IsChat) AlertToAllPlayers("Start", _config.Prefix, config.Name, MapHelper.GridToString(MapHelper.PositionToGrid(npc.transform.position)));
             }
-            Interface.Oxide.CallHook("OnBossSpawn", npc);
+            HarmonyModInterface.Mods.CallHook("OnBossSpawn", npc);
         }
 
         private BasePlayer GetCurrentTarget(ScientistNPC npc)
         {
             if (npc == null) return null;
-            ScientistBrain brain = npc.GetComponent<ScientistBrain>();
+            ScientistBrain brain = npc.Brain;
             if (brain == null) return null;
             if (brain.Events != null && brain.Events.Memory != null && brain.Events.CurrentInputMemorySlot >= 0)
             {
@@ -1421,12 +1490,10 @@ namespace Oxide.Plugins
                 if (t is BasePlayer player && player.IsPlayer() && npc.CanSeeTarget(player))
                     return player;
             }
-            if (_scientistNpcGetBestTarget != null)
-            {
-                BaseEntity tEnt = _scientistNpcGetBestTarget.Invoke(npc, null) as BaseEntity;
-                if (tEnt is BasePlayer player2 && player2.IsPlayer() && npc.CanSeeTarget(player2))
-                    return player2;
-            }
+            // HumanNPC.GetBestTarget is public — no reflection
+            BaseEntity tEnt = npc.GetBestTarget();
+            if (tEnt is BasePlayer player2 && player2.IsPlayer() && npc.CanSeeTarget(player2))
+                return player2;
             return null;
         }
 
@@ -1446,7 +1513,71 @@ namespace Oxide.Plugins
             {
                 if (p != null && ctrl.CanEngagePlayerForMovement(p)) return p;
             }
-            return null;
+            // Proximity trigger misses players already inside the radius at spawn or when colliders overlap oddly.
+            return ctrl.FindNearestEngageablePlayer();
+        }
+
+        /// <summary>
+        /// Ensures NpcSpawn brain memory has a combat target when the plugin sees a valid engage player
+        /// (including proximity-only, no LOS yet). Without this, CombatState/strafe never activate.
+        /// </summary>
+        private void EnsureBossCombatEngagement(ScientistNPC npc, BasePlayer target)
+        {
+            if (npc == null || target == null || !target.IsPlayer()) return;
+            ulong net = npc.net?.ID.Value ?? 0;
+            if (net != 0 && _controllers.TryGetValue(net, out ControllerBoss ctrl))
+                ctrl.RefreshProximityPlayers();
+
+            BasePlayer los = GetCurrentTarget(npc);
+            if (los != null && los.IsExists())
+                SetTarget(npc, target);
+            else
+                SetTarget(npc, target, allowCombatMemoryWithoutLos: true);
+        }
+
+        private static MethodInfo _customNpcSetDestinationMethod;
+
+        /// <summary>Route strafe moves through CustomScientistNpc.SetDestination when available (navmesh validation).</summary>
+        private static bool TryBossSetDestination(ScientistNPC npc, Vector3 pos, float radius, BaseNavigator.NavigationSpeed speed)
+        {
+            if (npc == null || npc.Brain?.Navigator == null) return false;
+            BaseNavigator nav = npc.Brain.Navigator;
+            RustNavMeshAgent agent = nav.Agent;
+            if (agent != null)
+            {
+                if (!agent.enabled)
+                {
+                    nav.Resume();
+                    nav.SetNavMeshEnabled(true);
+                    agent.enabled = true;
+                }
+                if (agent.isStopped) agent.isStopped = false;
+            }
+
+            Type t = npc.GetType();
+            if (t.Name == "CustomScientistNpc")
+            {
+                _customNpcSetDestinationMethod ??= t.GetMethod(
+                    "SetDestination",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                    null,
+                    new[] { typeof(Vector3), typeof(float), typeof(BaseNavigator.NavigationSpeed), typeof(Action) },
+                    null);
+                if (_customNpcSetDestinationMethod != null)
+                {
+                    try
+                    {
+                        if ((bool)_customNpcSetDestinationMethod.Invoke(npc, new object[] { pos, radius, speed, null }))
+                            return true;
+                    }
+                    catch
+                    {
+                        // fall through to stock navigator
+                    }
+                }
+            }
+            // CustomScientistNpc path checks can reject short combat strafe steps — stock navigator is fine for ~3m legs.
+            return nav.SetDestination(pos, speed, 0f, radius);
         }
 
         private static Vector3 SampleRandomTerrainPosition()
@@ -1864,12 +1995,10 @@ namespace Oxide.Plugins
         private void SetTarget(ScientistNPC npc, BasePlayer target, bool allowCombatMemoryWithoutLos = false)
         {
             if (npc == null || target == null || !target.IsPlayer()) return;
-            ScientistBrain brain = npc.GetComponent<ScientistBrain>();
+            ScientistBrain brain = npc.Brain;
             if (brain?.Senses == null) return;
 
-            if (_scientistNpcSetKnown != null)
-                _scientistNpcSetKnown.Invoke(npc, new object[] { target });
-            else if (brain.Senses.Memory != null)
+            if (brain.Senses.Memory != null)
             {
                 brain.Senses.Memory.SetKnown(target, npc, brain.Senses);
                 if (npc.CanSeeTarget(target))
@@ -2094,8 +2223,10 @@ namespace Oxide.Plugins
         private void CheckSpawnBoss()
         {
             if (_controllers.Count >= _config.AmountBosses) return;
-            int current = _controllers.Count;
-            for (int i = 0; i < _config.AmountBosses - current; i++) SpawnRandomBoss();
+            // Soft fill: one boss per tick, then schedule the next (avoids FPS spike on reload).
+            SpawnRandomBoss();
+            if (_controllers.Count < _config.AmountBosses)
+                timer.In(0.75f, CheckSpawnBoss);
         }
 
         private void SpawnRandomBoss()
@@ -2105,10 +2236,10 @@ namespace Oxide.Plugins
             string name = _whatSpawnBosses.GetRandom();
             _whatSpawnBosses.Remove(name);
 
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == name);
+            NpcConfig config = FindNpcConfig(name);
             Vector3 pos = GetSpawnPos(config, out bool terrainRoamSpawn, out bool customMapWorldSpawn);
 
-            if (pos == Vector3.zero || Interface.CallHook("CanBossSpawn", config.Name, pos) is bool)
+            if (pos == Vector3.zero || HarmonyModInterface.CallHook("CanBossSpawn", config.Name, pos) is bool)
             {
                 timer.In(UnityEngine.Random.Range(config.MinTime, config.MaxTime), () =>
                 {
@@ -2136,7 +2267,7 @@ namespace Oxide.Plugins
         {
             Vector3 pos = GetSpawnPos(config, out bool terrainRoamSpawn, out bool customMapWorldSpawn);
 
-            if (pos == Vector3.zero || Interface.CallHook("CanBossSpawn", config.Name, pos) is bool) return;
+            if (pos == Vector3.zero || HarmonyModInterface.CallHook("CanBossSpawn", config.Name, pos) is bool) return;
 
             ScientistNPC npc = SpawnBossDirectly(pos, config, terrainRoamSpawn, customMapWorldSpawn);
             if (npc == null) return;
@@ -2349,6 +2480,7 @@ namespace Oxide.Plugins
                 _customSphere.transform.SetParent(transform, false);
                 _customSphere.transform.localPosition = Vector3.zero;
                 _customSphere.AddComponent<CustomSphereCollider>().InitData(this, ProximityPlayerRadius);
+                RefreshProximityPlayers();
 
                 if (_abilityRadiusTriggersLoop)
                 {
@@ -2521,7 +2653,7 @@ namespace Oxide.Plugins
                 int mask = ag.areaMask > 0 ? ag.areaMask : NavAreaMonument;
                 bool navDebug = _ins._config != null && _ins._config.Debug && _ins._config.DebugNavMesh;
                 bool autoRecover = _ins._config != null && _ins._config.NavMeshAutoVerticalRecover && !TerrainRoamSpawn;
-                bool movingDbg = ag.velocity.sqrMagnitude > 0.04f;
+                bool movingDbg = ag.velocity.SqrMagnitude() > 0.04f;
                 bool pathingDbg = ag.hasPath;
 
                 if (NavMesh.SamplePosition(p, out NavMeshHit hit, 3.5f, mask))
@@ -2893,6 +3025,42 @@ namespace Oxide.Plugins
                 trigger.InterestLayers = 1 << 17;
             }
 
+            /// <summary>Re-populate <see cref="Players"/> when the trigger missed entrants (common at spawn).</summary>
+            internal void RefreshProximityPlayers()
+            {
+                if (Npc == null || Npc.IsDestroyed) return;
+                Players.RemoveWhere(p => p == null || p.IsDestroyed || !p.IsConnected);
+                float r = ProximityPlayerRadius;
+                float r2 = r * r;
+                Vector3 pos = transform.position;
+                foreach (BasePlayer p in BasePlayer.activePlayerList)
+                {
+                    if (p == null || p.IsDestroyed || !p.IsConnected) continue;
+                    if ((p.transform.position - pos).sqrMagnitude > r2) continue;
+                    if (CanEngagePlayerForMovement(p))
+                        Players.Add(p);
+                }
+            }
+
+            internal BasePlayer FindNearestEngageablePlayer()
+            {
+                RefreshProximityPlayers();
+                BasePlayer best = null;
+                float bestDist = float.MaxValue;
+                Vector3 pos = transform.position;
+                foreach (BasePlayer p in Players)
+                {
+                    if (p == null || !CanEngagePlayerForMovement(p)) continue;
+                    float d = Vector3.Distance(pos, p.transform.position);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = p;
+                    }
+                }
+                return best;
+            }
+
             /// <summary>In proximity and valid for combat — no LOS/CanSee requirement. Used so attack/strafe cycles do not drop to idle roam when LOS flickers.</summary>
             internal bool CanEngagePlayerForMovement(BasePlayer target)
             {
@@ -2902,7 +3070,7 @@ namespace Oxide.Plugins
                 if (target.InSafeZone()) return false;
                 if (target._limitedNetworking) return false;
                 if (Vector3.Distance(transform.position, target.transform.position) > ProximityPlayerRadius) return false;
-                if (Interface.CallHook("CanBossAbilityTarget", Npc, target) is bool) return false;
+                if (HarmonyModInterface.CallHook("CanBossAbilityTarget", Npc, target) is bool) return false;
                 return true;
             }
 
@@ -3540,35 +3708,85 @@ namespace Oxide.Plugins
             /// </summary>
             internal void PlaceGrimmCoverBarricade(BasePlayer damagePlayer, HitInfo info)
             {
-                if (Config == null || !Config.GrimmEnableBarricadeCover || Npc == null || Npc.IsDestroyed) return;
-                if (Time.realtimeSinceStartup < _nextGrimmBarricadeRealtime) return;
-                if (info == null || info.damageTypes.Total() <= 0.001f) return;
-                if (_npcHelpersActive || _isStationary) return;
+                if (Config == null || !Config.GrimmEnableBarricadeCover || Npc == null || Npc.IsDestroyed)
+                {
+                    DebugBarricadeSkip("disabled or npc null");
+                    return;
+                }
+                if (Time.realtimeSinceStartup < _nextGrimmBarricadeRealtime)
+                {
+                    DebugBarricadeSkip($"cooldown {( _nextGrimmBarricadeRealtime - Time.realtimeSinceStartup):F1}s left");
+                    return;
+                }
+                if (info == null || info.damageTypes.Total() <= 0.001f)
+                {
+                    DebugBarricadeSkip("no damage");
+                    return;
+                }
+                if (_npcHelpersActive || _isStationary)
+                {
+                    DebugBarricadeSkip(_npcHelpersActive ? "helper wave" : "stationary AOE");
+                    return;
+                }
 
                 float chance = Mathf.Clamp01(Config.GrimmBarricadeOnDamageChance);
-                if (chance <= 0f || UnityEngine.Random.value > chance) return;
+                if (chance <= 0f || UnityEngine.Random.value > chance)
+                {
+                    DebugBarricadeSkip($"chance roll failed ({chance:P0})");
+                    return;
+                }
 
                 BasePlayer target = damagePlayer;
                 if (target == null || !target.IsConnected || !target.userID.IsSteamId())
                     target = _ins.GetBossCombatTarget(Npc);
-                if (target == null || !target.IsConnected) return;
+                if (target == null || !target.IsConnected)
+                {
+                    DebugBarricadeSkip("no valid target");
+                    return;
+                }
 
                 float dist = Vector3.Distance(Npc.transform.position, target.transform.position);
-                if (dist < Config.GrimmBarricadeMinTargetDistance) return;
+                if (dist < Config.GrimmBarricadeMinTargetDistance)
+                {
+                    DebugBarricadeSkip($"target too close ({dist:F1}m < {Config.GrimmBarricadeMinTargetDistance:F1}m)");
+                    return;
+                }
 
                 PruneGrimmBarricades();
                 int cap = Mathf.Max(1, Config.GrimmBarricadeMaxConcurrent);
-                if (_grimmCoverBarricades.Count >= cap) return;
+                if (_grimmCoverBarricades.Count >= cap)
+                {
+                    DebugBarricadeSkip($"at cap ({cap})");
+                    return;
+                }
 
                 string sn = string.IsNullOrEmpty(Config.GrimmBarricadeShortname) ? "barricade.wood.cover" : Config.GrimmBarricadeShortname.Trim();
                 Item beltItem = null;
                 if (Config.GrimmBarricadeRequireBeltItem && !FindBarricadeInBelt(sn, out beltItem))
-                    return;
+                {
+                    if (!FindBarricadeInBelt("barricade.wood.cover", out beltItem))
+                    {
+                        DebugBarricadeSkip("no barricade on belt");
+                        return;
+                    }
+                    sn = "barricade.wood.cover";
+                }
 
                 if (!SpawnGrimmCoverBarricade(target, sn, beltItem))
+                {
+                    DebugBarricadeSkip("spawn failed (terrain/path)");
                     return;
+                }
 
                 _nextGrimmBarricadeRealtime = Time.realtimeSinceStartup + Mathf.Max(30f, Config.GrimmBarricadeCooldownSeconds);
+                if (_ins?._config != null && _ins._config.Debug)
+                    _ins.DebugLog($"[{BossName}] Grimm cover: placed after hit from {target.displayName} @ {dist:F1}m", true);
+            }
+
+            private void DebugBarricadeSkip(string reason)
+            {
+                if (_ins?._config == null || !_ins._config.Debug || !_ins._config.DebugVerbose) return;
+                _ins.DebugLog($"[{BossName}] Barricade skip: {reason}", true);
             }
 
             private bool FindBarricadeInBelt(string shortname, out Item item)
@@ -3588,17 +3806,38 @@ namespace Oxide.Plugins
 
             private bool SpawnGrimmCoverBarricade(BasePlayer target, string shortname, Item beltItemToConsume)
             {
-                ItemDefinition def = ItemManager.FindItemDefinition(shortname);
-                if (def == null) return false;
-                ItemModDeployable modDeployable = def.GetComponent<ItemModDeployable>();
-                if (modDeployable == null || modDeployable.entityPrefab == null || string.IsNullOrEmpty(modDeployable.entityPrefab.resourcePath))
-                    return false;
-
                 Vector3 feet = Npc.transform.position;
                 Vector3 flat = target.transform.position - feet;
                 flat.y = 0f;
                 if (flat.sqrMagnitude < 0.01f) flat = Npc.transform.forward;
                 flat.Normalize();
+
+                if (TrySpawnGrimmCoverFromItem(shortname, beltItemToConsume, feet, flat))
+                    return true;
+
+                // belt shortname mismatch (e.g. barricade.wood) — fall back to stock wood cover prefab like NpcSpawn 3.3
+                if (shortname != "barricade.wood.cover"
+                    && TrySpawnGrimmCoverPrefab(
+                        "assets/prefabs/deployable/barricades/barricade.cover.wood_double.prefab",
+                        feet, flat, beltItemToConsume))
+                    return true;
+
+                return false;
+            }
+
+            private bool TrySpawnGrimmCoverFromItem(string shortname, Item beltItemToConsume, Vector3 feet, Vector3 flat)
+            {
+                ItemDefinition def = ItemManager.FindItemDefinition(shortname);
+                if (def == null) return false;
+                ItemModDeployable modDeployable = def.GetComponent<ItemModDeployable>();
+                if (modDeployable == null || modDeployable.entityPrefab == null || string.IsNullOrEmpty(modDeployable.entityPrefab.resourcePath))
+                    return false;
+                return TrySpawnGrimmCoverPrefab(modDeployable.entityPrefab.resourcePath, feet, flat, beltItemToConsume, shortname);
+            }
+
+            private bool TrySpawnGrimmCoverPrefab(string prefabPath, Vector3 feet, Vector3 flat, Item beltItemToConsume, string debugShortname = null)
+            {
+                if (string.IsNullOrEmpty(prefabPath)) return false;
 
                 const int deployMask = 1235288065;
                 float[] yawOff = { 0f, 22f, -22f, 45f, -45f };
@@ -3608,11 +3847,13 @@ namespace Oxide.Plugins
                     Vector3 probe = feet + dir * UnityEngine.Random.Range(1.2f, 2.4f) + Vector3.up * 2.5f;
                     if (!Physics.Raycast(probe, Vector3.down, out RaycastHit gh, 6f, deployMask, QueryTriggerInteraction.Ignore))
                         continue;
-                    if (!IsPathClearForBoss(feet, gh.point)) continue;
+                    // Cover deploys 1–2m away — skip long-path boss checks that often false-negative on monuments.
+                    float deployDist = Vector3.Distance(feet, gh.point);
+                    if (deployDist > 3.5f && !IsPathClearForBoss(feet, gh.point)) continue;
 
                     Vector3 point = gh.point;
-                    Quaternion deployedRotation = Quaternion.LookRotation(gh.normal, dir) * Quaternion.Euler(90f, 0f, 0f);
-                    BaseEntity ent = GameManager.server.CreateEntity(modDeployable.entityPrefab.resourcePath, point, deployedRotation);
+                    Quaternion deployedRotation = Quaternion.LookRotation(dir, Vector3.up) * Quaternion.AngleAxis(180f, Vector3.up);
+                    BaseEntity ent = GameManager.server.CreateEntity(prefabPath, point, deployedRotation);
                     if (ent == null) continue;
                     ent.skinID = beltItemToConsume != null ? beltItemToConsume.skin : 0UL;
                     ent.OwnerID = Npc.userID;
@@ -3635,7 +3876,7 @@ namespace Oxide.Plugins
                     }
 
                     if (_ins?._config != null && _ins._config.Debug)
-                        _ins.DebugLog($"[{BossName}] Grimm cover: spawned {shortname} at {point}", true);
+                        _ins.DebugLog($"[{BossName}] Grimm cover: spawned {debugShortname ?? prefabPath} at {point}", true);
                     return true;
                 }
 
@@ -4148,13 +4389,49 @@ namespace Oxide.Plugins
                 if (Npc == null || !Npc.IsExists() || Npc.Brain?.Navigator == null) return;
                 RustNavMeshAgent agent = Npc.Brain.Navigator.Agent;
                 if (agent == null) return;
-                if (agent.enabled && agent.isOnNavMesh) return;
-                if (!bypassCooldown && Time.realtimeSinceStartup < _nextNavRecoverRealtime) return;
-                _nextNavRecoverRealtime = Time.realtimeSinceStartup + 1f;
+                if (agent.enabled && agent.isOnNavMesh)
+                {
+                    if (agent.isStopped) agent.isStopped = false;
+                    return;
+                }
+                // Never throttle while the agent is disabled — StrafeRoutine ticks faster than the old 1s cooldown,
+                // so a disabled agent would otherwise sit idle for a full second between recover attempts.
+                bool agentDead = !agent.enabled || !agent.isOnNavMesh;
+                if (!bypassCooldown && !agentDead && Time.realtimeSinceStartup < _nextNavRecoverRealtime) return;
+                _nextNavRecoverRealtime = Time.realtimeSinceStartup + (agentDead ? 0.2f : 1f);
+
+                ForceCombatNavReady(agent);
+            }
+
+            /// <summary>
+            /// Re-enable NavMeshAgent, fix monument AreaMask/agent type, Warp onto mesh, clear isStopped.
+            /// Called every strafe tick when the agent is off-mesh or disabled (log: Moving=False OnNavMesh=False).
+            /// </summary>
+            private void ForceCombatNavReady(RustNavMeshAgent agent = null)
+            {
+                if (_npcHelpersActive) return;
+                if (Npc == null || !Npc.IsExists() || Npc.Brain?.Navigator == null) return;
+                agent ??= Npc.Brain.Navigator.Agent;
+                if (agent == null) return;
 
                 BaseNavigator nav = Npc.Brain.Navigator;
                 nav.Resume();
+
+                bool monument = !TerrainRoamSpawn && _typeNavMesh != 1
+                    && (_isOnMonument || NavMesh.SamplePosition(Npc.transform.position, out _, 5f, NavAreaMonument));
+                if (monument)
+                {
+                    _isOnMonument = true;
+                    int want = _ins.GetMonumentAgentTypeID(Npc.transform.position);
+                    if (want == 0) want = NavAgentTerrain;
+                    if (agent.areaMask != NavAreaMonument) agent.areaMask = NavAreaMonument;
+                    if (agent.agentTypeID != want) agent.agentTypeID = want;
+                    AlignNavigatorDefaultAreaForBoss();
+                }
+
                 nav.SetNavMeshEnabled(true);
+                if (!agent.enabled) agent.enabled = true;
+                if (agent.isStopped) agent.isStopped = false;
 
                 if (agent.enabled && agent.isOnNavMesh) return;
 
@@ -4167,26 +4444,39 @@ namespace Oxide.Plugins
                 Vector3 p = Npc.transform.position;
                 NavMeshHit hit;
                 bool got;
+                int mask = monument ? NavAreaMonument
+                    : (TerrainRoamSpawn || _typeNavMesh == 1 ? NavAreaTerrain : NavAreaMonument);
                 if (CustomMapWorldPositionSpawn)
                 {
                     got = TrySelectNavMeshNearWorldPoint(p, p, out hit, 6f, 7f, 12f)
                         || TrySelectNavMeshNearWorldPoint(p, p, out hit, 8f, 9f, 16f);
                 }
-                else if (TerrainRoamSpawn || _typeNavMesh == 1)
-                {
-                    got = NavMesh.SamplePosition(p, out hit, 45f, NavAreaTerrain)
-                        || NavMesh.SamplePosition(p, out hit, 70f, NavMesh.AllAreas);
-                }
                 else
                 {
-                    got = NavMesh.SamplePosition(p, out hit, 28f, NavAreaMonument)
-                        || NavMesh.SamplePosition(p, out hit, 42f, NavAreaMonument)
-                        || NavMesh.SamplePosition(p, out hit, 55f, NavMesh.AllAreas);
+                    got = NavMesh.SamplePosition(p, out hit, 12f, mask)
+                        || NavMesh.SamplePosition(p, out hit, 28f, mask)
+                        || NavMesh.SamplePosition(p, out hit, 45f, NavMesh.AllAreas);
                 }
+
                 if (got)
-                    nav.Warp(hit.position);
+                {
+                    // Prefer agent.Warp — BaseNavigator.PlaceOnNavMesh only searches ~6m and leaves StuckOffNavmesh on fail.
+                    agent.Warp(hit.position);
+                    agent.enabled = true;
+                    if (agent.isStopped) agent.isStopped = false;
+                    if (!agent.isOnNavMesh)
+                        nav.PlaceOnNavMesh(8f);
+                }
                 else
-                    nav.PlaceOnNavMesh(2f);
+                    nav.PlaceOnNavMesh(8f);
+
+                if (_ins?._config != null && _ins._config.Debug && _ins._config.DebugVerbose
+                    && (!agent.enabled || !agent.isOnNavMesh))
+                {
+                    _ins.DebugLog(
+                        $"[{BossName}] ForceCombatNavReady FAILED enabled={agent.enabled} onMesh={agent.isOnNavMesh} " +
+                        $"mask={agent.areaMask} type={agent.agentTypeID} pos={Npc.transform.position}", true);
+                }
             }
 
             /// <summary>
@@ -4238,6 +4528,7 @@ namespace Oxide.Plugins
             {
                 if (Npc == null || Npc.IsDestroyed) return;
                 if (!BossHeavyTickShouldRun()) return;
+                RefreshProximityPlayers();
 
                 if (_npcHelpersActive)
                 {
@@ -4266,9 +4557,8 @@ namespace Oxide.Plugins
                     ReleaseNavigatorForStockRoam();
                     return;
                 }
-                if (_ins.GetCurrentTarget(Npc) == null)
-                    _ins.SetTarget(Npc, target);
-                
+                _ins.EnsureBossCombatEngagement(Npc, target);
+
                 // Diagnostic logging for movement state
                 float distanceToTarget = Vector3.Distance(Npc.transform.position, target.transform.position);
                 bool navigatorActive = Npc?.Brain?.Navigator != null;
@@ -4329,7 +4619,7 @@ namespace Oxide.Plugins
                 }
 
                 if (navigatorActive && Npc.Brain.Navigator.Agent != null && (!onNavMesh || !navMeshEnabled))
-                    RecoverCombatNavigation();
+                    ForceCombatNavReady();
                 if (navigatorActive && Npc.Brain.Navigator.Agent != null)
                 {
                     navMeshEnabled = Npc.Brain.Navigator.Agent.enabled;
@@ -4372,7 +4662,7 @@ namespace Oxide.Plugins
                     if (ag != null && ag.isOnNavMesh && ag.enabled && !ag.pathPending && ag.hasPath)
                     {
                         float rem = ag.remainingDistance;
-                        float v2 = ag.velocity.sqrMagnitude;
+                        float v2 = ag.velocity.SqrMagnitude();
                         // TakeCover / kiting can show high remainingDistance with non-trivial velocity; still recover absurd paths.
                         if ((rem > 42f && v2 < 0.06f) || rem > 72f)
                         {
@@ -4800,7 +5090,7 @@ namespace Oxide.Plugins
                             if (helper != null)
                             {
                                 spawnedHelpers++;
-                                Interface.Oxide.CallHook("OnBossSpawnedAdditionalNpc", Npc, helper);
+                                HarmonyModInterface.Mods.CallHook("OnBossSpawnedAdditionalNpc", Npc, helper);
                                 Scientists.Add(helper);
                                 BasePlayer primeTarget = ResolveCombatOrProximityTarget();
                                 if (primeTarget != null) _ins.SetTarget(helper, primeTarget, true);
@@ -5258,16 +5548,17 @@ namespace Oxide.Plugins
 						ReleaseNavigatorForStockRoam();
 						yield break;
 					}
-					if (_ins.GetCurrentTarget(Npc) == null)
-						_ins.SetTarget(Npc, currentTarget);
+					_ins.EnsureBossCombatEngagement(Npc, currentTarget);
 
 					if (Npc.Brain != null && Npc.Brain.Navigator != null)
 					{
-						Npc.Brain.Navigator.Resume();
-						RecoverCombatNavigation();
+						ForceCombatNavReady();
 						Vector3 center = Npc.transform.position;
 						float now = Time.realtimeSinceStartup;
 						bool newLeg = now >= _strafeLegEndRealtime;
+						// Reached destination early — don't stand idle until the leg timer expires.
+						if (!newLeg && !Npc.Brain.Navigator.Moving && _strafeLegEndRealtime > now + 0.18f)
+							newLeg = true;
 
 						if (now < _aoeStandoffEndRealtime)
 						{
@@ -5282,7 +5573,7 @@ namespace Oxide.Plugins
 								Vector3 desiredBack = p + away * GetAoeStandoffDistance();
 								desiredBack.y = center.y;
 								desiredBack = SanitizeStrafeDestination(center, desiredBack);
-								Npc.Brain.Navigator.SetDestination(desiredBack, BaseNavigator.NavigationSpeed.Fast, 0f, 2f);
+								TryBossSetDestination(Npc, desiredBack, 2f, BaseNavigator.NavigationSpeed.Fast);
 							}
 						}
 						else
@@ -5291,7 +5582,10 @@ namespace Oxide.Plugins
 							// NpcSpawn CombatState still fires projectiles / melee; we never straight-line "pressure only" without lateral motion.
 							if (newLeg)
 							{
-								float legDur = UnityEngine.Random.Range(0.65f, 1.05f);
+								bool aggressive = Config != null && Config.GrimmEnablePluginCombatStrafe;
+								float legDur = aggressive
+                                    ? UnityEngine.Random.Range(0.42f, 0.72f)
+                                    : UnityEngine.Random.Range(0.65f, 1.05f);
 								if (now < _recentDamageBucketExpiresAt && _recentDamageBucket > 12f)
 									legDur *= 0.62f;
 								_strafeLegEndRealtime = now + legDur;
@@ -5320,9 +5614,16 @@ namespace Oxide.Plugins
 
 								desired.y = center.y;
 								desired = SanitizeStrafeDestination(center, desired);
-								if (!Npc.Brain.Navigator.SetDestination(desired, BaseNavigator.NavigationSpeed.Fast, 0f, 2f)
-								    && _ins._config != null && _ins._config.Debug)
-									_ins.DebugLog($"[{BossName}] StrafeRoutine: SetDestination failed desired={desired}", true);
+								bool moved = TryBossSetDestination(Npc, desired, 2f, BaseNavigator.NavigationSpeed.Fast);
+								var ag = Npc.NavAgent;
+								bool onMesh = ag != null && ag.enabled && ag.isOnNavMesh;
+								bool moving = Npc.Brain.Navigator.Moving;
+								if (_ins._config != null && _ins._config.Debug && _ins._config.DebugVerbose)
+									_ins.DebugLog($"[{BossName}] Strafe leg: dist={dist:F1}m moved={moved} onMesh={onMesh} moving={moving} dest={desired}", true);
+								else if ((!moved || !onMesh) && _ins._config != null && _ins._config.Debug)
+									_ins.DebugLog($"[{BossName}] StrafeRoutine: set failed/off-mesh moved={moved} onMesh={onMesh} desired={desired}", true);
+								if (moved && !onMesh)
+									ForceCombatNavReady();
 							}
 						}
 					}
@@ -5673,7 +5974,7 @@ namespace Oxide.Plugins
             {
                 _controllers.Remove(scientistId);
 
-                NpcConfig config = Configs.FirstOrDefault(x => x.Name == entity.displayName);
+                NpcConfig config = FindNpcConfig(entity.displayName);
 
                 if (!config.DisableTimer)
                 {
@@ -5692,7 +5993,7 @@ namespace Oxide.Plugins
                     SendBalance(attacker.userID, config.Economic);
                 }
 
-                Interface.Oxide.CallHook("OnBossKilled", entity, attacker);
+                HarmonyModInterface.Mods.CallHook("OnBossKilled", entity, attacker);
 
                 if (!string.IsNullOrEmpty(config.CratePrefab))
                 {
@@ -5756,7 +6057,7 @@ namespace Oxide.Plugins
             if (entity == null || entity.net == null) return null;
             if (_controllers.ContainsKey(entity.net.ID.Value))
             {
-                NpcConfig config = Configs.FirstOrDefault(x => x.Name == entity.displayName);
+                NpcConfig config = FindNpcConfig(entity.displayName);
                 if (config.TypeLootTable == 2) return null;
                 else return true;
             }
@@ -5768,7 +6069,7 @@ namespace Oxide.Plugins
             if (_controllers.ContainsKey(netID.Value))
             {
                 ScientistNPC entity = _controllers[netID.Value].Npc;
-                NpcConfig config = Configs.FirstOrDefault(x => x.Name == entity.displayName);
+                NpcConfig config = FindNpcConfig(entity.displayName);
                 if (config.TypeLootTable == 3) return null;
                 else return true;
             }
@@ -5779,7 +6080,7 @@ namespace Oxide.Plugins
         {
             if (corpse == null) return null;
 
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == corpse.playerName);
+            NpcConfig config = FindNpcConfig(corpse.playerName);
             if (config == null) return null;
 
             if (config.TypeLootTable == 6) return null;
@@ -6191,12 +6492,12 @@ namespace Oxide.Plugins
                     PrintWarning($"Custom map data folder missing: oxide/data/{dataRoot}/{DataSubCustomMap}/ — skipped.");
                     return;
                 }
-                foreach (string name in Interface.Oxide.DataFileSystem.GetFiles($"{dataRoot}/{DataSubCustomMap}/"))
+                foreach (string name in HarmonyModInterface.Mods.DataFileSystem.GetFiles($"{dataRoot}/{DataSubCustomMap}/"))
                 {
                     // GetFiles returns full OS paths (Windows uses '\'); Path.GetFileNameWithoutExtension is required.
                     string fileName = Path.GetFileNameWithoutExtension(name);
                     if (string.IsNullOrEmpty(fileName) || loadedCustomMapStems.Contains(fileName)) continue;
-                    CustomMapConfig config = Interface.Oxide.DataFileSystem.ReadObject<CustomMapConfig>($"{dataRoot}/{DataSubCustomMap}/{fileName}");
+                    CustomMapConfig config = HarmonyModInterface.Mods.DataFileSystem.ReadObject<CustomMapConfig>($"{dataRoot}/{DataSubCustomMap}/{fileName}");
                     if (config == null)
                     {
                         PrintError($"File {fileName} is corrupted and cannot be loaded!");
@@ -6230,7 +6531,7 @@ namespace Oxide.Plugins
         #region API
         private ScientistNPC SpawnBoss(string name, Vector3 pos)
         {
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == name);
+            NpcConfig config = FindNpcConfig(name);
             if (config == null) return null;
 
             ScientistNPC npc = SpawnBossDirectly(pos, config, false, false);
@@ -6280,7 +6581,7 @@ namespace Oxide.Plugins
             string name = "";
             for (int i = 0; i < args.Length; i++) name += i == 0 ? args[i] : $" {args[i]}";
 
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == name);
+            NpcConfig config = FindNpcConfig(name);
             if (config == null)
             {
                 PrintToChat(player, $"The NPC named <color=#55aaff>{name}</color> <color=#ce3f27>does not exist</color> in the configuration");
@@ -6302,7 +6603,7 @@ namespace Oxide.Plugins
             if (monumentPositionsConfig == null) config.Monuments.Add(new MonumentPositionsConfig { Name = MonumentName, Positions = new HashSet<string> { pos } });
             else monumentPositionsConfig.Positions.Add(pos);
 
-            Interface.Oxide.DataFileSystem.WriteObject($"{GrimmBossDataDir}/{DataSubBosses}/{config.Name}", config);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject($"{GrimmBossDataDir}/{DataSubBosses}/{config.Name}", config);
 
             PrintToChat(player, $"You <color=#738d43>have added</color> new coordinates to the <color=#55aaff>List of locations on standard monuments</color>:\nMonument: <color=#55aaff>{MonumentName}</color>\nPosition: <color=#55aaff>{pos}</color>");
         }
@@ -6321,7 +6622,7 @@ namespace Oxide.Plugins
             string name = "";
             for (int i = 0; i < args.Length; i++) name += i == 0 ? args[i] : $" {args[i]}";
 
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == name);
+            NpcConfig config = FindNpcConfig(name);
             if (config == null)
             {
                 PrintToChat(player, $"The NPC named <color=#55aaff>{name}</color> <color=#ce3f27>does not exist</color> in the configuration");
@@ -6335,7 +6636,7 @@ namespace Oxide.Plugins
             string fileName = idString;
 
             string dataPath = $"{GrimmBossDataDir}/{DataSubCustomMap}/{fileName}";
-            CustomMapConfig mapConfig = Interface.Oxide.DataFileSystem.ReadObject<CustomMapConfig>(dataPath);
+            CustomMapConfig mapConfig = HarmonyModInterface.Mods.DataFileSystem.ReadObject<CustomMapConfig>(dataPath);
             if (mapConfig == null)
             {
                 mapConfig = new CustomMapConfig
@@ -6362,7 +6663,7 @@ namespace Oxide.Plugins
                 bossEntry.Positions.Add(pos);
             }
 
-            Interface.Oxide.DataFileSystem.WriteObject(dataPath, mapConfig);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(dataPath, mapConfig);
 
             CustomMapConfig existing = _customMaps.FirstOrDefault(x => x.ID == idString);
             if (existing == null)
@@ -6416,7 +6717,7 @@ namespace Oxide.Plugins
             string name = "";
             for (int i = 0; i < arg.Args.Length; i++) name += i == 0 ? arg.Args[i] : $" {arg.Args[i]}";
 
-            NpcConfig config = Configs.FirstOrDefault(x => x.Name == name);
+            NpcConfig config = FindNpcConfig(name);
             if (config == null)
             {
                 Puts($"There is no configuration named boss - {name}");
@@ -6451,7 +6752,7 @@ namespace Oxide.Plugins
     }
 }
 
-namespace Oxide.Plugins.GrimmBossExtensionMethods
+namespace Harmony.Plugins.GrimmBossExtensionMethods
 {
     public static class ExtensionMethods
     {

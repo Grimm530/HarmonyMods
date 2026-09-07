@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 
 namespace RustLeagueHarmony

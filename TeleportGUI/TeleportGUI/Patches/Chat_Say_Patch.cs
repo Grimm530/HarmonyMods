@@ -4,10 +4,7 @@ using HarmonyLib;
 
 namespace TeleportGUI.Patches
 {
-    /// <summary>
-    /// Intercepts chat so /tp, /home, /warp, /outpost, /bandit, and other TeleportGUI commands are handled.
-    /// Vanilla Chat.say drops slash messages without running them as console commands.
-    /// </summary>
+    /// <summary>Intercepts chat so /tp, /home, /warp, /tpback, /death are handled by the mod.</summary>
     [HarmonyPatch(typeof(Chat), nameof(Chat.say))]
     public static class Chat_Say_Patch
     {

@@ -1,5 +1,5 @@
 # Build script for Leaderboard Harmony Mod
-# Output: <workspace>\HarmonyMods\Leaderboard.dll
+# Copies Leaderboard.dll to server root HarmonyMods/
 
 Write-Host "Building Leaderboard..." -ForegroundColor Cyan
 
@@ -7,9 +7,8 @@ $projectPath = Join-Path $PSScriptRoot "Leaderboard.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    # Workspace root is three levels up from .cursor/HarmonyMods/Leaderboard
-    $workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-    $harmonyModsPath = Join-Path $workspaceRoot "HarmonyMods"
+    $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
+    $harmonyModsPath = Join-Path $root "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
@@ -17,6 +16,10 @@ if ($LASTEXITCODE -eq 0) {
     $dllPath = Join-Path $PSScriptRoot "bin\Release\net48\Leaderboard.dll"
     if (-not (Test-Path $dllPath)) {
         $dllPath = Join-Path $PSScriptRoot "bin\Release\Leaderboard.dll"
+    }
+    if (-not (Test-Path $dllPath)) {
+        Write-Host "Build output not found" -ForegroundColor Red
+        exit 1
     }
     $destPath = Join-Path $harmonyModsPath "Leaderboard.dll"
 

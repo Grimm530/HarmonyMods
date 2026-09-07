@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class CuiElementComponent : BaseCuiComponent
 {

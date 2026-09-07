@@ -1,6 +1,6 @@
 # Minimap Harmony Mod (1.3.1)
 
-Oxide-free Harmony port of **Minimap 1.3.1** (Chaos UI / Chaos Map). Uses **0Permissions** for `minimap.use`. Map images are stored with vanilla `FileStorage` (no ImageLibrary).
+Harmony Harmony port of **Minimap 1.3.1** (Chaos UI / Chaos Map). Uses **0Permissions** for `minimap.use`. Map images are stored with vanilla `FileStorage` (no ImageLibrary).
 
 ## Load order
 
@@ -28,7 +28,7 @@ perm grant group default minimap.use
 
 | Kind | Path |
 |------|------|
-| Config | `HarmonyConfig/Minimap.json` (migrates from `oxide/config/Minimap.json` on first load if present) |
+| Config | `HarmonyConfig/Minimap.json` (migrates from `legacy/config/Minimap.json` on first load if present) |
 | Data | `HarmonyData/Minimap/` (`minimap.users.json`, rendered image cache) |
 | Lang | `HarmonyLanguage/Minimap.json` (file wins over embedded defaults) |
 | Images | `HarmonyImages/Minimap/` (`maparrow.*.png` direction icons) |

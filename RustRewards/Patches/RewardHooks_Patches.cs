@@ -98,7 +98,7 @@ namespace RustRewardsHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnItemAction → ItemMod.ServerCommand (unwrap / Gut / etc.).</summary>
+    /// <summary>compat OnItemAction → ItemMod.ServerCommand (unwrap / Gut / etc.).</summary>
     [HarmonyPatch(typeof(ItemMod), nameof(ItemMod.ServerCommand))]
     internal static class ItemMod_ServerCommand_Patch
     {
@@ -117,7 +117,7 @@ namespace RustRewardsHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnLootEntityEnd → StorageContainer.PlayerStoppedLooting (LootContainer calls base).</summary>
+    /// <summary>compat OnLootEntityEnd → StorageContainer.PlayerStoppedLooting (LootContainer calls base).</summary>
     [HarmonyPatch(typeof(StorageContainer), nameof(StorageContainer.PlayerStoppedLooting))]
     internal static class StorageContainer_PlayerStoppedLooting_Patch
     {
@@ -126,7 +126,7 @@ namespace RustRewardsHarmony.Patches
         {
             try
             {
-                if (__instance == null || player == null) return;
+                if (player == null) return;
                 RewardHooks.Plugin?.OnLootEntityEnd(player, __instance);
             }
             catch (Exception ex)
@@ -138,26 +138,7 @@ namespace RustRewardsHarmony.Patches
 
     // ---- Combat / death ----
 
-    /// <summary>Oxide OnEntityTakeDamage → BaseCombatEntity.Hurt(HitInfo).</summary>
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), typeof(HitInfo))]
-    internal static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPostfix]
-        private static void Postfix(BaseCombatEntity __instance, HitInfo info)
-        {
-            try
-            {
-                if (__instance == null || info == null) return;
-                RewardHooks.Plugin?.OnEntityTakeDamage(__instance, info);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[GrimmRewards] OnEntityTakeDamage: " + ex.Message);
-            }
-        }
-    }
-
-    /// <summary>Oxide OnPlayerDeath → BasePlayer.Die(HitInfo).</summary>
+    /// <summary>Harmony OnPlayerDeath → BasePlayer.Die(HitInfo).</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Die), typeof(HitInfo))]
     internal static class BasePlayer_Die_Patch
     {
@@ -166,7 +147,6 @@ namespace RustRewardsHarmony.Patches
         {
             try
             {
-                if (__instance == null) return;
                 RewardHooks.Plugin?.OnPlayerDeath(__instance, info);
             }
             catch (Exception ex)
@@ -178,7 +158,7 @@ namespace RustRewardsHarmony.Patches
 
     /// <summary>
     /// Oxide OnEntityDeath overloads → BaseCombatEntity.Die(HitInfo).
-    /// Dispatches to the most specific plugin overload (Oxide-style typed hooks).
+    /// Dispatches to the most specific plugin overload (compat-style typed hooks).
     /// </summary>
     [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Die), typeof(HitInfo))]
     internal static class BaseCombatEntity_Die_Patch
@@ -189,7 +169,7 @@ namespace RustRewardsHarmony.Patches
             try
             {
                 var plugin = RewardHooks.Plugin;
-                if (plugin == null || __instance == null) return;
+                if (plugin == null) return;
 
                 // Players are handled by BasePlayer_Die_Patch → OnPlayerDeath
                 if (__instance is BasePlayer)

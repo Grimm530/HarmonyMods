@@ -1,63 +1,56 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RustManaged Condition="'$(RustManaged)' == ''">$(ENV:RUST_MANAGED_PATH)</RustManaged>
-    <RustManaged Condition="'$(RustManaged)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\..\RustDedicated_Data\Managed'))</RustManaged>
-  </PropertyGroup>
-  <PropertyGroup>
-    <AssemblyName>RaidableBasesBuyableUI</AssemblyName>
+    <AssemblyName>RaidableBasesUI</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
-    <RootNamespace>RaidableBasesBuyableUI</RootNamespace>
-    <OutputPath>bin\$(Configuration)\</OutputPath>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: RaidableBases Buyable UI gallery (Oxide RaidableBasesBuyableUI port). Config: HarmonyConfig/RaidableBasesBuyableUI.json</Description>
+    <RootNamespace>RaidableBasesUI</RootNamespace>
+    <Description>Harmony mod: RaidableBases UI - CUI for buyable events, cooldowns, delay, lockout, status, teleport. Standalone; call from RaidableBases via reflection. Config: HarmonyConfig/RaidableBasesUI.json</Description>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
-      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
-    </Reference>
-    <Reference Include="Facepunch.System">
-      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
-    </Reference>
-    <Reference Include="Facepunch.UnityEngine">
-      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
-    </Reference>
-    <Reference Include="Facepunch.Network">
-      <HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath>
-    </Reference>
-    <Reference Include="Facepunch.Console">
-      <HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath>
-    </Reference>
-    <Reference Include="Rust.Data">
-      <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
-    </Reference>
-    <Reference Include="Rust.Global">
-      <HintPath>$(RustManaged)\Rust.Global.dll</HintPath>
-    </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.UIModule">
-      <HintPath>$(RustManaged)\UnityEngine.UIModule.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>$(RustManaged)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
     </Reference>
-    <Reference Include="UnityEngine.UI">
-      <HintPath>$(RustManaged)\UnityEngine.UI.dll</HintPath>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.UIModule.dll</HintPath>
     </Reference>
-    <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>$(RustManaged)\UnityEngine.ImageConversionModule.dll</HintPath>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Network">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Console">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.System">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Data">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Global">
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
 </Project>

@@ -8,8 +8,8 @@ $projectPath = Join-Path $PSScriptRoot "ChatTranslator.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $workspaceRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

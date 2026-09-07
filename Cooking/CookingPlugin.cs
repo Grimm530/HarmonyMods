@@ -1,16 +1,16 @@
-﻿using Facepunch;
+using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Configuration;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Configuration;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
 using Newtonsoft.Json.Converters;
-using static Oxide.Plugins.Cooking.CookingManager;
+using static Harmony.Plugins.Cooking.CookingManager;
 using System.Text;
 
 /* Suggestions
@@ -23,7 +23,7 @@ using System.Text;
  * Fixed an issue caused by the July wipe that reset calories/hydration when consuming non-cooking related foods that were ingredients in meals.
 */
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
 	[Info("Cooking", "imthenewguy", "2.0.35")]
 	[Description("Extends Rust's cooking functionality.")]
@@ -1274,7 +1274,7 @@ namespace Oxide.Plugins
             {
                 Puts($"Failed to load config. - {ex.Message} - {ex.InnerException}");
                 UnityEngine.Debug.LogException(ex);
-                Interface.Oxide.UnloadPlugin(Name);
+                HarmonyModInterface.Mods.UnloadPlugin(Name);
             }
         }
 
@@ -1302,14 +1302,14 @@ namespace Oxide.Plugins
                 }
                 else
                 {
-                    dir = Path.Combine(Interface.Oxide.RootDirectory, "HarmonyData", "Cooking");
+                    dir = Path.Combine(HarmonyModInterface.Mods.RootDirectory, "HarmonyData", "Cooking");
                 }
 
                 if (!Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
 
-                Interface.Oxide.CustomDataDirectory = dir;
-                Interface.Oxide.ResetDataFileSystem();
+                HarmonyModInterface.Mods.CustomDataDirectory = dir;
+                HarmonyModInterface.Mods.ResetDataFileSystem();
             }
             catch (Exception ex)
             {
@@ -1374,8 +1374,19 @@ namespace Oxide.Plugins
         {
             Instance = this;
             Unsubscribe(nameof(OnPluginLoaded));
-            PCDDATA = Interface.Oxide.DataFileSystem.GetFile(this.Name);
+            PCDDATA = HarmonyModInterface.Mods.DataFileSystem.GetFile(this.Name);
             LoadData();
+
+            if (config == null)
+            {
+                try { LoadDefaultConfig(); }
+                catch (Exception ex) { PrintError("LoadDefaultConfig failed: " + ex.Message); }
+            }
+            if (config == null)
+            {
+                PrintError("Cooking config is null; Init aborted.");
+                return;
+            }
 
             permission.RegisterPermission(perm_recipemenu_chat, this);
             permission.RegisterPermission(perm_use, this);
@@ -1468,9 +1479,9 @@ namespace Oxide.Plugins
 
         void RemoveMarketNPCs()
         {
-            foreach (var marker in BaseNetworkable.serverEntities.OfType<MapMarkerMissionProvider>())
+            foreach (var entity in BaseNetworkable.serverEntities)
             {
-                if (marker == null || marker.IsDestroyed) continue;
+                if (entity is not MapMarkerMissionProvider marker || marker == null || marker.IsDestroyed) continue;
                 foreach (var npc in MarketNPCs)
                     if (npc.Value != null && InRange(npc.Value.transform.position, marker.transform.position, 0.1f))
                         marker.Kill();
@@ -1556,7 +1567,7 @@ namespace Oxide.Plugins
         {
             try
             {
-                pcdData = Interface.Oxide.DataFileSystem.ReadObject<PlayerEntity>(this.Name);
+                pcdData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PlayerEntity>(this.Name);
             }
             catch
             {
@@ -2397,12 +2408,26 @@ namespace Oxide.Plugins
 
         void OnServerInitialized(bool initial)
         {
+            if (config?.mealSettings?.meals == null)
+            {
+                PrintWarning("Cooking config not loaded; skipping OnServerInitialized setup.");
+                return;
+            }
+
+            if (pcdData == null)
+                pcdData = new PlayerEntity();
+
             SetupSubscriptions();
 
-            foreach (var kvp in ItemManager.GetItemDefinitions())
+            var itemDefs = ItemManager.GetItemDefinitions();
+            if (itemDefs != null)
             {
-                if (!DefaultDisplayNames.ContainsKey(kvp.displayName.english)) DefaultDisplayNames.Add(kvp.displayName.english, kvp.shortname);
-                if (!ItemID.ContainsKey(kvp.shortname)) ItemID.Add(kvp.shortname, kvp.itemid);
+                foreach (var kvp in itemDefs)
+                {
+                    if (kvp?.displayName?.english == null || string.IsNullOrEmpty(kvp.shortname)) continue;
+                    if (!DefaultDisplayNames.ContainsKey(kvp.displayName.english)) DefaultDisplayNames.Add(kvp.displayName.english, kvp.shortname);
+                    if (!ItemID.ContainsKey(kvp.shortname)) ItemID.Add(kvp.shortname, kvp.itemid);
+                }
             }
 
             bool updateConfig = false;
@@ -2981,7 +3006,7 @@ namespace Oxide.Plugins
 
             RunEatingEffect(player, mealData.effect.effect, mealData.effect.server_side, mealData.effect.max_distance);
 
-            Interface.CallHook("OnMealConsumed", player, item, mealDuration);
+            HarmonyModInterface.CallHook("OnMealConsumed", player, item, mealDuration);
             return null;
         }
 
@@ -3681,7 +3706,7 @@ namespace Oxide.Plugins
             List<BagInfo> bagData;
             if (!pcdData.bag.TryGetValue(player.userID, out bagData)) return;
 
-            if (Interface.CallHook("OnIngredientBagDrop", player) != null) return;
+            if (HarmonyModInterface.CallHook("OnIngredientBagDrop", player) != null) return;
 
             var container = GetBagContainer(player);
             if (container.inventory.itemList?.Count > 0)
@@ -4356,7 +4381,7 @@ namespace Oxide.Plugins
         void RollForRecipe(BasePlayer player, LootContainer container)
         {
             if (container == null) return;
-            if (Interface.CallHook("OnAddRecipeCardToLootContainer", player, container) != null) return;
+            if (HarmonyModInterface.CallHook("OnAddRecipeCardToLootContainer", player, container) != null) return;
 
             string recipe;
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) pcdData.pEntity.Add(player.userID, playerData = new PCDInfo());
@@ -4489,7 +4514,7 @@ namespace Oxide.Plugins
 
         void ModifyHorse(RidableHorse horse, BasePlayer player, float modifier)
         {
-            if (Interface.CallHook("RecipeCanModifyHorse", horse) != null) return;
+            if (HarmonyModInterface.CallHook("RecipeCanModifyHorse", horse) != null) return;
             if (ModifiedHorses.TryGetValue(horse, out var existingHorse))
             {
                 if (modifier > existingHorse.modifier) RestoreModifiedHorse(horse);
@@ -4577,7 +4602,7 @@ namespace Oxide.Plugins
 
             if (sourceEntityID > 0)
             {
-                object hookResult = Interface.CallHook("CanGatherIngredient", player, sourceEntityID);
+                object hookResult = HarmonyModInterface.CallHook("CanGatherIngredient", player, sourceEntityID);
                 if (hookResult is bool && (bool)hookResult == false) return;
             }            
 
@@ -5382,10 +5407,11 @@ namespace Oxide.Plugins
             {
                 if (InRange(npcData.position, npc.transform.position, 0.1f))
                 {
-                    foreach (var marker in BaseNetworkable.serverEntities.OfType<MapMarkerMissionProvider>())
-                        if (InRange(marker.transform.position, npc.transform.position, 0.1f))
+                    foreach (var entity in BaseNetworkable.serverEntities)
+                    {
+                        if (entity is MapMarkerMissionProvider marker && InRange(marker.transform.position, npc.transform.position, 0.1f))
                             marker.Kill();
-                    
+                    }
                     pcdData.npcs.Remove(npcData);
                     MarketNPCs.Remove(npc.net.ID.Value);
                     npc.Kill();
@@ -5548,7 +5574,7 @@ namespace Oxide.Plugins
                 player = GetComponent<BasePlayer>();
                 userid = player.userID;
                 InvokeRepeating(Run, 1, 1);
-                //Interface.Oxide.LogInfo($"Setting up BuffManager for {player.displayName}");
+                //HarmonyModInterface.Mods.LogInfo($"Setting up BuffManager for {player.displayName}");
             }
 
             public void Run()
@@ -5591,7 +5617,7 @@ namespace Oxide.Plugins
 
                 foreach (var buff in buffs)
                 {
-                    //Interface.Oxide.LogInfo($"Buffs: {buff.Key}");
+                    //HarmonyModInterface.Mods.LogInfo($"Buffs: {buff.Key}");
                     float currentValue;
                     if (!buffMods.TryGetValue(buff.Key, out currentValue)) buffMods.Add(buff.Key, buff.Value);
                     else
@@ -5604,7 +5630,7 @@ namespace Oxide.Plugins
                     {
                         AddComfort();
                         hasComfort = true;
-                        //Interface.Oxide.LogInfo($"Found comfort: {hasComfort} @ 1784808420");
+                        //HarmonyModInterface.Mods.LogInfo($"Found comfort: {hasComfort} @ 1784808420");
                     }
 
                     if (buff.Key == Buff.Metabolism_Overload)
@@ -5804,7 +5830,7 @@ namespace Oxide.Plugins
                         replacedCommand = replacedCommand.Replace("{name}", player.displayName);
                         string _command = replacedCommand.Split(' ')[0];
                         string[] args = replacedCommand.Split(' ').Skip(1).ToArray();
-                        //Interface.Oxide.LogInfo($"Command: {_command}. Args: {args}");
+                        //HarmonyModInterface.Mods.LogInfo($"Command: {_command}. Args: {args}");
                         
                         ConsoleSystem.Run(ConsoleSystem.Option.Server, _command, args);
                     }
@@ -5883,7 +5909,7 @@ namespace Oxide.Plugins
                                 formattedCommand = formattedCommand.Replace("{name}", player.displayName);
                                 string _command = formattedCommand.Split(' ')[0];
                                 string[] args = formattedCommand.Split(' ').Skip(1).ToArray();
-                                //Interface.Oxide.LogInfo($"Command: {formattedCommand}. Args: {args}");
+                                //HarmonyModInterface.Mods.LogInfo($"Command: {formattedCommand}. Args: {args}");
                                 ConsoleSystem.Run(ConsoleSystem.Option.Server, _command, args);
                             }
                             catch { }
@@ -6037,7 +6063,7 @@ namespace Oxide.Plugins
                 buffMods = null;
                 enabled = false;
                 Instance.BuffManagerDirectory.Remove(userid);                
-                //Interface.Oxide.LogInfo($"Destroyed BuffManager for {player?.displayName ?? "null player"}");
+                //HarmonyModInterface.Mods.LogInfo($"Destroyed BuffManager for {player?.displayName ?? "null player"}");
                 CancelInvoke();
             }
         }
@@ -6109,7 +6135,7 @@ namespace Oxide.Plugins
             {
                 player = GetComponent<BasePlayer>();
                 lastKnownPosition = player.transform.position;
-                //Interface.Oxide.LogInfo("Component active.");
+                //HarmonyModInterface.Mods.LogInfo("Component active.");
                 userid = player.userID;
 
                 InvokeRepeating(Run, 1, 1);
@@ -6125,7 +6151,7 @@ namespace Oxide.Plugins
 
                 if (!player.IsConnected || player.IsDead())
                 {
-                    //Interface.Oxide.LogInfo($"Dead or not connected.");
+                    //HarmonyModInterface.Mods.LogInfo($"Dead or not connected.");
                     Destroy(this);
                     return;
                 }
@@ -6154,20 +6180,20 @@ namespace Oxide.Plugins
                 else if (Time.time > meal.finishCookingAt)
                 {
                     GiveMeal(meal);
-                    //Interface.Oxide.LogInfo($"Finished making: {meal.displayName}.");
+                    //HarmonyModInterface.Mods.LogInfo($"Finished making: {meal.displayName}.");
                     queuedMeals.Remove(meal);
                     // Player, meal name, is ingredient
                     Dictionary<string, int> ingredientsUsed = new Dictionary<string, int>();
                     foreach (var ingredient in meal.ingredientsPerMeal)
                         ingredientsUsed.Add(ingredient.Key, ingredient.Value.amount);
-                    Interface.CallHook("OnMealCrafted", player, meal.displayName, ingredientsUsed, Instance.config.ingredientSettings.ingredients.ContainsKey(meal.displayName));
+                    HarmonyModInterface.CallHook("OnMealCrafted", player, meal.displayName, ingredientsUsed, Instance.config.ingredientSettings.ingredients.ContainsKey(meal.displayName));
                     ingredientsUsed.Clear();
                 }
             }
 
             private void UpdateCookingQueueUI(float timeLeft, ulong skin)
             {
-                //Interface.Oxide.LogInfo($"Time left on cook for: {timeLeft} seconds.");
+                //HarmonyModInterface.Mods.LogInfo($"Time left on cook for: {timeLeft} seconds.");
                 // Hand cooking UI here.
                 Instance.UpdateCookingQueue(player, skin, Convert.ToInt32(timeLeft), queuedMeals.Count, CookingQueueBackPanelColour, CookingQueueAnchorMin, CookingQueueAnchorMax, CookingQueueOffsetMin, CookingQueueOffsetMax, CookingQueueFrontPanelColour);
             }
@@ -6176,7 +6202,7 @@ namespace Oxide.Plugins
             {
                 var queMeal = new CookingInfo(shortname, displayName, skin, cookTime, spoilTime, ingredientsPerMeal);
                 queuedMeals.Add(queMeal);
-                //Interface.Oxide.LogInfo($"Meal added. New queue length: {queuedMeals.Count}");
+                //HarmonyModInterface.Mods.LogInfo($"Meal added. New queue length: {queuedMeals.Count}");
                 var current = queuedMeals.First();
                 if (current.finishCookingAt > 0)
                     UpdateCookingQueueUI(current.finishCookingAt - Time.time, current.skinID);
@@ -6247,27 +6273,27 @@ namespace Oxide.Plugins
 
             public void CancelAllCrafts()
             {
-                //Interface.Oxide.LogInfo("Starting cancel");
+                //HarmonyModInterface.Mods.LogInfo("Starting cancel");
                 foreach (var craft in queuedMeals)
                 {
-                    //Interface.Oxide.LogInfo("Looing - Craft in queuedMeals");
+                    //HarmonyModInterface.Mods.LogInfo("Looing - Craft in queuedMeals");
                     foreach (var ingredient in craft.ingredientsPerMeal)
                     {
-                        //Interface.Oxide.LogInfo($"Looping Ingredient in ingredients per craft - Is {ingredient.Key} in profile: {Instance.Ingredients.ContainsKey(ingredient.Key)}");
+                        //HarmonyModInterface.Mods.LogInfo($"Looping Ingredient in ingredients per craft - Is {ingredient.Key} in profile: {Instance.Ingredients.ContainsKey(ingredient.Key)}");
                         var ingredientProfile = Instance.Ingredients[ingredient.Key];
                         if (!ingredientsToRefund.ContainsKey(ingredient.Key))
                         {
-                            //Interface.Oxide.LogInfo("Adding a new key for refunds.");
+                            //HarmonyModInterface.Mods.LogInfo("Adding a new key for refunds.");
                             ingredientsToRefund.Add(ingredient.Key, new IngredientsInfo(ingredientProfile.shortname, ingredientProfile.skin, ingredient.Value.amount, ingredient.Value.spoilTime));
                         }
                         else
                         {
-                            //Interface.Oxide.LogInfo("Adding to existing key for refunds.");
+                            //HarmonyModInterface.Mods.LogInfo("Adding to existing key for refunds.");
                             ingredientsToRefund[ingredient.Key].amount += ingredient.Value.amount;
                         }
                     }
                 }
-                //Interface.Oxide.LogInfo("Startubg refund process.");
+                //HarmonyModInterface.Mods.LogInfo("Startubg refund process.");
                 foreach (var ingredient in ingredientsToRefund)
                 {
                     var item = ItemManager.CreateByName(ingredient.Value.shortname, ingredient.Value.amount, ingredient.Value.skin);
@@ -6280,7 +6306,7 @@ namespace Oxide.Plugins
 
                     if (player != null && player.IsAlive())
                     {
-                        //Interface.Oxide.LogInfo("We are alive");
+                        //HarmonyModInterface.Mods.LogInfo("We are alive");
                         player.GiveItem(item);
                         //if (!item.MoveToContainer(player.inventory.containerMain) || !item.MoveToContainer(player.inventory.containerBelt))
                             //item.DropAndTossUpwards(lastKnownPosition, 5);
@@ -6288,13 +6314,13 @@ namespace Oxide.Plugins
                     else
                     {
                         var dropPos = new Vector3(lastKnownPosition.x, lastKnownPosition.y + 1, lastKnownPosition.z);
-                        //Interface.Oxide.LogInfo($"We are dead. Dropping at {dropPos}");
+                        //HarmonyModInterface.Mods.LogInfo($"We are dead. Dropping at {dropPos}");
                         
                         item.DropAndTossUpwards(dropPos, 5);
                         player.SendConsoleCommand("ddraw.text", 20f, Color.yellow, dropPos, "HERE");
                     }
                 }
-                //Interface.Oxide.LogInfo("Cleaning up");
+                //HarmonyModInterface.Mods.LogInfo("Cleaning up");
                 queuedMeals.Clear();
                 queuedMeals = null;
                 ingredientsToRefund.Clear();
@@ -6320,13 +6346,13 @@ namespace Oxide.Plugins
 
             private void OnDestroy()
             {
-                //Interface.Oxide.LogInfo($"Destroying cooking manager component for {player.displayName}");
+                //HarmonyModInterface.Mods.LogInfo($"Destroying cooking manager component for {player.displayName}");
                 CancelAllCrafts();
-                //Interface.Oxide.LogInfo($"Cancelled crafts");
+                //HarmonyModInterface.Mods.LogInfo($"Cancelled crafts");
                 if (player != null && player.IsConnected) CuiHelper.DestroyUi(player, "CookingQueue");
-                //Interface.Oxide.LogInfo($"Unsent UI");
+                //HarmonyModInterface.Mods.LogInfo($"Unsent UI");
                 Instance.CookingManagerDirectory.Remove(userid);
-                //Interface.Oxide.LogInfo($"Removed the userid: {!Instance.CookingManagerDirectory.ContainsKey(userid)}");
+                //HarmonyModInterface.Mods.LogInfo($"Removed the userid: {!Instance.CookingManagerDirectory.ContainsKey(userid)}");
                 enabled = false;
                 CancelInvoke();
             }
@@ -7247,7 +7273,7 @@ namespace Oxide.Plugins
             else
             {
                 GiveMeal(player, mealData.shortname, mealData.skin, meal.ToLower(), mealData.spoilTime, quantity);
-                Interface.CallHook("OnMealCrafted", player, meal, mealData.ingredients, config.ingredientSettings.ingredients.ContainsKey(meal));
+                HarmonyModInterface.CallHook("OnMealCrafted", player, meal, mealData.ingredients, config.ingredientSettings.ingredients.ContainsKey(meal));
             }
             
             SendRecipeDetailedMenu(player, meal, arg.GetString(1),(CoreElmentSelected)coreElement, arg.GetString(0));

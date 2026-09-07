@@ -11,7 +11,6 @@ public static class Patch_TimedExplosive_Explode
 {
     static void Postfix(TimedExplosive __instance)
     {
-        if (__instance == null) return;
         if (__instance.creatorEntity is not BasePlayer player || player.IsNpc || !SteamIdHelper.IsSteamId(player.userID)) return;
 
         var prefab = __instance.LookupPrefab();

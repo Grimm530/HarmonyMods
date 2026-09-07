@@ -1,2 +1,2 @@
 // Global using aliases for Oxide timer type.
-global using Timer = Oxide.Core.Libraries.Timer;
+global using Timer = Harmony.Core.Libraries.Timer;

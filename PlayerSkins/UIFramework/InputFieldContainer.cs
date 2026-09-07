@@ -1,9 +1,9 @@
 using System;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class InputFieldContainer : BaseContainer
 {

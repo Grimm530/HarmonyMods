@@ -1,6 +1,6 @@
 # AlwaysBonus – Harmony Mod
 
-Auto-hits X markers on trees and stars on nodes. Migrated from Oxide plugin `AlwaysBonus` by Tryhard.
+Auto-hits X markers on trees and stars on nodes. Migrated from Harmony mod `AlwaysBonus` by Tryhard.
 
 ## Features
 

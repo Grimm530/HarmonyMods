@@ -1,16 +1,29 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
-using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using ConVar;
+using GrimmCuiHarmony;
 using HarmonyLib;
+using GrimmCuiHarmony;
 using Newtonsoft.Json;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 using Leaderboard.Storage;
+using GrimmCuiHarmony;
 using Leaderboard.Relay;
+using GrimmCuiHarmony;
 using Leaderboard.Discord;
+using GrimmCuiHarmony;
+using Leaderboard.Patches;
+using GrimmCuiHarmony;
 
 namespace Leaderboard;
 
@@ -18,15 +31,11 @@ public class LeaderboardMod : IHarmonyModHooks
 {
     public static LeaderboardMod Instance { get; private set; }
 
-    public const int VersionMajor = 1;
-    public const int VersionMinor = 0;
-    public const int VersionPatch = 1;
     public const string AppDomainApiKey = "Leaderboard_ApiType";
     public const string AppDomainPluginKey = "Leaderboard_Plugin";
-    public const string AppDomainUltimatePluginKey = "UltimateLeaderboard_Plugin";
+    public const string AppDomainPluginAliasKey = "UltimateLeaderboard_Plugin";
 
     private readonly Dictionary<ulong, PlayerStats> _playerStats = new();
-    private readonly HashSet<ulong> _loadedFromDisk = new();
     private readonly Dictionary<ulong, float> _lastCommandTime = new();
     private readonly object _statsLock = new();
 
@@ -35,19 +44,17 @@ public class LeaderboardMod : IHarmonyModHooks
     private string _configPath;
     private HarmonyLib.Harmony _harmony;
     private float _relayBatchTimer;
-    private string _relayServerId = "unknown";
     private readonly List<StatUpdatePayload> _relayBatch = new();
     private readonly Dictionary<ulong, int> _openLeaderboardCategory = new();
     private readonly Dictionary<ulong, int> _openLeaderboardProfileTab = new();
     private readonly Dictionary<ulong, int> _openLeaderboardTop10Tab = new();
     /// <summary>When set, My Statistics shows this player's profile instead of the viewer's own (e.g. after clicking a Search card).</summary>
     private readonly Dictionary<ulong, ulong> _viewedProfileUserId = new();
-    /// <summary>Players currently viewing Leaderboard inside ServerPanel content.</summary>
-    private readonly HashSet<ulong> _openInServerPanel = new();
+    private readonly HashSet<ulong> _serverPanelPlayers = new();
+    private PluginWrapper _pluginWrapper;
     private readonly object _uiLock = new();
     private GameObject _tickObject;
     private float _discordTimer;
-    private LeaderboardPluginWrapper _pluginWrapper;
     private const string UiLayer = "UI.Leaderboard";
 
     private static readonly Dictionary<string, string> _localImageIds = new();
@@ -73,33 +80,7 @@ public class LeaderboardMod : IHarmonyModHooks
             _openLeaderboardProfileTab.Remove(userId);
             _openLeaderboardTop10Tab.Remove(userId);
             _viewedProfileUserId.Remove(userId);
-            _openInServerPanel.Remove(userId);
         }
-    }
-
-    public bool IsOpenInServerPanel(ulong userId)
-    {
-        lock (_uiLock)
-            return _openInServerPanel.Contains(userId);
-    }
-
-    public void SetOpenInServerPanel(ulong userId, bool open)
-    {
-        lock (_uiLock)
-        {
-            if (open) _openInServerPanel.Add(userId);
-            else _openInServerPanel.Remove(userId);
-        }
-    }
-
-    /// <summary>Refresh open UI (Overlay fullscreen or ServerPanel embed).</summary>
-    public void RefreshLeaderboardUI(BasePlayer player)
-    {
-        if (player == null) return;
-        if (IsOpenInServerPanel(player.userID))
-            LeaderboardUI.RefreshInServerPanel(player);
-        else
-            LeaderboardUI.Show(player);
     }
 
     /// <summary>Whose stats to show in My Statistics: returns viewed target or the viewer's own id.</summary>
@@ -290,19 +271,17 @@ public class LeaderboardMod : IHarmonyModHooks
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
+        GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
         Instance = this;
-        _pluginWrapper = new LeaderboardPluginWrapper(this);
+        _pluginWrapper = new PluginWrapper(this);
         RegisterApiType();
+        GrimmCoreHurtRegistration.Register();
         _harmony = new HarmonyLib.Harmony("com.leaderboard.patches");
         _harmony.PatchAll(typeof(LeaderboardMod).Assembly);
 
         _configPath = Path.Combine(Environment.CurrentDirectory, "HarmonyConfig", "Leaderboard.json");
         LoadConfig();
         InitStorage();
-        ApplyWipeFromSignal();
-        OnWorldLoaded();
-
-        _tickObject = new GameObject("LeaderboardTick");
 
         _tickObject = new GameObject("LeaderboardTick");
         UnityEngine.Object.DontDestroyOnLoad(_tickObject);
@@ -310,296 +289,7 @@ public class LeaderboardMod : IHarmonyModHooks
 
         RegisterCommands();
         StartLocalImagesLoadCoroutine();
-        // Populate in-memory cache from disk so Top 10 / Search / Discord sync include offline players.
-        LoadAllPlayersFromDisk();
-        // Players already online when the mod loads never get PlayerInit again — start their sessions.
-        RegisterConnectedPlayers();
-        // Event mods may load after this assembly — defer integration patches a few seconds.
-        ScheduleEventModPatches();
-        if (_config?.Relay?.Enabled == true && !string.IsNullOrEmpty(_config.Relay.Url))
-            UnityEngine.Debug.Log($"[Leaderboard] Relay ServerId={_relayServerId} → {_config.Relay.Url}");
-        if (_config?.Relay?.Enabled == true && _config.Relay.SyncAllOnLoad && !string.IsNullOrEmpty(_config.Relay.Url))
-            SyncAllToRelay();
-        UnityEngine.Debug.Log($"[Leaderboard] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}. Commands: /leaderboard, /lb, /stats");
-    }
-
-    private void ScheduleEventModPatches()
-    {
-        var runner = _tickObject != null ? _tickObject.GetComponent<LeaderboardTickBehaviour>() : null;
-        if (runner == null) return;
-        runner.StartCoroutine(DeferredEventModPatches());
-    }
-
-    private System.Collections.IEnumerator DeferredEventModPatches()
-    {
-        // Wait for other HarmonyMods/*.dll to finish loading (filesystem order is undefined).
-        yield return new UnityEngine.WaitForSeconds(5f);
-        try
-        {
-            if (_harmony != null)
-                Patches.EventModPatches.TryApply(_harmony, _config?.EventIntegration);
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] EventModPatches: {ex.Message}");
-        }
-    }
-
-    /// <summary>Load every player JSON into memory (required for Top 10 / Search when players are offline).</summary>
-    private void LoadAllPlayersFromDisk()
-    {
-        try
-        {
-            var all = _storage?.LoadAllPlayers();
-            if (all == null || all.Count == 0)
-            {
-                UnityEngine.Debug.Log("[Leaderboard] No player JSON files found on disk.");
-                return;
-            }
-            lock (_statsLock)
-            {
-                for (int i = 0; i < all.Count; i++)
-                {
-                    var s = all[i];
-                    if (s == null || s.UserId == 0) continue;
-                    // Prefer already-online session rows if RegisterConnectedPlayers ran first (it doesn't).
-                    if (_playerStats.TryGetValue(s.UserId, out var existing) && existing.IsOnline)
-                    {
-                        MergeDiskStatsInto(existing, s);
-                        _loadedFromDisk.Add(s.UserId);
-                        continue;
-                    }
-                    if (s.Points == 0f)
-                        s.Points = RecalculatePoints(s);
-                    _playerStats[s.UserId] = s;
-                    _loadedFromDisk.Add(s.UserId);
-                }
-            }
-            UnityEngine.Debug.Log($"[Leaderboard] Loaded {all.Count} players from disk into memory.");
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] LoadAllPlayersFromDisk: {ex.Message}");
-        }
-    }
-
-    /// <summary>Merge historical disk stats into an in-memory row (keeps live session fields).</summary>
-    private static void MergeDiskStatsInto(PlayerStats live, PlayerStats disk)
-    {
-        if (live == null || disk == null) return;
-        if (string.IsNullOrEmpty(live.LastName) || live.LastName == "Unknown")
-            live.LastName = disk.LastName ?? live.LastName;
-        if (live.TotalPlayTime < disk.TotalPlayTime)
-            live.TotalPlayTime = disk.TotalPlayTime;
-        if (live.Points == 0 && disk.Points != 0)
-            live.Points = disk.Points;
-        live.HiddenFromLeaderboard = disk.HiddenFromLeaderboard;
-        if (disk.StatsStorage == null) return;
-        if (live.StatsStorage == null)
-            live.StatsStorage = new Dictionary<LootType, Dictionary<string, float>>();
-        foreach (var typeKv in disk.StatsStorage)
-        {
-            if (!live.StatsStorage.TryGetValue(typeKv.Key, out var liveBag))
-                live.StatsStorage[typeKv.Key] = liveBag = new Dictionary<string, float>();
-            if (typeKv.Value == null) continue;
-            foreach (var itemKv in typeKv.Value)
-            {
-                if (!liveBag.TryGetValue(itemKv.Key, out var liveVal) || liveVal < itemKv.Value)
-                    liveBag[itemKv.Key] = itemKv.Value;
-            }
-        }
-    }
-
-    /// <summary>Push all in-memory players + StatsStorage rows to the Discord bot relay (MySQL).</summary>
-    public void SyncAllToRelay()
-    {
-        var url = _config?.Relay?.Url;
-        if (string.IsNullOrEmpty(url)) return;
-
-        List<StatUpdatePayload> updates;
-        List<PlayerStatsPayload> players;
-        lock (_statsLock)
-        {
-            updates = new List<StatUpdatePayload>();
-            players = new List<PlayerStatsPayload>(_playerStats.Count);
-            foreach (var kv in _playerStats)
-            {
-                var s = kv.Value;
-                if (s == null) continue;
-                players.Add(ToPlayerPayload(s));
-                if (s.StatsStorage == null) continue;
-                foreach (var typeKv in s.StatsStorage)
-                {
-                    if (typeKv.Value == null) continue;
-                    foreach (var itemKv in typeKv.Value)
-                    {
-                        updates.Add(new StatUpdatePayload
-                        {
-                            UserId = s.UserId,
-                            LootType = (int)typeKv.Key,
-                            ShortName = itemKv.Key,
-                            ItemValue = itemKv.Value
-                        });
-                    }
-                }
-            }
-        }
-
-        if (players.Count == 0 && updates.Count == 0) return;
-        var posts = RelaySender.SendBatch(url, updates, players, _relayServerId);
-        UnityEngine.Debug.Log($"[Leaderboard] Relay SyncAll queued: {players.Count} players, {updates.Count} stat rows in {posts} POSTs (ServerId={_relayServerId}) → {url}");
-    }
-
-    private static PlayerStatsPayload ToPlayerPayload(PlayerStats s)
-    {
-        return new PlayerStatsPayload
-        {
-            UserId = s.UserId,
-            LastIP = s.LastIP ?? "",
-            LastName = s.LastName ?? "",
-            ConnectTime = s.ConnectTime.ToString("o"),
-            DisconnectTime = s.DisconnectTime.ToString("o"),
-            // Include the live session so Discord combined time does not stall until disconnect.
-            // Use fixed-point (no thousand separators) — "N" produces "9,047.91" which breaks MySQL/bot parsers.
-            TotalPlayTime = s.GetTotalPlayTimeIncludingCurrent().ToString("0.########", System.Globalization.CultureInfo.InvariantCulture),
-            Points = s.Points,
-            HiddenFromLeaderboard = s.HiddenFromLeaderboard ? 1 : 0
-        };
-    }
-
-    private void RegisterApiType()
-    {
-        try
-        {
-            AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(LeaderboardMod));
-            AppDomain.CurrentDomain.SetData(AppDomainPluginKey, _pluginWrapper);
-            AppDomain.CurrentDomain.SetData(AppDomainUltimatePluginKey, _pluginWrapper);
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] RegisterApiType: {ex.Message}");
-        }
-    }
-
-    private void UnregisterApiType()
-    {
-        try
-        {
-            AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
-            AppDomain.CurrentDomain.SetData(AppDomainPluginKey, null);
-            AppDomain.CurrentDomain.SetData(AppDomainUltimatePluginKey, null);
-        }
-        catch { }
-    }
-
-    /// <summary>
-    /// UltimateLeaderboard-compatible API: record an event win for Discord/in-game Events.
-    /// Call via AppDomain Leaderboard_Plugin: Call("API_OnEventWin", userId, "Convoy", 1)
-    /// </summary>
-    public void API_OnEventWin(ulong userId, string eventName, int amount = 1)
-    {
-        if (userId == 0 || string.IsNullOrEmpty(eventName) || amount == 0) return;
-        if (!SteamIdHelper.IsSteamId(userId)) return;
-        RecordStat(userId, LootType.Event, eventName, amount);
-    }
-
-    /// <summary>Dispatch for ServerPanel / AppDomain consumers (Plugin.Call).</summary>
-    public object Call(string method, params object[] args)
-    {
-        if (string.IsNullOrEmpty(method)) return null;
-        try
-        {
-            var mi = typeof(LeaderboardMod).GetMethod(method,
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (mi == null) return null;
-            var parameters = mi.GetParameters();
-            var invokeArgs = args ?? Array.Empty<object>();
-            if (parameters.Length == 0)
-                return mi.Invoke(this, null);
-            if (invokeArgs.Length < parameters.Length)
-            {
-                var padded = new object[parameters.Length];
-                Array.Copy(invokeArgs, padded, invokeArgs.Length);
-                invokeArgs = padded;
-            }
-            else if (invokeArgs.Length > parameters.Length)
-            {
-                var trimmed = new object[parameters.Length];
-                Array.Copy(invokeArgs, trimmed, parameters.Length);
-                invokeArgs = trimmed;
-            }
-            return mi.Invoke(this, invokeArgs);
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] Call({method}): {ex.InnerException?.Message ?? ex.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// ServerPanel plugin page hook. Returns bracket-stripped CUI JSON parented under
-    /// UI.Server.Panel.Content (root name UI.Server.Panel.Content.Plugin).
-    /// Must be synchronous — ServerPanel mounts the return value immediately.
-    /// </summary>
-    public string API_OpenPlugin(BasePlayer player)
-    {
-        if (player == null) return null;
-        try
-        {
-            // Prefer ServerPanel embed; clear any leftover Overlay UI.
-            LeaderboardUI.Destroy(player);
-            SetOpenInServerPanel(player.userID, true);
-            // Load from disk first (do NOT GetOrCreateStats beforehand — that skips disk load).
-            EnsurePlayerLoaded(player.userID, player.displayName, null);
-            GetOrCreateStats(player.userID, player.displayName);
-            var json = LeaderboardUI.BuildForServerPanel(player);
-            if (string.IsNullOrWhiteSpace(json))
-                UnityEngine.Debug.LogWarning("[Leaderboard] API_OpenPlugin produced empty UI JSON");
-            return json;
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning("[Leaderboard] API_OpenPlugin: " + (ex.InnerException?.Message ?? ex.Message));
-            return null;
-        }
-    }
-
-    public void OnServerPanelClosed(BasePlayer player)
-    {
-        if (player == null) return;
-        if (!IsOpenInServerPanel(player.userID)) return;
-        LeaderboardUI.DestroyServerPanel(player);
-        OnLeaderboardClosed(player.userID);
-    }
-
-    public void OnServerPanelCategoryPage(BasePlayer player, int category, int page)
-    {
-        if (player == null) return;
-        if (!IsOpenInServerPanel(player.userID)) return;
-        LeaderboardUI.DestroyServerPanel(player);
-        OnLeaderboardClosed(player.userID);
-    }
-
-    /// <summary>Start playtime sessions for everyone already in activePlayerList (mod load / reload).</summary>
-    private void RegisterConnectedPlayers()
-    {
-        try
-        {
-            var list = BasePlayer.activePlayerList;
-            if (list == null) return;
-            for (int i = 0; i < list.Count; i++)
-            {
-                var p = list[i];
-                if (p == null || p.IsNpc) continue;
-                if (!SteamIdHelper.IsSteamId(p.userID)) continue;
-                OnPlayerConnected(p);
-            }
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] RegisterConnectedPlayers: {ex.Message}");
-        }
+        UnityEngine.Debug.Log("[Leaderboard] Loaded. Commands: /leaderboard, /lb, /stats. ServerPanel: Leaderboard_Plugin / UltimateLeaderboard_Plugin");
     }
 
     private void NextTick(Action action)
@@ -681,6 +371,25 @@ public class LeaderboardMod : IHarmonyModHooks
         lock (_localImageLock) return _localImageIds.TryGetValue(iconFileName, out var id) ? id : null;
     }
 
+    public void OnWorldLoaded()
+    {
+        TryWipeFromMapVoterSignal();
+        NextTick(() => EventModPatches.TryApply(_harmony));
+    }
+
+    private void TryWipeFromMapVoterSignal()
+    {
+        var statePath = Path.Combine(Environment.CurrentDirectory, "HarmonyData", "Leaderboard", "last_wipe_signal.txt");
+        if (!WipeSignal.ShouldWipe(statePath)) return;
+
+        lock (_statsLock)
+            _playerStats.Clear();
+
+        _storage?.Wipe();
+        WipeSignal.MarkWiped(statePath);
+        UnityEngine.Debug.Log("[Leaderboard] Wipe signal applied — stats cleared.");
+    }
+
     public void OnUnloaded(OnHarmonyModUnloadedArgs args)
     {
         if (_tickObject != null) { UnityEngine.Object.Destroy(_tickObject); _tickObject = null; }
@@ -688,8 +397,10 @@ public class LeaderboardMod : IHarmonyModHooks
         FlushRelayBatch();
         _harmony?.UnpatchAll("com.leaderboard.patches");
         UnregisterCommands();
+        GrimmCoreHurtRegistration.Unregister();
         UnregisterApiType();
         _pluginWrapper = null;
+        lock (_uiLock) _serverPanelPlayers.Clear();
         Instance = null;
         UnityEngine.Debug.Log("[Leaderboard] Unloaded.");
     }
@@ -707,99 +418,19 @@ public class LeaderboardMod : IHarmonyModHooks
                 _config = JsonConvert.DeserializeObject<LeaderboardConfig>(json);
             }
             _config ??= new LeaderboardConfig();
-            _config.EventIntegration ??= new EventIntegrationConfig();
-            _config.Relay ??= new RelayConfig();
-            ResolveRelayServerId();
             try { File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, Formatting.Indented)); } catch { }
         }
         catch (Exception ex)
         {
             UnityEngine.Debug.LogWarning($"[Leaderboard] Config: {ex.Message}");
             _config = new LeaderboardConfig();
-            ResolveRelayServerId();
         }
-    }
-
-    /// <summary>
-    /// Both Grimm 2X and SVR1 launch with +server.identity grimm, so identity alone cannot
-    /// distinguish them. Prefer Relay.ServerId from HarmonyConfig/Leaderboard.json.
-    /// </summary>
-    private void ResolveRelayServerId()
-    {
-        var configured = _config?.Relay?.ServerId;
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            _relayServerId = configured.Trim();
-            return;
-        }
-        try
-        {
-            var id = ConVar.Server.identity;
-            if (!string.IsNullOrWhiteSpace(id))
-            {
-                _relayServerId = id.Trim();
-                UnityEngine.Debug.LogWarning("[Leaderboard] Relay.ServerId is empty; using server.identity. Set a unique ServerId in HarmonyConfig/Leaderboard.json if more than one server posts to this relay.");
-                return;
-            }
-        }
-        catch { /* identity not ready */ }
-        _relayServerId = "unknown";
     }
 
     private void InitStorage()
     {
         var folder = Path.Combine(Environment.CurrentDirectory, _config.DataFolder ?? "LeaderboardData");
         _storage = new JsonLeaderboardStorage(folder);
-    }
-
-    private string WipeSignalStatePath =>
-        Path.Combine(Environment.CurrentDirectory, _config?.DataFolder ?? "HarmonyData/LeaderboardData", "last_wipe_signal.txt");
-
-    private void ApplyWipeFromSignal()
-    {
-        if (_config?.WipeDataOnNewSave != true) return;
-        if (!WipeSignal.ShouldWipe(WipeSignalStatePath)) return;
-        _storage?.Wipe();
-        lock (_statsLock)
-        {
-            _playerStats.Clear();
-            _loadedFromDisk.Clear();
-        }
-        WipeSignal.MarkWiped(WipeSignalStatePath);
-        UnityEngine.Debug.Log("[Leaderboard] Wiped player stats (wipe_signal.json).");
-    }
-
-    /// <summary>Wipes player JSON when SaveRestore.WipeId changes (map or forced wipe).</summary>
-    public void OnWorldLoaded()
-    {
-        try
-        {
-            var wipeId = SaveRestore.WipeId ?? "";
-            if (string.IsNullOrEmpty(wipeId)) return;
-
-            var folder = Path.Combine(Environment.CurrentDirectory, _config?.DataFolder ?? "HarmonyData/LeaderboardData");
-            Directory.CreateDirectory(folder);
-            var statePath = Path.Combine(folder, "last_wipe_id.txt");
-            var prev = File.Exists(statePath) ? File.ReadAllText(statePath).Trim() : "";
-            File.WriteAllText(statePath, wipeId);
-
-            if (string.IsNullOrEmpty(prev) || string.Equals(prev, wipeId, StringComparison.Ordinal))
-                return;
-            if (_config?.WipeDataOnNewSave != true)
-                return;
-
-            _storage?.Wipe();
-            lock (_statsLock)
-            {
-                _playerStats.Clear();
-                _loadedFromDisk.Clear();
-            }
-            UnityEngine.Debug.Log($"[Leaderboard] Wiped player stats (new WipeId {wipeId}).");
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] Wipe-on-new-save: {ex.Message}");
-        }
     }
 
     private void RegisterCommands()
@@ -889,14 +520,191 @@ public class LeaderboardMod : IHarmonyModHooks
     {
         if (player == null) return;
         if (IsRateLimited(player.userID)) return;
+        ExitServerPanelMode(player);
         EnsurePlayerLoaded(player.userID, player.displayName, () =>
         {
-            SetOpenInServerPanel(player.userID, false);
             SetLeaderboardCategory(player.userID, 0);
             SetLeaderboardProfileTab(player.userID, 0);
             LeaderboardUI.Show(player);
         });
     }
+
+    #region ServerPanel
+
+    public bool IsServerPanelMode(BasePlayer player) =>
+        player != null && IsServerPanelMode(player.userID);
+
+    public bool IsServerPanelMode(ulong userId)
+    {
+        lock (_uiLock) return _serverPanelPlayers.Contains(userId);
+    }
+
+    public void EnterServerPanelMode(BasePlayer player)
+    {
+        if (player == null) return;
+        lock (_uiLock) _serverPanelPlayers.Add(player.userID);
+    }
+
+    public void ExitServerPanelMode(BasePlayer player)
+    {
+        if (player == null) return;
+        lock (_uiLock) _serverPanelPlayers.Remove(player.userID);
+    }
+
+    /// <summary>
+    /// ServerPanel Plugin page entry. Returns CUI JSON (no outer brackets) for
+    /// UI.Server.Panel.Content → UI.Server.Panel.Content.Plugin.
+    /// </summary>
+    public string API_OpenPlugin(BasePlayer player)
+    {
+        if (player == null) return null;
+        try
+        {
+            EnterServerPanelMode(player);
+            // Warm stats if already in memory; async load is fine for first paint.
+            EnsurePlayerLoaded(player.userID, player.displayName, null);
+            return LeaderboardUI.BuildForServerPanel(player);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning("[Leaderboard] API_OpenPlugin: " + ex.Message);
+            return null;
+        }
+    }
+
+    public void OnServerPanelClosed(BasePlayer player)
+    {
+        if (player == null) return;
+        ExitServerPanelMode(player);
+        OnLeaderboardClosed(player.userID);
+    }
+
+    public void OnServerPanelCategoryPage(BasePlayer player, object category, int page)
+    {
+        if (player == null) return;
+        ExitServerPanelMode(player);
+        OnLeaderboardClosed(player.userID);
+    }
+
+    /// <summary>Header kills/deaths fields in ServerPanel call this (UltimateLeaderboard-compatible).</summary>
+    public object API_GetPlayerStat(ulong userId, string lootType, string key)
+    {
+        if (!TryGetStats(userId, out var stats) || string.IsNullOrEmpty(key)) return 0;
+        if (string.Equals(lootType, "Kill", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(key, "kills", StringComparison.OrdinalIgnoreCase))
+            return stats.GetKills();
+        if (string.Equals(lootType, "Death", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(key, "deaths", StringComparison.OrdinalIgnoreCase))
+            return stats.GetDeaths();
+        if (Enum.TryParse(lootType, true, out LootType lt) && stats.TryGetItem(lt, key, out var value))
+            return value;
+        return 0;
+    }
+
+    public void RequestServerPanelRefresh(BasePlayer player)
+    {
+        if (player == null) return;
+        try
+        {
+            var wrapper = AppDomain.CurrentDomain.GetData("ServerPanel_Plugin");
+            if (wrapper == null) return;
+            var call = wrapper.GetType().GetMethod("Call",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            call?.Invoke(wrapper, new object[] { "API_OnServerPanelRefreshContent", new object[] { player } });
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning("[Leaderboard] RequestServerPanelRefresh: " + ex.Message);
+        }
+    }
+
+    private void RegisterApiType()
+    {
+        try
+        {
+            AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(LeaderboardMod));
+            AppDomain.CurrentDomain.SetData(AppDomainPluginKey, _pluginWrapper);
+            AppDomain.CurrentDomain.SetData(AppDomainPluginAliasKey, _pluginWrapper);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning("[Leaderboard] RegisterApiType: " + ex.Message);
+        }
+    }
+
+    private void UnregisterApiType()
+    {
+        try
+        {
+            AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
+            AppDomain.CurrentDomain.SetData(AppDomainPluginKey, null);
+            AppDomain.CurrentDomain.SetData(AppDomainPluginAliasKey, null);
+        }
+        catch { }
+    }
+
+    public object Call(string method, params object[] args)
+    {
+        if (string.IsNullOrEmpty(method)) return null;
+        args ??= Array.Empty<object>();
+        try
+        {
+            switch (method)
+            {
+                case "API_OpenPlugin":
+                    return API_OpenPlugin(args.Length > 0 ? args[0] as BasePlayer : null);
+                case "OnServerPanelClosed":
+                    OnServerPanelClosed(args.Length > 0 ? args[0] as BasePlayer : null);
+                    return null;
+                case "OnServerPanelCategoryPage":
+                {
+                    var player = args.Length > 0 ? args[0] as BasePlayer : null;
+                    object category = args.Length > 1 ? args[1] : null;
+                    int page = 0;
+                    if (args.Length > 2)
+                    {
+                        if (args[2] is int i) page = i;
+                        else int.TryParse(args[2]?.ToString(), out page);
+                    }
+                    OnServerPanelCategoryPage(player, category, page);
+                    return null;
+                }
+                case "API_GetPlayerStat":
+                {
+                    ulong userId = 0;
+                    if (args.Length > 0)
+                    {
+                        if (args[0] is ulong u) userId = u;
+                        else if (args[0] is long l) userId = (ulong)l;
+                        else ulong.TryParse(args[0]?.ToString(), out userId);
+                    }
+                    return API_GetPlayerStat(userId,
+                        args.Length > 1 ? args[1]?.ToString() : null,
+                        args.Length > 2 ? args[2]?.ToString() : null);
+                }
+                default:
+                    return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Leaderboard] Call({method}): " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>Published on AppDomain for ServerPanel PluginBridge (IsLoaded + Call).</summary>
+    public sealed class PluginWrapper
+    {
+        private readonly LeaderboardMod _mod;
+        public PluginWrapper(LeaderboardMod mod) => _mod = mod;
+        public bool IsLoaded => _mod != null && Instance == _mod;
+        public string Name => "Leaderboard";
+        public object Call(string method, params object[] args) => _mod?.Call(method, args);
+        public object API_OpenPlugin(BasePlayer player) => _mod?.API_OpenPlugin(player);
+    }
+
+    #endregion
 
     public bool IsRateLimited(ulong userId)
     {
@@ -931,35 +739,19 @@ public class LeaderboardMod : IHarmonyModHooks
     {
         lock (_statsLock)
         {
-            if (_loadedFromDisk.Contains(userId) && _playerStats.TryGetValue(userId, out var s))
+            if (_playerStats.TryGetValue(userId, out var s))
             {
-                if (!string.IsNullOrEmpty(displayName))
-                    s.LastName = displayName;
+                s.LastName = displayName ?? s.LastName;
                 onLoaded?.Invoke();
                 return;
             }
         }
-        _storage?.LoadPlayer(userId, diskStats =>
+        _storage?.LoadPlayer(userId, stats =>
         {
             lock (_statsLock)
             {
-                if (!string.IsNullOrEmpty(displayName))
-                    diskStats.LastName = displayName;
-                else if (string.IsNullOrEmpty(diskStats.LastName))
-                    diskStats.LastName = "Unknown";
-
-                if (_playerStats.TryGetValue(userId, out var existing))
-                {
-                    // Race: RecordStat/GetOrCreate created a stub before disk load finished.
-                    MergeDiskStatsInto(existing, diskStats);
-                    if (!string.IsNullOrEmpty(displayName))
-                        existing.LastName = displayName;
-                }
-                else
-                {
-                    _playerStats[userId] = diskStats;
-                }
-                _loadedFromDisk.Add(userId);
+                stats.LastName = displayName ?? stats.LastName;
+                _playerStats[userId] = stats;
             }
             onLoaded?.Invoke();
         });
@@ -980,38 +772,23 @@ public class LeaderboardMod : IHarmonyModHooks
     public void OnPlayerDisconnected(BasePlayer player)
     {
         if (player == null) return;
-        if (!TryGetStats(player.userID, out var stats)) return;
-        // Only accrue if we started a session (avoids inflating time when PlayerInit was missed).
-        if (!stats.IsOnline) return;
-
-        var session = (DateTime.UtcNow - stats.ConnectTime).TotalSeconds;
-        if (session > 0)
-            stats.TotalPlayTime += session;
-        stats.DisconnectTime = DateTime.UtcNow;
-        // Match UltimateLeaderboard: reset ConnectTime so a missed reconnect cannot re-add offline gaps.
-        stats.ConnectTime = DateTime.UtcNow;
-        stats.IsOnline = false;
-        stats.LastName = player.displayName ?? stats.LastName;
-        _storage?.SavePlayer(stats);
-        if (_config?.Relay?.Enabled == true)
-            FlushRelayBatch();
+        if (TryGetStats(player.userID, out var stats))
+        {
+            stats.DisconnectTime = DateTime.UtcNow;
+            stats.TotalPlayTime += (DateTime.UtcNow - stats.ConnectTime).TotalSeconds;
+            stats.IsOnline = false;
+            stats.LastName = player.displayName ?? stats.LastName;
+            _storage?.SavePlayer(stats);
+            if (_config?.Relay?.Enabled == true)
+                FlushRelayBatch();
+        }
     }
 
     public void RecordStat(ulong userId, LootType type, string prefab, float value)
     {
         if (string.IsNullOrEmpty(prefab)) return;
-        // Prefer disk-backed row when available; avoid creating an empty stub that blocks load.
-        bool needsLoad;
-        lock (_statsLock)
-            needsLoad = !_loadedFromDisk.Contains(userId) && !_playerStats.ContainsKey(userId);
-        if (needsLoad)
-        {
-            EnsurePlayerLoaded(userId, null, () => RecordStat(userId, type, prefab, value));
-            return;
-        }
         var stats = GetOrCreateStats(userId, null);
         stats.AddStats(type, prefab, value);
-        stats.Points += GetScoreDelta(type, prefab, value);
 
         if (_config?.Relay?.Enabled == true && !string.IsNullOrEmpty(_config.Relay.Url))
         {
@@ -1032,18 +809,8 @@ public class LeaderboardMod : IHarmonyModHooks
     public void RecordStatSet(ulong userId, LootType type, string prefab, float value)
     {
         if (string.IsNullOrEmpty(prefab)) return;
-        bool needsLoad;
-        lock (_statsLock)
-            needsLoad = !_loadedFromDisk.Contains(userId) && !_playerStats.ContainsKey(userId);
-        if (needsLoad)
-        {
-            EnsurePlayerLoaded(userId, null, () => RecordStatSet(userId, type, prefab, value));
-            return;
-        }
         var stats = GetOrCreateStats(userId, null);
-        stats.TryGetItem(type, prefab, out var oldValue);
         stats.SetStats(type, prefab, value);
-        stats.Points += GetScoreDelta(type, prefab, value - oldValue);
 
         if (_config?.Relay?.Enabled == true && !string.IsNullOrEmpty(_config.Relay.Url))
         {
@@ -1058,50 +825,6 @@ public class LeaderboardMod : IHarmonyModHooks
                 });
             }
         }
-    }
-
-    /// <summary>UltimateLeaderboard-compatible default scores for Discord Points category.</summary>
-    private static float GetScoreDelta(LootType type, string prefab, float valueDelta)
-    {
-        if (valueDelta == 0f || string.IsNullOrEmpty(prefab)) return 0f;
-        float score = 0f;
-        switch (type)
-        {
-            case LootType.Kill:
-                if (prefab == "kills") score = 1f;
-                else if (prefab == "helicopter") score = 15f;
-                else if (prefab == "bradleyapc") score = 10f;
-                else if (prefab == "barrel") score = 0.1f;
-                else if (prefab == "scientistnpc_heavy") score = 2f;
-                break;
-            case LootType.Death:
-                if (prefab == "deaths") score = -1f;
-                break;
-            case LootType.Gather:
-                if (prefab == "stones") score = 0.1f;
-                else if (prefab == "sulfur.ore" || prefab == "metal.ore" || prefab == "hq.metal.ore") score = 0.5f;
-                break;
-            case LootType.LootItems:
-                if (prefab == "supply_drop") score = 3f;
-                else if (prefab == "crate_normal") score = 0.3f;
-                else if (prefab == "crate_elite") score = 0.5f;
-                else if (prefab == "bradley_crate" || prefab == "heli_crate") score = 5f;
-                break;
-        }
-        return score * valueDelta;
-    }
-
-    private static float RecalculatePoints(PlayerStats stats)
-    {
-        if (stats?.StatsStorage == null) return 0f;
-        float points = 0f;
-        foreach (var typeKv in stats.StatsStorage)
-        {
-            if (typeKv.Value == null) continue;
-            foreach (var itemKv in typeKv.Value)
-                points += GetScoreDelta(typeKv.Key, itemKv.Key, itemKv.Value);
-        }
-        return points;
     }
 
     public LeaderboardConfig GetConfig() => _config;
@@ -1167,11 +890,21 @@ public class LeaderboardMod : IHarmonyModHooks
             foreach (var uid in userIds)
             {
                 if (!_playerStats.TryGetValue(uid, out var s)) continue;
-                players.Add(ToPlayerPayload(s));
+                players.Add(new PlayerStatsPayload
+                {
+                    UserId = s.UserId,
+                    LastIP = s.LastIP ?? "",
+                    LastName = s.LastName ?? "",
+                    ConnectTime = s.ConnectTime.ToString("o"),
+                    DisconnectTime = s.DisconnectTime.ToString("o"),
+                    TotalPlayTime = s.TotalPlayTime.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
+                    Points = s.Points,
+                    HiddenFromLeaderboard = s.HiddenFromLeaderboard ? 1 : 0
+                });
             }
         }
 
-        RelaySender.SendBatch(_config.Relay.Url, copy, players, _relayServerId);
+        RelaySender.SendBatch(_config.Relay.Url, copy, players);
     }
 
     public void Update(float deltaTime)
@@ -1223,17 +956,5 @@ public class LeaderboardMod : IHarmonyModHooks
         }
         if (fields.Count > 0)
             DiscordHelper.SendWebhook(url, "Leaderboard", fields);
-    }
-
-    /// <summary>Plugin-shaped wrapper for AppDomain consumers (ServerPanel Plugin Name Leaderboard / UltimateLeaderboard).</summary>
-    public sealed class LeaderboardPluginWrapper
-    {
-        private readonly LeaderboardMod _mod;
-        public LeaderboardPluginWrapper(LeaderboardMod mod) => _mod = mod;
-        public bool IsLoaded => _mod != null && Instance == _mod;
-        public string Name => "Leaderboard";
-        public string Version => $"{VersionMajor}.{VersionMinor}.{VersionPatch}";
-        public object Call(string method, params object[] args) => _mod?.Call(method, args);
-        public object API_OpenPlugin(BasePlayer player) => _mod?.API_OpenPlugin(player);
     }
 }

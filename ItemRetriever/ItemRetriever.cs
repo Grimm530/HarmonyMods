@@ -8,7 +8,7 @@ using UnityEngine;
 namespace ItemRetrieverHarmony
 {
     /// <summary>
-    /// ItemRetriever 0.7.7 ported for Harmony (no Oxide). Library for external container item supply.
+    /// ItemRetriever 0.7.7 ported for Harmony (Harmony-only). Library for external container item supply.
     /// </summary>
     public class ItemRetriever : ItemRetrieverPluginBase
     {
@@ -62,7 +62,7 @@ namespace ItemRetrieverHarmony
             ObjectCache.Clear<ulong>();
             ObjectCache.Clear<Item.Flag>();
         }
-        // ---- Harmony lifecycle (replaces Oxide OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces Harmony OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
         }
@@ -422,7 +422,7 @@ namespace ItemRetrieverHarmony
             public static void OnIngredientsDetermine(Dictionary<int, int> overridenIngredients, ItemBlueprint blueprint, int amount, BasePlayer player)
             {
                 overridenIngredients.Clear();
-                Interface.CallHook("OnIngredientsDetermine", overridenIngredients, blueprint, ObjectCache.Get(amount), player);
+                HarmonyModInterface.CallHook("OnIngredientsDetermine", overridenIngredients, blueprint, ObjectCache.Get(amount), player);
             }
         }
 

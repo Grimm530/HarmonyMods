@@ -1,7 +1,7 @@
 using System;
-using Oxide.Ext.Chaos.Pooling;
+using Ext.Chaos.Pooling;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class UIContainerPool : GenericPool
 {

@@ -1,6 +1,6 @@
 /*
- * Oxide-free shims for PlayerSkins 3.0.141 Chaos UI under Harmony.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims for PlayerSkins 3.0.141 Chaos UI under Harmony.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -15,7 +15,7 @@ using UnityEngine;
 
 namespace PlayerSkinsHarmony
 {
-    /// <summary>Oxide Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
+    /// <summary>compat Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
         public new TValue this[TKey key]
@@ -313,7 +313,7 @@ namespace PlayerSkinsHarmony
                 }
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[PlayerSkins] webrequest callback: " + ex.Message); }
@@ -324,7 +324,7 @@ namespace PlayerSkinsHarmony
         }
     }
 
-    /// <summary>Oxide-like permission API; plugin owner args ignored.</summary>
+    /// <summary>Harmony-like permission API; plugin owner args ignored.</summary>
     public class PermissionLib
     {
         private readonly HashSet<string> _registered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -407,16 +407,16 @@ namespace PlayerSkinsHarmony
         }
     }
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
 
-        public object CallHook(string name, params object[] args) => Interface.CallHook(name, args);
+        public object CallHook(string name, params object[] args) => HarmonyModInterface.CallHook(name, args);
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         public static void NextTick(Action action)
         {
@@ -763,9 +763,9 @@ namespace PlayerSkinsHarmony
     }
 }
 
-namespace Oxide.Ext.Chaos
+namespace Grimm.Chaos
 {
-    /// <summary>Oxide Hash alias used by Chaos plugins (default-on-miss indexer).</summary>
+    /// <summary>compat Hash alias used by Chaos plugins (default-on-miss indexer).</summary>
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
         public new TValue this[TKey key]
@@ -1189,7 +1189,7 @@ namespace Oxide.Ext.Chaos
                 var key = Key(name, skin);
                 if (Cache.ContainsKey(key))
                 {
-                    PlayerSkinsHarmony.Interface.NextTick(() =>
+                    PlayerSkinsHarmony.HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(); } catch { }
                     });
@@ -1205,7 +1205,7 @@ namespace Oxide.Ext.Chaos
                     try
                     {
                         var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
-                        PlayerSkinsHarmony.Interface.NextTick(() =>
+                        PlayerSkinsHarmony.HarmonyModInterface.NextTick(() =>
                         {
                             try
                             {
@@ -1332,7 +1332,7 @@ namespace Oxide.Ext.Chaos
     }
 }
 
-namespace Oxide.Ext.Chaos.Data
+namespace Grimm.Chaos.Data
 {
     public class Datafile<T>
     {

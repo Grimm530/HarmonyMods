@@ -6,11 +6,11 @@ using Facepunch;
 using Network;
 using UnityEngine;
 using UnityEngine.UI;
-using Oxide.Ext.Chaos.UIFramework;
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Font = Oxide.Ext.Chaos.UIFramework.Font;
-using GridLayoutGroup = Oxide.Ext.Chaos.UIFramework.GridLayoutGroup;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using Ext.Chaos.UIFramework;
+using Color = Ext.Chaos.UIFramework.Color;
+using Font = Ext.Chaos.UIFramework.Font;
+using GridLayoutGroup = Ext.Chaos.UIFramework.GridLayoutGroup;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 
 namespace TeleportGUI
 {
@@ -54,7 +54,8 @@ namespace TeleportGUI
         private void SetupUIComponents()
         {
             if (m_CallbackHandler == null)
-                m_CallbackHandler = new CommandCallbackHandler(this);
+                m_CallbackHandler = new CommandCallbackHandler("TeleportGUI");
+            _chaosCallbackHandler = m_CallbackHandler;
 
             var colors = _config?.UI?.Colors ?? new TeleportGUIConfig.UIOptions.UIColors();
             string BgHex(TeleportGUIConfig.UIOptions.UIColorEntry c, string fallback) =>
@@ -151,7 +152,7 @@ namespace TeleportGUI
             if (player == null || m_StylePreset == null) return;
 
             var padding = _config?.UI?.RequestPopup?.Padding
-                          ?? new TeleportGUIConfig.UIOptions.RequestPopupOptions.HorizontalPadding { Left = 0f, Right = 10f };
+                          ?? new TeleportGUIConfig.UIOptions.RequestPopupOptions.PopupHorizontalPadding { Left = 0f, Right = 10f };
             int seconds = Math.Max(0, timeRemaining);
 
             BaseContainer root = ImageContainer.Create(panel, Layer.Hud, GetRequestUiAnchor(), GetRequestUiOffset())
@@ -582,7 +583,7 @@ namespace TeleportGUI
                                 TextContainer.Create(header, UIAnchor.FullStretch, new Offset(5f, 0f, -5f, 0f))
                                     .WithText(Lang("UI.CooldownRemain", player))
                                     .WithAlignment(TextAnchor.MiddleRight)
-                                    .WithCountdown(new CountdownComponent((int)(usage.Cooldown - CurrentTime())));
+                                    .WithCountdown(new CountdownComponent((int)(usage.CooldownUntil - CurrentTime())));
                                 
                                 // Temp solution for broken countdown component
                                 /*string guid = CuiHelper.GetGuid();
@@ -854,7 +855,7 @@ namespace TeleportGUI
                 for (int i = list.Count - 1; i >= 0; i--)
                 {
                     BasePlayer p = list[i];
-                    if (!p.displayName.Contains(GetUiSearch(player), CompareOptions.OrdinalIgnoreCase))
+                    if (!p.displayName.Contains(GetUiSearch(player), StringComparison.OrdinalIgnoreCase))
                         list.RemoveAt(i);
                 }
             }
@@ -884,7 +885,7 @@ namespace TeleportGUI
                 for (int i = list.Count - 1; i >= 0; i--)
                 {
                     KeyValuePair<string, TeleportGUIData.UserData.HomePoint> p = list[i];
-                    if (!p.Key.Contains(GetUiSearch(player), CompareOptions.OrdinalIgnoreCase))
+                    if (!p.Key.Contains(GetUiSearch(player), StringComparison.OrdinalIgnoreCase))
                         list.RemoveAt(i);
                 }
             }
@@ -1256,6 +1257,7 @@ namespace TeleportGUI
             m_CallbackHandler.Clear();
             m_CallbackHandler.Unregister();
             m_CallbackHandler = null;
+            _chaosCallbackHandler = null;
         }
 
         private string Lang(string key, BasePlayer player, params object[] args) =>

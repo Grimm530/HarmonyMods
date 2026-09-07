@@ -1,5 +1,6 @@
 # Build script for AdminTime Harmony Mod
-# Output: <server root>\HarmonyMods\AdminTime.dll
+# Output: D:\!RustServer\HarmonyMods\AdminTime.dll
+# Builds the project in this folder (EnvSync visible-time path). Do not build AdminTime\AdminTime.csproj — that is a stale copy without EnvSync patches.
 
 Write-Host "Building AdminTime..." -ForegroundColor Cyan
 

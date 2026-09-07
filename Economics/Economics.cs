@@ -515,7 +515,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
             var paths = new List<string>();
             try
             {
-                var oldBalance = Interface.Oxide.DataFileSystem.GetFile(Name);
+                var oldBalance = HarmonyModInterface.Mods.DataFileSystem.GetFile(Name);
                 if (oldBalance.Exists())
                     paths.Add(oldBalance.Filename);
             }
@@ -523,7 +523,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
 
             try
             {
-                var nestedBalance = Interface.Oxide.DataFileSystem.GetFile(BalanceDataKey);
+                var nestedBalance = HarmonyModInterface.Mods.DataFileSystem.GetFile(BalanceDataKey);
                 if (nestedBalance.Exists())
                     paths.Add(nestedBalance.Filename);
             }
@@ -538,7 +538,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
             var paths = new List<string>();
             try
             {
-                var oldRp = Interface.Oxide.DataFileSystem.GetFile($"{Name}_RPTracking");
+                var oldRp = HarmonyModInterface.Mods.DataFileSystem.GetFile($"{Name}_RPTracking");
                 if (oldRp.Exists())
                     paths.Add(oldRp.Filename);
             }
@@ -546,7 +546,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
 
             try
             {
-                var nestedRp = Interface.Oxide.DataFileSystem.GetFile(RpTrackingDataKey);
+                var nestedRp = HarmonyModInterface.Mods.DataFileSystem.GetFile(RpTrackingDataKey);
                 if (nestedRp.Exists())
                     paths.Add(nestedRp.Filename);
             }
@@ -2414,7 +2414,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 _sharedBalances?.Wipe();
                 storedData.Players.Clear();
                 MarkDataChanged();
-                Interface.Call("OnEconomicsDataWiped");
+                HarmonyModInterface.Call("OnEconomicsDataWiped");
                 PrintWarning("Economics player balances wiped for new save");
             }
             else
@@ -2945,7 +2945,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
                    TrackRPAcquisition(playerId, amount, source);
                }
                 
-                Interface.Call("OnEconomicsDeposit", playerId, amount);
+                HarmonyModInterface.Call("OnEconomicsDeposit", playerId, amount);
 
                 if (config.LogTransactions)
                 {
@@ -2991,8 +2991,8 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 MarkDataChanged(playerId);
                 SharedUpsertPlayer(playerId);
 
-                Interface.Call("OnEconomicsBalanceUpdated", playerId, amount);
-                Interface.CallDeprecatedHook("OnBalanceChanged", "OnEconomicsBalanceUpdated", new System.DateTime(2022, 7, 1), playerId, amount);
+                HarmonyModInterface.Call("OnEconomicsBalanceUpdated", playerId, amount);
+                HarmonyModInterface.CallDeprecatedHook("OnBalanceChanged", "OnEconomicsBalanceUpdated", new System.DateTime(2022, 7, 1), playerId, amount);
 
                 if (config.LogTransactions)
                 {
@@ -3023,7 +3023,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
                     TrackRPAcquisition(targetId, amount, "Transfer", playerId);
                 }
                 
-                Interface.Call("OnEconomicsTransfer", playerId, targetId, amount);
+                HarmonyModInterface.Call("OnEconomicsTransfer", playerId, targetId, amount);
 
                 if (config.LogTransactions)
                 {
@@ -3055,7 +3055,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
                 if ((balance >= amount || (config.AllowNegativeBalance && balance + amount > config.NegativeBalanceLimit)) && SetBalance(playerId, balance - amount))
                 {
                     UpdateLastSeen(playerId); // Track activity on withdrawal
-                    Interface.Call("OnEconomicsWithdrawl", playerId, amount);
+                    HarmonyModInterface.Call("OnEconomicsWithdrawl", playerId, amount);
 
                     if (config.LogTransactions)
                     {
@@ -3625,7 +3625,7 @@ CREATE TABLE IF NOT EXISTS {Table} (
             SaveData();
 
             Message(player, "DataWiped");
-            Interface.Call("OnEconomicsDataWiped", player);
+            HarmonyModInterface.Call("OnEconomicsDataWiped", player);
         }
 
         [Command("ecopurge")]

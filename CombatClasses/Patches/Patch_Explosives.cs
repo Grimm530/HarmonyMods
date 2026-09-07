@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using CCPlugin = Oxide.Plugins.CombatClasses;
+using CCPlugin = Harmony.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony.Patches
 {
@@ -10,7 +10,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BaseEntity ent)
         {
-            if (__instance == null || ent == null) return;
+            if (ent == null) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             try { CCPlugin.Dispatch_OnExplosiveThrown(player, ent, __instance); }
@@ -47,7 +47,7 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseLauncher __instance, ServerProjectile justLaunched)
         {
-            if (__instance == null || justLaunched == null) return;
+            if (justLaunched == null) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             var entity = justLaunched.baseEntity as BaseEntity;

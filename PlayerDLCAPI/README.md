@@ -1,6 +1,6 @@
 # PlayerDLCAPI Harmony Mod (1.7.0)
 
-Oxide-free port of Player DLC API 1.6.2. It exposes paid workshop skin,
+Harmony port of Player DLC API 1.6.2. It exposes paid workshop skin,
 Steam inventory content, DLC app, item, and redirected-item ownership checks
 to other Harmony mods.
 
@@ -32,7 +32,7 @@ AppDomain keys:
 - `PlayerDlcApi_Generation`
 - `PlayerDlcApi_ReadyCallbacks`
 
-The public static API preserves the Oxide plugin method names and overloads:
+The public static API preserves the Harmony mod method names and overloads:
 
 - `Initialized`
 - `IsPaidSkin`, `FilterPaidSkins`

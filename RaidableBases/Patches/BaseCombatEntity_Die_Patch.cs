@@ -12,9 +12,7 @@ namespace RaidableBases
         [HarmonyPostfix]
         static void Postfix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null)
-                return;
-            Interface.CallHook("OnEntityDeath", __instance, info);
+            HarmonyModInterface.CallHook("OnEntityDeath", __instance, info);
         }
     }
 }

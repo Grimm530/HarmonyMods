@@ -6,7 +6,7 @@ namespace GrimmNPC.Patches
 {
     /// <summary>
     /// Patches NPCPlayer.CreateCorpse to trigger bomber explosion on death.
-    /// OnCorpsePopulate is an Oxide hook called from CreateCorpse, so we patch CreateCorpse
+    /// OnCorpsePopulate is an Harmony hook called from CreateCorpse, so we patch CreateCorpse
     /// and call the hook ourselves (like DefendableHomes does).
     /// </summary>
     [HarmonyPatch(typeof(NPCPlayer), nameof(NPCPlayer.CreateCorpse))]
@@ -14,7 +14,7 @@ namespace GrimmNPC.Patches
     {
         static void Prefix(NPCPlayer __instance)
         {
-            if (__instance == null || !(__instance is ScientistNPC)) return;
+            if (!(__instance is ScientistNPC)) return;
             ScientistNPC npc = __instance as ScientistNPC;
             if (!GrimmNPC.IsCustomNpc(npc)) return;
 

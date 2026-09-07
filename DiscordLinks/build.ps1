@@ -1,5 +1,5 @@
 # Build script for DiscordLinks Harmony Mod
-# Output: <workspace>\HarmonyMods\DiscordLinks.dll
+# Output: D:\!RustServer\HarmonyMods\DiscordLinks.dll
 # Config: HarmonyConfig/DiscordLinks.json | Data: HarmonyData/DiscordLinks/links.json
 
 Write-Host "Building DiscordLinks..." -ForegroundColor Cyan
@@ -8,8 +8,7 @@ $projectPath = Join-Path $PSScriptRoot "DiscordLinks.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

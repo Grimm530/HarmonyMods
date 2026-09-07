@@ -1,24 +1,24 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\Shop.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\Shop.cs"
 $dst = Join-Path $PSScriptRoot "Shop.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-# Strip Oxide runtime usings but retain Oxide.Game.Rust.Cui for the CUI types.
-foreach ($using in @("using Oxide.Core;", "using Oxide.Core.Libraries;", "using Oxide.Core.Libraries.Covalence;", "using Oxide.Core.Plugins;")) {
+# Strip Oxide runtime usings but retain Game.Rust.Cui for the CUI types.
+foreach ($using in @("using Harmony.Core;", "using Harmony.Core.Libraries;", "using Harmony.Core.Libraries.Covalence;", "using Harmony.Core.Plugins;")) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
 # The longer namespace must be rewritten before its parent namespace.
-$text = $text.Replace("using Oxide.Plugins.ShopExtensionMethods;", "using ShopHarmony.ShopExtensionMethods;")
+$text = $text.Replace("using Harmony.Plugins.ShopExtensionMethods;", "using ShopHarmony.ShopExtensionMethods;")
 $text = $text.Replace("using Rust.Workshop;`r`n", "")
 $text = $text.Replace("using Rust.Workshop;`n", "")
-$text = $text.Replace("namespace Oxide.Plugins.ShopExtensionMethods", "namespace ShopHarmony.ShopExtensionMethods")
-$text = $text.Replace("namespace Oxide.Plugins", "namespace ShopHarmony")
+$text = $text.Replace("namespace Harmony.Plugins.ShopExtensionMethods", "namespace ShopHarmony.ShopExtensionMethods")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace ShopHarmony")
 
 $newClass = @"
     /// <summary>
-    /// Shop 2.4.201 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// Shop 2.4.201 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class Shop : ShopPluginBase
 "@
@@ -39,7 +39,7 @@ foreach ($method in @("Init", "OnServerInitialized", "Unload", "OnPlayerConnecte
 
 # Extension-method permission bridge.
 $text = $text.Replace("internal static Permission perm;", "internal static HarmonyPermissionHelper perm;")
-$text = $text.Replace("perm ??= Interface.Oxide.GetLibrary<Permission>();", "perm ??= ShopHost.Instance?.Permission;")
+$text = $text.Replace("perm ??= HarmonyModInterface.Mods.GetLibrary<Permission>();", "perm ??= ShopHost.Instance?.Permission;")
 
 $ctorMarker = "        private static Shop _instance;"
 $ctor = @"
@@ -83,11 +83,11 @@ $text = [regex]::Replace($text, '(internal void Init\(\)\s*\{\s*_instance = this
 [System.IO.File]::WriteAllText($dst, $text)
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core" },
     @{ Name = "RustPlugin"; Pattern = "RustPlugin" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "ShopPluginBase"; Pattern = "ShopPluginBase" },
     @{ Name = "GetLibrary<Permission>"; Pattern = "GetLibrary<Permission>" },

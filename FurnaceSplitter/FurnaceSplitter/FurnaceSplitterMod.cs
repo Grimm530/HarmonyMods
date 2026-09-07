@@ -1,6 +1,6 @@
 /*
  * FurnaceSplitter Harmony Mod - Standalone
- * Furnace item splitting + auto fuel from inventory.
+ * Furnace/composter item splitting + auto fuel from inventory.
  * Patches: Item.MoveToContainer, ItemContainer.Insert
  * Config: HarmonyConfig/FurnaceSplitter.json
  */
@@ -43,6 +43,31 @@ namespace FurnaceSplitter
             public float FuelNeeded;
         }
 
+        /// <summary>
+        /// Correct cookable/compostable info for this oven.
+        /// Composters use ItemModCompostable; all other ovens use ItemModCookable.
+        /// </summary>
+        public static CookableItemInfo GetCookableInfo(BaseOven oven, ItemDefinition itemDef)
+        {
+            if (oven == null || itemDef == null)
+                return null;
+
+            return oven is Composter ? itemDef.ItemModCompostable : itemDef.ItemModCookable;
+        }
+
+        /// <summary>True when this oven should participate in split logic (furnaces + composters).</summary>
+        public static bool IsSupportedOven(BaseOven oven)
+        {
+            if (oven == null)
+                return false;
+
+            // Composters are BaseOven after the QoL compost UI update; they may not use byproduct creation.
+            if (oven is Composter)
+                return true;
+
+            return oven.allowByproductCreation;
+        }
+
         /// <summary>Get oven temperature for compatibility/fuel calc. When off, GetTemperature returns 15 - use design temp from oven.temperature instead.</summary>
         public static float GetOvenDesignTemperature(BaseOven oven)
         {
@@ -54,6 +79,7 @@ namespace FurnaceSplitter
                 case BaseOven.TemperatureType.Cooking: return 200f;
                 case BaseOven.TemperatureType.Smelting: return 1000f;
                 case BaseOven.TemperatureType.Warming: return 50f;
+                case BaseOven.TemperatureType.Compost: return 30f;
                 default: return 15f;
             }
         }
@@ -65,17 +91,21 @@ namespace FurnaceSplitter
             if (oven == null || oven.IsDestroyed) return result;
 
             float eta = GetTotalSmeltTime(oven) / oven.smeltSpeed;
+            result.ETA = eta;
+
+            if (oven.fuelType == null || oven is Composter)
+                return result;
+
             var burnable = oven.fuelType.GetComponent<ItemModBurnable>();
             float fuelUnits = burnable != null ? burnable.fuelAmount : 1800f;
             float ovenTemp = GetOvenDesignTemperature(oven);
             float neededFuel = (float)Math.Ceiling(eta * (ovenTemp / 200f) / fuelUnits);
 
             result.FuelNeeded = neededFuel;
-            result.ETA = eta;
             return result;
         }
 
-        /// <summary>Split item across oven slots. Returns MoveResult. Oxide plugin blocks default move when Ok or SlotsFilled.</summary>
+        /// <summary>Split item across oven slots. Returns MoveResult. Harmony mod blocks default move when Ok or SlotsFilled.</summary>
         public static MoveResult TryFurnaceSplit(Item item, BaseOven oven, int totalSlots, int splitAmount)
         {
             bool debug = FurnaceSplitterConfig.Config?.debug == true;
@@ -114,7 +144,7 @@ namespace FurnaceSplitter
             {
                 if (!FindMatchingSlotIndex(oven, container, item.info, addedSlots, out Item existingItem, out int slot))
                 {
-                    if (debug) FurnaceSplitterConfig.Log($"TryFurnaceSplit: FindMatchingSlotIndex failed for slot i={i} - NotEnoughSlots (mixed ore types?)");
+                    if (debug) FurnaceSplitterConfig.Log($"TryFurnaceSplit: FindMatchingSlotIndex failed for slot i={i} - NotEnoughSlots (mixed item types?)");
                     return MoveResult.NotEnoughSlots;
                 }
 
@@ -139,9 +169,6 @@ namespace FurnaceSplitter
             {
                 if (os.Item == null)
                 {
-                    // Never call ItemManager.Create with amount <= 0 (logs "Creating item with less than 1 amount!")
-                    if (os.DeltaAmount <= 0)
-                        continue;
                     var newItem = ItemManager.Create(item.info, os.DeltaAmount, item.skin);
                     newItem?.MoveToContainer(container, os.Position ?? os.Index);
                 }
@@ -181,7 +208,7 @@ namespace FurnaceSplitter
                 var inputItem = oven.inventory.GetSlot(i);
                 if (inputItem == null) continue;
 
-                var cookable = inputItem.info.GetComponent<ItemModCookable>();
+                var cookable = GetCookableInfo(oven, inputItem.info);
                 if (cookable == null) continue;
 
                 eta += cookable.cookTime * inputItem.amount;

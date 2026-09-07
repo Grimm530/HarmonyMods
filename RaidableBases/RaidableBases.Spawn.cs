@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -26,17 +32,14 @@ namespace RaidableBases
 
         #region Spawn
 
-        private static void Shuffle<T>(IList<T> list) // Fisher-Yates shuffle
+        private static void Shuffle<T>(IList<T> list)
         {
-            int count = list.Count;
-            int n = count;
-            while (n-- > 0)
+            for (int i = list.Count - 1; i > 0; i--)
             {
-                int k = UnityEngine.Random.Range(0, count);
-                int j = UnityEngine.Random.Range(0, count);
-                T value = list[k];
-                list[k] = list[j];
-                list[j] = value;
+                int index = UnityEngine.Random.Range(0, i + 1);
+                T value = list[i];
+                list[i] = list[index];
+                list[index] = value;
             }
         }
 
@@ -45,9 +48,13 @@ namespace RaidableBases
             var go = new GameObject(Name);
             var raid = go.AddComponent<RaidableBase>();
 
+            rb.raid = raid;
+            raid.rb = rb; // fixes CheckSubscribe bug when paste times out and rb is never set
+            raid.Options = rb.options;
+            raid.spawns = rb.spawns;
+            raid.payments = rb.payments;
             raid.go = go;
             raid.Instance = this;
-            raid.Options = rb.options;
             raid.ProtectionRadius = rb.options.ProtectionRadius(rb.type);
             raid.SqrProtectionRadius = raid.ProtectionRadiusSqr(0);
             raid.markerName = raid.MarkerName;
@@ -60,6 +67,7 @@ namespace RaidableBases
             raid.BaseHeight = rb.baseHeight;
             raid.ProfileName = rb.Profile.ProfileName;
             raid.IsLoading = true;
+            raid.IsWaterSpawn = rb.IsWaterSpawn;
             raid.loadTime = Time.time;
             raid.InitiateTurretOnSpawn = rb.options.AutoTurret.InitiateOnSpawn;
 
@@ -91,7 +99,7 @@ namespace RaidableBases
             {
                 Subscribe(nameof(OnActiveItemChanged));
             }
-            else if (raid.Options.Siege.Only)
+            else if (raid.Options.Siege.Only || raid.Options.RestrictByWorkbenchLevel(MaxConsideredWorkbenchLevel))
             {
                 Subscribe(nameof(OnActiveItemChanged));
             }
@@ -102,12 +110,10 @@ namespace RaidableBases
                 Subscribe(nameof(OnServerCommand));
             }
 
-            // Harmony always needs CanEntityBeTargeted (Targeting_Patches). Oxide only
-            // subscribed it on PVE plugins; without it raid turrets/traps go blind under Harmony.
-            Subscribe(nameof(CanEntityBeTargeted));
             if (IsPVE())
             {
                 Subscribe(nameof(CanEntityTrapTrigger));
+                Subscribe(nameof(CanEntityBeTargeted));
             }
             else
             {
@@ -128,15 +134,16 @@ namespace RaidableBases
 
             Raids.Add(raid);
 
-            raid.CheckPaste();
-            raid.SendDronePatrol(rb);
-            raid.SetupCollider();
-
             if (Raids.Count == 1)
             {
+                harmonyEngine.SetEnabled(HarmonyEngine.PatchGroup.RaidWindow, true);
                 Subscribe(nameof(OnPlayerRespawn));
                 CheckPlayersNearEvents();
             }
+
+            raid.CheckPaste();
+            raid.SendDronePatrol(rb);
+            raid.SetupCollider();
 
             return raid;
         }

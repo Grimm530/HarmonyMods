@@ -261,7 +261,7 @@ public static class IoFeature
         if (entity is ElectricalBranch branch)
             branch.branchAmount = ser.branchAmount;
         if (entity is PowerCounter counter)
-            counter.counterNumber = ser.targetCounterNumber;
+            counter.SetCounterNumber(ser.targetCounterNumber);
         if (entity is DoorManipulator doorManip)
             doorManip.powerAction = (DoorManipulator.DoorEffect)ser.doorEffect;
         if (entity is AutoTurret autoTurret)

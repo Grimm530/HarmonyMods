@@ -1,5 +1,5 @@
 using HarmonyLib;
-using DHPlugin = Oxide.Plugins.DefendableHomes;
+using DHPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes.Patches
 {
@@ -9,7 +9,7 @@ namespace DefendableHomes.Patches
         [HarmonyPostfix]
         public static void Postfix(NPCPlayer __instance, BaseCorpse __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             ScientistNPC scientist = __instance as ScientistNPC;
             NPCPlayerCorpse corpse = __result as NPCPlayerCorpse;
             if (scientist == null || corpse == null) return;

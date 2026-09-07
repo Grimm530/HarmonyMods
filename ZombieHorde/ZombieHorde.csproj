@@ -11,7 +11,7 @@
     <RootNamespace>ZombieHorde</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: ZombieHorde 0.6.351 (Oxide-free GrimmNPC spawn)</Description>
+    <Description>Harmony mod: ZombieHorde 0.6.351 (Harmony GrimmNPC spawn)</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -91,5 +91,8 @@
     <Compile Remove="_fix_config.py" />
     <None Remove="obj\**" />
     <None Include="_fix_config.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
   </ItemGroup>
 </Project>

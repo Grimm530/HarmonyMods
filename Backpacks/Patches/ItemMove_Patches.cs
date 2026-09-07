@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace BackpacksHarmony.Patches
 {
-    /// <summary>Oxide CanMoveItem — block edits for readonly backpack viewers.</summary>
+    /// <summary>compat CanMoveItem — block edits for readonly backpack viewers.</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.MoveToContainer))]
     public static class Item_MoveToContainer_Patch
     {
@@ -35,7 +35,7 @@ namespace BackpacksHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnItemAction — block item actions for readonly backpack viewers.</summary>
+    /// <summary>compat OnItemAction — block item actions for readonly backpack viewers.</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.ServerCommand))]
     public static class Item_ServerCommand_Patch
     {

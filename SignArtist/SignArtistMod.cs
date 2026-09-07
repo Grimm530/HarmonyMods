@@ -5,9 +5,9 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Plugins;
-using OxidePlugin = Oxide.Plugins.SignArtist;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Plugins;
+using HarmonyPlugin = Harmony.Plugins.SignArtist;
 
 namespace SignArtistHarmony
 {
@@ -34,7 +34,7 @@ namespace SignArtistHarmony
     public class SignArtistMod : IHarmonyModHooks
     {
         public static SignArtistMod Instance { get; private set; }
-        internal static SignArtist Plugin => OxidePlugin.GetModInstance();
+        internal static SignArtist Plugin => HarmonyPlugin.GetModInstance();
         public const string AppDomainApiKey = "SignArtist_ApiType";
 
         private Coroutine _initCoroutine;
@@ -48,11 +48,11 @@ namespace SignArtistHarmony
             Instance = this;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -88,13 +88,13 @@ namespace SignArtistHarmony
                 ModRunner.Instance.StopCoroutine(_initCoroutine);
                 _initCoroutine = null;
             }
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
             UnregisterConsoleCommands();
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[SignArtist] Harmony mod unloaded.");
         }
@@ -139,10 +139,10 @@ namespace SignArtistHarmony
             return InvokeAttributedChat(plugin, commandName, player, args);
         }
 
-        private bool InvokeAttributedChat(OxidePlugin plugin, string commandName, BasePlayer player, string[] args)
+        private bool InvokeAttributedChat(HarmonyPlugin plugin, string commandName, BasePlayer player, string[] args)
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
                 foreach (CommandAttribute attr in mi.GetCustomAttributes(typeof(CommandAttribute), false))
                 {
@@ -160,15 +160,15 @@ namespace SignArtistHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null) return;
-            var mi = typeof(OxidePlugin).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var mi = typeof(HarmonyPlugin).GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (mi == null) return;
             InvokeMethod(plugin, mi, player, command, args);
         }
 
-        private static void InvokeMethod(OxidePlugin plugin, MethodInfo mi, BasePlayer player, string command, string[] args)
+        private static void InvokeMethod(HarmonyPlugin plugin, MethodInfo mi, BasePlayer player, string command, string[] args)
         {
             try
             {
@@ -190,7 +190,7 @@ namespace SignArtistHarmony
         private void RegisterAttributedChatCommands()
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
                 foreach (CommandAttribute attr in mi.GetCustomAttributes(typeof(CommandAttribute), false))
                 {

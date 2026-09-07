@@ -1,6 +1,6 @@
 using Unity.Mathematics;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public struct Bounds
 {

@@ -1,6 +1,6 @@
 # Leaderboard (Harmony Mod)
 
-Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks resources gathered, buildings built, kills/deaths, NPC/animal kills, loot, craft, recycle, play time; persists to JSON; can relay to your bot for MySQL; optional Discord webhook.
+Standalone Harmony mod for tracking core Rust game stats (Harmony-only). Tracks resources gathered, buildings built, kills/deaths, NPC/animal kills, loot, craft, recycle, play time; persists to JSON; can relay to your bot for MySQL; optional Discord webhook.
 
 ## Mod Identity
 
@@ -28,8 +28,8 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 
 ## Data & MySQL (Option 2: Relay to Bot)
 
-- **Local:** Stats stored in `HarmonyData/LeaderboardData/Players/<steamid>.json` (config: `DataFolder`, `StorageType`; default folder is `HarmonyData/LeaderboardData`).
-- **Relay:** If `Relay.Enabled` and `Relay.Url` are set, stat updates are batched and POSTed as JSON in **the same format as the Oxide plugin’s MySQL tables** so your endpoint can write to the same DB. Payload: `Updates` (UserId, LootType, ShortName, ItemValue = **total**) and `Players` (UserId, LastIP, LastName, ConnectTime, DisconnectTime, TotalPlayTime, Points, HiddenFromLeaderboard). See `RELAY_ENDPOINT.md`.
+- **Local:** Stats stored in `HarmonyMods_Data/LeaderboardData/Players/<steamid>.json` (config: `DataFolder`, `StorageType`; default folder is `HarmonyMods_Data/LeaderboardData`).
+- **Relay:** If `Relay.Enabled` and `Relay.Url` are set, stat updates are batched and POSTed as JSON in **the same format as the Harmony mod’s MySQL tables** so your endpoint can write to the same DB. Payload: `Updates` (UserId, LootType, ShortName, ItemValue = **total**) and `Players` (UserId, LastIP, LastName, ConnectTime, DisconnectTime, TotalPlayTime, Points, HiddenFromLeaderboard). See `RELAY_ENDPOINT.md`.
 - **Discord:** Optional `Discord.WebhookUrl` + `Discord.Enabled` + `Discord.AutoMessageIntervalSeconds` for periodic “Top 5 Kills” (or similar) embeds.
 
 **Division of responsibility (with UltimateLeaderboard Discord bot):** This mod’s job is **only to get data to MySQL** (via Relay). The **bot** reads from the same database, uses its own template to build stats images, and posts to Discord (e.g. `/stats`). You do not need the mod to do any Discord or template work—the bot handles that.
@@ -44,7 +44,7 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 
 ## Config
 
-- **Path:** `HarmonyConfig/Leaderboard.json` (next to server root). Player data is stored under `HarmonyData/LeaderboardData/Players/`.
+- **Path:** `HarmonyConfig/Leaderboard.json` (next to server root). Player data is stored under `HarmonyMods_Data/LeaderboardData/Players/`.
 - **Options:** `StorageType` (Json), `DataFolder`, `Commands`, `CooldownSeconds`, `Relay` (Enabled, Url, BatchIntervalSeconds), `Discord` (WebhookUrl, Enabled, AutoMessageIntervalSeconds), `TemplatePath`, `ImageBaseUrl`.
 - **For “mod → MySQL, bot → Discord” setups:** You only need **Relay** (Enabled, Url, BatchIntervalSeconds) so the mod sends data to your relay (e.g. the Discord bot), which writes to MySQL. The bot’s template and Discord posting are separate.
 - **TemplatePath / ImageBaseUrl:** Used only for the **in-game** leaderboard panel (CUI) in Rust (e.g. fullscreen template, stat icons). They do not affect Discord; the bot has its own template and image logic.
@@ -65,26 +65,11 @@ Standalone Harmony mod for tracking core Rust game stats (no Oxide). Tracks reso
 | Item.MoveToContainer | Prefix/Postfix | **LootItems** when you take items from a crate/box into your inventory (manual looting) |
 | WorldItem.Pickup | Prefix/Postfix | **LootItems** when a world item is picked up (e.g. InstantBarrel barrel loot, ground pickups) |
 | LootContainer.DropItems | Prefix/Postfix | **LootItems** when barrel (etc.) is broken → items credited to attacker |
-| BaseCombatEntity.Hurt(HitInfo) | Postfix | **Hitrate BodyHits** → head/chest/stomach/arm/leg (PvP always; NPC BasePlayers when `CountNpcHitsForHitrate`) |
+| BaseCombatEntity.Hurt(HitInfo) | Postfix | **PvP hit tracking** → BodyHits (head, chest, stomach, arm, leg) for hitrate charts |
 | TimedExplosive.Explode(Vector3) | Postfix | **ExplosiveUsed** (satchel, C4, beancan, F1, molotov, flashbang, survey charge, rockets, GL HE, MLRS) when they explode → raid stats |
-| BasePlayer.PlayerInit | Postfix | Connect → play time start (Oxide OnPlayerConnected equivalent; not ServerInit) |
+| BasePlayer.ServerInit | Postfix | Connect → play time start |
 | BasePlayer.OnDestroy | Prefix | Disconnect → play time end, save |
 | Chat.say | Prefix | `/lb`, `/leaderboard`, `/stats` → open UI |
-
-## Event / raid recording (Harmony event mods)
-
-Patches (reflection — no hard DLL refs) credit wins when these mods are loaded:
-
-| Source | Stored as | Shortname |
-|--------|-----------|-----------|
-| RaidableBases `AwardRaiders` | `LootType.RaidableBases` | `easy` / `medium` / `hard` / `expert` / `nightmare` |
-| Convoy `EventLauncher.StopEvent` (PveMode owner) | `LootType.Event` | `Convoy` |
-| ArmoredTrain `EconomyManager.DefineEventWinner` | `LootType.Event` | `ArmoredTrainEvent` |
-| CHT `OnEntityDeath` (top damager / caller) | `LootType.Event` | `CHT` |
-
-Also: `API_OnEventWin(ulong userId, string eventName, int amount = 1)` via AppDomain `Leaderboard_Plugin`.
-
-**Discord categories** are configured on LeaderBot (`C:\!DiscordBots\UltimateLeaderboard-Discord-Bot-v1.2.0\config.json` → `auto_leaderboard.categories`). Presets: `points`, `playtime`, `killers`, `events`, `raids`, `explosive`, `npc_kills`, `resources`, `animals`, `builder`. Or full objects with `type` = `points` | `playtime` | `stat_sum` | `loot_type_total`.
 
 ## Leaderboard categories → data source
 
@@ -103,14 +88,18 @@ Each in-game category is filled from specific **LootType**s and **recording meth
 | **Misc** | Kill | **BaseCombatEntity.Die** → animal/NPC/heli/Bradley kills (bear, boar, wolf, helicopter, bradleyapc, etc.) |
 | **Farming** | Gather | **BasePlayer.GiveItem** (ResourceHarvested) → hemp, berries, potato, cloth, mushroom, corn, pumpkin, flowers, wheat |
 | **Construction / Upgrade** | Construction, Upgrade | **BaseEntity.OnPlaced** → buildings; **BuildingBlock.SetGrade** → upgrades (wood, stone, metal, armored) |
-| **Kills / Deaths / Hitrate** | Kill, Death, BodyHits | **BasePlayer.Die** → deaths + killer’s kills/max_distance; **BaseCombatEntity.Hurt** → body hits (PvP + optional NPC) |
+| **Kills / Deaths / PvP** | Kill, Death, BodyHits | **BasePlayer.Die** → deaths + killer’s kills/max_distance; **BaseCombatEntity.Hurt** → PvP body hits (hitrate) |
 
 So: **Resources** and **Farming** both use **Gather** (different keys); **Looted** uses **Crate** + **LootItems**; **Fired** uses **ShotFired**; **Raid** uses **ExplosiveUsed** (and some **ShotFired** in UI). All of these are produced by the patches above.
 
 ## UI
 
-- **Current:** Minimal panel (background, title “Leaderboard”, close button). Fullscreen template (Fullscreen.json + Settings, Awards, TopPlaces) can be loaded from `LeaderboardData/Templates/` in a future update.
-- **CUI:** Built with `CommunityEntity.ServerInstance.ClientRPC("AddUI", connection, json)` and `DestroyUI` by name.
+- **Standalone:** `/leaderboard`, `/lb`, `/stats` open a fullscreen Overlay panel (header, categories, close).
+- **ServerPanel:** Category pages with `Plugin Name: UltimateLeaderboard` (or `Leaderboard`) and
+  `Plugin Hook: API_OpenPlugin` mount the same UI under `UI.Server.Panel.Content.Plugin`.
+  The mod publishes `Leaderboard_Plugin` (+ `UltimateLeaderboard_Plugin` alias) on AppDomain.
+  Tab/page clicks while embedded call `API_OnServerPanelRefreshContent` so ServerPanel remounts.
+- **CUI:** Built as JSON for `CommunityEntity` AddUI / DestroyUI; GrimmCUI routes `cui.endtest LEADERBOARD …`.
 
 ## Build & Deploy
 
@@ -119,18 +108,12 @@ cd .cursor\HarmonyMods\Leaderboard
 .\build.ps1
 ```
 
-Output: workspace `HarmonyMods/Leaderboard.dll`. Load: `harmony.load Leaderboard`.
+Output: `<server-root>/HarmonyMods/Leaderboard.dll`. Load: `harmony.load Leaderboard`.
 
-## Hitrate (BodyHits)
+## PvP & hitrate
 
-- **Targets:** Real players always count. NPC `BasePlayer` targets (scientists, tunnel/underwater dwellers, custom NPCs) count when config `CountNpcHitsForHitrate` is `true` (default). Animals/heli/Bradley are not body-hit targets.
-- **Oxide parity:** UltimateLeaderboard gated NPC body hits behind `Count NPC kills as player kills` (default **false**). This mod uses a dedicated flag defaulting to **true**.
-- **Recording:** `BaseCombatEntity.Hurt` → BodyHits keys `head` / `chest` / `stomach` / `arm` / `leg`.
-
-## Playtime
-
-- Tracked inside this mod (connect → disconnect session seconds). **Does not require PlaytimeTracker.**
-- Connect hook is `BasePlayer.PlayerInit` (same as Shop / AutoCodeLock). On mod load, already-online players are registered so playtime works after `harmony.load Leaderboard`.
+- **Kills/deaths:** Recorded when a player dies (Patch_BasePlayer_Die). Charts update on kill/death.
+- **Hit damage / hitrate:** When you shoot or melee another player, each hit is recorded by body part (Patch_BaseCombatEntity.Hurt). The **Hitrate** tab shows your PvP hit distribution (HEAD, CHEST, STOMACH, ARM, LEG) as a percentage of your total hits on players.
 
 ## Compatibility (e.g. BetterBackpack, InstantBarrel)
 

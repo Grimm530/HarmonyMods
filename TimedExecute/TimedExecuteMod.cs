@@ -9,7 +9,7 @@ using UnityEngine;
 namespace TimedExecute
 {
     /// <summary>
-    /// Harmony port of Oxide TimedExecute 0.7.4 (PaiN &amp; misticos).
+    /// Harmony port of original TimedExecute 0.7.4 (PaiN &amp; misticos).
     /// Execute commands every (x) seconds / at real or in-game times.
     /// Config: HarmonyConfig/TimedExecute.json
     /// </summary>
@@ -66,7 +66,7 @@ namespace TimedExecute
             public Dictionary<string, float> TimerRepeat = new Dictionary<string, float>();
         }
 
-        /// <summary>Stand-in for Oxide Timer.</summary>
+        /// <summary>Stand-in for compat Timer.</summary>
         public sealed class Timer
         {
             internal bool Destroyed;
@@ -225,7 +225,7 @@ namespace TimedExecute
             }
 
             /// <summary>
-            /// Matches Oxide covalence Server.Time short-time keys used in config defaults ("01:00", "12:00").
+            /// Matches compat covalence Server.Time short-time keys used in config defaults ("01:00", "12:00").
             /// </summary>
             static string GetInGameShortTime()
             {
@@ -235,7 +235,7 @@ namespace TimedExecute
             }
         }
 
-        /// <summary>Oxide-style timer.Once / timer.Repeat via MonoBehaviour coroutines.</summary>
+        /// <summary>compat-style timer.Once / timer.Repeat via MonoBehaviour coroutines.</summary>
         public class HarmonyTimerRunner
         {
             private readonly ModRunner _runner;

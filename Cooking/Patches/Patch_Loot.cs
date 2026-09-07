@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using CookingPlugin = Oxide.Plugins.Cooking;
+using CookingPlugin = Harmony.Plugins.Cooking;
 
 namespace CookingHarmony.Patches
 {
@@ -10,7 +10,7 @@ namespace CookingHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (!__result || __instance == null || targetEntity == null) return;
+            if (!__result || targetEntity == null) return;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return;
             try { CookingPlugin.Dispatch_OnLootEntity(player, targetEntity); }

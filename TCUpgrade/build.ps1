@@ -1,6 +1,5 @@
 # Build script for TCUpgrade Harmony Mod
-# Output: <server root>\HarmonyMods\TCUpgrade.dll (DLL name unchanged for HarmonyLoader)
-# Requires: Oxide TCUpgrade.cs plugin for full functionality
+# Output: <server root>\HarmonyMods\TCUpgrade.dll (DLL only)
 
 Write-Host "Building TCUpgrade Harmony mod..." -ForegroundColor Cyan
 
@@ -23,7 +22,7 @@ if ($LASTEXITCODE -eq 0) {
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! TCUpgrade.dll copied to $destPath" -ForegroundColor Green
     Write-Host "Load with: harmony.load TCUpgrade (or automatic at startup)" -ForegroundColor Yellow
-    Write-Host "Config: HarmonyConfig/TCUpgrade.json - unload Oxide TCUpgrade plugin first" -ForegroundColor Gray
+    Write-Host "Config: HarmonyConfig/TCUpgrade.json" -ForegroundColor Gray
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

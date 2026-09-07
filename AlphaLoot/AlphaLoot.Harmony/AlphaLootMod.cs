@@ -1,11 +1,8 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using AlphaLoot.Harmony.Patches;
-using HarmonyLib;
 using Newtonsoft.Json;
 using UnityEngine;
 using Arg = ConsoleSystem.Arg;
@@ -57,7 +54,6 @@ public class AlphaLootMod : IHarmonyModHooks
 	public void OnLoaded(OnHarmonyModLoadedArgs args)
 	{
 		Instance = this;
-		TryApplyOxideCorpseBridge();
 		string path = Path.GetDirectoryName(UnityEngine.Application.dataPath) ?? ".";
 		_baseDataPath = Path.Combine(path, "HarmonyData", "AlphaLoot");
 		_configPath = Path.Combine(path, "HarmonyConfig", "AlphaLoot.json");
@@ -96,7 +92,7 @@ public class AlphaLootMod : IHarmonyModHooks
 		AlphaLootConfig config2 = _config;
 		if (config2 != null && config2.UseApprovedSkins)
 		{
-			Debug.LogWarning((object)"[AlphaLoot] WARNING! As of August 7th 2025, granting access to paid DLC that users do not own is against Rust's Terms of Service and can result in your server being delisted or worse.\nIf you continue to allow users to use paid DLC skins, you do so at your own risk!\nhttps://facepunch.com/legal/servers");
+			Debug.LogWarning((object)"[AlphaLoot] WARNING! UseApprovedSkins=true allows paid DLC skins. Granting access to paid DLC users don't own is against Rust's TOS. https://facepunch.com/legal/servers");
 		}
 		Debug.Log((object)string.Format("[AlphaLoot.Harmony] Loaded from {0}. Loot: {1}, Heli: {2}, Bradley: {3}. SupplyDrop: {4}, OverrideFancyDrop: {5}, UseApprovedSkins: {6}", _baseDataPath, num, (_heliData?.loot_advanced?.Count).GetValueOrDefault() + (_heliData?.loot_simple?.Count).GetValueOrDefault(), (_bradleyData?.loot_advanced?.Count).GetValueOrDefault() + (_bradleyData?.loot_simple?.Count).GetValueOrDefault(), flag ? "yes" : "NO - add supply_drop to loot_advanced", _config?.OverrideFancyDrop, _config?.UseApprovedSkins));
 	}
@@ -114,20 +110,6 @@ public class AlphaLootMod : IHarmonyModHooks
 		_heliData = null;
 		_bradleyData = null;
 		Debug.Log((object)"[AlphaLoot.Harmony] Unloaded.");
-	}
-
-	private void TryApplyOxideCorpseBridge()
-	{
-		try
-		{
-			var harmony = new HarmonyLib.Harmony("com.facepunch.rust_dedicated.AlphaLoot.oxide");
-			if (Interface_CallHook_OnCorpsePopulate_Patch.TryApply(harmony))
-				Debug.Log((object)"[AlphaLoot] Oxide OnCorpsePopulate bridge applied.");
-		}
-		catch (Exception ex)
-		{
-			Debug.LogWarning((object)("[AlphaLoot] Oxide bridge skipped: " + ex.Message));
-		}
 	}
 
 	private void RegisterCommands()
@@ -194,7 +176,7 @@ public class AlphaLootMod : IHarmonyModHooks
 				{
 					if (CanUseCommand(a))
 					{
-						AlphaLootTools.AddItems(a, ToStringArray(a.Args), Instance);
+						AlphaLootTools.AddItems(a, a.Args, Instance);
 					}
 				}
 			};
@@ -243,10 +225,10 @@ public class AlphaLootMod : IHarmonyModHooks
 					}
 				}
 			};
-			RegisterServerCommand("al.additems", value);
-			RegisterServerCommand("al.search", value2);
-			RegisterServerCommand("al.repopulateall", value3);
-			RegisterServerCommand("al.skins", value4);
+			ConsoleSystem.Index.Server.Dict["al.additems"] = value;
+			ConsoleSystem.Index.Server.Dict["al.search"] = value2;
+			ConsoleSystem.Index.Server.Dict["al.repopulateall"] = value3;
+			ConsoleSystem.Index.Server.Dict["al.skins"] = value4;
 		}
 		catch (Exception ex)
 		{
@@ -258,10 +240,10 @@ public class AlphaLootMod : IHarmonyModHooks
 	{
 		try
 		{
-			UnregisterServerCommand("al.additems");
-			UnregisterServerCommand("al.search");
-			UnregisterServerCommand("al.repopulateall");
-			UnregisterServerCommand("al.skins");
+			ConsoleSystem.Index.Server.Dict.Remove("al.additems");
+			ConsoleSystem.Index.Server.Dict.Remove("al.search");
+			ConsoleSystem.Index.Server.Dict.Remove("al.repopulateall");
+			ConsoleSystem.Index.Server.Dict.Remove("al.skins");
 		}
 		catch
 		{
@@ -270,7 +252,7 @@ public class AlphaLootMod : IHarmonyModHooks
 
 	private void RepopulateAllLoot(Arg arg)
 	{
-		LootContainer[] array = Object.FindObjectsByType<LootContainer>(FindObjectsSortMode.None);
+		LootContainer[] array = Object.FindObjectsOfType<LootContainer>();
 		int num = 0;
 		for (int i = 0; i < ((array != null) ? array.Length : 0); i++)
 		{
@@ -282,7 +264,6 @@ public class AlphaLootMod : IHarmonyModHooks
 					lootContainer.CreateInventory(giveUID: true);
 					lootContainer.OnInventoryFirstCreated(lootContainer.inventory);
 				}
-				BaseLootProfile.SetContainerCapacity(lootContainer.inventory, lootContainer.inventorySlots);
 				((FacepunchBehaviour)lootContainer).CancelInvoke((Action)lootContainer.SpawnLoot);
 				((FacepunchBehaviour)lootContainer).Invoke((Action)lootContainer.SpawnLoot, Random.Range(1f, 20f));
 				num++;
@@ -325,48 +306,6 @@ public class AlphaLootMod : IHarmonyModHooks
 		AlphaLootContext.BlockedWorkshopSkinIds = hashSet;
 		AlphaLootTools.SaveData(this);
 		Reply(arg, "Removed all skins from the random skin list, and all skins individually set on items in the loot table");
-	}
-
-	private static string[] ToStringArray(Facepunch.StringView[] args)
-	{
-		if (args == null || args.Length == 0) return Array.Empty<string>();
-
-		var result = new string[args.Length];
-		for (int i = 0; i < args.Length; i++)
-			result[i] = args[i].ToString();
-		return result;
-	}
-
-	private static string[] ToStringArray(string[] args)
-	{
-		return args ?? Array.Empty<string>();
-	}
-
-	private static void RegisterServerCommand(string fullName, ConsoleSystem.Command command)
-	{
-		IDictionary dict = GetServerCommandDictionary();
-		if (dict == null) return;
-		dict[CreateCommandDictionaryKey(dict, fullName)] = command;
-	}
-
-	private static void UnregisterServerCommand(string fullName)
-	{
-		IDictionary dict = GetServerCommandDictionary();
-		if (dict == null) return;
-		dict.Remove(CreateCommandDictionaryKey(dict, fullName));
-	}
-
-	private static IDictionary GetServerCommandDictionary()
-	{
-		FieldInfo field = typeof(ConsoleSystem.Index.Server).GetField("Dict", BindingFlags.Public | BindingFlags.Static);
-		return field?.GetValue(null) as IDictionary;
-	}
-
-	private static object CreateCommandDictionaryKey(IDictionary dict, string key)
-	{
-		Type keyType = dict.GetType().GetGenericArguments().FirstOrDefault() ?? typeof(string);
-		if (keyType == typeof(string)) return key;
-		return Activator.CreateInstance(keyType, key);
 	}
 
 	private static bool CanUseCommand(Arg arg)
@@ -525,26 +464,24 @@ public class AlphaLootMod : IHarmonyModHooks
 
 	internal static bool AreSkinDefinitionsReady()
 	{
-		// ItemSkinDirectory is enough to build the DLC block list.
-		// SteamInventory.Definitions often stay empty on dedicated servers and must not block startup forever.
-		return TryGetItemSkinDirectorySkins(out _);
+		ItemSkinDirectory.Skin[] array = TryGetSkinDirectorySkins();
+		if (array != null && array.Length != 0)
+		{
+			return GetSteamInventoryDefinitionCount() > 0;
+		}
+		return false;
 	}
 
-	private static bool TryGetItemSkinDirectorySkins(out ItemSkinDirectory.Skin[] skins, bool logWarning = false)
+	private static ItemSkinDirectory.Skin[] TryGetSkinDirectorySkins()
 	{
-		skins = null;
 		try
 		{
-			skins = ItemSkinDirectory.Instance?.skins;
-			return skins != null && skins.Length != 0;
+			return ItemSkinDirectory.Instance?.skins;
 		}
 		catch (Exception ex)
 		{
-			if (logWarning)
-			{
-				Debug.LogWarning((object)("[AlphaLoot.Harmony] Item skin directory is not ready: " + ex.Message));
-			}
-			return false;
+			Debug.LogWarning((object)("[AlphaLoot.Harmony] Item skin directory is not ready: " + ex.Message));
+			return null;
 		}
 	}
 
@@ -579,7 +516,8 @@ public class AlphaLootMod : IHarmonyModHooks
 		HashSet<ulong> hashSet = new HashSet<ulong>();
 		try
 		{
-			if (!TryGetItemSkinDirectorySkins(out ItemSkinDirectory.Skin[] array, logWarning: true))
+			ItemSkinDirectory.Skin[] array = TryGetSkinDirectorySkins();
+			if (array == null || array.Length == 0)
 			{
 				return hashSet;
 			}

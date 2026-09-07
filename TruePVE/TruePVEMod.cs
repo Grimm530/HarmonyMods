@@ -1,17 +1,26 @@
-// TruePVEMod.cs -- Harmony entry point for the TruePVE Oxide port (2.4.31).
-// Hosts Oxide.Plugins.TruePVE, drives LoadConfig/Init/OnServerInitialized/Unload,
+// TruePVEMod.cs -- Harmony entry point for the TruePVE Harmony port (2.4.31).
+// Hosts Harmony.Plugins.TruePVE, drives LoadConfig/Init/OnServerInitialized/Unload,
 // registers chat + console commands (covalence bridge), and re-registers permissions
 // when the Permissions Harmony mod becomes ready. Pattern follows SkillTreeMod.
 
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
-using Oxide.Core.Libraries.Covalence;
-using OxidePlugin = Oxide.Plugins.TruePVE;
+using GrimmCuiHarmony;
+using Harmony.Core.Libraries.Covalence;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.TruePVE;
+using GrimmCuiHarmony;
 
 namespace TruePVEHarmony
 {
@@ -60,7 +69,7 @@ namespace TruePVEHarmony
     {
         public static TruePVEMod Instance { get; private set; }
 
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -73,14 +82,16 @@ namespace TruePVEHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadDefaultMessages();
                 plugin.HarmonyLoadConfig();
                 // Hooks default to subscribed under Harmony; keep damage gated until Init re-subscribes after ruleset is ready.
@@ -100,7 +111,7 @@ namespace TruePVEHarmony
 
             _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
 
-            Debug.Log("[TruePVE] Harmony mod loaded (Oxide port 2.4.31). Config: HarmonyConfig/TruePVE.json. server.pve browser tag supported (RuleSets own damage).");
+            Debug.Log("[TruePVE] Harmony mod loaded (Harmony port 2.4.31). Config: HarmonyConfig/TruePVE.json. server.pve browser tag supported (RuleSets own damage).");
         }
 
         private void OnPermissionsReady()
@@ -115,7 +126,7 @@ namespace TruePVEHarmony
             catch (Exception ex) { Debug.LogWarning("[TruePVE] Permissions ready: " + ex.Message); }
         }
 
-        private static void ReRegisterPermissions(OxidePlugin plugin)
+        private static void ReRegisterPermissions(HarmonyPlugin plugin)
         {
             // The plugin registers all permissions in Init(); re-invoking Init is unsafe,
             // so re-register the known static permission set directly through the bridge.
@@ -134,6 +145,7 @@ namespace TruePVEHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreHurtRegistration.Unregister();
             if (_permissionsReadyCallback != null)
             {
                 PermissionsBridge.UnregisterReadyCallback(_permissionsReadyCallback);
@@ -146,8 +158,8 @@ namespace TruePVEHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
 
             UnregisterConsoleCommands();
 
@@ -155,7 +167,7 @@ namespace TruePVEHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[TruePVE] Harmony mod unloaded.");
         }
@@ -230,13 +242,13 @@ namespace TruePVEHarmony
         private static IPlayer WrapPlayer(BasePlayer player)
             => player == null ? (IPlayer)new RustConsolePlayer() : new BasePlayerWrapper(player);
 
-        private static void InvokeCovalenceMethod(OxidePlugin plugin, string methodName, IPlayer user, string command, string[] args)
+        private static void InvokeCovalenceMethod(HarmonyPlugin plugin, string methodName, IPlayer user, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var mi = typeof(OxidePlugin).GetMethod(methodName, bf, null,
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName, bf, null,
                     new[] { typeof(IPlayer), typeof(string), typeof(string[]) }, null);
                 mi?.Invoke(plugin, new object[] { user, command, args ?? Array.Empty<string>() });
             }
@@ -273,7 +285,7 @@ namespace TruePVEHarmony
             catch (Exception ex) { Debug.LogWarning("[TruePVE] RegisterDynamicCommands: " + ex.Message); }
         }
 
-        private static void InvokeConsole(OxidePlugin plugin, string methodName, ConsoleSystem.Arg arg)
+        private static void InvokeConsole(HarmonyPlugin plugin, string methodName, ConsoleSystem.Arg arg)
         {
             if (arg == null || plugin == null) return;
             var basePlayer = arg.Player();

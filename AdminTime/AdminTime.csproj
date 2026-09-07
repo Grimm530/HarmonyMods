@@ -5,12 +5,15 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12</LangVersion>
     <RootNamespace>AdminTime</RootNamespace>
-    <Description>Harmony mod: per-player admin time and weather (mytime, myweather, storm). No Oxide; config allowlist. Port of AdminTime Oxide plugin.</Description>
+    <Description>Harmony mod: per-player admin time and weather (mytime, myweather, storm). Harmony-only; config allowlist. Port of AdminTime Harmony mod.</Description>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
     <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="AdminTime\**" />
+  </ItemGroup>
   <ItemGroup>
     <Reference Include="Rust.Data">
       <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>

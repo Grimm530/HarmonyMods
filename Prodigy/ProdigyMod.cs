@@ -1,14 +1,23 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using ConVar;
-using Facepunch;
+using GrimmCuiHarmony;
 using HarmonyLib;
+using GrimmCuiHarmony;
 using Network;
+using GrimmCuiHarmony;
 using Newtonsoft.Json;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace Prodigy;
 
@@ -32,6 +41,7 @@ public class ProdigyMod : IHarmonyModHooks
 
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
         Instance = this;
         _harmony = new HarmonyLib.Harmony("com.prodigy.patches");
         _harmony.PatchAll(typeof(ProdigyMod).Assembly);
@@ -223,7 +233,7 @@ public class ProdigyMod : IHarmonyModHooks
     {
         var player = arg.Player();
         if (player == null) { arg.ReplyWith("Must be a player!"); return; }
-        RunProdigyCommand(player, ToStringArray(arg.Args), arg);
+        RunProdigyCommand(player, arg.Args.AsStringArray(), arg);
     }
 
     /// <summary>Runs prodigy logic (used by console command and by chat /prod or /prodigy).</summary>
@@ -292,18 +302,7 @@ public class ProdigyMod : IHarmonyModHooks
     {
         var player = arg.Player();
         if (player == null || !CanUse(player)) return;
-        var args = ToStringArray(arg.Args);
-        RunProdigyUiMove(player, args.Length > 0 ? args[0] : null, args.Length > 1 ? args[1] : null);
-    }
-
-    private static string[] ToStringArray(StringView[] args)
-    {
-        if (args == null || args.Length == 0) return Array.Empty<string>();
-
-        var result = new string[args.Length];
-        for (int i = 0; i < args.Length; i++)
-            result[i] = args[i].ToString();
-        return result;
+        RunProdigyUiMove(player, arg.GetString(0), arg.GetString(1));
     }
 
     /// <summary>Handles UI move/close (used by console command and by cui.endtest PRODIGY from button clicks).</summary>
@@ -470,7 +469,7 @@ public class ProdigyMod : IHarmonyModHooks
     private static void AppendLockedCrate(List<string> details, bool isHoldingHammer, LockedByEntCrate crate)
     {
         foreach (var item in crate.inventory.itemList) details.Add($"{item.info.shortname} {item.amount}");
-        if (isHoldingHammer) crate.lockingEnt?.ToBaseEntity()?.Kill();
+        if (isHoldingHammer) crate.lockingEnt?.Kill();
     }
 
     private static void AppendGunTrap(List<string> details, GunTrap gunTrap) { foreach (var item in gunTrap.inventory.itemList) details.Add($"{item.info.shortname} {item.amount}"); }
@@ -514,7 +513,7 @@ public class ProdigyMod : IHarmonyModHooks
         sb.AppendFormat("Navmesh enabled: {0}, stopped: {1}, stuck: {2}, type: {3}, ", nav.Agent.enabled, nav.Agent.isOnNavMesh && nav.Agent.isStopped, nav.StuckOffNavmesh, nav.CurrentNavigationType);
         if (npc.TryGetComponent<BaseAIBrain>(out var brain)) sb.AppendFormat("SenseRange: {0}, ListenRange: {1}, TargetLostRange: {2}, StoppingDistance: {3}", brain.SenseRange, brain.ListenRange, brain.TargetLostRange, nav.StoppingDistance);
         sb.AppendLine();
-        DrawNavDebug(player, npc.eyes.position, nav.Agent.destination, nav.Destination, npc);
+        DrawNavDebug(player, npc.eyes.position, nav.Agent.destination.ToVector3(), nav.Destination, npc);
     }
 
     private static void HandleNavigator(BaseNavigator nav, StringBuilder sb, BasePlayer player)
@@ -523,7 +522,7 @@ public class ProdigyMod : IHarmonyModHooks
         sb.AppendFormat("Navmesh enabled: {0}, stopped: {1}, stuck: {2}, type: {3}, ", nav.Agent.enabled, nav.Agent.isOnNavMesh && nav.Agent.isStopped, nav.StuckOffNavmesh, nav.CurrentNavigationType);
         sb.AppendLine();
         var entity = nav.GetComponent<BaseEntity>();
-        DrawNavDebug(player, nav.transform.position, nav.Agent.destination, nav.Destination, entity);
+        DrawNavDebug(player, nav.transform.position, nav.Agent.destination.ToVector3(), nav.Destination, entity);
     }
 
     /// <summary>Draws sphere on NPC, line to nav destination (max 75m), arrow at end; cyan = actual movement direction.</summary>

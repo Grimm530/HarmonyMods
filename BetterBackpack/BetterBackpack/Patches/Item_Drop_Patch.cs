@@ -9,7 +9,7 @@ internal class Item_Drop_Patch
     [HarmonyPrefix]
     private static void Prefix(Item __instance)
     {
-        if (!LootDebug.IsActive || __instance == null || !__instance.IsBackpack()) return;
+        if (!LootDebug.IsActive || !__instance.IsBackpack()) return;
         var player = __instance.GetOwnerPlayer();
         if (player == null)
             player = __instance.parent?.playerOwner;

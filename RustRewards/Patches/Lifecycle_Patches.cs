@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace RustRewardsHarmony.Patches
 {
-    /// <summary>Oxide OnPlayerConnected → BasePlayer.PlayerInit postfix.</summary>
+    /// <summary>Harmony OnPlayerConnected → BasePlayer.PlayerInit postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PlayerInit))]
     public static class BasePlayer_PlayerInit_Patch
     {
@@ -22,7 +22,7 @@ namespace RustRewardsHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
+    /// <summary>Harmony OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {
@@ -40,7 +40,7 @@ namespace RustRewardsHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnServerSave → SaveRestore.Save(bool) postfix.</summary>
+    /// <summary>Harmony OnServerSave → SaveRestore.Save(bool) postfix.</summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Save), typeof(bool))]
     public static class SaveRestore_Save_Patch
     {
@@ -60,7 +60,7 @@ namespace RustRewardsHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnNewSave — when SaveRestore.Load runs with a new wipe id.
+    /// compat OnNewSave — when SaveRestore.Load runs with a new wipe id.
     /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     public static class SaveRestore_Load_Patch

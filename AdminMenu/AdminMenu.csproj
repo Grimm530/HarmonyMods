@@ -11,7 +11,7 @@
     <RootNamespace>AdminMenuHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: AdminMenu 2.1.13 Chaos UI port (Oxide-free hosting/compat layer).</Description>
+    <Description>Harmony mod: AdminMenu 2.1.13 Chaos UI port (Harmony hosting/compat layer).</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -98,7 +98,14 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="Patches\Cui_Endtest_Patch.cs" />
+    <Compile Remove="UIFramework\**" />
+    <Compile Remove="Pooling\**" />
+    <Compile Remove="Json\**" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

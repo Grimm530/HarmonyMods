@@ -4,21 +4,21 @@ using Newtonsoft.Json;
 using UnityEngine;
 using System.Linq;
 using System.Globalization;
-using Oxide.Ext.Chaos.Collections;
-using Oxide.Ext.Chaos.Data;
-using Oxide.Ext.Chaos.UIFramework;
-using Oxide.Game.Rust.Cui;
+using Grimm.Chaos.Collections;
+using Grimm.Chaos.Data;
+using Ext.Chaos.UIFramework;
+using Game.Rust.Cui;
 using UnityEngine.UI;
 using StackManagerHarmony;
 
-using Chaos = Oxide.Ext.Chaos;
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Axis = Oxide.Ext.Chaos.UIFramework.Axis;
+using Chaos = Grimm.Chaos;
+using Color = Ext.Chaos.UIFramework.Color;
+using Axis = Ext.Chaos.UIFramework.Axis;
 using Debug = UnityEngine.Debug;
-using GridLayoutGroup = Oxide.Ext.Chaos.UIFramework.GridLayoutGroup;
-using HorizontalLayoutGroup = Oxide.Ext.Chaos.UIFramework.HorizontalLayoutGroup;
-using VerticalLayoutGroup = Oxide.Ext.Chaos.UIFramework.VerticalLayoutGroup;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using GridLayoutGroup = Ext.Chaos.UIFramework.GridLayoutGroup;
+using HorizontalLayoutGroup = Ext.Chaos.UIFramework.HorizontalLayoutGroup;
+using VerticalLayoutGroup = Ext.Chaos.UIFramework.VerticalLayoutGroup;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 using Timer = StackManagerHarmony.Timer;
 
 namespace StackManagerHarmony
@@ -377,7 +377,7 @@ namespace StackManagerHarmony
             
             if (item.parent?.entityOwner)
             {
-                if (item.parent.entityOwner.GetComponent("Oxide.Plugins.SkinBox/LootHandler") != null)
+                if (item.parent.entityOwner.GetComponent("Harmony.Plugins.SkinBox/LootHandler") != null)
                     return null;
             }
 
@@ -468,7 +468,7 @@ namespace StackManagerHarmony
                     Item otherItem = itemContainer.GetSlot(targetSlot);
                     if (otherItem != null && otherItem.info.itemid != item.info.itemid)
                     {
-                        if (item.parent.CanAcceptItem(otherItem, -1) == ItemContainer.CanAcceptResult.CanAccept)
+                        if (item.parent.CanAcceptItem(playerInventory.baseEntity, otherItem, -1) == ItemContainer.CanAcceptResult.CanAccept)
                         {
                             int storageLimit = GetMaxStackable(otherItem, item.parent);
                             if (storageLimit > 0)
@@ -3157,7 +3157,7 @@ namespace StackManagerHarmony
         #region v1.x.x Config Restoration
         public void ccmdLoadOldConfig(ConsoleSystem.Arg arg)
         {
-            SendReply(arg, "se.loadoldconfig is not supported under Harmony StackManager (Oxide data migration removed).");
+            SendReply(arg, "se.loadoldconfig is not supported under Harmony StackManager (legacy data migration removed).");
         }
         
         private void TryLoadv1Config(ConsoleSystem.Arg arg)

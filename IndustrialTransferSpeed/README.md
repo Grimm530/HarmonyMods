@@ -1,14 +1,12 @@
 # IndustrialTransferSpeed Harmony Mod
 
-**Standalone** Harmony mod for configurable industrial conveyor transfer speed. Patches the game directly—no Oxide plugin required.
-
-Planter/composter industrial adaptor farming features were removed (they were broken). This mod only controls conveyor stack size per move.
+**Standalone** Harmony mod for configurable industrial conveyor transfer speed. Patches the game directly—no Harmony mod required. More performant than the Oxide equivalent (no constant entity iteration, no reflection hooks).
 
 ## Features
 
-- **MaxStackSizePerMove** - Control how many items conveyors transfer per move (vanilla: 128)
-- **Config** - `HarmonyConfig/IndustrialTransferSpeed.json` (created on first load)
-- **Clean unload** - Resets conveyors to vanilla (128) when mod is unloaded
+- **MaxStackSizePerMove** – Control how many items conveyors transfer per move (vanilla: 128)
+- **Config** – `HarmonyConfig/IndustrialTransferSpeed.json` (created on first load)
+- **Clean unload** – Resets conveyors to vanilla (128) when mod is unloaded
 
 ## Architecture
 
@@ -23,11 +21,11 @@ Planter/composter industrial adaptor farming features were removed (they were br
 
 ```json
 {
-  "MaxStackSizePerMove (van is 128)": 256
+  "MaxStackSizePerMove": 600
 }
 ```
 
-- **MaxStackSizePerMove** - Max stack amount conveyors can transfer per move (1-100000). Vanilla default: 128.
+- **MaxStackSizePerMove** – Max stack amount conveyors can transfer per move (1–100000). Vanilla default: 128.
 
 ## Build
 
@@ -37,9 +35,9 @@ Planter/composter industrial adaptor farming features were removed (they were br
 
 Output: `HarmonyMods/IndustrialTransferSpeed.dll`
 
-## Migration from Oxide Plugin
+## Migration from Harmony Mod
 
-Replace the Oxide plugin `IndustrialTransferSpeed.cs` with this Harmony mod:
+Replace the Harmony mod `IndustrialTransferSpeed.cs` with this Harmony mod:
 1. Build and copy `IndustrialTransferSpeed.dll` to `HarmonyMods/`
-2. Remove/unload the Oxide plugin
+2. Remove/unload the Harmony mod
 3. Create or edit `HarmonyConfig/IndustrialTransferSpeed.json` with desired `MaxStackSizePerMove`

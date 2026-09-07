@@ -6,16 +6,16 @@ using UnityEngine;
 namespace AlphaLoot.Harmony.Patches;
 
 /// <summary>
-/// Optional bridge for Oxide OnCorpsePopulate when Oxide.Core is loaded.
+/// Optional bridge for Oxide OnCorpsePopulate when Harmony.Core is loaded.
 /// Applied manually from AlphaLootMod.OnLoaded — no [HarmonyPatch] attribute so PatchAll does not require Oxide at load time.
 /// </summary>
-public static class Interface_CallHook_OnCorpsePopulate_Patch
+public static class HarmonyModInterface_CallHook_OnCorpsePopulate_Patch
 {
 	public static bool TryApply(HarmonyLib.Harmony harmony)
 	{
 		try
 		{
-			var interfaceType = Type.GetType("Oxide.Core.Interface, Oxide.Core", throwOnError: false);
+			var interfaceType = Type.GetType("Harmony.Core.HarmonyModInterface, Harmony.Core", throwOnError: false);
 			if (interfaceType == null)
 				return false;
 
@@ -23,7 +23,7 @@ public static class Interface_CallHook_OnCorpsePopulate_Patch
 			if (method == null)
 				return false;
 
-			var postfix = new HarmonyMethod(typeof(Interface_CallHook_OnCorpsePopulate_Patch), nameof(Postfix));
+			var postfix = new HarmonyMethod(typeof(HarmonyModInterface_CallHook_OnCorpsePopulate_Patch), nameof(Postfix));
 			harmony.Patch(method, postfix: postfix);
 			return true;
 		}

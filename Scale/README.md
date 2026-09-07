@@ -1,6 +1,6 @@
 # Scale (Harmony)
 
-Oxide **Scale 1.0.0** port. Admin tool to resize entities by look or by entity ID.
+Legacy **Scale 1.0.0** port. Admin tool to resize entities by look or by entity ID.
 
 ## Load order
 

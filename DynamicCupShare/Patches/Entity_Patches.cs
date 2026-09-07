@@ -10,7 +10,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Postfix(BaseNetworkable __instance)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
 
             try
             {
@@ -37,7 +37,7 @@ namespace DynamicCupShareHarmony.Patches
         private static void Prefix(BaseNetworkable __instance)
         {
             var plugin = DynamicCupShareMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
 
             try
             {

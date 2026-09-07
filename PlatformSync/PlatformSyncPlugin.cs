@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 namespace PlatformSync
 {
     /// <summary>
-    /// Near-identical port of Oxide PlatformSync 1.1.01 (PlatformSync | Grimm530).
+    /// Near-identical port of original PlatformSync 1.1.01 (PlatformSync | Grimm530).
     /// Oxide APIs are replaced by Compat shims; hooks arrive via Harmony patches.
     /// </summary>
     public class PlatformSyncPlugin
@@ -62,7 +62,7 @@ namespace PlatformSync
             [JsonProperty("action")] public string Action;
             [JsonProperty("local_only")] public bool LocalOnly;
             [JsonProperty("discord_role")] public string DiscordRole;
-            [JsonProperty("oxide_group")] public string OxideGroup;
+            [JsonProperty("oxide_group")] public string PermissionGroup;
         }
 
         class StoredLinksData
@@ -100,7 +100,7 @@ namespace PlatformSync
             LoadLinksData();
             RegisterCommands();
             Puts("Loaded. Config: " + (PlatformSyncConfig.ConfigPath ?? "n/a")
-                 + " LocalVerifyGroup=" + LocalVerifyOxideGroup
+                 + " LocalVerifyGroup=" + LocalVerifyGroup
                  + " PermissionsBound=" + Compat.Permission.IsPermissionsBound);
         }
 
@@ -196,12 +196,12 @@ namespace PlatformSync
 
             // Prefer Harmony data; migrate from Oxide data if needed
             string path = LinksDataPath;
-            if (!File.Exists(path) && File.Exists(Compat.OxideLinksDataPath))
+            if (!File.Exists(path) && File.Exists(Compat.LegacyHostLinksDataPath))
             {
                 try
                 {
                     Directory.CreateDirectory(dir);
-                    File.Copy(Compat.OxideLinksDataPath, path);
+                    File.Copy(Compat.LegacyHostLinksDataPath, path);
                     Puts("Migrated links.json from oxide/data/PlatformSync/");
                 }
                 catch (Exception ex) { Puts("Failed to migrate links.json: " + ex.Message); }
@@ -221,8 +221,8 @@ namespace PlatformSync
             }
 
             string legacy = LinksLogLegacyPath;
-            if (!File.Exists(legacy) && File.Exists(Compat.OxideLinksLogLegacyPath))
-                legacy = Compat.OxideLinksLogLegacyPath;
+            if (!File.Exists(legacy) && File.Exists(Compat.LegacyHostLinksLogPath))
+                legacy = Compat.LegacyHostLinksLogPath;
 
             if (File.Exists(legacy))
                 MigrateFromLegacyLog(legacy);
@@ -289,7 +289,7 @@ namespace PlatformSync
                 Action = action ?? "",
                 LocalOnly = localOnly,
                 DiscordRole = discordRole ?? "",
-                OxideGroup = oxideGroup ?? ""
+                PermissionGroup = oxideGroup ?? ""
             };
             if (_linkEntries == null) _linkEntries = new List<LinkLogEntry>();
             _linkEntries.Add(entry);
@@ -319,7 +319,7 @@ namespace PlatformSync
         }
 
         private string LocalVerifyDiscordRole => GetConfigString("LocalVerifyDiscordRole", "Verified");
-        private string LocalVerifyOxideGroup => GetConfigString("LocalVerifyOxideGroup", "verified");
+        private string LocalVerifyGroup => GetConfigString("LocalVerifyGroup", "verified");
 
         private bool IsLocalLinkedAction(string action)
         {
@@ -419,7 +419,7 @@ namespace PlatformSync
             if (string.IsNullOrWhiteSpace(steamId) || string.IsNullOrWhiteSpace(groupName)) return false;
             foreach (var entry in GetActiveLocalLinks().Values)
             {
-                string entryGroup = string.IsNullOrWhiteSpace(entry.OxideGroup) ? LocalVerifyOxideGroup : entry.OxideGroup;
+                string entryGroup = string.IsNullOrWhiteSpace(entry.PermissionGroup) ? LocalVerifyGroup : entry.PermissionGroup;
                 if (entry.SteamId == steamId && string.Equals(entryGroup, groupName, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
@@ -442,7 +442,7 @@ namespace PlatformSync
             }
 
             string roleName = LocalVerifyDiscordRole;
-            string oxideGroup = LocalVerifyOxideGroup;
+            string oxideGroup = LocalVerifyGroup;
 
             bool hasRole;
             string error;
@@ -483,7 +483,7 @@ namespace PlatformSync
             foreach (var entry in activeLinks)
             {
                 string roleName = string.IsNullOrWhiteSpace(entry.DiscordRole) ? LocalVerifyDiscordRole : entry.DiscordRole;
-                string oxideGroup = string.IsNullOrWhiteSpace(entry.OxideGroup) ? LocalVerifyOxideGroup : entry.OxideGroup;
+                string oxideGroup = string.IsNullOrWhiteSpace(entry.PermissionGroup) ? LocalVerifyGroup : entry.PermissionGroup;
 
                 bool hasRole;
                 string error;
@@ -811,7 +811,7 @@ namespace PlatformSync
             }
 
             Compat.Permission.EnsureLinked();
-            string verifiedGroup = LocalVerifyOxideGroup;
+            string verifiedGroup = LocalVerifyGroup;
             if (string.IsNullOrWhiteSpace(verifiedGroup)) verifiedGroup = "verified";
             const string nitroGroup = "nitro";
 
@@ -942,16 +942,16 @@ namespace PlatformSync
             if (Convert.ToBoolean(ConfigGet("EnableDiscordLink")) == true)
             {
                 bool linked = linkDetails["linked"] != null && (bool)linkDetails["linked"];
-                var discordOxideGroup = linkDetails["discord_oxide_group"]?.ToString();
-                if (string.IsNullOrWhiteSpace(discordOxideGroup))
-                    discordOxideGroup = LocalVerifyOxideGroup;
+                var discordPermissionGroup = linkDetails["discord_oxide_group"]?.ToString();
+                if (string.IsNullOrWhiteSpace(discordPermissionGroup))
+                    discordPermissionGroup = LocalVerifyGroup;
 
                 if (linked)
                 {
-                    EnsureGroup(discordOxideGroup);
-                    if (!permission.UserHasGroup(steamId, discordOxideGroup))
+                    EnsureGroup(discordPermissionGroup);
+                    if (!permission.UserHasGroup(steamId, discordPermissionGroup))
                     {
-                        permission.AddUserGroup(steamId, discordOxideGroup);
+                        permission.AddUserGroup(steamId, discordPermissionGroup);
                         AppendLinkLog(
                             steamId,
                             steamName,
@@ -960,7 +960,7 @@ namespace PlatformSync
                             "linked");
                         if (trackRecheckStats) _recheckVerifiedAdded++;
                         if (notify) notifyPlayer.ChatMessage(Lang("ConfirmLink"));
-                        Puts(steamId + " has linked with the discord adding them to the " + discordOxideGroup + " group.");
+                        Puts(steamId + " has linked with the discord adding them to the " + discordPermissionGroup + " group.");
                     }
                     else if (notify)
                     {
@@ -972,13 +972,13 @@ namespace PlatformSync
                     if (notify)
                         notifyPlayer.ChatMessage(Lang("ErrorLink"));
 
-                    if (HasActiveLocalLinkForGroup(steamId, discordOxideGroup))
+                    if (HasActiveLocalLinkForGroup(steamId, discordPermissionGroup))
                     {
-                        Puts(steamId + " is locally verified; keeping " + discordOxideGroup + " group.");
+                        Puts(steamId + " is locally verified; keeping " + discordPermissionGroup + " group.");
                     }
-                    else if (permission.UserHasGroup(steamId, discordOxideGroup))
+                    else if (permission.UserHasGroup(steamId, discordPermissionGroup))
                     {
-                        permission.RemoveUserGroup(steamId, discordOxideGroup);
+                        permission.RemoveUserGroup(steamId, discordPermissionGroup);
                         AppendLinkLog(
                             steamId,
                             steamName,
@@ -986,7 +986,7 @@ namespace PlatformSync
                             JsonString(linkDetails, "discord_username", "discord_name", "discordUsername", "discordName"),
                             "unlinked");
                         if (trackRecheckStats) _recheckVerifiedRemoved++;
-                        Puts(steamId + " has stop linking with the discord removing them from the " + discordOxideGroup + " group.");
+                        Puts(steamId + " has stop linking with the discord removing them from the " + discordPermissionGroup + " group.");
                     }
                 }
             }
@@ -994,26 +994,26 @@ namespace PlatformSync
             if (Convert.ToBoolean(ConfigGet("EnableNitro")) == true)
             {
                 bool nitro = linkDetails["nitro"] != null && (bool)linkDetails["nitro"];
-                var nitroOxideGroup = linkDetails["nitro_oxide_group"]?.ToString();
-                if (string.IsNullOrWhiteSpace(nitroOxideGroup))
-                    nitroOxideGroup = "nitro";
+                var nitroPermissionGroup = linkDetails["nitro_oxide_group"]?.ToString();
+                if (string.IsNullOrWhiteSpace(nitroPermissionGroup))
+                    nitroPermissionGroup = "nitro";
 
                 if (nitro)
                 {
-                    EnsureGroup(nitroOxideGroup);
-                    if (!permission.UserHasGroup(steamId, nitroOxideGroup))
+                    EnsureGroup(nitroPermissionGroup);
+                    if (!permission.UserHasGroup(steamId, nitroPermissionGroup))
                     {
-                        permission.AddUserGroup(steamId, nitroOxideGroup);
+                        permission.AddUserGroup(steamId, nitroPermissionGroup);
                         if (trackRecheckStats) _recheckNitroAdded++;
                         if (notify) notifyPlayer.ChatMessage(Lang("ConfirmNitro"));
-                        Puts(steamId + " has boosted the discord adding them to the " + nitroOxideGroup + " group.");
+                        Puts(steamId + " has boosted the discord adding them to the " + nitroPermissionGroup + " group.");
                     }
                 }
-                else if (permission.UserHasGroup(steamId, nitroOxideGroup))
+                else if (permission.UserHasGroup(steamId, nitroPermissionGroup))
                 {
-                    permission.RemoveUserGroup(steamId, nitroOxideGroup);
+                    permission.RemoveUserGroup(steamId, nitroPermissionGroup);
                     if (trackRecheckStats) _recheckNitroRemoved++;
-                    Puts(steamId + " has stop boosting the discord removing them from the " + nitroOxideGroup + " group.");
+                    Puts(steamId + " has stop boosting the discord removing them from the " + nitroPermissionGroup + " group.");
                 }
             }
         }

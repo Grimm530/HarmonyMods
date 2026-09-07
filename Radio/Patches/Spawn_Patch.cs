@@ -22,7 +22,6 @@ namespace RadioHarmony.Patches
         [HarmonyPrefix]
         private static void Prefix(BaseNetworkable __instance)
         {
-            if (__instance == null) return;
             try { RadioMod.Instance?.Vehicles?.OnEntityKilled(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[Radio] Kill: " + ex.Message); }
         }

@@ -3,8 +3,8 @@ using HarmonyLib;
 namespace InventoryShortcuts.Patches;
 
 /// <summary>
-/// Intercepts cui.endtest when INVSHORTCUTS is used. Handles QUEST, SKILLS, OUTPOST, PLAYERS, KITS, SHOP, SKINS.
-/// Runs chat.say as the player so Oxide plugins receive the command. Closes loot/inventory when possible.
+/// Intercepts cui.endtest when INVSHORTCUTS is used. Handles hotbar shortcuts (Outpost, Players, Kits, etc.).
+/// Runs chat.say as the player so Harmony mods receive the command. Closes loot/inventory when possible.
 /// </summary>
 [HarmonyPatch(typeof(global::cui), nameof(global::cui.endtest))]
 public static class Cui_Endtest_Patch
@@ -13,8 +13,6 @@ public static class Cui_Endtest_Patch
     {
         return action switch
         {
-            "QUEST" => "/quest",
-            "SKILLS" => "/st",
             "OUTPOST" => "/outpost",
             "PLAYERS" => "/tp",
             "KITS" => "/kits",
@@ -38,7 +36,7 @@ public static class Cui_Endtest_Patch
         var player = args.Connection?.player as BasePlayer;
         if (player == null || player.IsDestroyed || !player.IsConnected) return true;
 
-        string action = a[1].ToString().ToUpperInvariant();
+        string action = a[1]?.ToUpperInvariant();
         if (action == "GRIDCLOSE")
         {
             mod.DestroyGridOverlay(player);
@@ -51,7 +49,7 @@ public static class Cui_Endtest_Patch
         // Close loot/inventory so the target UI can open cleanly (e.g. Quests, Skills, Shop, Kits, etc.)
         try { player.EndLooting(); } catch { /* ignore */ }
 
-        // Send to client so it runs through normal chat pipeline (Oxide plugins receive it)
+        // Send to client so it runs through normal chat pipeline (Harmony mods receive it)
         player.SendConsoleCommand("chat.say", cmd);
         return false;
     }

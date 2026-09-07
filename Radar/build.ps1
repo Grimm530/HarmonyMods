@@ -1,5 +1,5 @@
 # Build script for Radar Harmony Mod
-# Output: <server root>\HarmonyMods\Radar.dll
+# Output: D:\!RustServer\HarmonyMods\Radar.dll
 
 Write-Host "Building Radar..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "Radar.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

@@ -1,5 +1,5 @@
 # Build script for UnlockTier1 Harmony Mod
-# Output: <workspace>\HarmonyMods\UnlockTier1.dll
+# Output: D:\!RustServer\HarmonyMods\UnlockTier1.dll
 
 Write-Host "Building UnlockTier1..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "UnlockTier1.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

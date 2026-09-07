@@ -69,6 +69,39 @@ namespace ZombieHorde
 
     public static class NavmeshSpawnPoint
     {
+        /// <summary>True when terrain NavMesh is queryable (respects aimanager.nav_wait / AI.move).</summary>
+        public static bool IsWorldReady()
+        {
+            try
+            {
+                if (!ConVar.AI.move) return false;
+                if (Rust.Ai.AiManager.nav_disable) return false;
+                if (TerrainMeta.HeightMap == null || !TerrainMeta.HeightMap.isInitialized || World.Size <= 0)
+                    return false;
+
+                if (TerrainMeta.Path?.Monuments != null)
+                {
+                    int tested = 0;
+                    foreach (MonumentInfo monument in TerrainMeta.Path.Monuments)
+                    {
+                        if (monument == null) continue;
+                        Vector3 p = monument.transform.position;
+                        if (NavMesh.SamplePosition(p, out NavMeshHit hit, 80f, NavMesh.AllAreas) && hit.distance <= 40f)
+                            return true;
+                        if (++tested >= 12) break;
+                    }
+                }
+
+                Vector3 probe = Vector3.zero;
+                probe.y = TerrainMeta.HeightMap.GetHeight(probe);
+                return NavMesh.SamplePosition(probe, out _, 500f, NavMesh.AllAreas);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool Find(Vector3 position, float radius, out Vector3 result)
         {
             result = position;

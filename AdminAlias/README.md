@@ -59,7 +59,7 @@ The command is registered with `Replicated = true` and **added to `ConsoleSystem
 ## What NOT to Touch
 
 - Do not call Oxide or permission APIs; this mod is standalone and config-based.
-- Do not patch methods that might be patched by Oxide if you need universal (with/without Oxide) behavior; `BasePlayer.get_displayName` is vanilla and safe.
+- Do not patch methods that might be patched by Oxide if you need universal (with/without legacy plugin host) behavior; `BasePlayer.get_displayName` is vanilla and safe.
 
 ## Build and Deploy
 

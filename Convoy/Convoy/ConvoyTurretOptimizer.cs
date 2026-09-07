@@ -159,7 +159,7 @@ namespace Convoy
                 }
                 else if (_autoTurret.HasGenericFireable())
                 {
-                    _autoTurret.AttachedWeapon.ServerUse();
+                    _autoTurret.GetAttachedWeapon()?.ServerUse();
                     _autoTurret.nextShotTime = Time.time + 0.115f;
                 }
                 else

@@ -1,9 +1,9 @@
 using System;
 using System.Reflection;
 using UnityEngine;
-using Oxide.Core.Plugins;
+using Harmony.Core.Plugins;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class ZoneManager
     {

@@ -1,9 +1,9 @@
 using HarmonyLib;
-using DHPlugin = Oxide.Plugins.DefendableHomes;
+using DHPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes.Patches
 {
-    /// <summary>Oxide CanStackItem — keep custom flare skins from stacking with vanilla flares.</summary>
+    /// <summary>compat CanStackItem — keep custom flare skins from stacking with vanilla flares.</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.CanStack))]
     public static class Patch_Item_CanStack
     {
@@ -20,7 +20,7 @@ namespace DefendableHomes.Patches
         }
     }
 
-    /// <summary>Oxide OnItemSplit — preserve flare name/skin when splitting stacks.</summary>
+    /// <summary>compat OnItemSplit — preserve flare name/skin when splitting stacks.</summary>
     [HarmonyPatch(typeof(Item), nameof(Item.SplitItem))]
     public static class Patch_Item_SplitItem
     {

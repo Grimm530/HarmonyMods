@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace ServerPanelHarmony.Patches
 {
-    /// <summary>Oxide OnPlayerConnected - drives the auto-open menu on join.</summary>
+    /// <summary>Harmony OnPlayerConnected - drives the auto-open menu on join.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PlayerInit))]
     public static class BasePlayer_PlayerInit_Patch
     {
@@ -16,7 +16,7 @@ namespace ServerPanelHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDisconnected - clears rate limits and open menu state.</summary>
+    /// <summary>Harmony OnPlayerDisconnected - clears rate limits and open menu state.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {

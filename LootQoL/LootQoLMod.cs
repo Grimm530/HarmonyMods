@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.IO;
 using System.Reflection;
+using GrimmCuiHarmony;
 using UnityEngine;
 
 namespace LootQoLHarmony
@@ -17,7 +18,7 @@ namespace LootQoLHarmony
 
         public const int VersionMajor = 1;
         public const int VersionMinor = 2;
-        public const int VersionPatch = 1;
+        public const int VersionPatch = 2;
 
         private Action _permissionsReadyCallback;
         private GameObject _runner;
@@ -27,6 +28,7 @@ namespace LootQoLHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
@@ -140,7 +142,9 @@ namespace LootQoLHarmony
             var a = args?.Args;
             if (a == null || a.Length < 2) return;
             string action = a.GetValue(1)?.ToString() ?? string.Empty;
-            BasePlayer player = args.Connection?.player as BasePlayer;
+            if (action.StartsWith("lootqol.", StringComparison.OrdinalIgnoreCase))
+                action = action.Substring("lootqol.".Length);
+            BasePlayer player = args.Connection?.player as BasePlayer ?? args.Player();
             if (player == null) return;
             if (string.Equals(action, "take", StringComparison.OrdinalIgnoreCase))
                 Plugin?.FastLootTakeAll(player);

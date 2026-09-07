@@ -1,7 +1,7 @@
 using System;
 using HarmonyLib;
 using UnityEngine;
-using ZM = Oxide.Plugins.ZoneManager;
+using ZM = Harmony.Plugins.ZoneManager;
 
 namespace ZoneManagerHarmony.Patches
 {

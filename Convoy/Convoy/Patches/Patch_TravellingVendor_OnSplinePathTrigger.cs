@@ -14,7 +14,7 @@ namespace Convoy.Patches
         [HarmonyPrefix]
         public static bool Prefix(TravellingVendor __instance)
         {
-            if (__instance == null || __instance.net == null) return true;
+            if (__instance.net == null) return true;
             if (ConvoyState.IsConvoyEntity((ulong)__instance.net.ID.Value))
                 return false;
             return true;

@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace KaruzaVehicles
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.19")]
+    [Info("Custom Entities", "Nikedemos", "1.0.20")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin

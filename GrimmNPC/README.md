@@ -10,13 +10,13 @@ Custom NPCs are identified by a fixed **`skinID`** (`GrimmNPC.CUSTOM_NPC_SKIN_ID
 
 - **Spawn / config:** Postfix on `ScientistNPC.ServerInit` to apply `CustomNpcData` (health, name, sense range, nav agent flags, optional bomber explosive, etc.) without destroying components.
 - **Brain think (postfix):** After `BaseAIBrain.Think`, throttled logic for dormancy (optional), roam enforcement, combat assists, dynamic navmesh tweaks, idle/raid-adjacent behavior, and special weapons handling. **Stock `Think` still runs;** this adds orchestration on top.
-- **Roam vs idle:** Custom NPCs with **`RoamRange > 5m`** (typical bosses) are **not** soft-halted for “no memory target but moving” — that movement is used by **`ScientistBrain`** `RoamState`, **`DismountedState`**, and related stock states. Only **`RoamRange ≤ 5m`** (stationary guards) get the in-range idle halt. **Not** controlled by `HarmonyConfig/GrimmNPC.json` or `oxide/config/BossMonster.json`; patrol still needs **`AIMovePoint`**s from the map’s **`AIInformationZone`** (monuments usually have them). **`oxide/plugins/BossMonster.cs`** sets **`Navigator.MaxRoamDistanceFromHome`** from each boss’s **Roam Range** JSON so stock roam scoring matches the plugin tether.
+- **Roam vs idle:** Custom NPCs with **`RoamRange > 5m`** (typical bosses) are **not** soft-halted for “no memory target but moving” — that movement is used by **`ScientistBrain`** `RoamState`, **`DismountedState`**, and related stock states. Only **`RoamRange ≤ 5m`** (stationary guards) get the in-range idle halt. **Not** controlled by `HarmonyConfig/GrimmNPC.json` or `legacy/config/BossMonster.json`; patrol still needs **`AIMovePoint`**s from the map’s **`AIInformationZone`** (monuments usually have them). **`oxide/plugins/BossMonster.cs`** sets **`Navigator.MaxRoamDistanceFromHome`** from each boss’s **Roam Range** JSON so stock roam scoring matches the plugin tether.
 - **Raiding:** Postfix on `BaseAIBrain.Think` calls `Raid.TickRaid` for registered raiding NPCs (structure raycasts, explosives/rockets via `SpecialWeaponsHandler`). Does not replace vanilla combat when LOS to players exists.
 - **Targeting:** Prefix on `HumanNPC.GetBestTarget` for custom NPCs only, **skipping** the original method and supplying a custom pick (chase range from home, guard priority, raid-goal bias, config flags). This is a deliberate tradeoff: narrower than duplicating `AIBrainSenses.UpdateSenses`, but it **does** own target choice for those NPCs.
 - **Roam clamp:** Prefix on `BaseNavigator.SetDestination` (4-parameter overload) to clamp destinations to horizontal roam range from `HomePosition`, with raid-goal bypass and optional “freeze unless players nearby” (see below).
 - **Swimming (optional):** If `CustomNpcData.CanSwim`, patches `BaseNavigator` `IsSwimming`, `GetTargetSpeed`, `UpdatePositionAndRotation`, and `CanEnableNavMeshNavigation` to approximate water movement. **High sensitivity:** touches navigator internals; only enable when needed.
 - **Damage / turrets:** Postfix on `BaseCombatEntity.OnAttacked` for turret damage scaling; prefix on `AutoTurret.ShouldTarget` for opt-out targeting.
-- **Bomber:** Prefix on `NPCPlayer.CreateCorpse` when `IsBomber` to run effect + optional Oxide hook.
+- **Bomber:** Prefix on `NPCPlayer.CreateCorpse` when `IsBomber` to run effect + optional Harmony hook.
 - **Save-load safety (global):** Prefix on `BaseEntity.HasChild` replaces the method with a cycle-safe walk (fixes circular parent saves). Affects **all** entities, not only custom NPCs.
 
 ---
@@ -57,7 +57,7 @@ Custom NPCs are identified by a fixed **`skinID`** (`GrimmNPC.CUSTOM_NPC_SKIN_ID
 - **File I/O** (config load/save, data persistence): `try/catch` with logging; falls back to defaults.
 - **Reflection** (Oxide `CallHook`, spawn-time `NavMeshAgent` / `MonumentNavMesh` probes, `InitializeAI` paused field): failures are handled or logged; avoid silent swallow except where enumeration of assemblies can throw.
 - **Game logic in patches:** No broad `try/catch` around entire postfix bodies; failures should surface in logs during development.
-- **`CallOxideHook`:** Failures log **only** when `EnableDebugLogging` is true (avoids spam on servers without Oxide).
+- **`CallOxideHook`:** Failures log **only** when `EnableDebugLogging` is true (avoids spam on servers without legacy plugin host).
 
 ---
 

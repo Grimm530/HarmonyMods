@@ -2,23 +2,23 @@ using Facepunch;
 using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos;
-using Oxide.Game.Rust.Cui;
+using Grimm.Chaos;
+using Game.Rust.Cui;
 using UnityEngine;
 using System.Linq;
 using System.Collections;
 using System.Globalization;
-using Oxide.Ext.Chaos.Data;
-using Oxide.Ext.Chaos.UIFramework;
+using Grimm.Chaos.Data;
+using Ext.Chaos.UIFramework;
 using Steamworks;
 using UnityEngine.UI;
 
-using Chaos = Oxide.Ext.Chaos;
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Font = Oxide.Ext.Chaos.UIFramework.Font;
-using GridLayoutGroup = Oxide.Ext.Chaos.UIFramework.GridLayoutGroup;
-using VerticalLayoutGroup = Oxide.Ext.Chaos.UIFramework.VerticalLayoutGroup;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using Chaos = Grimm.Chaos;
+using Color = Ext.Chaos.UIFramework.Color;
+using Font = Ext.Chaos.UIFramework.Font;
+using GridLayoutGroup = Ext.Chaos.UIFramework.GridLayoutGroup;
+using VerticalLayoutGroup = Ext.Chaos.UIFramework.VerticalLayoutGroup;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 using PlayerSkinsHarmony;
 
 namespace PlayerSkinsHarmony
@@ -57,7 +57,7 @@ namespace PlayerSkinsHarmony
         public enum CurrencyType { None, ServerRewards, Economics, Scrap }
         #endregion
         
-        #region Oxide Hooks
+        #region Harmony Hooks
 
         internal void OnServerInitialized()
         {
@@ -774,7 +774,7 @@ namespace PlayerSkinsHarmony
                 skinList.Add(kvp.Key, skins);
             }
 
-            Interface.Oxide.CallHook("OnPlayerSkinsSkinsLoaded", skinList);
+            HarmonyModInterface.Mods.CallHook("OnPlayerSkinsSkinsLoaded", skinList);
 
             Debug.Log("[PlayerSkins] - Skins processed and ready to use!");
 
@@ -4346,7 +4346,7 @@ namespace PlayerSkinsHarmony
         }
         #endregion 
 
-        // ---- Harmony lifecycle (replaces Oxide Loaded / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Loaded / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             s_Instance = this;

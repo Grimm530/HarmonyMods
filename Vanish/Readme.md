@@ -19,7 +19,7 @@
 - Intercept console commands containing "vanish" (chat/console) for users with `authLevel != 0`
 - Config: `HarmonyConfig/Vanish.json` (Users, CanSeeEveryone, AccessList, Messages); per-user `UserConfig` (effects, safepoints, UI image, damage block, etc.)
 - **Permanent** vs **temporary** patches: temporary patches (e.g. `ShouldNetworkTo`, `Hurt`, `Die`) only applied when at least one player is vanished; unpatched when none
-- Optional Oxide: when `Oxide.Core` is present, patch `Interface.CallHook(...)` so admins who are currently vanished can loot and authorize on cupboards
+- Optional Oxide: when `Harmony.Core` is present, patch `HarmonyModInterface.CallHook("CanLootEntity", ...)` so vanished/admins can loot
 
 **Key flags / state:**
 - `IsShuttingDown` — set in `ServerMgr.Shutdown` prefix; prevents `Reappear` on unload for already-disconnected players
@@ -56,7 +56,7 @@ When creating Vanish documentation, include these sections. Adapt content to wha
 ### 2) Project Structure & Topology
 - Single main assembly; entry: `Manager : IHarmonyModHooks` in `HarmonyMods.RustGame.Vanish`.
 - Config path: `HarmonyConfig/Vanish.json`; icon `HarmonyConfig/Vanish.png` or `Vanish.b64`.
-- State flow: Config load → `HiddenPlayers` (Dictionary by UserIDString → VanishComponent); `UserConfig.Get(ulong)` reads existing settings (or defaults); `GetOrCreate` saves a Users entry only for players with vanish access.
+- State flow: Config load → `HiddenPlayers` (Dictionary by UserIDString → VanishComponent); `UserConfig.Get(ulong)` creates/saves per-user config on first access.
 
 ### 3) Persistent Data Model (CRITICAL)
 - **HiddenPlayers:** `Dictionary<string, VanishComponent>` keyed by `BasePlayer.UserIDString`. Only contains currently vanished players. Cleared implicitly when each is destroyed on `Reappear`.
@@ -68,7 +68,7 @@ Document top-level and per-user fields:
 
 | Level | Field | Type | Default / note |
 |-------|--------|------|----------------|
-| Config | Users | Dictionary&lt;ulong, UserConfig&gt; | Per-user settings, created only for authLevel / IsAdmin / AccessList |
+| Config | Users | Dictionary&lt;ulong, UserConfig&gt; | Per-user settings, created on first Get(id) |
 | Config | CanSeeEveryone | List&lt;ulong&gt; | SteamIDs that always see vanished players; gates ShouldNetworkTo patch |
 | Config | AccessList | List&lt;ulong&gt; | SteamIDs allowed to use vanish (with HasAccess) |
 | Config | Messages | Dictionary&lt;string, string&gt; | Localized strings (Disabled, Enabled, Saved, etc.) |
@@ -78,7 +78,7 @@ Document top-level and per-user fields:
 | UserConfig | SafePoints | List&lt;Vector3&gt; | Stored as "x y z" in JSON (UnityVector3Converter) |
 | UserConfig | ImageBase64, ImageColor, ImageOffsetMin/Max, ImageScaleFactor | string/float | UI indicator |
 
-Config load: `Config.ReloadConfig()` (OnLoaded) prunes Users who are in the world without vanish access; save on UserConfig.GetOrCreate when a permitted user is new, and on various SetConfig commands.
+Config load: `Config.ReloadConfig()` (OnLoaded); save on UserConfig.Get when new user, and on various SetConfig commands.
 
 ### 5) Console / Chat Command Surface
 Commands are intercepted via **ConsoleSystem.RunWithResult** prefix: only when `HasAccess(Connection)` (authLevel != 0) and command string contains "vanish" (after stripping chat prefixes and normalizing).
@@ -100,7 +100,7 @@ Result: command is consumed (return false) so game does not process it again.
 ### 6) Harmony Patches & Event Flow (CRITICAL)
 **Permanent patches** (always applied after validation):
 - **ConsoleSystem.RunWithResult** — Prefix: intercept "vanish" commands, toggle or SetConfig; return false to suppress original.
-- **ServerMgr.OnDisconnected** — Prefix: vanished players only; optional bag/safepoint/underground teleport. Does **not** disable colliders on admin logoff (that killed sleepers and wiped inventory).
+- **ServerMgr.OnDisconnected** — Prefix: handle disconnect (e.g. reappear or teleport to safepoint).
 - **BasePlayer.PlayerInit** — Postfix: apply auto-vanish / re-vanish for loaded players after save load or connect.
 - **ServerMgr.Shutdown** — Prefix: set `IsShuttingDown = true`.
 - **SaveRestore.Load** — Prefix: on load, re-vanish or auto-vanish players; optionally clear SafePoints (SafePointsRemoval).
@@ -120,9 +120,8 @@ Result: command is consumed (return false) so game does not process it again.
 - **BasePlayer.MarkHostileFor** — Prefix: block for vanished.
 - **BasePlayer.Hurt** / **OnAttacked** / **Die** — Prefix: block damage/death when user config blocks incoming/outgoing.
 - **BasePlayer.get_currentCraftLevel** — Prefix: fake workbench level when WorkbenchCraft.
-- **PlayerLoot.StartLootingEntity**, **StorageContainer.CanBeLooted**, **BasePlayer.CanBeLooted**, **BuildingPrivlidge.CanAdministrate** — Prefix: first-priority bypass for admins who are currently vanished, so other loot blockers do not deny admin vanish inspection.
 - **CodeLock.OnTryToOpen/OnTryToClose**, **KeyLock.OnTryToOpen/OnTryToClose** — Prefix: allow vanished to use locks.
-- **Oxide.Core.Interface.CallHook** ("CanLootEntity", "IOnCupboardAuthorize", cupboard deauthorize/clear hooks) — Prefix (only if Oxide present): let admins who are currently vanished loot and manage cupboard authorization.
+- **Harmony.Core.HarmonyModInterface.CallHook** ("CanLootEntity") — Prefix (only if Oxide present): let admins or vanished loot.
 
 Patch application: `PatchAll()` uses `PatchDefinition` list; validates with `AccessTools.Method`; if validation fails and `CancelOnError`, load aborts. Temporary patches applied after permanent; unpatched when last vanished player reappears.
 
@@ -135,8 +134,8 @@ Patch application: `PatchAll()` uses `PatchDefinition` list; validates with `Acc
 **Invariants:** `IsVanished(player)` must match `HiddenPlayers` and `limitNetworking`. Temporary patches must be applied only when `HiddenPlayers.Count > 0`.
 
 ### 8) Oxide Integration (Optional)
-- **Conditional patch:** `Type.GetType("Oxide.Core.Interface, Oxide.Core")`; if non-null, add temporary patches for `Interface.CallHook` overloads used by loot and cupboard authorization. Prefix: if the player is both admin and vanished, set `__result = null` and return false so they can loot or authorize.
-- No Oxide reference in .csproj; runtime detection only.
+- **Conditional patch:** `Type.GetType("Harmony.Core.HarmonyModInterface, Harmony.Core")`; if non-null, add temporary patch for `HarmonyModInterface.CallHook(string, object[])`. Prefix: if hook == "CanLootEntity" and first arg is BasePlayer and (IsAdmin || IsVanished), set __result and return false so they can loot.
+- Harmony-only reference in .csproj; runtime detection only.
 
 ### 9) VanishExtensions (Methods.cs)
 - **IsOnline(BasePlayer)** — not null and Connection != null.
@@ -171,7 +170,7 @@ Use these when editing the mod to avoid introducing System.Linq or duplicate log
 
 ### 12) Comparison with Oxide Vanish (Whispers88)
 
-**Reference:** `.cursor/Oxide.Plugins.Cant-Use/Vanish.cs` (Oxide plugin; not loadable in this workspace but useful for feature comparison).
+**Reference:** `.cursor/Harmony.Plugins.Cant-Use/Vanish.cs` (Harmony mod; not loadable in this workspace but useful for feature comparison).
 
 | Feature | Oxide Vanish | Harmony Vanish |
 |--------|---------------|----------------|
@@ -226,4 +225,4 @@ Before outputting a Vanish dictionary/instructional, verify:
 - Config, UserConfig, and Messages are accurate; CanSeeEveryone and AccessList behavior is clear.
 - Lifecycle (OnLoaded, OnUnloaded, Disappear, Reappear, TryPatchTemporary, TryUnpatchTemporary) is correct.
 - Performance and "do not touch" sections are included.
-- When adding features or improving the mod, consult **section 12) Comparison with Oxide Vanish** (`.cursor/Oxide.Plugins.Cant-Use/Vanish.cs`) for the improvement checklist.
+- When adding features or improving the mod, consult **section 12) Comparison with Oxide Vanish** (`.cursor/Harmony.Plugins.Cant-Use/Vanish.cs`) for the improvement checklist.

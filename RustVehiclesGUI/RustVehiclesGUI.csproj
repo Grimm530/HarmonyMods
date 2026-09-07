@@ -5,7 +5,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12</LangVersion>
     <RootNamespace>RustVehiclesGUIHarmony</RootNamespace>
-    <Description>Harmony mod: RustVehiclesGUI 1.0.5 (Oxide-free). Config: HarmonyConfig/RustVehiclesGUI.json</Description>
+    <Description>Harmony mod: RustVehiclesGUI 1.0.5 (Harmony). Config: HarmonyConfig/RustVehiclesGUI.json</Description>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
@@ -97,4 +97,9 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
 </Project>

@@ -18,7 +18,6 @@ namespace GrimmNPC.Patches
     {
         static void Postfix(BaseAIBrain __instance)
         {
-            if (__instance == null) return;
 
             ScientistNPC npc = __instance.GetBaseEntity() as ScientistNPC;
             if (npc == null || !GrimmNPC.IsCustomNpc(npc)) return;

@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -39,7 +39,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(GrowableEntity __instance, BasePlayer player)
         {
-            if (__instance == null || player == null) return;
+            if (player == null) return;
             try { STPlugin.Dispatch_CanTakeCutting(player, __instance); }
             catch (System.Exception ex) { Debug.LogWarning("[SkillTree] CanTakeCutting: " + ex.Message); }
         }

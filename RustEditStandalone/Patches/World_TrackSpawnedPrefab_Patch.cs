@@ -1,5 +1,4 @@
 using HarmonyLib;
-using RustEditStandalone.Core;
 using UnityEngine;
 
 namespace RustEditStandalone.Patches;
@@ -9,6 +8,7 @@ public static class World_TrackSpawnedPrefab_Patch
 {
     static void Postfix(string category, GameObject instance)
     {
-        RustEditHub.NotifyPrefabTracked(instance, category);
+        if (RustEditStandaloneMod.Instance == null) return;
+        RustEditStandaloneMod.Instance.OnPrefabSpawned(instance, category);
     }
 }

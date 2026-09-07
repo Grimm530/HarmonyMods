@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using ATPlugin = Oxide.Plugins.ArmoredTrain;
+using ATPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain.Patches
 {
@@ -23,7 +23,7 @@ namespace ArmoredTrain.Patches
             if (ent is BasePlayer)
                 return true;
 
-            if (__instance == null || ent == null)
+            if (ent == null)
             {
                 __result = false;
                 return false;

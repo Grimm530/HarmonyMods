@@ -168,6 +168,6 @@ public static class RustEditCommands
         OceanFeature.Show(player, t);
         Reply(arg, "Showing ocean path.");
     }
-    private static void CheckUpdate(ConsoleSystem.Arg arg) => Reply(arg, "AutoUpdater omitted in RustEditStandalone (no Oxide Managed target).");
+    private static void CheckUpdate(ConsoleSystem.Arg arg) => Reply(arg, "AutoUpdater omitted in RustEditStandalone (Harmony-only Managed target).");
     private static void DownloadUpdate(ConsoleSystem.Arg arg) => Reply(arg, "AutoUpdater omitted in RustEditStandalone.");
 }

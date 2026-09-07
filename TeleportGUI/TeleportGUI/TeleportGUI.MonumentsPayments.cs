@@ -12,7 +12,7 @@ using Random = UnityEngine.Random;
 namespace TeleportGUI
 {
     /// <summary>
-    /// Monument-generated warps + payment helpers (Oxide TeleportGUI 2.0.50).
+    /// Monument-generated warps + payment helpers (original TeleportGUI 2.0.50).
     /// Generated warps live only in memory — never written to warpdata.
     /// </summary>
     public partial class TeleportGUIMod
@@ -82,7 +82,7 @@ namespace TeleportGUI
         #region Monument lifecycle
 
         /// <summary>
-        /// Harmony loads BeforeSceneLoad. Wait until TerrainMeta/monuments exist (Oxide OnServerInitialized timing).
+        /// Harmony loads BeforeSceneLoad. Wait until TerrainMeta/monuments exist (Harmony OnServerInitialized timing).
         /// </summary>
         public void StartMonumentWarpInit()
         {
@@ -208,7 +208,7 @@ namespace TeleportGUI
 
         /// <summary>
         /// Discover monuments via TerrainMeta.Path.Monuments and generate enabled warps in memory.
-        /// Missing monuments are added to config (Oxide OnServerInitialized behavior). Generated warps are never written to warpdata.
+        /// Missing monuments are added to config (Harmony OnServerInitialized behavior). Generated warps are never written to warpdata.
         /// </summary>
         public void InitializeMonumentWarps()
         {
@@ -449,7 +449,7 @@ namespace TeleportGUI
         }
 
         /// <summary>
-        /// Oxide adds missing monuments with Enabled=false. Vanilla Outpost / Bandit Camp default on
+        /// original adds missing monuments with Enabled=false. Vanilla Outpost / Bandit Camp default on
         /// with /outpost and /bandit so they work without a hand-edited config.
         /// </summary>
         private static TeleportGUIConfig.WarpOptions.MonumentWarp CreateDefaultMonumentWarp(string shortname, bool isSafeZone)
@@ -991,7 +991,7 @@ namespace TeleportGUI
 
         #endregion
 
-        #region Nested types (Oxide Monument / MonumentWarpPoint / LocalSpawnGenerator)
+        #region Nested types (original Monument / MonumentWarpPoint / LocalSpawnGenerator)
 
         public sealed class MonumentInfoEntry
         {

@@ -230,7 +230,7 @@ if ($warnings.Count -eq 0) {
 $summary += "`n" + ($warnings -join "`n")
 
 # Check Oxide logs for errors
-$summary += "`n`n========================================`nOxide Plugin Log Analysis`n========================================`n"
+$summary += "`n`n========================================`nHarmony Mod Log Analysis`n========================================`n"
 
 $oxideLogPath = Join-Path (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)) "oxide\logs"
 if (Test-Path $oxideLogPath) {
@@ -250,7 +250,7 @@ if (Test-Path $oxideLogPath) {
             }
         }
     } else {
-        $summary += "No Oxide log files found in: $oxideLogPath`n"
+        $summary += "Harmony-only log files found in: $oxideLogPath`n"
     }
 } else {
     $summary += "Oxide log path not found: $oxideLogPath`n"

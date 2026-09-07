@@ -1,17 +1,15 @@
 ﻿using HarmonyLib;
 using Network;
 
-// ReSharper disable InconsistentNaming
-
-namespace RustServerMetrics.HarmonyPatches;
-
-[HarmonyPatch(typeof(NetWrite), nameof(NetWrite.Send))]
-public class NetWrite_Send_Patch
+namespace RustServerMetrics.HarmonyPatches
 {
-    [HarmonyPrefix]
-    public static void Prefix(NetWrite __instance, SendInfo info)
+    [HarmonyPatch(typeof(NetWrite), nameof(NetWrite.Send))]
+    public class NetWrite_Send_Patch
     {
-        if (!MetricsLogger.IsReady) return;
-        SingletonComponent<MetricsLogger>.Instance.OnNetWriteSend(__instance, info);
+        [HarmonyPrefix]
+        public static void Prefix(NetWrite __instance, SendInfo info)
+        {
+            SingletonComponent<MetricsLogger>.Instance?.OnNetWriteSend(__instance, info);
+        }
     }
 }

@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace ShopHarmony.Patches
 {
-    /// <summary>Oxide OnPlayerConnected → BasePlayer.PlayerInit postfix.</summary>
+    /// <summary>Harmony OnPlayerConnected → BasePlayer.PlayerInit postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.PlayerInit))]
     public static class BasePlayer_PlayerInit_Patch
     {
@@ -22,7 +22,7 @@ namespace ShopHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
+    /// <summary>Harmony OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {
@@ -41,7 +41,7 @@ namespace ShopHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnNewSave — when SaveRestore.Load runs with a wipe id change.
+    /// compat OnNewSave — when SaveRestore.Load runs with a wipe id change.
     /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]
     public static class SaveRestore_Load_Patch

@@ -56,12 +56,34 @@ namespace ZombieHorde
 
             GrimmNpcBridge.Bind();
 
-            // adminOnly=false so zombiehorde.admin (not only auth level) can run F1 console, matching Oxide.
+            // adminOnly=false so zombiehorde.admin (not only auth level) can run F1 console, matching original plugin.
             Compat.RegisterConsoleCommand("horde", OnConsoleHorde, false);
             Compat.RegisterConsoleCommand("hordeinfo", OnConsoleHordeInfo, false);
 
-            // Defer world init until ServerMgr is ready
-            Compat.Timer.Once(2f, OnServerInitialized);
+            // Defer until terrain/world exist (Init runs during mod load, often before map generation).
+            Compat.Timer.Once(2f, TryOnServerInitialized);
+        }
+
+        private bool _serverInitialized;
+
+        private int _serverInitAttempts;
+
+        private void TryOnServerInitialized()
+        {
+            if (_serverInitialized)
+                return;
+
+            if (ServerMgr.Instance == null || TerrainMeta.HeightMap == null || World.Size <= 0 || !NavmeshSpawnPoint.IsWorldReady())
+            {
+                _serverInitAttempts++;
+                if (_serverInitAttempts == 12 || _serverInitAttempts == 48)
+                    Compat.PrintWarning("ZombieHorde: waiting for AI NavMesh before horde spawn orders...");
+                Compat.Timer.Once(5f, TryOnServerInitialized);
+                return;
+            }
+
+            _serverInitialized = true;
+            OnServerInitialized();
         }
 
         public void Shutdown()
@@ -107,7 +129,8 @@ namespace ZombieHorde
                 ConfigData.Configuration.Raiding = new ConfigData.RaidingZombiesOptions();
             RaidingZombies.Init();
 
-            Compat.Puts("Initialized. GrimmNPC=" + GrimmNpcBridge.Available + " Hordes queued/active=" + Horde.AllHordes.Count);
+            Compat.Puts("Initialized. GrimmNPC=" + GrimmNpcBridge.Available + " Hordes queued/active=" + Horde.AllHordes.Count
+                + " spawnOrders=" + Horde.SpawnOrder.PendingCount);
         }
 
         #region Config
@@ -117,11 +140,11 @@ namespace ZombieHorde
             try
             {
                 string path = Compat.ConfigPath;
-                if (!File.Exists(path) && File.Exists(Compat.OxideConfigPath))
+                if (!File.Exists(path) && File.Exists(Compat.LegacyPluginConfigPath))
                 {
                     Directory.CreateDirectory(Compat.ConfigDirectory);
-                    File.Copy(Compat.OxideConfigPath, path);
-                    Compat.Puts("Migrated oxide/config/ZombieHorde.json -> HarmonyConfig/ZombieHorde.json");
+                    File.Copy(Compat.LegacyPluginConfigPath, path);
+                    Compat.Puts("Migrated legacy/config/ZombieHorde.json -> HarmonyConfig/ZombieHorde.json");
                 }
 
                 if (!File.Exists(path))
@@ -605,7 +628,7 @@ namespace ZombieHorde
             if (!Mathf.Approximately(damageMultiplier, 1f))
                 hitInfo.damageTypes.ScaleAll(damageMultiplier);
 
-            // RaidingZombies explosive scale (Oxide RaidingZombies.OnEntityTakeDamage / CanEntityTakeDamage)
+            // RaidingZombies explosive scale (original RaidingZombies.OnEntityTakeDamage / CanEntityTakeDamage)
             RaidingZombies.OnEntityTakeDamage(baseCombatEntity, hitInfo);
         }
 
@@ -841,7 +864,7 @@ namespace ZombieHorde
         {
             if (arg == null) return;
 
-            // Match Oxide: console commands are separate from chat; permission when run by a player.
+            // Match original: console commands are separate from chat; permission when run by a player.
             if (arg.Connection != null)
             {
                 string userId = arg.Connection.userid.ToString();
@@ -865,7 +888,7 @@ namespace ZombieHorde
                 return;
             }
 
-            // Server/RCON: broadcast like Oxide PrintToChat, also reply for RCON visibility.
+            // Server/RCON: broadcast like original PrintToChat, also reply for RCON visibility.
             string info = GetInfoString();
             ConsoleNetwork.BroadcastToAllClients("chat.add", 0, 0, info);
             arg.ReplyWith(info);
@@ -1046,7 +1069,7 @@ namespace ZombieHorde
         }
 
         /// <summary>
-        /// Oxide console parity: info, destroy (1-based), create (random spawn), addloadout, hordecount, membercount.
+        /// original console parity: info, destroy (1-based), create (random spawn), addloadout, hordecount, membercount.
         /// </summary>
         private void CmdHordeConsole(ConsoleSystem.Arg arg)
         {
@@ -1073,7 +1096,7 @@ namespace ZombieHorde
                 }
                 case "destroy":
                 {
-                    // Console uses 1-based indices (Oxide parity); chat uses 0-based.
+                    // Console uses 1-based indices (original parity); chat uses 0-based.
                     if (arg.Args.Length != 2 || !int.TryParse(arg.GetString(1), out int number))
                     {
                         arg.ReplyWith("You must specify a horde number");

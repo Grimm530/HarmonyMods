@@ -5,7 +5,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <RootNamespace>RestoreItemsHarmony</RootNamespace>
-    <Description>Harmony mod: RestoreItems 2.1.6 (Oxide-free). Death inventory capture and /getstuff restoration.</Description>
+    <Description>Harmony mod: RestoreItems 2.1.6 (Harmony). Death inventory capture and /getstuff restoration.</Description>
     <RustManaged Condition="'$(RustManaged)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</RustManaged>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

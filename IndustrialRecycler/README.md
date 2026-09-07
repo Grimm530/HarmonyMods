@@ -1,8 +1,8 @@
 # IndustrialRecycler (Harmony)
 
-Oxide **IndustrialRecycler 1.9.1** port as a standalone Harmony mod (no Oxide runtime).
+Legacy **IndustrialRecycler 1.9.2** port as a standalone Harmony mod (Harmony-only runtime).
 
-IndustrialRecycler 1.9.1 Harmony port. Storage adapters + virtual recycler.
+IndustrialRecycler 1.9.2 Harmony port. Storage adapters + virtual recycler.
 
 ## Load order
 

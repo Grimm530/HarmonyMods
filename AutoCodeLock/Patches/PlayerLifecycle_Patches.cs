@@ -10,7 +10,7 @@ namespace AutoCodeLockHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerConnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[AutoCodeLock] OnPlayerConnected: " + ex.Message); }
         }
@@ -23,7 +23,7 @@ namespace AutoCodeLockHarmony.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[AutoCodeLock] OnPlayerDisconnected: " + ex.Message); }
         }

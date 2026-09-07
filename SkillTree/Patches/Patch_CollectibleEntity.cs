@@ -3,7 +3,7 @@
 // Must be Prefix: DoPickup ends with Kill(), and yield must apply before items are created.
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -13,7 +13,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(CollectibleEntity __instance, BasePlayer reciever)
         {
-            if (__instance == null || reciever == null || __instance.itemList == null) return;
+            if (reciever == null || __instance.itemList == null) return;
             try { STPlugin.Dispatch_OnCollectiblePickup(__instance, reciever); }
             catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnCollectiblePickup: " + ex.Message); }
         }

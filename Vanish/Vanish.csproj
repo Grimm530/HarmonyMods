@@ -3,35 +3,13 @@
     <AssemblyName>Vanish</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
-    <OutputPath>bin\$(Configuration)\</OutputPath>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <LangVersion>12.0</LangVersion>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
   </PropertyGroup>
   <PropertyGroup>
     <ManagedPath Condition="'$(ManagedPath)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</ManagedPath>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="mscorlib">
-      <HintPath>$(ManagedPath)\mscorlib.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Runtime">
-      <HintPath>$(ManagedPath)\System.Runtime.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Memory">
-      <HintPath>$(ManagedPath)\System.Memory.dll</HintPath>
-    </Reference>
-    <Reference Include="netstandard">
-      <HintPath>$(ManagedPath)\netstandard.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Runtime.CompilerServices.Unsafe">
-      <HintPath>$(ManagedPath)\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
-    </Reference>
-    <Reference Include="System">
-      <HintPath>$(ManagedPath)\System.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Core" />
     <Reference Include="Rust.Harmony">
       <HintPath>$(ManagedPath)\Rust.Harmony.dll</HintPath>
     </Reference>
@@ -71,6 +49,8 @@
     <Reference Include="Assembly-CSharp-firstpass">
       <HintPath>$(ManagedPath)\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
+    <!-- Harmony.Core not referenced - Vanish loads without legacy plugin host. CanLootEntity patch applied only when Harmony.Core present at runtime. -->
+    <Reference Include="System.Core" />
     <Reference Include="Rust.Data">
       <HintPath>$(ManagedPath)\Rust.Data.dll</HintPath>
     </Reference>

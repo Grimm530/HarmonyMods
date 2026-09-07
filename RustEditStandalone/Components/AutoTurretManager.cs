@@ -27,7 +27,7 @@ public sealed class AutoTurretManager : MonoBehaviour
             if (item != null)
             {
                 item.RemoveFromContainer();
-                item.RemoveFromWorld();
+                item.Remove();
                 item.position = 0;
                 item.SetParent(_turret.inventory);
                 _turret.inventory.MarkDirty();
@@ -43,7 +43,7 @@ public sealed class AutoTurretManager : MonoBehaviour
     private void EnsureAmmo()
     {
         if (_turret == null || !UnlimitedAmmo) return;
-        if (_turret.AttachedWeapon == null)
+        if (_turret.GetAttachedWeapon() == null)
         {
             _turret.Invoke(EnsureAmmo, 1f);
             return;

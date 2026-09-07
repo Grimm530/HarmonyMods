@@ -9,7 +9,7 @@
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
-    <Description>Harmony port of Oxide PlatformSync 1.1.01 — Discord/Steam link + Nitro groups</Description>
+    <Description>Harmony port of original PlatformSync 1.1.01 — Discord/Steam link + Nitro groups</Description>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">

@@ -80,7 +80,7 @@ namespace ItemRetrieverHarmony
 
             try
             {
-                // Oxide hook args: (this, id, list) — ItemRetriever signature (inventory, itemId, collect)
+                // Harmony hook args: (this, id, list) — ItemRetriever signature (inventory, itemId, collect)
                 var result = plugin.OnInventoryItemsFind(__instance, id, list);
                 if (result != null)
                     return false; // False object skips vanilla

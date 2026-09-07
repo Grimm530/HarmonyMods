@@ -7,7 +7,7 @@ public static class Patch_BaseEntity_OnPlaced
 {
     static void Postfix(BaseEntity __instance, BasePlayer player)
     {
-        if (__instance == null || player == null || !SteamIdHelper.IsSteamId(player.userID)) return;
+        if (player == null || !SteamIdHelper.IsSteamId(player.userID)) return;
         var mod = LeaderboardMod.Instance;
         if (mod == null) return;
 

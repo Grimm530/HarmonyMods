@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using HarmonyChat;
 using HarmonyLib;
 using UnityEngine;
@@ -22,11 +21,6 @@ namespace KillFeedHarmony.Patches
             {
                 if (message.StartsWith("/") || message.StartsWith("\\"))
                 {
-                    string[] parts = message.Substring(1).Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length == 0) return true;
-                    string command = parts[0];
-                    string[] argsArr = parts.Length > 1 ? parts.Skip(1).ToArray() : Array.Empty<string>();
-
                     if (ChatSayBridge.Dispatch(player, message))
                         return false;
                     return true;

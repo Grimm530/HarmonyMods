@@ -1,6 +1,6 @@
 namespace EntityOwner
 {
-    /// <summary>Steam ID helpers — Oxide-style IsSteamId without Oxide runtime.</summary>
+    /// <summary>Steam ID helpers — compat-style IsSteamId without legacy plugin host runtime.</summary>
     internal static class CompatHelpers
     {
         private const ulong MinSteamId = 76561197960265728UL;

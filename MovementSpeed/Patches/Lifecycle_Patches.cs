@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using MSPlugin = Oxide.Plugins.MovementSpeed;
+using MSPlugin = Harmony.Plugins.MovementSpeed;
 
 namespace MovementSpeedHarmony.Patches
 {
@@ -10,7 +10,6 @@ namespace MovementSpeedHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null) return;
             try { MovementSpeedMod.Plugin?.DispatchConnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[MovementSpeed] OnPlayerConnected: " + ex.Message); }
         }
@@ -22,7 +21,6 @@ namespace MovementSpeedHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null) return;
             try { MovementSpeedMod.Plugin?.DispatchDisconnected(__instance, ""); }
             catch (System.Exception ex) { Debug.LogWarning("[MovementSpeed] OnPlayerDisconnected: " + ex.Message); }
         }

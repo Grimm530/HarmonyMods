@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using BD = Oxide.Plugins.BradleyDrops;
+using BD = Harmony.Plugins.BradleyDrops;
 
 namespace BradleyDropsHarmony.Patches
 {
@@ -52,7 +52,7 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ItemContainer __instance, Item item, bool __result)
         {
-            if (!__result || __instance == null || item == null) return;
+            if (!__result || item == null) return;
             try { BD.Dispatch_OnItemAddedToContainer(__instance, item); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnItemAddedToContainer: " + ex.Message); }
         }
@@ -64,7 +64,7 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BaseEntity ent, Item ownerItem)
         {
-            if (__instance == null || ent == null) return;
+            if (ent == null) return;
             var player = __instance.GetOwnerPlayer();
             if (player == null) return;
             try { BD.Dispatch_OnExplosiveThrown(player, ent, __instance, ownerItem); }
@@ -78,7 +78,7 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(ThrownWeapon __instance, BasePlayer owningPlayer, BaseEntity thrownEntity)
         {
-            if (__instance == null || owningPlayer == null || thrownEntity == null) return;
+            if (owningPlayer == null || thrownEntity == null) return;
             try { BD.Dispatch_OnExplosiveThrown(owningPlayer, thrownEntity, __instance, __instance.GetItem()); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnExplosiveThrown DoThrowImpl: " + ex.Message); }
         }
@@ -90,7 +90,6 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(SupplySignal __instance)
         {
-            if (__instance == null) return true;
             try
             {
                 ulong skin = __instance.skinID;
@@ -110,24 +109,9 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
         {
-            if (__instance == null || __instance is BasePlayer) return;
+            if (__instance is BasePlayer) return;
             try { BD.Dispatch_OnEntitySpawned(__instance); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnEntitySpawned: " + ex.Message); }
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), new[] { typeof(HitInfo) })]
-    public static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        public static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            if (info?.InitiatorPlayer != null)
-            {
-                object attack = BD.Dispatch_OnPlayerAttack(info.InitiatorPlayer, info);
-                if (attack != null) return false;
-            }
-            return BD.Dispatch_OnEntityTakeDamage(__instance, info) == null;
         }
     }
 
@@ -137,7 +121,7 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BradleyAPC __instance, HitInfo info)
         {
-            if (__instance == null || info == null) return;
+            if (info == null) return;
             try { BD.Dispatch_OnBradleyAttacked(__instance, info); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnBradleyAttacked: " + ex.Message); }
         }
@@ -160,7 +144,7 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPrefix]
         public static bool Prefix(PlayerLoot __instance, BaseEntity targetEntity, ref bool __result)
         {
-            if (__instance == null || targetEntity is not LockedByEntCrate crate) return true;
+            if (targetEntity is not LockedByEntCrate crate) return true;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return true;
             if (BD.Dispatch_CanLootEntity(player, crate) != null) { __result = false; return false; }
@@ -185,7 +169,6 @@ namespace BradleyDropsHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BradleyAPC __instance)
         {
-            if (__instance == null) return;
             try { BD.Dispatch_OnBradleyApcInitialize(__instance); }
             catch (Exception ex) { Debug.LogWarning("[BradleyDrops] OnBradleyApcInitialize: " + ex.Message); }
         }

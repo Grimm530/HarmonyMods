@@ -5,7 +5,7 @@ namespace ServerPanelHarmony.Patches
 {
     /// <summary>
     /// Category commands (from HarmonyData/ServerPanel/Categories.json) and pop-up commands are chat
-    /// commands under Oxide. Route them here and swallow the chat line when one matches.
+    /// commands under Harmony. Route them here and swallow the chat line when one matches.
     /// </summary>
     [HarmonyPatch(typeof(ConVar.Chat), nameof(ConVar.Chat.say))]
     public static class Chat_Say_Patch

@@ -1,7 +1,7 @@
 /*
  * SmeltingSpeed Harmony Mod
  * Halves smelt time for all furnace types (campfire, furnace, large furnace, oil refinery, electric furnace).
- * Patches: BaseOven.IncreaseCookTime
+ * Patches: BaseOven.GetSmeltingSpeed
  */
 
 namespace SmeltingSpeed

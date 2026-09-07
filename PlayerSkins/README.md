@@ -1,6 +1,6 @@
 # PlayerSkins Harmony Mod (3.0.142)
 
-Oxide-free Harmony port of **PlayerSkins 3.0.141** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AutoCodeLock).
+Harmony Harmony port of **PlayerSkins 3.0.141** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AutoCodeLock).
 
 ## Load order
 
@@ -90,13 +90,13 @@ Copies `PlayerSkins.dll` to `HarmonyMods/`.
 Regenerate plugin body from Oxide reference:
 
 ```powershell
-.\.cursor\HarmonyMods\PlayerSkins\convert-from-oxide.ps1
+.\.cursor\HarmonyMods\PlayerSkins\convert-from-legacy.ps1
 ```
 
-`convert-from-oxide.ps1` overwrites Harmony-only workshop scrape changes. Re-apply those after a regenerate.
+`convert-from-legacy.ps1` overwrites Harmony-only workshop scrape changes. Re-apply those after a regenerate.
 
 ## Port notes
 
-- Source: `.cursor/Oxide.Plugins.Cant-Use/PlayerSkins.cs`
+- Source: `.cursor/Harmony.Plugins.Cant-Use/PlayerSkins.cs`
 - Uses existing `HarmonyConfig/PlayerSkins.json` and `HarmonyData/PlayerSkins/` data from Oxide migration
 - NPC shop/reskin NPCs (`OnUseNPC`): method is ported; wire NPC user IDs in config when a dedicated NPC interaction patch is added (same gap as Shop/Kits Harmony ports)

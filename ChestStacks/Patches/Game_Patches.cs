@@ -10,7 +10,7 @@ namespace ChestStacks.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = ChestStacksMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerConnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[ChestStacks] OnPlayerConnected: " + ex.Message); }
         }
@@ -23,7 +23,7 @@ namespace ChestStacks.Patches
         private static void Postfix(BasePlayer __instance)
         {
             var plugin = ChestStacksMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerDisconnected(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[ChestStacks] OnPlayerDisconnected: " + ex.Message); }
         }
@@ -36,7 +36,7 @@ namespace ChestStacks.Patches
         private static void Prefix(BaseNetworkable __instance)
         {
             var plugin = ChestStacksMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             var box = __instance as BoxStorage;
             if (box == null) return;
             try { plugin.OnEntityKill(box); }
@@ -51,7 +51,7 @@ namespace ChestStacks.Patches
         private static bool Prefix(DestroyOnGroundMissing __instance)
         {
             var plugin = ChestStacksMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return true;
+            if (plugin == null) return true;
             try
             {
                 var entity = GameObjectEx.ToBaseEntity(__instance.gameObject);

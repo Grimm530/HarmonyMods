@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: CombatClasses 1.0.0131 (Oxide port). Config: HarmonyConfig/CombatClasses.json. Data: CustomDataDirectory (default C:\!DataPersistence\oxide\data\CombatClasses) or HarmonyData/CombatClasses. SkillTree-overlapping abilities disabled. Requires Permissions mod.</Description>
+    <Description>Harmony mod: CombatClasses 1.0.0131 (Harmony port). Config: HarmonyConfig/CombatClasses.json. Data: CustomDataDirectory (default C:\!DataPersistence\oxide\data\CombatClasses) or HarmonyData/CombatClasses. SkillTree-overlapping abilities disabled. Requires Permissions mod.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
@@ -111,4 +111,13 @@
       <HintPath>$(RustManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Patch_CuiDrag.cs" /></ItemGroup>
 </Project>

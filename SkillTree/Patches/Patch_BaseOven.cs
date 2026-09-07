@@ -3,7 +3,7 @@
 // while oven.IsOn() still reflects the previous state (SkillTree Smelt_Speed depends on that).
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -14,7 +14,6 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseOven __instance, Item fuel, ItemModBurnable burnable)
         {
-            if (__instance == null) return;
             try { STPlugin.Dispatch_OnFuelConsume(__instance, fuel, burnable); }
             catch (System.Exception ex) { Debug.LogWarning("[SkillTree] OnFuelConsume: " + ex.Message); }
         }
@@ -30,7 +29,6 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(BaseOven __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null) return;
             BasePlayer player = msg.player;
             if (player == null) return;
             try { STPlugin.Dispatch_OnOvenToggle(__instance, player); }

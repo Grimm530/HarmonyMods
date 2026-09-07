@@ -1,6 +1,6 @@
 # JetPack (Harmony)
 
-Oxide **JetPack 1.3.7** port as a standalone Harmony mod (no Oxide runtime).
+Legacy **JetPack 1.3.7** port as a standalone Harmony mod (Harmony-only runtime).
 
 JetPack 1.3.7 Harmony port. Wearable jetpack.
 

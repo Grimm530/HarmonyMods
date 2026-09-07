@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using HPlugin = Oxide.Plugins.Hud;
+using HPlugin = Harmony.Plugins.Hud;
 
 namespace HudHarmony.Patches
 {
@@ -115,7 +115,6 @@ namespace HudHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(HackableLockedCrate __instance)
         {
-            if (__instance == null) return;
             try
             {
                 if (__instance.hackSeconds + 1f > HackableLockedCrate.requiredHackSeconds)

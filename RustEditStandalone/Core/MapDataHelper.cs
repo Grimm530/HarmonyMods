@@ -9,7 +9,7 @@ using UnityEngine;
 namespace RustEditStandalone.Core;
 
 /// <summary>
-/// Map-layer lookup matching Oxide.Ext.RustEdit Helper.GetMap:
+/// Map-layer lookup matching original plugin.Ext.RustEdit Helper.GetMap:
 /// XOR logical name with prefab count, optional AES Base64 name, then Xml deserialize.
 /// Always falls back to scanning non-terrain layers.
 /// </summary>

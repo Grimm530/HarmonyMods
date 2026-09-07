@@ -1,20 +1,13 @@
 # Build script for AlphaLoot Harmony Mod
-# Output: <server root>\HarmonyMods\AlphaLoot.dll
+# Output: D:\!RustServer\HarmonyMods\AlphaLoot.dll
 
 Write-Host "Building AlphaLoot Harmony mod..." -ForegroundColor Cyan
-
-# Stale Assembly-CSharp copies in bin/ break ItemManager.Create overload resolution.
-Get-ChildItem $PSScriptRoot -Directory -Recurse -Filter "bin" -ErrorAction SilentlyContinue |
-    ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
-Get-ChildItem $PSScriptRoot -Directory -Recurse -Filter "obj" -ErrorAction SilentlyContinue |
-    ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 
 $projectPath = Join-Path $PSScriptRoot "AlphaLoot.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

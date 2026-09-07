@@ -5,9 +5,9 @@ using UnityEngine;
 namespace RemoverToolHarmony
 {
     /// <summary>
-    /// Resolves the optional Oxide plugin references used by RemoverTool against Harmony ports
+    /// Resolves the optional Harmony mod references used by RemoverTool against Harmony ports
     /// exposed through AppDomain wrappers. Returns null when a dependency is not present so the
-    /// plugin's existing null-checks fall back gracefully (matches Oxide PluginReference behaviour).
+    /// plugin's existing null-checks fall back gracefully (matches Harmony ModReference behaviour).
     /// </summary>
     public static class PluginBridges
     {

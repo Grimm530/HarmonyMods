@@ -1,6 +1,6 @@
 # AutoCodeLock Harmony Mod (3.0.12)
 
-Oxide-free Harmony port of **AutoCodeLock 3.0.12** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AdminMenu).
+Harmony Harmony port of **AutoCodeLock 3.0.12** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AdminMenu).
 
 ## Load order
 
@@ -72,7 +72,7 @@ Copies `AutoCodeLock.dll` to `HarmonyMods/`.
 
 ## Port notes
 
-- Source: `.cursor/Oxide.Plugins.Cant-Use/AutoCodeLock.cs`
+- Source: `.cursor/Harmony.Plugins.Cant-Use/AutoCodeLock.cs`
 - ProtoBuf storage dropped — JSON only under `HarmonyData`
 - Fixed Oxide bugs while porting: skin command now sets the selected skin; guest-code apply updates guest codes (not pin)
 - Team/clan lock **access** is owned by DynamicCupShare. After auto-PIN or guest-code apply this mod calls `DynamicCupShareMod.NotifyCodeLockChanged` and does not wipe existing guest users.

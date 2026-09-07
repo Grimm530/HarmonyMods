@@ -1,4 +1,4 @@
-# Cooking (Harmony OxideCompat port)
+# Cooking (Harmony HarmonyCompat port)
 
 Port of Oxide `Cooking` v2.0.35 to a Harmony mod. Player/recipe data is shared across SVR1/SVR2/SVR3 via the existing hardlinked `Cooking.json`.
 
@@ -22,7 +22,7 @@ Port of Oxide `Cooking` v2.0.35 to a Harmony mod. Player/recipe data is shared a
 
 ## SkillTree API
 
-`AppDomain.SetData("Cooking_ApiType", typeof(CookingMod))` so SkillTree `PluginManager.Find("Cooking")` works.
+`AppDomain.SetData("Cooking_ApiType", typeof(CookingMod))` so SkillTree `ModManager.Find("Cooking")` works.
 
 Static methods used by SkillTree:
 
@@ -46,7 +46,7 @@ Copies **only** `Cooking.dll` to root `HarmonyMods/`.
 
 - Auto-loads with other Harmony mods on server start.
 - Requires **Permissions** Harmony mod (`0Permissions.dll`).
-- Do **not** run the Oxide plugin at the same time — unload/disable `oxide/plugins/Cooking.cs` (file left in place; not deleted by this port).
+- Do **not** run the Harmony mod at the same time — unload/disable `oxide/plugins/Cooking.cs` (file left in place; not deleted by this port).
 
 ## Notes
 

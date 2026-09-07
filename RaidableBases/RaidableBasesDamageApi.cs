@@ -5,7 +5,7 @@ namespace RaidableBases
 {
     /// <summary>
     /// TruePVE / inter-mod API: allow damage and targeting inside active raid bases.
-    /// TruePVE has no Oxide hook bus; it only consults AppDomain delegates for
+    /// TruePVE has no Harmony hook bus; it only consults AppDomain delegates for
     /// CanEntityTakeDamage / CanEntityBeTargeted (same pattern as Convoy / PveMode).
     /// Without this, TruePVE's defaultAllowDamage=false blocks all raid building damage.
     /// </summary>
@@ -55,10 +55,10 @@ namespace RaidableBases
                 return null;
 
             if (host.IsSubscribed("CanEntityTakeDamage"))
-                return host.InvokeHook("CanEntityTakeDamage", new object[] { combat, info });
+                return host.InvokeHookCached("CanEntityTakeDamage", combat, info);
 
             if (host.IsSubscribed("OnEntityTakeDamage"))
-                return host.InvokeHook("OnEntityTakeDamage", new object[] { combat, info });
+                return host.InvokeHookCached("OnEntityTakeDamage", combat, info);
 
             return null;
         }

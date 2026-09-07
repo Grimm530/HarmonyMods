@@ -36,26 +36,27 @@ public class RoadFixConfig
         [JsonProperty("RoadBridgeMapPath")]
         public string RoadBridgeMapPath = "maps/prefabs/bridge.map";
 
+        /// <summary>Same tile as roads. Kept as a config key so old JSON still loads.</summary>
         [JsonProperty("RailBridgeMapPath")]
-        public string RailBridgeMapPath = "maps/prefabs/bridgerail.map";
+        public string RailBridgeMapPath = "maps/prefabs/bridge.map";
 
         /// <summary>
-        /// Local position of the road path center node in bridge.map (RustEdit).
-        /// Map origin stays at (0,0,0); placement puts this node on the world path.
+        /// Local position of the path-center in bridge.map. New tile is authored at (0,5,0).
+        /// Placement puts this point on the world path.
         /// </summary>
         [JsonProperty("RoadPathCenterLocal")]
-        public Vector3 RoadPathCenterLocal = new Vector3(-6.346f, 5.065f, 0.262f);
+        public Vector3 RoadPathCenterLocal = new Vector3(0f, 5f, 0f);
 
-        /// <summary>Local position of the rail path center node in bridgerail.map.</summary>
+        /// <summary>Same node as RoadPathCenterLocal (one shared template).</summary>
         [JsonProperty("RailPathCenterLocal")]
-        public Vector3 RailPathCenterLocal = new Vector3(-6.316f, 5.036f, 0.127f);
+        public Vector3 RailPathCenterLocal = new Vector3(0f, 5f, 0f);
 
         /// <summary>
         /// One "node" length in metres (bridge already covers ~3 nodes at native scale).
         /// NodeCount ≈ SpanLength / this.
         /// </summary>
         [JsonProperty("BridgeTemplateLength")]
-        public float BridgeTemplateLength = 12f;
+        public float BridgeTemplateLength = 21f;
 
         /// <summary>
         /// Do not stretch when NodeCount is at or below this (bridge is already larger than the road).
@@ -69,6 +70,21 @@ public class RoadFixConfig
         /// </summary>
         [JsonProperty("StretchPerExtraNode")]
         public float StretchPerExtraNode = 0.05f;
+
+        /// <summary>
+        /// Extra metres of deck past the wet water on EACH bank.
+        /// Deck length = water topology span + 2 × this.
+        /// </summary>
+        [JsonProperty("BridgeLengthOverhang")]
+        public float BridgeLengthOverhang = 5f;
+
+        /// <summary>Floor when shrinking a bridge to a narrow river.</summary>
+        [JsonProperty("MinBridgeLengthScale")]
+        public float MinBridgeLengthScale = 0.5f;
+
+        /// <summary>Cap when stretching a tile to cover a wide river.</summary>
+        [JsonProperty("MaxBridgeLengthScale")]
+        public float MaxBridgeLengthScale = 5f;
 
         /// <summary>
         /// After roads raise terrain through rivers, carve the bed back at crossings only
@@ -115,14 +131,89 @@ public class RoadFixConfig
 
         /// <summary>
         /// Flatten rail path nodes across bridge spans onto a straight grade
-        /// (matches bridgerail gravel deck / kills rail waves on the span).
+        /// (matches bridge.map deck / kills rail waves on the span).
         /// </summary>
         [JsonProperty("SnapRailNodesToDeck")]
         public bool SnapRailNodesToDeck = true;
 
-        /// <summary>Added to snapped rail node Y (gravel top relative to path center).</summary>
+        /// <summary>
+        /// Extra metres on snapped rail Y after aligning to cube_tiled_gravel top
+        /// (negative sinks rails into the gravel).
+        /// </summary>
         [JsonProperty("RailDeckGravelOffset")]
         public float RailDeckGravelOffset = 0f;
+
+        /// <summary>
+        /// When parallel rails share a river gap, scale the rail bridge across
+        /// them so every track has gravel under it.
+        /// </summary>
+        [JsonProperty("WidenRailBridgeForParallelTracks")]
+        public bool WidenRailBridgeForParallelTracks = true;
+
+        /// <summary>Extra metres past EACH outermost rail when widening for a second track.</summary>
+        [JsonProperty("RailBridgeWidthPad")]
+        public float RailBridgeWidthPad = 5f;
+
+        /// <summary>
+        /// Extra cover on a two-track (or switch) rail tile vs the measured envelope.
+        /// </summary>
+        [JsonProperty("DualRailCoverMultiplier")]
+        public float DualRailCoverMultiplier = 1.15f;
+
+        /// <summary>
+        /// Clear width (metres) between parapets on the authored U-channel tile.
+        /// Same opening as RoadBridgeNativeWidth — old 14 m was the previous prefab.
+        /// </summary>
+        [JsonProperty("RailBridgeNativeWidth")]
+        public float RailBridgeNativeWidth = 10f;
+
+        /// <summary>
+        /// Max metres between two rail polylines (or an endpoint vs the other path)
+        /// to count as the same train path / switch. Parallel neighbours farther
+        /// than this keep their own tiles and are not used to widen.
+        /// </summary>
+        [JsonProperty("RailJoinDistance")]
+        public float RailJoinDistance = 5.5f;
+
+        /// <summary>How far (m) to measure a joined extra rail's spread along the span.</summary>
+        [JsonProperty("RailJunctionDetectRadius")]
+        public float RailJunctionDetectRadius = 16f;
+
+        /// <summary>
+        /// Clear width (metres) between parapets on the authored U-channel tile.
+        /// Road asphalt (10–12 m) must fit inside this after width scale.
+        /// </summary>
+        [JsonProperty("RoadBridgeNativeWidth")]
+        public float RoadBridgeNativeWidth = 10f;
+
+        /// <summary>
+        /// Extra metres of clear deck past each edge of the road mesh.
+        /// Solo road cover = Path.Width + 2 × this (so walls sit outside the asphalt).
+        /// </summary>
+        [JsonProperty("RoadBridgeWidthPad")]
+        public float RoadBridgeWidthPad = 2f;
+
+        /// <summary>
+        /// When a road and rail share a river gap this close (metres between spans),
+        /// place one widened road bridge and skip the rail tile.
+        /// </summary>
+        [JsonProperty("MergeTouchingRoadRail")]
+        public bool MergeTouchingRoadRail = true;
+
+        /// <summary>Max centreline / span distance (m) to treat road+rail as one crossing.</summary>
+        [JsonProperty("RoadRailTouchDistance")]
+        public float RoadRailTouchDistance = 16f;
+
+        /// <summary>
+        /// Extra width on a combined road+rail tile vs the measured cover.
+        /// 2 = twice as wide as the fitted road+rail envelope.
+        /// </summary>
+        [JsonProperty("CombinedBridgeWidthMultiplier")]
+        public float CombinedBridgeWidthMultiplier = 2f;
+
+        /// <summary>Max width scale vs the authored bridge.map (stops runaway stretch).</summary>
+        [JsonProperty("MaxRailBridgeWidthScale")]
+        public float MaxRailBridgeWidthScale = 4f;
 
         /// <summary>
         /// Extra yaw (degrees) applied after LookRotation(pathTangent).
@@ -139,11 +230,18 @@ public class RoadFixConfig
         public float BridgeHeightOffset = -0.5f;
 
         /// <summary>
-        /// When two rail spans' centers are within this radius (metres), keep only the longer one.
-        /// Stops double bridges at junctions that merge before the river.
+        /// When two rail spans' centers are within this radius (metres), they *may*
+        /// share a deck — but only if lateral offset is under RailDeckLateralMerge.
         /// </summary>
         [JsonProperty("RailBridgeMergeRadius")]
         public float RailBridgeMergeRadius = 55f;
+
+        /// <summary>
+        /// Max sideways gap (m) to treat two rails as one deck. Parallel crossings
+        /// farther apart each get their own bridge.
+        /// </summary>
+        [JsonProperty("RailDeckLateralMerge")]
+        public float RailDeckLateralMerge = 16f;
 
         /// <summary>
         /// Base length multiplier (1 = native). Applied before per-extra-node stretch.
@@ -189,6 +287,14 @@ public class RoadFixConfig
 
         [JsonProperty("DebugLogging")]
         public bool DebugLogging = true;
+
+        public string SharedBridgeMapPath =>
+            string.IsNullOrEmpty(RoadBridgeMapPath) ? "maps/prefabs/bridge.map" : RoadBridgeMapPath;
+
+        public Vector3 SharedPathCenterLocal => RoadPathCenterLocal;
+
+        public float SharedNativeWidth =>
+            RoadBridgeNativeWidth > 1f ? RoadBridgeNativeWidth : Mathf.Max(4f, RailBridgeNativeWidth);
     }
 
     public static ConfigData Config;

@@ -52,7 +52,7 @@ internal static class BridgeTerrain
 
     /// <summary>
     /// Flatten rail path nodes across a bridge span onto a straight grade between the
-    /// approach nodes (aligns rail mesh with bridgerail gravel deck).
+    /// approach nodes (aligns rail mesh with the shared bridge.map deck).
     /// </summary>
     public static void SnapRailNodesToDeckGrade(BridgeCrossing crossing)
     {
@@ -64,11 +64,19 @@ internal static class BridgeTerrain
         if (pathLen <= 0f || points.Length < 2)
             return;
 
-        float y0 = SamplePoint(crossing.Path, crossing.StartDist).y;
-        float y1 = SamplePoint(crossing.Path, crossing.EndDist).y;
-        float gravel = RoadFixConfig.Config?.RailDeckGravelOffset ?? 0f;
-        y0 += gravel;
-        y1 += gravel;
+        BridgeMapPlacer.GetRailDeckGrade(crossing, out float y0, out float y1);
+        SnapRailNodesToDeckGrade(crossing, y0, y1);
+    }
+
+    public static void SnapRailNodesToDeckGrade(BridgeCrossing crossing, float y0, float y1)
+    {
+        if (crossing.Path?.Path?.Points == null)
+            return;
+
+        Vector3[] points = crossing.Path.Path.Points;
+        float pathLen = crossing.Path.Path.Length;
+        if (pathLen <= 0f || points.Length < 2)
+            return;
 
         float fade = 10f;
         float d0 = Mathf.Max(0f, crossing.StartDist - fade);
@@ -117,7 +125,7 @@ internal static class BridgeTerrain
         {
             Debug.Log(
                 $"[RoadFix] SnapRail→deck '{crossing.Path.Name}' Y {y0:F2}→{y1:F2} " +
-                $"gravelOffset={gravel:F2} span={crossing.StartDist:F0}-{crossing.EndDist:F0} " +
+                $"span={crossing.StartDist:F0}-{crossing.EndDist:F0} " +
                 $"changed={changed}/{points.Length}");
         }
     }
@@ -209,38 +217,25 @@ internal static class BridgeTerrain
 
     public static (float startY, float endY) ComputeBankHeights(PathList path, float startDist, float endDist)
     {
-        float y0 = FindBankHeight(path, startDist, -1f);
-        float y1 = FindBankHeight(path, endDist, 1f);
-        float clearance = Mathf.Max(0f, RoadFixConfig.Config?.WaterClearance ?? 2f);
-        Vector3 mid = SamplePoint(path, (startDist + endDist) * 0.5f);
-        float minWater = WaterLevel.RaycastWaterColliders(mid) + clearance + 1f;
-        return (Mathf.Max(y0, minWater), Mathf.Max(y1, minWater));
+        return (SampleAbutment(path, startDist, -1f).y, SampleAbutment(path, endDist, 1f).y);
     }
 
-    private static float FindBankHeight(PathList path, float fromDist, float direction)
+    /// <summary>
+    /// Path Y just outside the wet span — the road/rail the player is actually on.
+    /// Do not use water+clearance or max-terrain; those sit ~1m above the mesh.
+    /// </summary>
+    public static Vector3 SampleAbutment(PathList path, float fromDist, float direction)
     {
         float pathLen = path.Path.Length;
-        float best = float.MinValue;
-        for (float offset = 0f; offset <= 100f; offset += 2f)
+        for (float offset = 6f; offset <= 20f; offset += 2f)
         {
             float d = Mathf.Clamp(fromDist + direction * offset, 0f, pathLen);
             Vector3 pt = SamplePoint(path, d);
-            if (RiverProximity.IsOnRiver(pt, 0f))
-                continue;
-
-            float ground = TerrainMeta.HeightMap.GetHeight(pt);
-            best = Mathf.Max(best, ground, pt.y);
-            if (offset >= 8f && best > float.MinValue)
-                return best;
+            if (!RiverProximity.IsInRiverChannel(pt, padMetres: 0.5f))
+                return pt;
         }
 
-        if (best > float.MinValue)
-            return best;
-
-        Vector3 fallback = SamplePoint(path, fromDist);
-        return Mathf.Max(
-            TerrainMeta.HeightMap.GetHeight(fallback),
-            WaterLevel.RaycastWaterColliders(fallback) + (RoadFixConfig.Config?.WaterClearance ?? 2f) + 1f);
+        return SamplePoint(path, Mathf.Clamp(fromDist + direction * 8f, 0f, pathLen));
     }
 
     public static Vector3 SamplePoint(PathList path, float dist)
@@ -263,39 +258,10 @@ internal static class BridgeTerrain
         out float yPrev,
         out float yNext)
     {
-        float pad = Mathf.Max(nodeLength * 2f, 24f);
-        float d0 = Mathf.Max(0f, startDist - pad);
-        float d1 = Mathf.Min(path.Path.Length, endDist + pad);
-        prev = SamplePoint(path, d0);
-        next = SamplePoint(path, d1);
-        yPrev = FindBankHeight(path, startDist, -1f);
-        yNext = FindBankHeight(path, endDist, 1f);
-
-        // Prefer the farther dry approach average when banks are nearly level.
-        if (Mathf.Abs(yNext - yPrev) < 0.35f)
-        {
-            yPrev = SampleApproachMax(path, startDist, -1f, 12f, 64f);
-            yNext = SampleApproachMax(path, endDist, 1f, 12f, 64f);
-            prev = SamplePoint(path, Mathf.Max(0f, startDist - 32f));
-            next = SamplePoint(path, Mathf.Min(path.Path.Length, endDist + 32f));
-        }
-    }
-
-    private static float SampleApproachMax(PathList path, float fromDist, float direction, float minOff, float maxOff)
-    {
-        float pathLen = path.Path.Length;
-        float best = float.MinValue;
-        for (float offset = minOff; offset <= maxOff; offset += 2f)
-        {
-            float d = Mathf.Clamp(fromDist + direction * offset, 0f, pathLen);
-            Vector3 pt = SamplePoint(path, d);
-            if (RiverProximity.IsOnRiver(pt, 0f))
-                continue;
-            best = Mathf.Max(best, TerrainMeta.HeightMap.GetHeight(pt), pt.y);
-        }
-        if (best > float.MinValue)
-            return best;
-        return FindBankHeight(path, fromDist, direction);
+        prev = SampleAbutment(path, startDist, -1f);
+        next = SampleAbutment(path, endDist, 1f);
+        yPrev = prev.y;
+        yNext = next.y;
     }
 
     /// <summary>

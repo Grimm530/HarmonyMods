@@ -1,7 +1,7 @@
 /*
  * IndustrialTransferSpeed Harmony Mod
  * Patches game to set IndustrialConveyor.MaxStackSizePerMove from config.
- * Conveyor speed only — no planter/composter adaptor farming features.
+ * More performant than Harmony mod - no constant updates, direct IL patching.
  * Config: HarmonyConfig/IndustrialTransferSpeed.json
  */
 

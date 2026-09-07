@@ -11,7 +11,7 @@
     <RootNamespace>CopyPasteHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: CopyPaste 4.2.81 (Oxide-free). API compatible with RaidableBases.</Description>
+    <Description>Harmony mod: CopyPaste 4.2.81 (Harmony). API compatible with RaidableBases.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

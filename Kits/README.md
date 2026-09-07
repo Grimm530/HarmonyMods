@@ -1,6 +1,6 @@
 # Kits (Harmony Mod)
 
-**No Oxide dependency.** Harmony port of Oxide **Kits 2.3.8** (Mevent) — same kit UI/logic, adapted only for Harmony hosting.
+**Harmony-only dependency.** Harmony port of Legacy **Kits 2.3.8** (Mevent) — same kit UI/logic, adapted only for Harmony hosting.
 
 ## Mod identity
 
@@ -8,9 +8,9 @@
 |-------|--------|
 | **Name** | Kits |
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
-| **Oxide** | None — for Oxide-free servers only |
-| **Source** | `.cursor/Oxide.Plugins.Cant-Use/Kits.cs` (v2.3.8) |
-| **Config** | `HarmonyConfig/Kits.json` (migrates from `oxide/config/Kits.json` if present) |
+| **Oxide** | None — for Harmony servers only |
+| **Source** | `.cursor/Harmony.Plugins.Cant-Use/Kits.cs` (v2.3.8) |
+| **Config** | `HarmonyConfig/Kits.json` (migrates from `legacy/config/Kits.json` if present) |
 | **Data** | `HarmonyData/Kits/` (`Kits.json`, `DisabledAutoKits.json`, `Players/{userid}.json`, `logs/`) |
 
 ## Project structure
@@ -19,12 +19,12 @@
 |------|--------|
 | `Kits.cs` | Full 2.3.8 plugin logic (ported from Oxide; near-verbatim) |
 | `KitsCompat.cs` | Oxide shims: `IPlayer`, config/data, timers, lang, permissions, webrequest |
-| `RustCui.cs` | CUI helpers (`Oxide.Game.Rust.Cui`) without Oxide pooling |
+| `RustCui.cs` | CUI helpers (`Game.Rust.Cui`) without legacy plugin host pooling |
 | `KitsHarmonyMod.cs` | Harmony entry, AppDomain API, command registration |
 | `Patches/Chat_Say_Patch.cs` | Prefix on `ConVar.Chat.say` for `/kit`, `/kits`, `/editkit` |
 | `Patches/Cui_Endtest_Patch.cs` | Routes `cui.endtest KITS …` CUI clicks to `UI_Kits` |
 | `Patches/PlayerLifecycle_Patches.cs` | Respawn / disconnect / death / wipe hooks |
-| `convert-from-oxide.ps1` | Regenerates `Kits.cs` from Oxide source |
+| `convert-from-legacy.ps1` | Regenerates `Kits.cs` from Oxide source |
 | `Kits.csproj` | Game refs + Krafs.Publicizer |
 | `build.ps1` | Build and copy DLL to `HarmonyMods/` |
 
@@ -32,10 +32,10 @@
 
 | Oxide | Harmony |
 |-------|---------|
-| `oxide/config/Kits.json` | `HarmonyConfig/Kits.json` |
+| `legacy/config/Kits.json` | `HarmonyConfig/Kits.json` |
 | `oxide/data/Kits/` | `HarmonyData/Kits/` |
 | `RustPlugin` + attributes | `KitsPluginBase` + manual ConsoleSystem / chat patch |
-| `Interface.CallHook` / PluginReferences | No-op / always null (use Offline Image Mode) |
+| `HarmonyModInterface.CallHook` / PluginReferences | No-op / always null (use Offline Image Mode) |
 | ImageLibrary / ServerPanel / Notify / NoEscape | Unloaded stubs — offline images work; Notify falls back to chat |
 | Permissions | Admins always pass; grant others via `HarmonyPermissionHelper` |
 
@@ -71,7 +71,7 @@ DLL → **`HarmonyMods/Kits.dll`**. Load: `harmony.load Kits`.
 Refresh from Oxide source:
 
 ```powershell
-.\.cursor\HarmonyMods\Kits\convert-from-oxide.ps1
+.\.cursor\HarmonyMods\Kits\convert-from-legacy.ps1
 .\.cursor\HarmonyMods\Kits\build.ps1
 ```
 
@@ -79,7 +79,7 @@ Refresh from Oxide source:
 
 | Oxide | Harmony |
 |-------|---------|
-| `oxide/config/Kits.json` | `HarmonyConfig/Kits.json` |
+| `legacy/config/Kits.json` | `HarmonyConfig/Kits.json` |
 | `oxide/data/Kits/Kits.json` | `HarmonyData/Kits/Kits.json` |
 | `oxide/data/Kits/DisabledAutoKits.json` | `HarmonyData/Kits/DisabledAutoKits.json` |
 | `oxide/data/Kits/Players/{steamid}.json` | `HarmonyData/Kits/Players/{steamid}.json` |
@@ -90,6 +90,6 @@ Relative data keys are unchanged (`Kits/Kits`, `Kits/Players/{id}`, etc.) — th
 ## Notes
 
 - Enable **Offline Image Mode** is optional; built-in HTTP image loader works without ImageLibrary.
-- **Permissions:** Load `0Permissions.dll` for Oxide-style groups. Kit `Permission` fields (e.g. `kits.defensep3`) are enforced via that mod. Server admins do **not** auto-pass kit perms — grant via `admin` (or other) groups. See `HarmonyConfig/Permissions.json`.
+- **Permissions:** Load `0Permissions.dll` for compat-style groups. Kit `Permission` fields (e.g. `kits.defensep3`) are enforced via that mod. Category tabs follow kit access — having a kit perm is enough even if the kit is under `vip` / another category without `kits.{category}`. Server admins do **not** auto-pass kit perms — grant via `admin` (or other) groups. See `HarmonyConfig/Permissions.json`.
 - **AutoWipe** on new save: wipe detection uses `SaveRestore.WipeId` change; first boot after load stores the id without wiping. Use `kits.reset` manually if needed.
-- Plugin hooks (`OnKitRedeemed`, `canRedeemKit`, Notify) are no-ops without Oxide plugins.
+- Plugin hooks (`OnKitRedeemed`, `canRedeemKit`, Notify) are no-ops without Harmony mods.

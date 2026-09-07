@@ -16,36 +16,47 @@ namespace CustomMapGen.Patches
     {
         private static int _seenAnySpawnPrefabCall;
 
-        static void Prefix(string category, Prefab prefab, Vector3 position, Quaternion rotation, Vector3 scale)
+        static bool Prefix(string category, Prefab prefab, Vector3 position, Quaternion rotation, Vector3 scale)
         {
             var cfg = CustomMapGen.Instance?.GetConfig();
-            if (cfg == null || !cfg.Enabled)
-                return;
-
-            if (cfg.DebugLogging || cfg.DebugLogSkippedWorldPrefabs)
-                SwapSpawnTracking.RecordSpawnAttempt(prefab);
-
-            if (!cfg.DebugLogSkippedWorldPrefabs)
-                return;
-
-            if (Interlocked.Exchange(ref _seenAnySpawnPrefabCall, 1) == 0)
-                UnityEngine.Debug.Log("[CustomMapGen] World.SpawnPrefab diagnostics hook is active.");
-
-            if (prefab == null)
+            if (cfg != null && cfg.Enabled)
             {
-                UnityEngine.Debug.LogWarning("[CustomMapGen] World.SpawnPrefab: Prefab wrapper is null (unexpected). category=" + category + " pos=" + position);
-                return;
+                if (cfg.DebugLogging || cfg.DebugLogSkippedWorldPrefabs)
+                    SwapSpawnTracking.RecordSpawnAttempt(prefab);
+
+                if (cfg.DebugLogSkippedWorldPrefabs)
+                {
+                    if (Interlocked.Exchange(ref _seenAnySpawnPrefabCall, 1) == 0)
+                        UnityEngine.Debug.Log("[CustomMapGen] World.SpawnPrefab diagnostics hook is active.");
+
+                    if (prefab == null)
+                    {
+                        UnityEngine.Debug.LogWarning("[CustomMapGen] World.SpawnPrefab: Prefab wrapper is null (unexpected). category=" + category + " pos=" + position);
+                    }
+                    else if (prefab.Object == null)
+                    {
+                        string path = prefab.Name ?? "";
+                        UnityEngine.Debug.LogWarning(
+                            "[CustomMapGen] World.SpawnPrefab SKIP (silent vanilla behavior): GameManager.FindPrefab returned null — " +
+                            "nothing will spawn. prefabId=" + prefab.ID + " path=\"" + path + "\" category=\"" + category + "\" pos=" + position +
+                            " scale=" + scale +
+                            ". Fix: verify prefab ID in map matches this server build; ensure AssetBundleBackend loaded required scenes for this path.");
+                    }
+                }
             }
 
-            if (prefab.Object != null)
-                return;
+            // Overlay extras must not recarve. Vanilla monument already applied height/splat stamps.
+            if (World_AddPrefab_Patch.SkipTerrainStampsOnSpawn)
+            {
+                if (prefab != null && prefab.Object != null)
+                {
+                    GameObject instance = prefab.Spawn(position, rotation, scale);
+                    World.TrackSpawnedPrefab(category, instance);
+                }
+                return false;
+            }
 
-            string path = prefab.Name ?? "";
-            UnityEngine.Debug.LogWarning(
-                "[CustomMapGen] World.SpawnPrefab SKIP (silent vanilla behavior): GameManager.FindPrefab returned null — " +
-                "nothing will spawn. prefabId=" + prefab.ID + " path=\"" + path + "\" category=\"" + category + "\" pos=" + position +
-                " scale=" + scale +
-                ". Fix: verify prefab ID in map matches this server build; ensure AssetBundleBackend loaded required scenes for this path.");
+            return true;
         }
     }
 

@@ -377,7 +377,7 @@ namespace GrimmNPC.Patches
                 if (player.IsDead()) return false;
                 
                 // Check for hook support (could be added via interface later)
-                // For now, skip hook check as GrimmNPC doesn't use Oxide hooks
+                // For now, skip hook check as GrimmNPC doesn't use Harmony hooks
                 
                 // Check if player is Steam ID (real player)
                 // Steam IDs are typically > 76561197960265728 (Steam ID 64 format)

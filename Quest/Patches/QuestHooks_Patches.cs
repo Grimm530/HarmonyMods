@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using QPlugin = Oxide.Plugins.Quest;
+using QPlugin = Harmony.Plugins.Quest;
 
 namespace QuestHarmony.Patches
 {
@@ -10,7 +10,7 @@ namespace QuestHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BuildingBlock __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return;
+            if (msg.player == null) return;
             try { QPlugin.Dispatch_OnStructureUpgrade(__instance, msg.player, __instance.grade); }
             catch (System.Exception ex) { Debug.LogWarning("[Quest] OnStructureUpgrade: " + ex.Message); }
         }
@@ -89,7 +89,7 @@ namespace QuestHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(Planner __instance, BaseEntity __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             try { QPlugin.Dispatch_OnEntityBuilt(__instance, __result.gameObject); }
             catch (System.Exception ex) { Debug.LogWarning("[Quest] OnEntityBuilt: " + ex.Message); }
         }
@@ -173,7 +173,7 @@ namespace QuestHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(PatrolHelicopter __instance, HitInfo info)
         {
-            if (__instance == null || info == null) return;
+            if (info == null) return;
             try
             {
                 if (info.damageTypes != null && info.damageTypes.Total() >= __instance.health)
@@ -211,7 +211,7 @@ namespace QuestHarmony.Patches
         [HarmonyPrefix]
         public static void Prefix(Recycler __instance, BaseEntity.RPCMessage msg)
         {
-            if (__instance == null || msg.player == null) return;
+            if (msg.player == null) return;
             try { QPlugin.Dispatch_OnRecyclerToggle(__instance, msg.player); }
             catch (System.Exception ex) { Debug.LogWarning("[Quest] OnRecyclerToggle: " + ex.Message); }
         }
@@ -259,7 +259,7 @@ namespace QuestHarmony.Patches
         {
             try
             {
-                if (__instance == null || __instance.CurrentState != BaseFishingRod.CatchState.Caught) return;
+                if (__instance.CurrentState != BaseFishingRod.CatchState.Caught) return;
                 var player = __instance.GetOwnerPlayer();
                 var def = __instance.currentFishTarget;
                 if (player == null || def == null) return;

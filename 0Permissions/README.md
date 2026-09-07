@@ -1,6 +1,6 @@
 # 0Permissions (Harmony Mod)
 
-Oxide-style **groups + permissions** for Oxide-free servers. Kits, RaidableBases, and other mods check this for access like `kits.defensep3` / `raidablebases.allow`.
+compat-style **groups + permissions** for Harmony servers. Kits, RaidableBases, and other mods check this for access like `kits.defensep3` / `raidablebases.allow`.
 
 Named **`0Permissions`** so filesystem / HarmonyLoader startup order places it before other mods.
 
@@ -75,7 +75,7 @@ perm show groups
 ```
 
 Dotted form also works: `perm.usergroup`, `perm.grant`, `perm.show`.
-Oxide-compatible aliases also work: `oxide.usergroup`, `oxide.grant`, `oxide.revoke`, `oxide.group`, `oxide.show`.
+Harmony-compatible aliases also work: `oxide.usergroup`, `oxide.grant`, `oxide.revoke`, `oxide.group`, `oxide.show`.
 
 Short aliases: `usergroup`, `grant`, `revoke`.
 
@@ -146,7 +146,7 @@ perm.show user 76561199127409262
 perm.show perm kits.defensep3
 ```
 
-Players without the kit's `Permission` field will not see/redeem that kit (same as Oxide Kits).
+Players without the kit's `Permission` field will not see/redeem that kit (same as legacy Kits).
 
 ## Build
 

@@ -1,6 +1,6 @@
 # TranslationAPI Harmony Mod
 
-Standalone Harmony mod providing web-based translation (Google/Microsoft/Yandex). **No Oxide.** Used by ChatTranslator and Rustcord Harmony mods via direct call.
+Standalone Harmony mod providing web-based translation (Google/Microsoft/Yandex). **Harmony-only.** Used by ChatTranslator and Rustcord Harmony mods via direct call.
 
 ## Architecture
 
@@ -40,4 +40,4 @@ TranslationAPIMod.Translate(message, "en", "auto", translated => {
 
 ## Dependencies
 
-- No Oxide. Uses `System.Net.Http`, `UnityEngine` for coroutines.
+- Harmony-only. Uses `System.Net.Http`, `UnityEngine` for coroutines.

@@ -1,6 +1,6 @@
 # TCUpgrade Harmony Mod
 
-Standalone Harmony mod providing TC (tool cupboard) upgrade, repair, reskin, wallpaper, and TC skin replacement. **No Oxide plugin required.** Loaded by HarmonyLoader from `HarmonyMods/`. Config: `HarmonyConfig/TCUpgrade.json` or `oxide/config/TCUpgrade.json` (fallback).
+Standalone Harmony mod providing TC (tool cupboard) upgrade, repair, reskin, wallpaper, and TC skin replacement. **No Harmony mod required.** Loaded by HarmonyLoader from `HarmonyMods/`. Config: `HarmonyConfig/TCUpgrade.json` or `legacy/config/TCUpgrade.json` (fallback).
 
 ---
 
@@ -24,11 +24,11 @@ Standalone Harmony mod providing TC (tool cupboard) upgrade, repair, reskin, wal
 | `TCUpgradeMod._buildingCupboard` | `BuildingPrivlidge` → `TCConfig` | One TCConfig per TC; cleared on unload |
 | `TCUpgradeMod._playerSelectedSkins` | `ulong` (userID) → `TCSkin` | Persists during session only |
 | `TCUpgradeMod._data` | `TCUpgradeData` (CustomWallpapers) | Loaded on start, saved on addwp |
-| `TCUpgradeConfig.Config` | Static config singleton | Loaded from HarmonyConfig or oxide/config |
+| `TCUpgradeConfig.Config` | Static config singleton | Loaded from HarmonyConfig or legacy/config |
 
 **State flow:** Config + Data → Load; Patches → `OnLootStarted`/`OnLootEnded`; SENDCMD → Coroutines; Unload → stop coroutines, clear caches.
 
-**Dependencies:** Optional Oxide plugins (NoEscape, RaidBlock) via reflection when `Use NoEscape Plugin` / `Use RaidBlock Plugin` are true.
+**Dependencies:** Optional Harmony mods (NoEscape, RaidBlock) via reflection when `Use NoEscape Plugin` / `Use RaidBlock Plugin` are true.
 
 ---
 
@@ -38,10 +38,10 @@ Standalone Harmony mod providing TC (tool cupboard) upgrade, repair, reskin, wal
 
 | Field | Purpose |
 |-------|---------|
-| `Version` | Schema version (currently "1.6.5") |
+| `Version` | Schema version (currently "1.6.0") |
 | `CustomWallpapers` | `Dictionary<string, HashSet<ulong>>` — category (Wall/Floor/Ceiling) → skin IDs |
 
-**Lifecycle:** Load on `OnLoaded`; Save when `addwp` adds a skin or when data version is migrated to 1.6.5.
+**Lifecycle:** Load on `OnLoaded`; Save when `addwp` adds a skin. No migration logic.
 
 ### TCConfig (runtime only, in `_buildingCupboard`)
 
@@ -60,8 +60,6 @@ Per-TC state for upgrade/repair/reskin/wallpaper work: `Id`, `Grade`, `SkinId`, 
 | Use RaidBlock Plugin | bool | true | When true, calls RaidBlock `IsRaidBlocked` via reflection |
 | Debug | bool | false | Verbose logging |
 | Force both sides including external sides | bool | true | No longer patches game `CheckWallpaper`; game may remove invalid wallpaper (e.g. after rotation). Option kept for compatibility; both internal/external wallpaper when valid. |
-| Item Category Filter (Resources, ResourcesAndComponents, All) | string | Resources | TC inventory category filter via `onlyAcceptCategory` and blocked items |
-| Wallpaper Damage | bool | true | When false, wallpaper blocks get full damage protection |
 | Wallpaper placement Cost (Cloth) | int | 5 | Cloth per wallpaper apply |
 | Deployables Repair | bool | true | Include deployables in repair |
 | Repair Cooldown After Recent Damage (seconds) | float | 30 | Skip repair if `SecondsSinceAttacked < cooldown` |
@@ -77,13 +75,13 @@ Per-TC state for upgrade/repair/reskin/wallpaper work: `Id`, `Grade`, `SkinId`, 
 | Show player status in auth list | bool | false | When true, viewers in Admin Steam IDs see "[Online]" or "[Offline]" next to each auth name |
 | Items | `List<ItemInfo>` | 12 default items | Upgrade menu items (grade, skin, permission) |
 
-**Config load:** `TCUpgradeConfig.LoadConfig()` on mod load. Prefer `HarmonyConfig/TCUpgrade.json`; fallback `oxide/config/TCUpgrade.json`; migrates from legacy `TCUpgrade.json` if present. Not hot-reloadable.
+**Config load:** `TCUpgradeConfig.LoadConfig()` on mod load. Prefer `HarmonyConfig/TCUpgrade.json`; fallback `legacy/config/TCUpgrade.json`; migrates from legacy `TCUpgrade.json` if present. Not hot-reloadable.
 
 ---
 
 ## 5. Permissions & Authorization Matrix
 
-Permission model is **config-based** (no Oxide permission system). `HasPermission(userId, perm)` returns true only if: (1) User is in Admin Steam IDs, or (2) `perm == "TCUpgrade.use"` or `perm == "default"`. Checks for `TCUpgrade.repair`, `TCUpgrade.upgrade`, etc. therefore grant access only to admins (unless perm is TCUpgrade.use/default).
+Permission model is **config-based** (Harmony-only permission system). `HasPermission(userId, perm)` returns true only if: (1) User is in Admin Steam IDs, or (2) `perm == "TCUpgrade.use"` or `perm == "default"`. Checks for `TCUpgrade.repair`, `TCUpgrade.upgrade`, etc. therefore grant access only to admins (unless perm is TCUpgrade.use/default).
 
 | Permission | Who | What it gates | Where enforced |
 |------------|-----|---------------|-----------------|
@@ -191,7 +189,7 @@ Permission model is **config-based** (no Oxide permission system). `HasPermissio
 | TCUpgrade.tcskin | TCSKIN | TCSKINSELECT, CLOSE2 | TC skin selection |
 | TCUpgrade.authlist | AUTH | CLOSE, REMOVEAUTH | Authorized players list |
 
-**Button commands:** All CUI buttons use `cui.endtest TCUPGRADE action [args]` (AdminMenu/TeleportGUI pattern). Clients only forward ConsoleGen commands; `Cui_Endtest_Patch` intercepts the `TCUPGRADE` marker and runs the handler. Bare `SENDCMD` is not forwarded by the client. `CUIHelper.NormalizeButtonCommand` rewrites legacy `cui.endtest SENDCMD` / bare `SENDCMD` forms to the bridge. The server also registers `SENDCMD` for direct F1 use.
+**Button commands:** All CUI buttons use `cui.endtest SENDCMD action [args]` (e.g. `cui.endtest SENDCMD MENU`, `cui.endtest SENDCMD REPAIR`). The vanilla `cui.endtest` command is always replicated to clients, so buttons work for **all players** including after mod reload and without relying on a custom replicated list. `Cui_Endtest_Patch` intercepts when args start with `SENDCMD` and runs the handler. The server also registers `SENDCMD` (and adds it to Replicated) for direct F1 use.
 
 **Throttling:** None. UI is driven by CUI commands and loot events. **Suppression:** RaidBlock/NoEscape blocks upgrade/repair/reskin/wallpaper actions; permissions gate menu visibility.
 
@@ -214,7 +212,7 @@ Permission model is **config-based** (no Oxide permission system). `HasPermissio
 
 - **ForceBothSides:** CheckWallpaper is no longer patched; the game's `CheckWallpaper()` runs so wallpaper is auto-removed when invalid (e.g. after rotation), avoiding client/server desync. The `forcebothsides` config option remains for compatibility but no longer disables the game check.
 - **TC skin replace uses `NextTick`:** TC replacement runs one frame later so parent/attachment/building state is stable before copying auth/inventory and killing old TC.
-- **Permission check is config-only:** No Oxide permission system; Admin Steam IDs + string match for `TCUpgrade.use`/`default`. Other perms (e.g. TCUpgrade.repair) are checked but `HasPermission` only returns true for admin or TCUpgrade.use/default.
+- **Permission check is config-only:** Harmony-only permission system; Admin Steam IDs + string match for `TCUpgrade.use`/`default`. Other perms (e.g. TCUpgrade.repair) are checked but `HasPermission` only returns true for admin or TCUpgrade.use/default.
 - **BuildingPrivlidge_Spawn patches StorageContainer.ServerInit:** `BuildingPrivlidge.Spawn` may not resolve in some Harmony/game versions; `StorageContainer.ServerInit` is the reliable hook for TC init.
 - **Wallpaper hammer:** Special hammer skin (3494416562) rotates wallpaper on floor/foundation; no permission beyond hammer ownership.
 - **CUI and replicated commands:** CUI buttons use `cui.endtest SENDCMD action [args]` so the client always has the vanilla replicated command; `Cui_Endtest_Patch` handles SENDCMD and buttons work for all players (including after mod reload). The mod also registers `SENDCMD` and adds it to the Replicated list for direct F1 use.
@@ -247,19 +245,19 @@ cd .cursor/HarmonyMods/TCUpgrade
 
 **Output:** `HarmonyMods/TCUpgrade.dll`
 
-**Migration from Oxide Plugin:**
+**Migration from Harmony Mod:**
 
 1. Unload Oxide TCUpgrade: `o.unload TCUpgrade`
 2. Build and ensure `TCUpgrade.dll` is in `HarmonyMods/`
-3. Config loads from `oxide/config/TCUpgrade.json` or legacy `TCUpgrade.json` if present, then saves to `HarmonyConfig/TCUpgrade.json`
+3. Config loads from `legacy/config/TCUpgrade.json` or legacy `TCUpgrade.json` if present, then saves to `HarmonyConfig/TCUpgrade.json`
 
-**Do not run both** the Oxide plugin and Harmony mod—they conflict.
+**Do not run both** the Harmony mod and Harmony mod—they conflict.
 
 ---
 
 ## 15. Local Images (HarmonyImages/TCUpgrade)
 
-TCUpgrade loads PNG images from `{server root}/HarmonyImages/TCUpgrade/` and stores them in Rust's **FileStorage** under CommunityEntity. This works without Oxide ImageLibrary or Carbon ImageDatabase.
+TCUpgrade loads PNG images from `{server root}/HarmonyImages/TCUpgrade/` and stores them in Rust's **FileStorage** under CommunityEntity. This works without legacy plugin host ImageLibrary or Carbon ImageDatabase.
 
 **Setup:**
 1. Run the download script to fetch images from the CDN:

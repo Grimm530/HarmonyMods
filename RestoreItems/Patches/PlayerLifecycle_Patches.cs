@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RestoreItemsHarmony.Patches
 {
     /// <summary>
-    /// Oxide OnPlayerDeath runs after Belt.DropActive and before base.Die when not wounding.
+    /// Harmony OnPlayerDeath runs after Belt.DropActive and before base.Die when not wounding.
     /// SleepingBag.OnPlayerDeath is the nearest stable anchor after DropActive.
     /// </summary>
     [HarmonyPatch(typeof(SleepingBag), nameof(SleepingBag.OnPlayerDeath))]
@@ -28,7 +28,7 @@ namespace RestoreItemsHarmony.Patches
         [HarmonyPrefix]
         private static void Prefix(BasePlayer __instance, HitInfo info)
         {
-            if (__instance == null || __instance.IsDead()) return;
+            if (__instance.IsDead()) return;
             if (__instance.EligibleForWounding(info)) return;
             DeathHookState.LastHitInfo = info;
         }
@@ -41,7 +41,7 @@ namespace RestoreItemsHarmony.Patches
         private static void Postfix(BasePlayer __instance, HitInfo info)
         {
             var plugin = RestoreItemsHarmonyMod.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.DispatchOnDied(__instance, info); }
             catch (System.Exception ex) { Debug.LogWarning("[RestoreItems] OnDied: " + ex.Message); }
         }

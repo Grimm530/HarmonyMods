@@ -1,9 +1,7 @@
 using BaseEntityFlags = BaseEntity.Flags;
 
 /// <summary>
-/// Restores the removed BaseEntity.SetFlag(Flags, bool, bool, bool) API.
-/// Staging Assembly-CSharp replaced it with StartSetFlags / SetFlagLocal.
-/// Live servers still have the original method — do not deploy this rebuild there.
+/// Restores BaseEntity.SetFlag(Flags, bool, bool, bool) at compile time via StartSetFlags / FlagsUpdateScope.
 /// </summary>
 internal static class BaseEntityFlagCompat
 {

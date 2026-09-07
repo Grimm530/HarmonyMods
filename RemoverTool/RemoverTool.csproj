@@ -5,7 +5,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12</LangVersion>
     <RootNamespace>RemoverToolHarmony</RootNamespace>
-    <Description>Harmony mod: Remover Tool 4.3.431 (Oxide-free). Config: HarmonyConfig/RemoverTool.json</Description>
+    <Description>Harmony mod: Remover Tool 4.3.431 (Harmony). Config: HarmonyConfig/RemoverTool.json</Description>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
@@ -95,4 +95,8 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
 </Project>

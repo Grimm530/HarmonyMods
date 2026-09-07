@@ -1,5 +1,5 @@
 using HarmonyLib;
-using CCPlugin = Oxide.Plugins.CombatClasses;
+using CCPlugin = Harmony.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony.Patches
 {
@@ -9,7 +9,6 @@ namespace CombatClassesHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null) return;
 
             if (__instance is BasePlayer player)
             {

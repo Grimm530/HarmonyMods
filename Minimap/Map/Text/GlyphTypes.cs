@@ -1,4 +1,4 @@
-namespace Oxide.Ext.Chaos.TextMeshPro;
+namespace Grimm.Chaos.TextMeshPro;
 
 public class GlyphMetricsInfo
 {

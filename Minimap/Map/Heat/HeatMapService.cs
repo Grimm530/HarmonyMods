@@ -2,16 +2,16 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Oxide.Ext.Chaos.Data;
-using Oxide.Ext.Chaos.Map;
-using Oxide.Ext.Chaos.UIFramework;
+using Grimm.Chaos.Data;
+using Grimm.Chaos.Map;
+using Ext.Chaos.UIFramework;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
 using Time = UnityEngine.Time;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
-using UILayer = Oxide.Ext.Chaos.UIFramework.Layer;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
+using UILayer = Ext.Chaos.UIFramework.Layer;
 
 namespace MinimapHarmony
 {
@@ -408,7 +408,7 @@ namespace MinimapHarmony
             RawImageContainer overlay = RawImageContainer.Create(name, UILayer.HudMenu, UIAnchor.FullStretch, Offset.zero);
             overlay.WithParent(parent);
             overlay.WithPNG(render ? _overlayImage : string.Empty);
-            overlay.WithColor(render ? Oxide.Ext.Chaos.UIFramework.Color.White : Oxide.Ext.Chaos.UIFramework.Color.Clear);
+            overlay.WithColor(render ? Ext.Chaos.UIFramework.Color.White : Ext.Chaos.UIFramework.Color.Clear);
             overlay.DestroyExisting();
             ChaosUI.Show(mapUser.Player, overlay);
         }
@@ -418,7 +418,7 @@ namespace MinimapHarmony
             bool render = isActive && !string.IsNullOrEmpty(_overlayImage);
             UpdateComponent<RawImageComponent> update = ChaosUI.PrepareUpdate<RawImageComponent>(name);
             update.Component.PNG = render ? _overlayImage : string.Empty;
-            update.Component.Color = render ? Oxide.Ext.Chaos.UIFramework.Color.White : Oxide.Ext.Chaos.UIFramework.Color.Clear;
+            update.Component.Color = render ? Ext.Chaos.UIFramework.Color.White : Ext.Chaos.UIFramework.Color.Clear;
             return update;
         }
 

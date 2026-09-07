@@ -11,7 +11,7 @@
     <RootNamespace>AutoCodeLockHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: AutoCodeLock 3.0.12 Chaos UI port (Oxide-free).</Description>
+    <Description>Harmony mod: AutoCodeLock 3.0.12 Chaos UI port (Harmony).</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
   </PropertyGroup>
@@ -84,7 +84,14 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="Patches\Cui_Endtest_Patch.cs" />
+    <Compile Remove="UIFramework\**" />
+    <Compile Remove="Pooling\**" />
+    <Compile Remove="Json\**" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

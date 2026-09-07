@@ -1,9 +1,9 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,7 +12,7 @@ using System.Text;
 using UnityEngine;
 using static BaseEntity;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("WaterBases", "Nikedemos", "1.0.26")]
     [Description("Allows vanilla-like constructions on water surface - and underwater too!")]
@@ -3292,7 +3292,7 @@ namespace Oxide.Plugins
         {
             if (entity is BuildingBlock)
             {
-                Interface.CallHook("OnWaterFoundationKilled", entity);
+                HarmonyModInterface.CallHook("OnWaterFoundationKilled", entity);
             }
 
             entity.Invoke(() => entity.Kill(BaseNetworkable.DestroyMode.Gib), 0.01F);
@@ -4737,7 +4737,7 @@ namespace Oxide.Plugins
 
                 ApplyUpkeepMultiplier(floor);
 
-                Interface.CallHook("OnWaterFoundationBuilt", floor);
+                HarmonyModInterface.CallHook("OnWaterFoundationBuilt", floor);
             }
         }
 

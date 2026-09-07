@@ -1,5 +1,5 @@
 /*
- * Harmony shims so the ported ItemRetriever 0.7.7 logic can run without Oxide/Carbon.
+ * Harmony shims so the ported ItemRetriever 0.7.7 logic can run without legacy plugin host/Carbon.
  * Slim library host - no config/data/commands/permissions.
  */
 using System;
@@ -38,7 +38,7 @@ namespace ItemRetrieverHarmony
     #region Plugin stub
 
     /// <summary>
-    /// Oxide-compatible plugin identity. Call routes to the live ItemRetriever instance APIs.
+    /// Harmony-compatible plugin identity. Call routes to the live ItemRetriever instance APIs.
     /// External mods (e.g. Backpacks) receive a bridge instance whose Call invokes ItemRetrieverHarmonyMod.
     /// </summary>
     public class Plugin
@@ -94,17 +94,17 @@ namespace ItemRetrieverHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public object CallHook(string name, params object[] args) => Interface.CallHook(name, args);
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public object CallHook(string name, params object[] args) => HarmonyModInterface.CallHook(name, args);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         /// <summary>No-op under Harmony unless another mod registers a hook bridge.</summary>
         public static object CallHook(string name, params object[] args) => null;
@@ -189,7 +189,7 @@ namespace ItemRetrieverHarmony
         protected void PrintWarning(string message) => Host?.PrintWarning(message);
         protected void PrintError(string message) => Host?.PrintError(message);
 
-        protected void NextTick(Action action) => Interface.NextTick(action);
+        protected void NextTick(Action action) => HarmonyModInterface.NextTick(action);
 
         public abstract void HarmonyInit();
         public abstract void HarmonyServerInitialized();

@@ -17,6 +17,20 @@ internal static class BridgeMapPlacer
     private static Type _vectorDataType;
     private static Type _prefabDataType;
     private static readonly Dictionary<string, IList> PrefabCache = new Dictionary<string, IList>(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> MissingMapsLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, TemplateMetrics> MetricsCache =
+        new Dictionary<string, TemplateMetrics>(StringComparer.OrdinalIgnoreCase);
+
+    private struct TemplateMetrics
+    {
+        public float NativeWidth;
+        public float NativeLength;
+        public float GravelTopLocalY;
+        public bool HasGravel;
+        // Where the authored gravel deck is centered in local space.
+        // We use this (x/z) so placements don't depend on the RustEdit node being exact.
+        public Vector3 DeckCenterLocal;
+    }
 
     public static int PlaceCrossing(BridgeCrossing crossing, string mapPath, Vector3 pathCenterLocal)
     {
@@ -27,7 +41,12 @@ internal static class BridgeMapPlacer
         string fullPath = Path.IsPathRooted(mapPath) ? mapPath : Path.GetFullPath(mapPath);
         if (!File.Exists(fullPath))
         {
-            Debug.LogWarning($"[RoadFix] Bridge map not found: {fullPath}");
+            if (MissingMapsLogged.Add(fullPath))
+            {
+                Debug.LogError(
+                    $"[RoadFix] Bridge map not found: {fullPath}. " +
+                    "Put bridge.map in maps/prefabs (or set RoadBridgeMapPath).");
+            }
             return 0;
         }
 
@@ -43,11 +62,13 @@ internal static class BridgeMapPlacer
         // One path direction for yaw + pitch: StartDist → EndDist (avoids flipped spans).
         Vector3 pathDir = GetPathDirection(crossing);
 
-        // 1) Place level (yaw only) with path-center local node on the road center node.
+        TemplateMetrics metrics = GetMetrics(fullPath, pathCenterLocal, lengthOnX);
+
+        // Centered tile: config path-center is (0,5,0). Do not use old Bridgeonly XYZ.
         GetYawPlacement(crossing, pathCenterLocal, cfg, pathDir,
             out Vector3 mapOriginWorld, out Quaternion yawRotation, out Vector3 pivotWorld);
 
-        float lengthScale = GetNodeBasedLengthScale(crossing, cfg);
+        float lengthScale = GetLengthScale(crossing, metrics, cfg);
 
         Vector3 yawEuler = yawRotation.eulerAngles;
         object startPos = NewVector(mapOriginWorld.x, mapOriginWorld.y, mapOriginWorld.z);
@@ -56,7 +77,11 @@ internal static class BridgeMapPlacer
         if (created == null || created.Count == 0)
             return 0;
 
-        ApplyLengthScale(created, mapOriginWorld, yawRotation, lengthScale, lengthOnX);
+        // Scale length around the path-center pivot so the deck stays on the road.
+        ApplyLengthScale(created, pivotWorld, yawRotation, lengthScale, lengthOnX);
+        float nativeClear = NativeClearWidth(crossing, cfg);
+        float widthScale = GetWidthScale(crossing, cfg, nativeClear);
+        ApplyWidthScale(created, pivotWorld, yawRotation, widthScale, lengthOnX);
 
         // 2) Pitch around center using node heights, axis = bridge length (after yaw).
         float pitchDeg = ComputeNodePitch(crossing, cfg, pathDir, yawRotation, lengthOnX,
@@ -112,31 +137,69 @@ internal static class BridgeMapPlacer
             float terrainMid = TerrainMeta.HeightMap.GetHeight(pathMid);
             Debug.Log(
                 $"[RoadFix] Queued bridge from {Path.GetFileName(fullPath)} at {crossing.Center} " +
-                $"span={crossing.SpanLength:F1} nodes={crossing.NodeCount} lengthScale={lengthScale:F2} " +
-                $"nodeY={yPrev:F1}→{yNext:F1} pitch={pitchDeg:F1}° pivot={pivotWorld} " +
-                $"pathMidY={pathMid.y:F2} terrainMidY={terrainMid:F2} " +
+                $"span={crossing.SpanLength:F1} nodes={crossing.NodeCount} nativeLen={metrics.NativeLength:F1} " +
+                $"lengthScale={lengthScale:F2} " +
+                $"abutmentY={yPrev:F2}→{yNext:F2} pitch={pitchDeg:F1}° pivot={pivotWorld} " +
+                $"pathMidY={pathMid.y:F2} pivotY={pivotWorld.y:F2} terrainMidY={terrainMid:F2} " +
                 $"banks={crossing.StartDeckY:F2}→{crossing.EndDeckY:F2} bedDetect={crossing.RiverBedY:F2} " +
-                $"heightOffset={cfg.BridgeHeightOffset} yaw={cfg.BridgeYawOffset} axis={cfg.BridgeLengthAxis} " +
+                $"heightOffset={cfg.BridgeHeightOffset} pathLocal={pathCenterLocal} yawOff={cfg.BridgeYawOffset} yaw={yawEuler.y:F1} head={Mathf.Atan2(pathDir.x, pathDir.z) * Mathf.Rad2Deg:F1} " +
+                $"axis={cfg.BridgeLengthAxis} nativeClear={nativeClear:F1} " +
+                $"coverWidth={crossing.CoverWidth:F1} widthScale={widthScale:F2} extras={crossing.ExtraSpans?.Count ?? 0} " +
                 $"serialized={serialized} deferred={deferred} skipped={skipped}");
         }
 
         return serialized;
     }
 
-    /// <summary>Flattened StartDist → EndDist direction (stable across spans).</summary>
+    /// <summary>
+    /// Heading of the path through the river, matching the mesh centerline.
+    /// Bank-approach tangents must not be mixed in — a straight rail/road in the
+    /// water with curved approaches was yawing the tile clockwise.
+    /// </summary>
     private static Vector3 GetPathDirection(BridgeCrossing crossing)
     {
-        Vector3 p0 = BridgeTerrain.SamplePoint(crossing.Path, crossing.StartDist);
-        Vector3 p1 = BridgeTerrain.SamplePoint(crossing.Path, crossing.EndDist);
-        Vector3 flat = new Vector3(p1.x - p0.x, 0f, p1.z - p0.z);
-        if (flat.sqrMagnitude < 0.001f)
+        Vector3 sum = Vector3.zero;
+        AddSpanHeading(crossing.Path, crossing.StartDist, crossing.EndDist, ref sum);
+        if (crossing.ExtraSpans != null)
         {
-            flat = crossing.Tangent;
-            flat.y = 0f;
+            for (int i = 0; i < crossing.ExtraSpans.Count; i++)
+            {
+                BridgeCrossing extra = crossing.ExtraSpans[i];
+                AddSpanHeading(extra.Path, extra.StartDist, extra.EndDist, ref sum);
+            }
         }
-        if (flat.sqrMagnitude < 0.001f)
-            flat = Vector3.forward;
-        return flat.normalized;
+
+        if (sum.sqrMagnitude > 0.0001f)
+            return sum.normalized;
+
+        Vector3 stored = crossing.Tangent;
+        stored.y = 0f;
+        if (stored.sqrMagnitude > 0.001f)
+            return stored.normalized;
+
+        return Vector3.forward;
+    }
+
+    /// <summary>
+    /// Short chord at mid-span (cubic if the path is a spline). Same positions the
+    /// rail/road mesh uses. Window is capped so long water-expands do not pick up
+    /// bank curves.
+    /// </summary>
+    private static void AddSpanHeading(PathList path, float start, float end, ref Vector3 sum)
+    {
+        if (path?.Path == null)
+            return;
+
+        float pathLen = path.Path.Length;
+        float mid = (start + end) * 0.5f;
+        float half = Mathf.Min(6f, Mathf.Max(2f, (end - start) * 0.15f));
+        float d0 = Mathf.Clamp(mid - half, 0f, pathLen);
+        float d1 = Mathf.Clamp(mid + half, 0f, pathLen);
+        Vector3 a = path.Spline ? path.Path.GetPointCubicHermite(d0) : path.Path.GetPoint(d0);
+        Vector3 b = path.Spline ? path.Path.GetPointCubicHermite(d1) : path.Path.GetPoint(d1);
+        Vector3 flat = new Vector3(b.x - a.x, 0f, b.z - a.z);
+        if (flat.sqrMagnitude > 0.0001f)
+            sum += flat.normalized;
     }
 
     /// <summary>Yaw-only placement: pathCenterLocal sits on the road center node (pivot).</summary>
@@ -150,9 +213,17 @@ internal static class BridgeMapPlacer
         out Vector3 pivotWorld)
     {
         float mid = (crossing.StartDist + crossing.EndDist) * 0.5f;
-        // Place on road/rail path node height (same as before the bank-average experiment).
-        pivotWorld = BridgeTerrain.SamplePoint(crossing.Path, mid);
-        pivotWorld.y += cfg.BridgeHeightOffset;
+        Vector3 midPt = BridgeTerrain.SamplePoint(crossing.Path, mid);
+        Vector3 startAbut = BridgeTerrain.SampleAbutment(crossing.Path, crossing.StartDist, -1f);
+        Vector3 endAbut = BridgeTerrain.SampleAbutment(crossing.Path, crossing.EndDist, 1f);
+        // Mid-span path Y is the river hump (water+2). Ends must match the approach road.
+        pivotWorld = midPt;
+        if (crossing.CoverWidth > 1f)
+        {
+            pivotWorld.x = crossing.Center.x;
+            pivotWorld.z = crossing.Center.z;
+        }
+        pivotWorld.y = (startAbut.y + endAbut.y) * 0.5f + cfg.BridgeHeightOffset;
 
         yawRotation = Quaternion.LookRotation(pathDir, Vector3.up)
             * Quaternion.Euler(0f, cfg.BridgeYawOffset, 0f);
@@ -250,15 +321,30 @@ internal static class BridgeMapPlacer
     }
 
     /// <summary>
-    /// Base BridgeLengthScale, then +StretchPerExtraNode only from the 4th node onward.
+    /// Size the tile to the measured water span plus overhang past each bank.
+    /// Stretches when the river is wider than the template; still floors on creeks.
     /// </summary>
-    private static float GetNodeBasedLengthScale(BridgeCrossing crossing, RoadFixConfig.ConfigData cfg)
+    private static float GetLengthScale(
+        BridgeCrossing crossing,
+        TemplateMetrics metrics,
+        RoadFixConfig.ConfigData cfg)
     {
-        float scale = Mathf.Max(0.1f, cfg.BridgeLengthScale);
-        int threshold = Mathf.Max(1, cfg.StretchOnlyAfterNodes);
-        int nodes = Mathf.Max(1, crossing.NodeCount);
-        if (nodes > threshold)
-            scale += (nodes - threshold) * Mathf.Max(0f, cfg.StretchPerExtraNode);
+        float native = metrics.NativeLength > 1f
+            ? metrics.NativeLength
+            : Mathf.Max(4f, cfg.BridgeTemplateLength);
+        float overhangEach = Mathf.Max(0f, cfg.BridgeLengthOverhang);
+        float target = Mathf.Max(8f, crossing.SpanLength + overhangEach * 2f);
+        float fitScale = target / native;
+        float minScale = Mathf.Clamp(cfg.MinBridgeLengthScale, 0.2f, 1f);
+        float maxScale = Mathf.Clamp(cfg.MaxBridgeLengthScale, 1f, 6f);
+        float scale = Mathf.Clamp(fitScale, minScale, maxScale);
+        if (cfg.DebugLogging)
+        {
+            Debug.Log(
+                $"[RoadFix] Length water={crossing.SpanLength:F1} +{overhangEach:F0}m/bank " +
+                $"target={target:F1} nativeLen={native:F1} → lengthScale={scale:F2} " +
+                $"path='{crossing.Path?.Name}'");
+        }
         return scale;
     }
 
@@ -284,6 +370,170 @@ internal static class BridgeMapPlacer
             else scale.z *= lengthScale;
             SetMember(row, "scale", NewVector(scale.x, scale.y, scale.z));
         }
+    }
+
+    /// <summary>
+    /// World Y of the gravel driving surface at each abutment (cube_tiled_gravel top).
+    /// </summary>
+    public static void GetRailDeckGrade(BridgeCrossing crossing, out float y0, out float y1)
+    {
+        y0 = 0f;
+        y1 = 0f;
+        var cfg = RoadFixConfig.Config;
+        if (cfg == null || crossing.Path?.Path == null)
+            return;
+
+        Vector3 startAbut = BridgeTerrain.SampleAbutment(crossing.Path, crossing.StartDist, -1f);
+        Vector3 endAbut = BridgeTerrain.SampleAbutment(crossing.Path, crossing.EndDist, 1f);
+        bool lengthOnX = !string.Equals(cfg.BridgeLengthAxis, "Z", StringComparison.OrdinalIgnoreCase);
+        Vector3 pathLocal = cfg.SharedPathCenterLocal;
+        string mapPath = cfg.SharedBridgeMapPath;
+        string fullPath = Path.IsPathRooted(mapPath) ? mapPath : Path.GetFullPath(mapPath);
+        TemplateMetrics metrics = GetMetrics(fullPath, pathLocal, lengthOnX);
+
+        float topOffset = metrics.GravelTopLocalY - pathLocal.y;
+        float extra = cfg.RailDeckGravelOffset;
+        y0 = startAbut.y + cfg.BridgeHeightOffset + topOffset + extra;
+        y1 = endAbut.y + cfg.BridgeHeightOffset + topOffset + extra;
+    }
+
+    private static float NativeClearWidth(BridgeCrossing crossing, RoadFixConfig.ConfigData cfg)
+    {
+        bool road = crossing.Path != null && crossing.Path.Width >= 8f;
+        float native = road ? cfg.RoadBridgeNativeWidth : cfg.RailBridgeNativeWidth;
+        return Mathf.Max(4f, native);
+    }
+
+    private static float GetWidthScale(BridgeCrossing crossing, RoadFixConfig.ConfigData cfg, float nativeClear)
+    {
+        if (cfg == null || crossing.CoverWidth <= 1f)
+            return 1f;
+
+        float native = Mathf.Max(4f, nativeClear);
+        float need = crossing.CoverWidth;
+        if (need <= native + 0.25f)
+            return 1f;
+
+        float maxScale = Mathf.Clamp(cfg.MaxRailBridgeWidthScale, 1f, 5f);
+        float scale = Mathf.Clamp(need / native, 1f, maxScale);
+        if (cfg.DebugLogging)
+        {
+            Debug.Log(
+                $"[RoadFix] widthScale={scale:F2} cover={need:F1} nativeClear={native:F1} " +
+                $"path='{crossing.Path?.Name}' width={crossing.Path?.Width:F1}");
+        }
+        return scale;
+    }
+
+    private static void ApplyWidthScale(IList rows, Vector3 origin, Quaternion rotation, float widthScale, bool lengthOnX)
+    {
+        if (Mathf.Abs(widthScale - 1f) < 0.01f)
+            return;
+
+        Quaternion inv = Quaternion.Inverse(rotation);
+        foreach (object row in rows)
+        {
+            Vector3 pos = GetVector3(row, "position");
+            Vector3 local = inv * (pos - origin);
+            if (lengthOnX) local.z *= widthScale;
+            else local.x *= widthScale;
+            Vector3 world = origin + rotation * local;
+            SetMember(row, "position", NewVector(world.x, world.y, world.z));
+
+            Vector3 scale = GetVector3(row, "scale");
+            if (scale == Vector3.zero)
+                scale = Vector3.one;
+            if (lengthOnX) scale.z *= widthScale;
+            else scale.x *= widthScale;
+            SetMember(row, "scale", NewVector(scale.x, scale.y, scale.z));
+        }
+    }
+
+    private static TemplateMetrics GetMetrics(string fullPath, Vector3 pathCenterLocal, bool lengthOnX)
+    {
+        if (MetricsCache.TryGetValue(fullPath, out TemplateMetrics cached))
+            return cached;
+
+        IList prefabs = File.Exists(fullPath) ? LoadPrefabs(fullPath) : null;
+        TemplateMetrics metrics = MeasureTemplate(prefabs, pathCenterLocal, lengthOnX);
+        if (prefabs != null)
+            MetricsCache[fullPath] = metrics;
+        return metrics;
+    }
+
+    private static TemplateMetrics MeasureTemplate(IList prefabs, Vector3 pathCenterLocal, bool lengthOnX)
+    {
+        var metrics = new TemplateMetrics
+        {
+            NativeWidth = 8f,
+            NativeLength = 12f,
+            GravelTopLocalY = pathCenterLocal.y,
+            HasGravel = false,
+            DeckCenterLocal = pathCenterLocal
+        };
+        if (prefabs == null || prefabs.Count == 0)
+            return metrics;
+
+        float minW = float.MaxValue;
+        float maxW = float.MinValue;
+        float minL = float.MaxValue;
+        float maxL = float.MinValue;
+        float gravelTop = float.MinValue;
+
+        foreach (object row in prefabs)
+        {
+            if (row == null || !TryGetPrefabId(row, out uint id) || id == 0)
+                continue;
+            Vector3 pos = GetVector3(row, "position");
+            Vector3 scale = GetVector3(row, "scale");
+            if (scale == Vector3.zero)
+                scale = Vector3.one;
+
+            string path = StringPool.Get(id);
+            if (!string.IsNullOrEmpty(path) && ShouldSkipBridgePrefab(path))
+                continue;
+
+            float across = lengthOnX ? pos.z : pos.x;
+            float halfW = 0.5f * Mathf.Abs(lengthOnX ? scale.z : scale.x);
+            minW = Mathf.Min(minW, across - halfW);
+            maxW = Mathf.Max(maxW, across + halfW);
+
+            float along = lengthOnX ? pos.x : pos.z;
+            float halfL = 0.5f * Mathf.Abs(lengthOnX ? scale.x : scale.z);
+            minL = Mathf.Min(minL, along - halfL);
+            maxL = Mathf.Max(maxL, along + halfL);
+
+            if (string.IsNullOrEmpty(path))
+                continue;
+            string lower = path.ToLowerInvariant();
+            if (lower.IndexOf("cube_tiled_gravel", StringComparison.Ordinal) < 0)
+                continue;
+
+            metrics.HasGravel = true;
+            float top = pos.y + 0.5f * Mathf.Abs(scale.y);
+            if (top > gravelTop)
+                gravelTop = top;
+        }
+
+        if (maxW > minW && minW < float.MaxValue * 0.5f)
+            metrics.NativeWidth = maxW - minW;
+        if (maxL > minL && minL < float.MaxValue * 0.5f)
+            metrics.NativeLength = maxL - minL;
+
+        // Align deck center (x/z) based on gravel bounds.
+        // This prevents consistent lateral offsets when RustEdit node offsets change.
+        if (maxW > minW && maxL > minL && minW < float.MaxValue * 0.5f && minL < float.MaxValue * 0.5f)
+        {
+            float centerW = (minW + maxW) * 0.5f;
+            float centerL = (minL + maxL) * 0.5f;
+            metrics.DeckCenterLocal = lengthOnX
+                ? new Vector3(centerL, pathCenterLocal.y, centerW)
+                : new Vector3(centerW, pathCenterLocal.y, centerL);
+        }
+        if (metrics.HasGravel && gravelTop > float.MinValue * 0.5f)
+            metrics.GravelTopLocalY = gravelTop;
+
+        return metrics;
     }
 
     private static IList LoadPrefabs(string fullPath)

@@ -19,6 +19,11 @@ public static class GenerateRoadTerrain_Process_Patch
         {
             if (!RoadFixConfig.IsEnabled())
                 return;
+            if (World.Cached)
+            {
+                BridgeService.NoteCachedIdle();
+                return;
+            }
 
             var cfg = RoadFixConfig.Config;
             if (cfg == null)

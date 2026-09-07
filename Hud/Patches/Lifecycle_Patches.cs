@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using HPlugin = Oxide.Plugins.Hud;
+using HPlugin = Harmony.Plugins.Hud;
 
 namespace HudHarmony.Patches
 {
@@ -43,7 +43,7 @@ namespace HudHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BasePlayer __instance)
         {
-            if (__instance == null || __instance.IsSleeping()) return;
+            if (__instance.IsSleeping()) return;
             try { HPlugin.Dispatch_OnPlayerSleepEnded(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[Hud] OnPlayerSleepEnded: " + ex.Message); }
         }

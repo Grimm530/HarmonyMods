@@ -1,13 +1,18 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using HarmonyLib;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace AirbourneSpawnHarmony
 {
     /// <summary>
-    /// Harmony entry for AirbourneSpawn 1.0.191 (Oxide-free).
+    /// Harmony entry for AirbourneSpawn 1.0.191 (Harmony).
     /// Load order: 0Permissions -> Kits (optional autokit) -> AirbourneSpawn.
     /// </summary>
     public class AirbourneSpawnMod : IHarmonyModHooks
@@ -31,6 +36,7 @@ namespace AirbourneSpawnHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 

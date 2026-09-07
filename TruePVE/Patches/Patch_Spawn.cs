@@ -1,7 +1,7 @@
 // OnEntitySpawned (server spawn) and OnEntityBuilt (deploy/build).
 using HarmonyLib;
 using UnityEngine;
-using TPVE = Oxide.Plugins.TruePVE;
+using TPVE = Harmony.Plugins.TruePVE;
 
 namespace TruePVEHarmony.Patches
 {
@@ -11,7 +11,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
         {
-            if (__instance == null || __instance is BasePlayer) return;
+            if (__instance is BasePlayer) return;
             try { TPVE.Dispatch_OnEntitySpawned(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnEntitySpawned: " + ex.Message); }
         }
@@ -23,14 +23,14 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(Planner __instance, BaseEntity __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             try { TPVE.Dispatch_OnEntityBuilt(__instance, __result.gameObject); }
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnEntityBuilt: " + ex.Message); }
         }
     }
 
     /// <summary>
-    /// OnConstructionPlace (TruePVE 2.4.3 planter planting). Oxide injects this inside
+    /// OnConstructionPlace (TruePVE 2.4.3 planter planting). compat injects this inside
     /// Planner.DoPlacement after the entity exists but before parent is assigned, so
     /// CanHarvest uses placement.entity as the planter parent.
     /// Non-null dispatch result kills the planted growable (same as Oxide KillMessage).
@@ -41,7 +41,7 @@ namespace TruePVEHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(Planner __instance, Construction.Target placement, Construction component, GameObject __result)
         {
-            if (__instance == null || __result == null) return;
+            if (__result == null) return;
             GrowableEntity plant = __result.GetComponent<GrowableEntity>();
             if (plant == null) return;
             BasePlayer player = __instance.GetOwnerPlayer();

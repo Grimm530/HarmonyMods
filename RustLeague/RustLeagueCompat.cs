@@ -119,7 +119,7 @@ namespace RustLeagueHarmony
             try
             {
                 File.Copy(oxide, host.ConfigPath, false);
-                Debug.Log("[RustLeague] Migrated oxide/config/RustLeague.json -> HarmonyConfig/RustLeague.json");
+                Debug.Log("[RustLeague] Migrated legacy/config/RustLeague.json -> HarmonyConfig/RustLeague.json");
             }
             catch (Exception ex)
             {

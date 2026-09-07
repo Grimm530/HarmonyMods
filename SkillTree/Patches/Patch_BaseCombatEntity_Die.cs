@@ -1,14 +1,14 @@
-// OnEntityDeath / OnPlayerDeath — Prefix at Oxide CallHook timing (NOT Die postfix).
+// OnEntityDeath / OnPlayerDeath — Prefix at compat CallHook timing (NOT Die postfix).
 //
 // Oxide fires OnEntityDeath inside BaseCombatEntity.Die BEFORE OnDied/DropItems/Kill.
 // A Die Postfix runs after loot has already dropped and IsDestroyed is true, so
 // OnEntityDeath's early `entity.IsDestroyed` return kills Loot Magnet (HandleLootPickup),
 // barrel XP, Node_Spawn_Chance (via ResourceEntity), etc.
 //
-// This server has no Oxide CallHook strings in game IL, so transpilers never match.
+// This server has Harmony-only CallHook strings in game IL, so transpilers never match.
 // Prefix calls the same typed dispatch SkillTree already uses.
 using HarmonyLib;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {

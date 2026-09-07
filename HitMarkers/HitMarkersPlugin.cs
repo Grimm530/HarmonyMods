@@ -1,21 +1,21 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
 using Random = UnityEngine.Random;
 
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
 	[Info("Hit Markers", "Grimm530", "1.2.5")]
 	[Description("Displays hit markers and damage numbers")]
@@ -283,14 +283,14 @@ namespace Oxide.Plugins
 
 		private void SaveData()
 		{
-			Interface.Oxide.DataFileSystem.WriteObject(Name, _data);
+			HarmonyModInterface.Mods.DataFileSystem.WriteObject(Name, _data);
 		}
 
 		private void LoadData()
 		{
 			try
 			{
-				_data = Interface.Oxide.DataFileSystem.ReadObject<PluginData>(Name);
+				_data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PluginData>(Name);
 			}
 			catch (Exception e)
 			{

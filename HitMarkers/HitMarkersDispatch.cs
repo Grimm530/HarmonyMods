@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Oxide.Core;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Game.Rust.Cui;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class HitMarkers
     {
@@ -33,13 +33,13 @@ namespace Oxide.Plugins
                 _data.HeadshotDisabledUsers = new List<ulong>();
             try
             {
-                var old = Interface.Oxide.DataFileSystem.ReadObject<List<ulong>>("HitIcon");
+                var old = HarmonyModInterface.Mods.DataFileSystem.ReadObject<List<ulong>>("HitIcon");
                 // HitIcon.json may be { DisabledUsers: [] }
             }
             catch { }
             try
             {
-                var path = System.IO.Path.Combine(Oxide.Core.OxideMod.ResolveServerRoot(), "HarmonyData", "HitIcon.json");
+                var path = System.IO.Path.Combine(Harmony.Core.HarmonyModRuntime.ResolveServerRoot(), "HarmonyData", "HitIcon.json");
                 if (!System.IO.File.Exists(path)) return;
                 var json = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
                 var arr = json["DisabledUsers"] as Newtonsoft.Json.Linq.JArray;
@@ -122,7 +122,7 @@ namespace Oxide.Plugins
         private void LoadHeadshotImages()
         {
             if (_config?.HeadshotIcon == null) return;
-            string root = Oxide.Core.OxideMod.ResolveServerRoot();
+            string root = Harmony.Core.HarmonyModRuntime.ResolveServerRoot();
             string dir = Path.Combine(root, "HarmonyImages", "HitMarkers");
             TryStorePng("hitimage", Path.Combine(dir, "hit.png"));
             TryStorePng("deathimage", Path.Combine(dir, "death.png"));

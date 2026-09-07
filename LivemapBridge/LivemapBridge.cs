@@ -7,6 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using LivemapBridge.MapCreation;
 using Newtonsoft.Json;
 using UnityEngine;
 using Building = BuildingManager.Building;
@@ -20,8 +21,11 @@ public class LivemapBridgeMod : IHarmonyModHooks
 
     const string CmdName = "livemap.snapshot";
     const string CmdFull = "global.livemap.snapshot";
+    const string CmdRenderName = "livemap.render";
+    const string CmdRenderFull = "global.livemap.render";
 
     ConsoleSystem.Command _cmd;
+    ConsoleSystem.Command _cmdRender;
     ConfigFile _config;
     string _configPath;
     bool _wrotePanelWarning;
@@ -206,6 +210,18 @@ public class LivemapBridgeMod : IHarmonyModHooks
             ConsoleSystem.Index.Server.Dict[CmdFull] = _cmd;
             if (ConsoleSystem.Index.Server.GlobalDict != null)
                 ConsoleSystem.Index.Server.GlobalDict[CmdName] = _cmd;
+
+            _cmdRender = new ConsoleSystem.Command
+            {
+                Name = CmdRenderName,
+                FullName = CmdRenderFull,
+                Variable = false,
+                ServerAdmin = true,
+                Call = CmdRender
+            };
+            ConsoleSystem.Index.Server.Dict[CmdRenderFull] = _cmdRender;
+            if (ConsoleSystem.Index.Server.GlobalDict != null)
+                ConsoleSystem.Index.Server.GlobalDict[CmdRenderName] = _cmdRender;
         }
         catch (Exception ex)
         {
@@ -219,7 +235,10 @@ public class LivemapBridgeMod : IHarmonyModHooks
         {
             ConsoleSystem.Index.Server.Dict?.Remove(CmdFull);
             ConsoleSystem.Index.Server.GlobalDict?.Remove(CmdName);
+            ConsoleSystem.Index.Server.Dict?.Remove(CmdRenderFull);
+            ConsoleSystem.Index.Server.GlobalDict?.Remove(CmdRenderName);
             _cmd = null;
+            _cmdRender = null;
         }
         catch
         {
@@ -229,6 +248,16 @@ public class LivemapBridgeMod : IHarmonyModHooks
     void CmdSnapshot(ConsoleSystem.Arg arg)
     {
         arg?.ReplyWith(BuildJson());
+    }
+
+    void CmdRender(ConsoleSystem.Arg arg)
+    {
+        _mapExported = false;
+        _mapExportAttempts = 0;
+        MaybeExportMapImage(force: true);
+        arg?.ReplyWith(_mapExported
+            ? "[LivemapBridge] Map + height exported."
+            : "[LivemapBridge] Map export not ready yet (terrain / minimap still loading).");
     }
 
     void Tick()
@@ -1279,27 +1308,57 @@ public class LivemapBridgeMod : IHarmonyModHooks
         return null;
     }
 
-    void MaybeExportMapImage()
+    void MaybeExportMapImage(bool force = false)
     {
-        if (_mapExported || TerrainMeta.Size.x <= 0f)
+        if (!force && _mapExported)
+            return;
+        if (TerrainMeta.Size.x <= 0f || !OverworldRenderer.TerrainReady())
             return;
 
-        _mapExportAttempts++;
-        if (_mapExportAttempts > 900)
-            return;
-
-        string pngPath = FindMinimapOverworldPng(out int renderRes);
-        if (string.IsNullOrEmpty(pngPath))
-            return;
+        if (!force)
+        {
+            _mapExportAttempts++;
+            if (_mapExportAttempts > 900)
+                return;
+        }
 
         try
         {
-            byte[] png = File.ReadAllBytes(pngPath);
+            byte[] png = null;
+            int renderRes = 0;
+            string source = "livemap";
+            string minimapPath = "";
+
+            if (_config.PreferMinimapCache)
+            {
+                minimapPath = FindMinimapOverworldPng(out renderRes);
+                if (!string.IsNullOrEmpty(minimapPath) && File.Exists(minimapPath))
+                {
+                    png = File.ReadAllBytes(minimapPath);
+                    if (png != null && png.Length > 0)
+                        source = "minimap";
+                    else
+                        png = null;
+                }
+            }
+
+            // Communities without Minimap: paint from live TerrainMeta.
+            if (png == null || png.Length == 0)
+            {
+                png = OverworldRenderer.RenderPng(_config.MapRenderResolution, out renderRes);
+                source = "livemap";
+                minimapPath = "";
+            }
+
             if (png == null || png.Length == 0)
                 return;
 
+            byte[] height = OverworldRenderer.RenderHeightBin(513);
+
             string harmonyMap = _config.HarmonyMapPath;
             string panelMap = _config.PanelMapPath;
+            string harmonyHeight = _config.HarmonyHeightPath;
+            string panelHeight = _config.PanelHeightPath;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 if (_unloaded)
@@ -1307,9 +1366,15 @@ public class LivemapBridgeMod : IHarmonyModHooks
                 WriteBytesAtomic(harmonyMap, png);
                 if (!string.IsNullOrEmpty(panelMap))
                     WriteBytesAtomic(panelMap, png);
+                if (height != null && height.Length > 0)
+                {
+                    WriteBytesAtomic(harmonyHeight, height);
+                    if (!string.IsNullOrEmpty(panelHeight))
+                        WriteBytesAtomic(panelHeight, height);
+                }
             });
 
-            string metaJson = BuildTerrainMetaJson(pngPath, renderRes);
+            string metaJson = BuildTerrainMetaJson(minimapPath, renderRes, source);
             var metaObj = JsonConvert.DeserializeObject<Dictionary<string, object>>(metaJson);
             if (metaObj != null)
                 metaObj["mapImage"] = Path.GetFileName(panelMap ?? harmonyMap);
@@ -1319,7 +1384,8 @@ public class LivemapBridgeMod : IHarmonyModHooks
                 WriteAtomic(_config.PanelTerrainPath, metaJson);
 
             _mapExported = true;
-            Debug.Log("[LivemapBridge] Exported Minimap overworld → " + panelMap + " (" + renderRes + "px, oceanMargin " + ReadMinimapOceanMargin() + ")");
+            Debug.Log("[LivemapBridge] Exported overworld (" + source + ") → " + panelMap
+                      + " (" + renderRes + "px, oceanMargin " + OverworldRenderer.OceanMargin + ")");
         }
         catch (Exception ex)
         {
@@ -1363,53 +1429,28 @@ public class LivemapBridgeMod : IHarmonyModHooks
         return best;
     }
 
-    string BuildTerrainMetaJson(string minimapPng, int renderRes)
+    string BuildTerrainMetaJson(string minimapPng, int renderRes, string source)
     {
-        int oceanMargin = ReadMinimapOceanMargin();
         float water01 = SampleEdgeWater01();
+        // height.bin from OverworldRenderer is TerrainMeta.GetHeight01 — scale/pos must match live TerrainMeta.
         var meta = new Dictionary<string, object>
         {
             ["worldSize"] = (int)TerrainMeta.Size.x,
             ["water01"] = water01,
             ["seed"] = World.Seed,
             ["mapImage"] = "map.png",
-            ["mapImageSource"] = "minimap",
-            ["oceanMargin"] = oceanMargin,
+            ["mapImageSource"] = source ?? "livemap",
+            ["oceanMargin"] = OverworldRenderer.OceanMargin,
             ["renderResolution"] = renderRes,
             ["mapImageSize"] = new[] { renderRes, renderRes },
-            ["minimapCache"] = minimapPng,
+            ["minimapCache"] = minimapPng ?? "",
             ["live"] = true,
-            // height.bin uses Facepunch .map encoding — NOT TerrainMeta.Size.y / Position.y.
-            ["heightScale"] = 2000.0,
-            ["terrainPosY"] = -1500.0,
+            ["heightScale"] = (double)TerrainMeta.Size.y,
+            ["terrainPosY"] = (double)TerrainMeta.Position.y,
             ["heightBin"] = "height.bin",
             ["resolution"] = 513
         };
-        MergeHeightMeta(meta, _config.PanelTerrainPath);
-        MergeHeightMeta(meta, _config.HarmonyTerrainPath);
         return JsonConvert.SerializeObject(meta, Formatting.Indented);
-    }
-
-    static void MergeHeightMeta(Dictionary<string, object> meta, string path)
-    {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            return;
-        try
-        {
-            var existing = JsonConvert.DeserializeObject<Dictionary<string, object>>(File.ReadAllText(path));
-            if (existing == null)
-                return;
-            foreach (string key in new[] {
-                "heightBin", "resolution", "sourceResolution", "mapFile", "water01"
-            })
-            {
-                if (existing.TryGetValue(key, out object val) && val != null)
-                    meta[key] = val;
-            }
-        }
-        catch
-        {
-        }
     }
 
     static float SampleEdgeWater01()
@@ -1429,24 +1470,6 @@ public class LivemapBridgeMod : IHarmonyModHooks
         }
         samples.Sort();
         return samples[samples.Count / 2];
-    }
-
-    static int ReadMinimapOceanMargin()
-    {
-        try
-        {
-            string path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "HarmonyConfig", "Minimap.json"));
-            if (!File.Exists(path))
-                return 500;
-            string json = File.ReadAllText(path);
-            var m = System.Text.RegularExpressions.Regex.Match(json, "\"Ocean margin[^\"]*\"\\s*:\\s*(\\d+)");
-            if (m.Success && int.TryParse(m.Groups[1].Value, out int margin))
-                return margin;
-        }
-        catch
-        {
-        }
-        return 500;
     }
 
     static int ReadMinimapRenderResolution()
@@ -1494,6 +1517,7 @@ public class LivemapBridgeMod : IHarmonyModHooks
         public float IntervalSeconds = 1f;
         public float BuildingsIntervalSeconds = 30f;
         public float VehicleScanIntervalSeconds = 5f;
+        public string PanelServerId = "";
         public string HarmonyOutputPath = @"C:\svr1\HarmonyData\Livemap\snapshot.json";
         public string PanelOutputPath = @"C:\!WEB RCON PANEL\livemap\data\snapshot.json";
         public string HarmonyBuildingsPath = @"C:\svr1\HarmonyData\Livemap\buildings.json";
@@ -1504,6 +1528,12 @@ public class LivemapBridgeMod : IHarmonyModHooks
         public string PanelMapPath = @"C:\!WEB RCON PANEL\livemap\data\map.png";
         public string HarmonyTerrainPath = @"C:\svr1\HarmonyData\Livemap\terrain.json";
         public string PanelTerrainPath = @"C:\!WEB RCON PANEL\livemap\data\terrain.json";
+        public string HarmonyHeightPath = @"C:\svr1\HarmonyData\Livemap\height.bin";
+        public string PanelHeightPath = @"C:\!WEB RCON PANEL\livemap\data\height.bin";
+        public int MapRenderResolution = 2048;
+        public bool PreferMinimapCache = true;
+        public string IngestUrl = "";
+        public string IngestToken = "";
     }
 
     class Snapshot

@@ -1,6 +1,6 @@
 /*
- * Harmony shims so the ported RustRewards 3.2.5 logic can run without Oxide/Carbon.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims so the ported RustRewards 3.2.5 logic can run without legacy plugin host/Carbon.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace RustRewardsHarmony
 {
-    /// <summary>Oxide Hash&lt;TKey,TValue&gt; — Dictionary subclass used by Shop installer image cache.</summary>
+    /// <summary>compat Hash&lt;TKey,TValue&gt; — Dictionary subclass used by Shop installer image cache.</summary>
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
         public new TValue this[TKey key]
@@ -582,7 +582,7 @@ namespace RustRewardsHarmony
         }
     }
 
-    /// <summary>Oxide Game.Rust.Libraries.Player.Reply shim.</summary>
+    /// <summary>compat Game.Rust.Libraries.Player.Reply shim.</summary>
     public static class Player
     {
         public static void Reply(BasePlayer player, string message, string prefix = "", ulong chatIcon = 0UL)
@@ -795,7 +795,7 @@ namespace RustRewardsHarmony
             set => AsObject()[key] = value == null ? JValue.CreateNull() : JToken.FromObject(value, JsonSerializer.Create(Settings));
         }
 
-        /// <summary>Oxide Config.Get(params string[] keys) — nested path lookup.</summary>
+        /// <summary>compat Config.Get(params string[] keys) — nested path lookup.</summary>
         public object Get(params string[] keys)
         {
             if (keys == null || keys.Length == 0) return null;
@@ -846,7 +846,7 @@ namespace RustRewardsHarmony
         public void WriteObject(object obj, bool sync = true)
         {
             if (obj == null) return;
-            // Oxide stores both objects and arrays (e.g. DisabledAutoShop is List<ulong>)
+            // legacy host stores both objects and arrays (e.g. DisabledAutoShop is List<ulong>)
             _data = JToken.FromObject(obj, JsonSerializer.Create(Settings));
             if (sync) Save();
         }
@@ -900,7 +900,7 @@ namespace RustRewardsHarmony
         }
     }
 
-    /// <summary>Data root = HarmonyData so Oxide paths like Shop/Players/x resolve correctly.</summary>
+    /// <summary>Data root = HarmonyData so legacy paths like Shop/Players/x resolve correctly.</summary>
     public class DataFileSystem
     {
         private readonly string _root;
@@ -940,7 +940,7 @@ namespace RustRewardsHarmony
             {
                 try
                 {
-                    // Oxide data files may be objects (RustRewards.json) or arrays (DisabledAutoRustRewards.json)
+                    // legacy data files may be objects (RustRewards.json) or arrays (DisabledAutoRustRewards.json)
                     data = JToken.Parse(File.ReadAllText(path));
                 }
                 catch
@@ -995,7 +995,7 @@ namespace RustRewardsHarmony
             }
         }
 
-        /// <summary>Returns full file paths ending in .json (Oxide-compatible for Shop PlayerData.GetFiles).</summary>
+        /// <summary>Returns full file paths ending in .json (Harmony-compatible for Shop PlayerData.GetFiles).</summary>
         public string[] GetFiles(string relativePath)
         {
             relativePath = (relativePath ?? "").Replace('\\', '/').Trim('/');
@@ -1009,11 +1009,11 @@ namespace RustRewardsHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public DataFileSystem DataFileSystem => Interface.DataFileSystem;
+        public DataFileSystem DataFileSystem => HarmonyModInterface.DataFileSystem;
         public string DataDirectory => RustRewardsHost.Instance?.DataDirectory ?? "";
         public string RootDirectory => RustRewardsHost.Instance?.ServerRoot ?? "";
         public string LangDirectory
@@ -1035,7 +1035,7 @@ namespace RustRewardsHarmony
             }
             return null;
         }
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
         public T GetLibrary<T>() where T : class
         {
             if (typeof(T) == typeof(HarmonyPermissionHelper))
@@ -1046,10 +1046,10 @@ namespace RustRewardsHarmony
             Debug.LogWarning("[GrimmRewards] ReloadPlugin is a no-op under Harmony (restart/reload the mod instead).");
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         public static Func<string, object[], object> CallHookHandler;
 
@@ -1139,7 +1139,7 @@ namespace RustRewardsHarmony
                 }
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[GrimmRewards] webrequest callback: " + ex.Message); }
@@ -1208,7 +1208,7 @@ namespace RustRewardsHarmony
             Directory.CreateDirectory(Path.Combine(dataDir, "RustRewards", "Players"));
             Directory.CreateDirectory(Path.Combine(dataDir, "RustRewards", "logs"));
             Instance.DataDirectory = dataDir;
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
 
             var configPath = Path.Combine(configDir, "RustRewards.json");
             if (!File.Exists(configPath))
@@ -1219,7 +1219,7 @@ namespace RustRewardsHarmony
                     try
                     {
                         File.Copy(oxideConfig, configPath);
-                        Debug.Log("[GrimmRewards] Migrated config from oxide/config/RustRewards.json");
+                        Debug.Log("[GrimmRewards] Migrated config from legacy/config/RustRewards.json");
                     }
                     catch (Exception ex)
                     {
@@ -1229,7 +1229,7 @@ namespace RustRewardsHarmony
             }
 
             // Also migrate oxide/data/RustRewards/* into HarmonyData/RustRewards/ if Harmony data is empty
-            TryMigrateOxideData(serverRoot, dataDir);
+            TryMigrateLegacyData(serverRoot, dataDir);
 
             JToken data = null;
             if (File.Exists(configPath))
@@ -1243,7 +1243,7 @@ namespace RustRewardsHarmony
             Debug.Log($"[GrimmRewards] Data:   {Path.Combine(dataDir, "RustRewards")} (kits={File.Exists(Path.Combine(dataDir, "RustRewards", "RustRewards.json"))}, players={Directory.Exists(Path.Combine(dataDir, "RustRewards", "Players"))})");
         }
 
-        private static void TryMigrateOxideData(string serverRoot, string harmonyDataRoot)
+        private static void TryMigrateLegacyData(string serverRoot, string harmonyDataRoot)
         {
             try
             {

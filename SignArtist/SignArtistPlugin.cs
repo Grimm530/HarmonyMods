@@ -1,8 +1,8 @@
 // Reference: System.Drawing
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Plugins.SignArtistClasses;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Harmony.Plugins.SignArtistClasses;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -11,7 +11,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using Oxide.Core.Libraries.Covalence;
+using Harmony.Core.Libraries.Covalence;
 using UnityEngine;
 using UnityEngine.Networking;
 using Color = System.Drawing.Color;
@@ -19,7 +19,7 @@ using Graphics = System.Drawing.Graphics;
 using Steamworks;
 
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("Sign Artist", "Grimm530", "1.4.52")]
     [Description("Allows players with the appropriate permission to import images from the internet on paintable objects")]
@@ -586,7 +586,7 @@ namespace Oxide.Plugins
 				{
 					rotation = RotateFlipType.RotateNoneFlipX;
 				}
-				object rotateObj = Interface.Call("GetImageRotation", request.Sign.Entity);
+				object rotateObj = HarmonyModInterface.Call("GetImageRotation", request.Sign.Entity);
 				if (rotateObj is RotateFlipType)
 				{
 					rotation = (RotateFlipType)rotateObj;
@@ -611,7 +611,7 @@ namespace Oxide.Plugins
 				request.Sign.SendNetworkUpdate();
 
 				signArtist.SendMessage(request.Sender, "ImageLoaded");
-				Interface.Oxide.CallHook("OnSignUpdated", request.Sign.Entity, request.Sender);
+				HarmonyModInterface.Mods.CallHook("OnSignUpdated", request.Sign.Entity, request.Sender);
 
 				if (request.Sender != null)
 				{
@@ -783,8 +783,8 @@ namespace Oxide.Plugins
                 // Notify the player that the image was loaded.
                 signArtist.SendMessage(request.Sender, "ImageRestored");
 
-                // Call the Oxide hook 'OnSignUpdated' to notify other plugins of the update event.
-                Interface.Oxide.CallHook("OnSignUpdated", request.Sign.Entity, request.Sender);
+                // Call the Harmony hook 'OnSignUpdated' to notify other plugins of the update event.
+                HarmonyModInterface.Mods.CallHook("OnSignUpdated", request.Sign.Entity, request.Sender);
 
                 // Attempt to start the next download.
                 StartNextRestore(true);
@@ -956,7 +956,7 @@ namespace Oxide.Plugins
 
         #region Init
         /// <summary>
-        /// Oxide hook that is triggered when the plugin is loaded.
+        /// Harmony hook that is triggered when the plugin is loaded.
         /// </summary>
         ///
         private void Init()
@@ -1060,7 +1060,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Oxide hook that is triggered to automatically load the configuration file.
+        /// Harmony hook that is triggered to automatically load the configuration file.
         /// </summary>
         protected override void LoadConfig()
         {
@@ -1070,7 +1070,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Oxide hook that is triggered to automatically load the default configuration file when no file exists.
+        /// Harmony hook that is triggered to automatically load the default configuration file when no file exists.
         /// </summary>
         protected override void LoadDefaultConfig()
         {
@@ -1078,7 +1078,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Oxide hook that is triggered to save the configuration file.
+        /// Harmony hook that is triggered to save the configuration file.
         /// </summary>
         protected override void SaveConfig()
         {
@@ -1086,7 +1086,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Oxide hook that is triggered when the server has fully initialized.
+        /// Harmony hook that is triggered when the server has fully initialized.
         /// </summary>
         private void OnServerInitialized()
         {
@@ -1102,7 +1102,7 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Oxide hook that is triggered when the plugin is unloaded.
+        /// Harmony hook that is triggered when the plugin is unloaded.
         /// </summary>
         private void Unload()
         {
@@ -1125,7 +1125,7 @@ namespace Oxide.Plugins
 
         #region Localization
         /// <summary>
-        /// Oxide hook that is triggered automatically after it has been loaded to initialize the messages for the Lang API.
+        /// Harmony hook that is triggered automatically after it has been loaded to initialize the messages for the Lang API.
         /// </summary>
         protected override void LoadDefaultMessages()
         {
@@ -1275,7 +1275,7 @@ namespace Oxide.Plugins
             imageDownloader.QueueDownload(args[0], player, sign, textureIndex, raw, hor);
 
             // Call external hook
-            Interface.Oxide.CallHook("OnImagePost", player, args[0], raw, sign.Entity, textureIndex);
+            HarmonyModInterface.Mods.CallHook("OnImagePost", player, args[0], raw, sign.Entity, textureIndex);
 
             // Set the cooldown on the command for the player if the cooldown setting is enabled.
             SetCooldown(player);
@@ -1356,7 +1356,7 @@ namespace Oxide.Plugins
 
             imageDownloader.QueueDownload(shortname, player, sign, textureIndex, false, hor);
 
-            Interface.Oxide.CallHook("OnImagePost", player, shortname, false, sign.Entity, textureIndex);
+            HarmonyModInterface.Mods.CallHook("OnImagePost", player, shortname, false, sign.Entity, textureIndex);
 
             SetCooldown(player);
         }
@@ -1383,7 +1383,7 @@ namespace Oxide.Plugins
             url = json.response.publishedfiledetails[0].preview_url;
             imageDownloader.QueueDownload(url, player, sign, textureIndex, false, hor);
 
-            Interface.Oxide.CallHook("OnImagePost", player, url, false, sign.Entity, textureIndex);
+            HarmonyModInterface.Mods.CallHook("OnImagePost", player, url, false, sign.Entity, textureIndex);
 
             SetCooldown(player);
         }
@@ -1538,7 +1538,7 @@ namespace Oxide.Plugins
             imageDownloader.QueueDownload(url, player, sign, textureIndex, raw, hor);
 
             // Call external hook
-            Interface.Oxide.CallHook("OnImagePost", player, url, raw, sign.Entity, textureIndex);
+            HarmonyModInterface.Mods.CallHook("OnImagePost", player, url, raw, sign.Entity, textureIndex);
 
             // Set the cooldown on the command for the player if the cooldown setting is enabled.
             SetCooldown(player);

@@ -1,13 +1,48 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using HarmonyLib;
 using UnityEngine;
 
 namespace BagCooldowns;
 
 public static class HarmonyMethods
 {
+	private static IEnumerable<SleepingBag> EnumerateSleepingBags()
+	{
+		var field = AccessTools.Field(typeof(SleepingBag), "sleepingBags");
+		if (field == null)
+			return Array.Empty<SleepingBag>();
+
+		object raw = field.GetValue(null);
+		if (raw == null)
+			return Array.Empty<SleepingBag>();
+
+		if (raw is SleepingBag[] array)
+			return array;
+
+		if (raw is List<SleepingBag> list)
+			return list;
+
+		if (raw is IEnumerable enumerable)
+		{
+			var bags = new List<SleepingBag>();
+			foreach (object item in enumerable)
+			{
+				if (item is SleepingBag bag)
+					bags.Add(bag);
+			}
+			return bags;
+		}
+
+		return Array.Empty<SleepingBag>();
+	}
+
 	public static void SetBagTimers()
 	{
-		foreach (SleepingBag item in SleepingBag.sleepingBags)
+		foreach (SleepingBag item in EnumerateSleepingBags())
 		{
+			if (item == null) continue;
 			SetSecondsBetweenReUses(item);
 		}
 	}
@@ -65,9 +100,9 @@ public static class HarmonyMethods
 
 	public static void ResetBagTimers()
 	{
-		foreach (SleepingBag item in SleepingBag.sleepingBags)
+		foreach (var item in EnumerateSleepingBags())
 		{
-			if (item is StaticRespawnArea)
+			if (item == null || item is StaticRespawnArea)
 				continue;
 
 			var val = (int)item.RespawnType;

@@ -1,5 +1,5 @@
 # Build script for DeveloperListOverride Harmony Mod
-# Output: <server root>\HarmonyMods\DeveloperListOverride.dll
+# Output: D:\!RustServer\HarmonyMods\DeveloperListOverride.dll
 
 Write-Host "Building DeveloperListOverride..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "DeveloperListOverride\DeveloperListOverr
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

@@ -10,7 +10,7 @@ namespace AutoCodeLockHarmony.Patches
         private static bool Prefix(DoorCloser __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return true;
+            if (plugin == null) return true;
 
             try
             {
@@ -33,7 +33,7 @@ namespace AutoCodeLockHarmony.Patches
         private static bool Prefix(DoorCloser __instance, BaseEntity.RPCMessage rpc)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return true;
+            if (plugin == null) return true;
 
             try
             {

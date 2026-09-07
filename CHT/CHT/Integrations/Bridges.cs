@@ -153,7 +153,7 @@ namespace CHT
                 {
                     foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        Type t = asm.GetType("SkillTree.SkillTreeMod") ?? asm.GetType("Oxide.Plugins.SkillTree");
+                        Type t = asm.GetType("SkillTree.SkillTreeMod") ?? asm.GetType("Harmony.Plugins.SkillTree");
                         if (t == null) continue;
                         pluginInstance = t.GetProperty("Plugin", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
                             ?? t.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);

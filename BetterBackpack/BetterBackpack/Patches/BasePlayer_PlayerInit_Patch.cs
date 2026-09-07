@@ -13,8 +13,7 @@ internal class BasePlayer_PlayerInit_Patch
     [HarmonyPostfix]
     private static void Postfix(BasePlayer __instance)
     {
-        if (__instance == null || __instance.IsNpc || __instance.net?.connection == null) return;
-        LootDebug.LogPlayerSpawn(__instance);
+        if (__instance.IsNpc || __instance.net?.connection == null) return;
         var player = __instance;
         InvokeHandler.Invoke(player, () =>
         {

@@ -160,12 +160,6 @@ public class TCUpgradeConfig
 			["TCUpgrade.vip"] = 1f
 		};
 
-		[JsonProperty("Item Category Filter (Resources, ResourcesAndComponents, All)")]
-		public string ItemCategoryFilter = "Resources";
-
-		[JsonProperty("Wallpaper Damage")]
-		public bool WallpaperDamage = true;
-
 		[JsonProperty("Allow Items in TC Inventory")]
 		public Dictionary<string, bool> AllowedItemsConfig = new Dictionary<string, bool>
 		{
@@ -492,7 +486,7 @@ public class TCUpgradeConfig
 				if (Config != null)
 				{
 					SaveConfig();
-					Debug.Log((object)("[TCUpgrade] Config created from oxide/config at " + _configPath));
+					Debug.Log((object)("[TCUpgrade] Config created from legacy/config at " + _configPath));
 				}
 			}
 			else if (File.Exists(path3))

@@ -1,6 +1,6 @@
 # Trade (Harmony)
 
-Oxide **Trade 1.2.15** port. Player-to-player shop-front trading.
+Legacy **Trade 1.2.15** port. Player-to-player shop-front trading.
 
 ## Load order
 

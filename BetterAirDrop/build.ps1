@@ -1,5 +1,5 @@
 # Build script for BetterAirDrop Harmony Mod
-# Output: <workspace>\HarmonyMods\BetterAirDrop.dll
+# Output: D:\!RustServer\HarmonyMods\BetterAirDrop.dll
 
 Write-Host "Building BetterAirDrop..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "BetterAirDrop.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

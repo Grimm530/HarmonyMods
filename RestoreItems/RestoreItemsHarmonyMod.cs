@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.RestoreItems;
+using HarmonyPlugin = Harmony.Plugins.RestoreItems;
 
 namespace RestoreItemsHarmony
 {
@@ -17,7 +17,7 @@ namespace RestoreItemsHarmony
     public class RestoreItemsHarmonyMod : IHarmonyModHooks
     {
         public static RestoreItemsHarmonyMod Instance { get; private set; }
-        public static OxidePlugin Plugin { get; private set; }
+        public static HarmonyPlugin Plugin { get; private set; }
 
         public const string AppDomainApiKey = "RestoreItems_ApiType";
         public const string AppDomainPluginKey = "RestoreItems_Plugin";
@@ -37,7 +37,7 @@ namespace RestoreItemsHarmony
 
             try
             {
-                Plugin = new OxidePlugin();
+                Plugin = new HarmonyPlugin();
                 Plugin.HarmonyInit();
             }
             catch (Exception ex)
@@ -180,7 +180,7 @@ namespace RestoreItemsHarmony
 
             if (string.Equals(name, "restoretest", StringComparison.OrdinalIgnoreCase))
             {
-                InvokeChat(nameof(OxidePlugin.CmdRestoreTest), player, name, args);
+                InvokeChat(nameof(HarmonyPlugin.CmdRestoreTest), player, name, args);
                 return true;
             }
 
@@ -189,7 +189,7 @@ namespace RestoreItemsHarmony
 
         private void InvokeChat(string method, BasePlayer player, string command, string[] args)
         {
-            var mi = typeof(OxidePlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var mi = typeof(HarmonyPlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (mi == null) return;
             try { mi.Invoke(Plugin, new object[] { player, command, args }); }
             catch (Exception ex) { Debug.LogWarning("[RestoreItems] InvokeChat " + method + ": " + ex.Message); }
@@ -263,7 +263,7 @@ namespace RestoreItemsHarmony
             if (Plugin == null || string.IsNullOrEmpty(method)) return null;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var mi = typeof(HarmonyPlugin).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (mi == null) return null;
                 var pars = mi.GetParameters();
                 if (args == null) args = Array.Empty<object>();
@@ -280,7 +280,7 @@ namespace RestoreItemsHarmony
         }
     }
 
-    /// <summary>Oxide Plugin.Call bridge for consumers resolving RestoreItems_Plugin.</summary>
+    /// <summary>Harmony Mod.Call bridge for consumers resolving RestoreItems_Plugin.</summary>
     public sealed class RestoreItemsPluginWrapper
     {
         private readonly RestoreItemsHarmonyMod _mod;
@@ -291,7 +291,7 @@ namespace RestoreItemsHarmony
     }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class RestoreItems
     {

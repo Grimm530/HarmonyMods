@@ -1,12 +1,21 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Plugins;
+using GrimmCuiHarmony;
+using Harmony.Core.Libraries.Covalence;
+using GrimmCuiHarmony;
+using Harmony.Plugins;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace WaterBasesHarmony
 {
@@ -81,6 +90,7 @@ namespace WaterBasesHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             ModRunner.Ensure();
 
@@ -179,13 +189,13 @@ namespace WaterBasesHarmony
 
             foreach (var mi in typeof(WaterBases).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
             {
-                foreach (var attr in mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), false).Cast<Oxide.Plugins.ChatCommandAttribute>())
+                foreach (var attr in mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), false).Cast<Harmony.Plugins.ChatCommandAttribute>())
                 {
                     if (string.IsNullOrEmpty(attr.Command)) continue;
                     _chatHandlers[attr.Command] = mi;
                     _chatCommandNames.Add(attr.Command);
                 }
-                foreach (var attr in mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), false).Cast<Oxide.Plugins.ConsoleCommandAttribute>())
+                foreach (var attr in mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), false).Cast<Harmony.Plugins.ConsoleCommandAttribute>())
                 {
                     if (string.IsNullOrEmpty(attr.Command)) continue;
                     _consoleHandlers[attr.Command] = mi;

@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos;
+namespace Grimm.Chaos;
 
 public static class MathExtensions
 {

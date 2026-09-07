@@ -1,19 +1,19 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\CopyPaste4.2.81.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\CopyPaste4.2.81.cs"
 $dst = Join-Path $PSScriptRoot "CopyPaste.cs"
 $text = [System.IO.File]::ReadAllText($src)
 
-$text = $text.Replace("using Oxide.Core;`r`n", "")
-$text = $text.Replace("using Oxide.Core;`n", "")
-$text = $text.Replace("using Oxide.Core.Libraries.Covalence;`r`n", "")
-$text = $text.Replace("using Oxide.Core.Libraries.Covalence;`n", "")
+$text = $text.Replace("using Harmony.Core;`r`n", "")
+$text = $text.Replace("using Harmony.Core;`n", "")
+$text = $text.Replace("using Harmony.Core.Libraries.Covalence;`r`n", "")
+$text = $text.Replace("using Harmony.Core.Libraries.Covalence;`n", "")
 $text = $text.Replace("using Oxide.Game.Rust.Libraries.Covalence;`r`n", "")
 $text = $text.Replace("using Oxide.Game.Rust.Libraries.Covalence;`n", "")
-$text = $text.Replace("namespace Oxide.Plugins", "namespace CopyPasteHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace CopyPasteHarmony")
 
 $newClass = @"
     /// <summary>
-    /// CopyPaste 4.2.81 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// CopyPaste 4.2.81 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public partial class CopyPaste : CopyPasteBase
 "@
@@ -23,7 +23,7 @@ if ($newText -eq $text) { throw "Could not find class declaration to replace" }
 $text = $newText
 
 $text = $text.Replace(".IPlayer", ".ToIPlayer()")
-$text = $text.Replace("Interface.Oxide.DataFileSystem", "Interface.DataFileSystem")
+$text = $text.Replace("HarmonyModInterface.Mods.DataFileSystem", "Interface.DataFileSystem")
 
 # StringPool is not ready during early Harmony OnLoaded — defer field initializers
 $oldPool = 'private readonly uint _floorFramePrefabId = StringPool.Get("assets/prefabs/building core/floor.frame/floor.frame.prefab");
@@ -119,7 +119,7 @@ $text = [regex]::Replace($text, $initPattern, { param($mm) $mm.Groups[1].Value +
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core"; Pattern = "Oxide\.Core" },
+    @{ Name = "Harmony.Core"; Pattern = "Oxide\.Core" },
     @{ Name = "CovalencePlugin"; Pattern = "CovalencePlugin" },
     @{ Name = "[Command]"; Pattern = "\[Command" },
     @{ Name = ".IPlayer (bad)"; Pattern = "\.IPlayer\b" },

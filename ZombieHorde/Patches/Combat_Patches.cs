@@ -3,34 +3,6 @@ using Rust;
 
 namespace ZombieHorde.Patches
 {
-    [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), typeof(HitInfo))]
-    internal static class BaseCombatEntity_Hurt_Patch
-    {
-        [HarmonyPrefix]
-        private static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-        {
-            if (ConfigData.Configuration == null || info == null || __instance == null)
-                return true;
-
-            // Skip Hurt entirely when NPC/animal damage to zombies is disabled
-            ZombieNPC victim = ZombieNPC.Get(__instance as BasePlayer);
-            if (victim != null)
-            {
-                BasePlayer initiator = info.InitiatorPlayer;
-                if (initiator != null && initiator.IsNpc && ZombieNPC.Get(initiator) == null
-                    && !ConfigData.Configuration.Member.TargetedByNPCs)
-                    return false;
-
-                if (info.Initiator is BaseNpc && !(info.Initiator is BasePlayer)
-                    && !ConfigData.Configuration.Member.TargetedByAnimals)
-                    return false;
-            }
-
-            ZombieHordePlugin.Instance?.OnEntityTakeDamage(__instance, info);
-            return true;
-        }
-    }
-
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Die), typeof(HitInfo))]
     internal static class BasePlayer_Die_Patch
     {

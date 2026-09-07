@@ -1,6 +1,6 @@
 # GrimmRewards (RustRewards Harmony Mod 3.2.5)
 
-Oxide-free port of RustRewards, branded as **GrimmRewards** in chat/UI/Discord. Rewards players for kills, harvest, pickup, open, activity, and welcome using Scrap, Economics, or ServerRewards.
+Harmony port of RustRewards, branded as **GrimmRewards** in chat/UI/Discord. Rewards players for kills, harvest, pickup, open, activity, and welcome using Scrap, Economics, or ServerRewards.
 
 ## Paths
 
@@ -45,4 +45,4 @@ Copies `RustRewards.dll` to the server `HarmonyMods/` folder.
 
 ## Source
 
-Converted from `Oxide.Plugins.Cant-Use/RustRewards.cs` via `convert-from-oxide.ps1`.
+Converted from `Harmony.Plugins.Cant-Use/RustRewards.cs` via `convert-from-legacy.ps1`.

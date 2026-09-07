@@ -5,7 +5,7 @@ using UnityEngine;
 namespace RustVehiclesHarmony
 {
     /// <summary>
-    /// Resolves optional Oxide PluginReference fields against Harmony ports exposed via AppDomain.
+    /// Resolves optional Harmony ModReference fields against Harmony ports exposed via AppDomain.
     /// Missing deps resolve to null so existing null-checks behave like Oxide soft references.
     /// </summary>
     public static class PluginBridges

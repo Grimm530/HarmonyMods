@@ -56,7 +56,7 @@ namespace SortButton.Patches
         private static void Postfix(PlayerLoot __instance, BaseEntity targetEntity)
         {
             var plugin = SortButtonMod.Instance?.Plugin;
-            if (plugin == null || __instance == null || targetEntity == null) return;
+            if (plugin == null || targetEntity == null) return;
             var player = __instance.GetComponent<BasePlayer>();
             if (player == null) return;
             try { plugin.OnLootEntity(player, targetEntity); }
@@ -71,7 +71,7 @@ namespace SortButton.Patches
         private static void Prefix(PlayerLoot __instance)
         {
             var plugin = SortButtonMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             var player = __instance.baseEntity;
             if (player == null) return;
             try { plugin.OnPlayerLootEnd(player); }

@@ -11,7 +11,6 @@ internal class BaseCombatEntity_Die_Patch
     static void Postfix(BaseCombatEntity __instance, HitInfo info)
     {
         if (RustcordMod.Instance == null) return;
-        if (__instance == null) return;
         var cfg = RustcordConfig.Config;
         if (cfg?.PostSettings?.Deaths != true) return;
 

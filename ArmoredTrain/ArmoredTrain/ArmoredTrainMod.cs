@@ -2,19 +2,20 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.ArmoredTrain;
+using ArmoredTrain.Patches;
+using HarmonyPlugin = Harmony.Plugins.ArmoredTrain;
 
 namespace ArmoredTrain
 {
     /// <summary>
-    /// Harmony entry point for the Armored Train event. Instantiates the ported Oxide plugin body
-    /// (Oxide.Plugins.ArmoredTrain), loads config from HarmonyConfig/ArmoredTrain.json, registers the
-    /// atrain* console commands, and drives the Oxide-style Init/OnServerInitialized/Unload lifecycle.
+    /// Harmony entry point for the Armored Train event. Instantiates the ported Harmony mod body
+    /// (Harmony.Plugins.ArmoredTrain), loads config from HarmonyConfig/ArmoredTrain.json, registers the
+    /// atrain* console commands, and drives the compat-style Init/OnServerInitialized/Unload lifecycle.
     /// </summary>
     public class ArmoredTrainMod : IHarmonyModHooks
     {
         public static ArmoredTrainMod Instance { get; private set; }
-        public static OxidePlugin Plugin { get; private set; }
+        public static HarmonyPlugin Plugin { get; private set; }
 
         private HarmonyLib.Harmony _harmony;
         private Coroutine _initCoroutine;
@@ -27,22 +28,49 @@ namespace ArmoredTrain
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            // Keep OnLoaded minimal — PatchAll already ran on this frame.
+            // Config, Find patch, commands, and plugin init run in SoftStartCoroutine
+            // so harmony.load does not stall the server (RaidableBases-style soft-start).
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
+            _initCoroutine = ModRunner.Instance.StartCoroutine(SoftStartCoroutine());
+            Debug.Log("[ArmoredTrain] Harmony mod loaded (soft-start pending). Requires 0GrimmNPC.");
+        }
+
+        private IEnumerator SoftStartCoroutine()
+        {
+            while (ServerMgr.Instance == null)
+                yield return null;
+
+            // Leave the harmony.load / PatchAll frame before doing heavy work.
+            yield return null;
+            yield return null;
+
+            if (Instance != this)
+                yield break;
 
             try
             {
-                Plugin = new OxidePlugin();
+                Plugin = new HarmonyPlugin();
                 Plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
             {
                 Debug.LogError("[ArmoredTrain] Failed to construct/load plugin: " + ex);
-                return;
+                _initCoroutine = null;
+                yield break;
             }
+
+            yield return null;
+            if (Instance != this)
+                yield break;
 
             ArmoredTrainGrimmNpc.Bind();
             ArmoredTrainDamageApi.Publish();
+            yield return null;
+            if (Instance != this)
+                yield break;
 
             // Facepunch HarmonyLoader already PatchAll's this assembly before OnLoaded.
             // Only apply the Find fallback with a separate ID (same pattern as Convoy).
@@ -57,27 +85,31 @@ namespace ArmoredTrain
                 Debug.LogWarning("[ArmoredTrain] Find patch failed (non-fatal): " + ex.Message);
             }
 
+            yield return null;
+            if (Instance != this)
+                yield break;
+
             RegisterCommands();
+            Debug.Log("[ArmoredTrain] Soft-start: config + commands ready. Config: HarmonyConfig/ArmoredTrain.json. Data root: " + Harmony.Core.HarmonyModInterface.Mods.DataDirectory + ".");
 
-            _initCoroutine = ModRunner.Instance.StartCoroutine(WaitForServerThenInit());
-            Debug.Log("[ArmoredTrain] Harmony mod loaded. Commands: " + string.Join(", ", StartCommands) + ". Config: HarmonyConfig/ArmoredTrain.json. Data root: " + Oxide.Core.Interface.Oxide.DataDirectory + ". Requires 0GrimmNPC.");
-        }
-
-        private IEnumerator WaitForServerThenInit()
-        {
-            while (ServerMgr.Instance == null)
-                yield return null;
-            // Give CommunityEntity + other mods (GrimmNPC) a moment to finish loading.
-            yield return new WaitForSeconds(2f);
+            // Brief settle so other mods finishing soft-start are not stacked on the same frames.
+            yield return CoroutineEx.waitForSeconds(2f);
+            if (Instance != this)
+                yield break;
 
             ArmoredTrainGrimmNpc.Bind();
 
             try { Plugin?.CallInit(); }
             catch (Exception ex) { Debug.LogWarning("[ArmoredTrain] Init failed: " + ex.Message); }
 
+            yield return CoroutineEx.waitForSeconds(0.5f);
+            if (Instance != this)
+                yield break;
+
             try { Plugin?.CallOnServerInitialized(); }
             catch (Exception ex) { Debug.LogError("[ArmoredTrain] OnServerInitialized failed: " + ex); }
 
+            Debug.Log("[ArmoredTrain] Soft-start complete.");
             _initCoroutine = null;
         }
 
@@ -101,6 +133,7 @@ namespace ArmoredTrain
 
             ModRunner.Destroy();
             Plugin = null;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[ArmoredTrain] Harmony mod unloaded.");
         }
@@ -195,14 +228,14 @@ namespace ArmoredTrain
             if (DenyIfNotAdmin(arg, player)) return;
             string preset = null;
             try { if (arg.HasArgs(1)) preset = arg.GetString(0); } catch { }
-            OxidePlugin.CmdStart(player, preset, overrideUnderground);
+            HarmonyPlugin.CmdStart(player, preset, overrideUnderground);
         }
 
         private static void HandleStop(ConsoleSystem.Arg arg)
         {
             var player = PlayerOf(arg);
             if (DenyIfNotAdmin(arg, player)) return;
-            OxidePlugin.CmdStop();
+            HarmonyPlugin.CmdStop();
             arg.ReplyWith("[ArmoredTrain] Stop requested.");
         }
 
@@ -215,7 +248,7 @@ namespace ArmoredTrain
                 return;
             }
             if (DenyIfNotAdmin(arg, player)) return;
-            OxidePlugin.CmdPoint(player);
+            HarmonyPlugin.CmdPoint(player);
         }
 
         private static void HandleSaveWagon(ConsoleSystem.Arg arg)
@@ -227,7 +260,7 @@ namespace ArmoredTrain
                 arg.ReplyWith("[ArmoredTrain] Usage: savecustomwagon <presetName> <wagonShortPrefabName>");
                 return;
             }
-            OxidePlugin.CmdSaveCustomWagon(arg.GetString(0), arg.GetString(1));
+            HarmonyPlugin.CmdSaveCustomWagon(arg.GetString(0), arg.GetString(1));
         }
         #endregion
     }

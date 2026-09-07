@@ -12,7 +12,7 @@ public static class Patch_BasePlayer_LifeStoryShotFired
 {
     static void Postfix(BasePlayer __instance, BaseEntity withWeapon)
     {
-        if (__instance == null || !SteamIdHelper.IsSteamId(__instance.userID)) return;
+        if (!SteamIdHelper.IsSteamId(__instance.userID)) return;
         if (withWeapon is not BaseProjectile projectile) return;
         if (projectile.primaryMagazine?.ammoType == null) return;
         var shortname = projectile.primaryMagazine.ammoType.shortname;

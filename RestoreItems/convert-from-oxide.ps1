@@ -1,19 +1,19 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\RestoreItems.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\RestoreItems.cs"
 $dst = Join-Path $PSScriptRoot "RestoreItems.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
 foreach ($using in @(
-    "using Oxide.Core;",
-    "using Oxide.Core.Plugins;"
+    "using Harmony.Core;",
+    "using Harmony.Core.Plugins;"
 )) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
 $newClass = @"
     /// <summary>
-    /// RestoreItems 2.1.6 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
+    /// RestoreItems 2.1.6 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
     /// </summary>
     public partial class RestoreItems : RustPlugin
 "@
@@ -35,7 +35,7 @@ if ($text -notmatch "using RestoreItemsHarmony;")
 {
     $text = $text.Replace(
         "using UnityEngine;",
-        "using UnityEngine;`r`nusing Oxide.Core;`r`nusing Oxide.Core.Plugins;`r`nusing RestoreItemsHarmony;`r`nusing System.IO;")
+        "using UnityEngine;`r`nusing Harmony.Core;`r`nusing Harmony.Core.Plugins;`r`nusing RestoreItemsHarmony;`r`nusing System.IO;")
 }
 
 $hooks = @(

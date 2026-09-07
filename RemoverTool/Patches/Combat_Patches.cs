@@ -47,7 +47,6 @@ namespace RemoverToolHarmony.Patches
         [HarmonyPostfix]
         private static void Postfix(BasePlayer __instance, Item __state)
         {
-            if (__instance == null) return;
             var plugin = RemoverToolHarmonyMod.Instance?.Plugin;
             if (plugin == null || !plugin.IsSubscribed("OnActiveItemChanged")) return;
 

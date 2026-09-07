@@ -1,5 +1,5 @@
 /*
- * Invokes RaidableBases OnPlayerDeath hook. Prefix: if hook returns non-null, block default death (Oxide behavior).
+ * Invokes RaidableBases OnPlayerDeath hook. Prefix: if hook returns non-null, block default death (compat behavior).
  */
 using HarmonyLib;
 using UnityEngine;
@@ -12,9 +12,7 @@ namespace RaidableBases
         [HarmonyPrefix]
         static bool Prefix(BasePlayer __instance, HitInfo info)
         {
-            if (__instance == null)
-                return true;
-            var result = Interface.CallHook("OnPlayerDeath", __instance, info);
+            var result = HarmonyModInterface.CallHook("OnPlayerDeath", __instance, info);
             if (result != null)
                 return false;
             return true;

@@ -1,14 +1,14 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Oxide.Ext.Chaos.TextMeshPro;
+using Grimm.Chaos.TextMeshPro;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
 using Color = UnityEngine.Color;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public class MapRenderer : System.IDisposable
 {

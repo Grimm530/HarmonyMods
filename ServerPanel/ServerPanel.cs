@@ -13,7 +13,7 @@ using Facepunch.Extend;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using ServerPanelHarmony.ServerPanelExtensionMethods;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -30,7 +30,7 @@ using Carbon.Modules;
 namespace ServerPanelHarmony
 {
     /// <summary>
-    /// ServerPanel 2.0.20 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// ServerPanel 2.0.20 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class ServerPanel : ServerPanelPluginBase
     {
@@ -633,7 +633,7 @@ namespace ServerPanelHarmony
         {
             try
             {
-                data = Interface.Oxide.DataFileSystem.ReadObject<T>(Path.Combine(Name, filePath));
+                data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<T>(Path.Combine(Name, filePath));
             }
             catch (Exception e)
             {
@@ -645,7 +645,7 @@ namespace ServerPanelHarmony
 
         private void SaveDataToFile<T>(T data, string filePath)
         {
-            Interface.Oxide.DataFileSystem.WriteObject(Path.Combine(Name, filePath), data);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(Path.Combine(Name, filePath), data);
         }
 
         #endregion Data.General
@@ -4730,7 +4730,7 @@ else
                 _localizationData = null;
             }
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -5021,7 +5021,7 @@ else
                             var menuCategory = GetCategoryById(nextCategory);
                             if (menuCategory == null) return;
 
-                            if (Interface.CallHook("OnServerPanelCategoryPage", player, nextCategory, 0) != null)
+                            if (HarmonyModInterface.CallHook("OnServerPanelCategoryPage", player, nextCategory, 0) != null)
                                 return;
 
                             if (IsPlayerEditing(player.userID))
@@ -5049,7 +5049,7 @@ else
                         {
                             var targetPage = arg.GetInt(2);
 
-                            if (Interface.CallHook("OnServerPanelCategoryPage", player, openedMenu.SelectedCategory,
+                            if (HarmonyModInterface.CallHook("OnServerPanelCategoryPage", player, openedMenu.SelectedCategory,
                                     targetPage) != null)
                                 return;
 
@@ -13665,7 +13665,7 @@ else
 
         private IEnumerator LoadImage(string name, string path)
         {
-            var url = "file://" + Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + path;
+            var url = "file://" + HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + path;
             using var www = UnityWebRequestTexture.GetTexture(url);
 
             yield return www.SendWebRequest();
@@ -13961,7 +13961,7 @@ else
         {
             if (player == null) return;
 
-            Interface.CallHook("OnServerPanelClosed", player);
+            HarmonyModInterface.CallHook("OnServerPanelClosed", player);
 
             RemoveOpenedMenu(player.userID);
         }
@@ -14264,6 +14264,21 @@ else
             StartShowMenu(player, category);
         }
 
+        /// <summary>
+        /// Redraw the currently opened category content without going through the UI_ServerPanel
+        /// console command. Harmony CUI buttons never land in ConsoleSystem.Index, so plugin pages
+        /// (RustVehiclesGUI shop/manage, pagination, etc.) refresh through this API instead.
+        /// </summary>
+        private void API_OnServerPanelRefreshContent(BasePlayer player)
+        {
+            if (player == null || player.IsDestroyed) return;
+            if (CheckMigrationRequired(player)) return;
+            if (!_dataLoaded) return;
+            if (!TryGetOpenedMenu(player.userID, out var openedMenu) || openedMenu == null) return;
+
+            openedMenu.UpdateContent(true);
+        }
+
         private string API_GetCurrentTemplate()
         {
             return _templateData?.UI?.ID;
@@ -14358,7 +14373,7 @@ else
                         SendReply(player, "Migration completed");
                 }
 
-            timer.Once(1f, () => Interface.Oxide.ReloadPlugin("ServerPanel"));
+            timer.Once(1f, () => HarmonyModInterface.Mods.ReloadPlugin("ServerPanel"));
         }
 
         private void API_OnMigrationFailed(string errorMessage, string errorDetails)
@@ -14493,7 +14508,7 @@ else
         private void SendNotify(BasePlayer player, string key, int type, params object[] obj)
         {
             if (_config.UseNotify && (Notify != null || UINotify != null))
-                Interface.Oxide.CallHook("SendNotify", player, type, Msg(player, key, obj));
+                HarmonyModInterface.Mods.CallHook("SendNotify", player, type, Msg(player, key, obj));
             else
                 Reply(player, key, obj);
         }

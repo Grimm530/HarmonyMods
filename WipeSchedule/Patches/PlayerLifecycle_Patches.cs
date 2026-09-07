@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace WipeScheduleHarmony.Patches
 {
-    /// <summary>Oxide OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
+    /// <summary>Harmony OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {

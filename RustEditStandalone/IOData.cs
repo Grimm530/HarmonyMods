@@ -6,7 +6,7 @@ using UnityEngine;
 namespace RustEditStandalone;
 
 /// <summary>
-/// RustEdit IO layer data - plain DTOs matching Oxide.Ext.RustEdit.IO schema.
+/// RustEdit IO layer data - plain DTOs matching original plugin.Ext.RustEdit.IO schema.
 /// Deserialized manually from ProtoBuf wire format to avoid loading protobuf-net at runtime.
 /// </summary>
 

@@ -3,7 +3,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 
 namespace PersonalNPCHarmony
@@ -95,7 +95,7 @@ namespace PersonalNPCHarmony
             public HashSet<ulong> UnlockedPlayers = new HashSet<ulong>();
         }
 
-        internal void SaveData() => Interface.Oxide.DataFileSystem.WriteObject("PersonalNPC/PersonalNPCHelper", _data);
+        internal void SaveData() => HarmonyModInterface.Mods.DataFileSystem.WriteObject("PersonalNPC/PersonalNPCHelper", _data);
 
         #endregion
 
@@ -103,11 +103,11 @@ namespace PersonalNPCHarmony
 
         internal void Init()
         {
-            _data = Interface.Oxide.DataFileSystem.ReadObject<StoredData>("PersonalNPC/PersonalNPCHelper") ?? new StoredData();
+            _data = HarmonyModInterface.Mods.DataFileSystem.ReadObject<StoredData>("PersonalNPC/PersonalNPCHelper") ?? new StoredData();
 
             if (_data.UnlockedPlayers.Count == 0)
             {
-                var legacy = Interface.Oxide.DataFileSystem.ReadObject<StoredData>("GrimmBotCraft");
+                var legacy = HarmonyModInterface.Mods.DataFileSystem.ReadObject<StoredData>("GrimmBotCraft");
                 if (legacy?.UnlockedPlayers?.Count > 0)
                 {
                     _data = legacy;
@@ -157,7 +157,7 @@ namespace PersonalNPCHarmony
         private void EnsureBuyableUiPlugin()
         {
             if (!plugins.Exists(BuyableUiPluginName))
-                Interface.Oxide.LoadPlugin(BuyableUiPluginName);
+                HarmonyModInterface.Mods.LoadPlugin(BuyableUiPluginName);
         }
 
         internal void OnNewSave()

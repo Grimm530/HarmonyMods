@@ -1,15 +1,13 @@
 # Build script for TruePVE Harmony Mod
-# Output: <server root>\HarmonyMods\TruePVE.dll
-# Config: HarmonyConfig/TruePVE.json
+# Output: D:\!RustServer\HarmonyMods\TruePVE.dll
 
-Write-Host "Building TruePVE Harmony mod..." -ForegroundColor Cyan
+Write-Host "Building TruePVE..." -ForegroundColor Cyan
 
 $projectPath = Join-Path $PSScriptRoot "TruePVE.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
@@ -22,8 +20,8 @@ if ($LASTEXITCODE -eq 0) {
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nBuild successful! TruePVE.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "Config: HarmonyConfig/TruePVE.json (created on first load if missing)" -ForegroundColor Yellow
-    Write-Host "Load: harmony.load TruePVE (or automatic at startup)" -ForegroundColor Gray
+    Write-Host "Load with: harmony.load TruePVE" -ForegroundColor Yellow
+    Write-Host "Config: TruePVE.json in HarmonyConfig/ or Config/ or server root (default created in HarmonyConfig/ on first load)" -ForegroundColor Yellow
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

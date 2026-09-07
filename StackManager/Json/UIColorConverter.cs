@@ -1,15 +1,15 @@
 using System;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.Json;
+namespace Ext.Chaos.Json;
 
 public class UIColorConverter : JsonConverter
 {
 	public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
 	{
-		Oxide.Ext.Chaos.UIFramework.Color color = (Oxide.Ext.Chaos.UIFramework.Color)value;
+		Ext.Chaos.UIFramework.Color color = (Ext.Chaos.UIFramework.Color)value;
 		writer.WriteValue($"{color.R} {color.G} {color.B} {color.A}");
 	}
 
@@ -18,9 +18,9 @@ public class UIColorConverter : JsonConverter
 		if (reader.TokenType == JsonToken.String)
 		{
 			string[] array = reader.Value.ToString().Trim().Split(' ');
-			return new Oxide.Ext.Chaos.UIFramework.Color(Convert.ToSingle(array[0]), Convert.ToSingle(array[1]), Convert.ToSingle(array[2]), Convert.ToSingle(array[3]));
+			return new Ext.Chaos.UIFramework.Color(Convert.ToSingle(array[0]), Convert.ToSingle(array[1]), Convert.ToSingle(array[2]), Convert.ToSingle(array[3]));
 		}
-		return Oxide.Ext.Chaos.UIFramework.Color.Clear;
+		return Ext.Chaos.UIFramework.Color.Clear;
 	}
 
 	public override bool CanConvert(Type objectType)

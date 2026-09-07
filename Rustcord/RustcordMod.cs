@@ -10,9 +10,9 @@ using UnityEngine;
 namespace Rustcord;
 
 /// <summary>
-/// Harmony mod: Rustcord - game server monitoring through Discord. No Oxide.
+/// Harmony mod: Rustcord - game server monitoring through Discord. Harmony-only.
 /// Uses Discord webhooks for Game->Discord (one-way). Compatible with ticket-support-system-discord relay.
-/// Config: HarmonyConfig/Rustcord.json or oxide/config/Rustcord.json
+/// Config: HarmonyConfig/Rustcord.json or legacy/config/Rustcord.json
 /// </summary>
 public class RustcordMod : IHarmonyModHooks
 {

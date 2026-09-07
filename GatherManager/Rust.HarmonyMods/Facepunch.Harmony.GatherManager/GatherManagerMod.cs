@@ -149,7 +149,7 @@ namespace Facepunch.Harmony.GatherManager
                 item.amount = (int)(item.amount * scale);
         }
 
-        /// <summary>Oxide-style: modify collectible.itemList before DoPickup gives items. Mirrors OnCollectiblePickup. Uses global scale when PickupResourceModifiers is empty.</summary>
+        /// <summary>compat-style: modify collectible.itemList before DoPickup gives items. Mirrors OnCollectiblePickup. Uses global scale when PickupResourceModifiers is empty.</summary>
         public void ApplyPickupModifiersToCollectible(CollectibleEntity collectible)
         {
             if (collectible?.itemList == null || collectible.itemList.Length == 0)
@@ -210,7 +210,7 @@ namespace Facepunch.Harmony.GatherManager
 
             var command = split[0].ToLowerInvariant();
 
-            // Never intercept chat commands – Oxide plugin chat commands depend on these
+            // Never intercept chat commands – Harmony mod chat commands depend on these
             if (command == "chat.say" || command == "chat.teamsay" || command == "chat.localsay")
                 return false;
 

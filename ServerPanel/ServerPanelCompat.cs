@@ -1,6 +1,6 @@
 /*
  * Harmony shims so the ported ServerPanel 2.0.20 / ServerPanelPopUps 2.0.20 logic can run
- * without Oxide/Carbon. No Oxide assemblies are referenced or loaded.
+ * without legacy plugin host/Carbon. Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -1105,7 +1105,7 @@ namespace ServerPanelHarmony
         }
     }
 
-    /// <summary>Data root = HarmonyData so Oxide paths like ServerPanel/Categories resolve correctly.</summary>
+    /// <summary>Data root = HarmonyData so legacy paths like ServerPanel/Categories resolve correctly.</summary>
     public class DataFileSystem
     {
         private readonly string _root;
@@ -1220,20 +1220,20 @@ namespace ServerPanelHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public DataFileSystem DataFileSystem => Interface.DataFileSystem;
+        public DataFileSystem DataFileSystem => HarmonyModInterface.DataFileSystem;
         public string DataDirectory => ServerPanelHost.Instance?.DataDirectory ?? "";
         public string RootDirectory => ServerPanelHost.Instance?.ServerRoot ?? "";
         public string LangDirectory => ServerPanelHost.Instance?.LangDirectory ?? "HarmonyLanguage";
 
         public void LogError(string message) => Debug.LogError("[ServerPanel] " + message);
 
-        public object CallHook(string name, params object[] args) => Interface.CallHook(name, args);
+        public object CallHook(string name, params object[] args) => HarmonyModInterface.CallHook(name, args);
 
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
 
         public T GetLibrary<T>() where T : class
         {
@@ -1246,10 +1246,10 @@ namespace ServerPanelHarmony
             Debug.LogWarning("[ServerPanel] ReloadPlugin is a no-op under Harmony (use harmony.load ServerPanel).");
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         /// <summary>
         /// Oxide broadcast hooks are not available under Harmony. Forward the small set of
@@ -1384,7 +1384,7 @@ namespace ServerPanelHarmony
 
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[ServerPanel] webrequest callback: " + ex.Message); }
@@ -1654,7 +1654,7 @@ namespace ServerPanelHarmony
             Instance.LangDirectory = langDir;
             Instance.ImageDirectory = imageDir;
 
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
 
             Debug.Log("[ServerPanel] Config dir: " + configDir);
             Debug.Log("[ServerPanel] Data dir:   " + Path.Combine(dataDir, "ServerPanel"));
@@ -1904,7 +1904,7 @@ namespace ServerPanelHarmony
             try
             {
                 var owner = value.GetType().Assembly;
-                var helper = owner.GetType("Oxide.Game.Rust.Cui.CuiHelper");
+                var helper = owner.GetType("Game.Rust.Cui.CuiHelper");
                 var toJson = helper?.GetMethods(BindingFlags.Public | BindingFlags.Static)
                     .FirstOrDefault(m => m.Name == "ToJson" && m.GetParameters().Length >= 1);
                 if (toJson != null)

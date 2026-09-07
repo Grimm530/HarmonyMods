@@ -1,6 +1,6 @@
 # SmeltingSpeed
 
-Harmony mod that halves smelt time for all oven/furnace types in Rust. No config. Single patch on `BaseOven.IncreaseCookTime`.
+Harmony mod that halves smelt time for all oven/furnace types in Rust. No config. Single patch on `BaseOven.GetSmeltingSpeed`.
 
 ## Mod Identity
 
@@ -20,14 +20,14 @@ Harmony mod that halves smelt time for all oven/furnace types in Rust. No config
 | Oil Refinery | BaseOven | Fractioning (1500°C) |
 | Electric Furnace | ElectricOven → BaseOven | Smelting (1000°C) |
 
-All extend `BaseOven` and apply cook progress through `IncreaseCookTime(deltaTime * GetSmeltingSpeed())`, so patching the progress amount covers all.
+All extend `BaseOven` and use `GetSmeltingSpeed()` in `Cook()` → `IncreaseCookTime(deltaTime * GetSmeltingSpeed())`, so a single patch covers all.
 
 ## Project Structure
 
 | File | Responsibility |
 |------|----------------|
 | `SmeltingSpeedMod.cs` | Lifecycle, `SpeedMultiplier` constant |
-| `Patches/BaseOven_IncreaseCookTime_Patch.cs` | Prefix on `BaseOven.IncreaseCookTime`; multiplies progress amount by 2 |
+| `Patches/BaseOven_GetSmeltingSpeed_Patch.cs` | Postfix on `BaseOven.GetSmeltingSpeed`; multiplies result by 2 |
 
 ## Persistent Data Model
 
@@ -38,7 +38,7 @@ All extend `BaseOven` and apply cook progress through `IncreaseCookTime(deltaTim
 
 | Patch | Target | Type | Purpose |
 |-------|--------|------|---------|
-| `BaseOven_IncreaseCookTime_Patch` | `BaseOven.IncreaseCookTime` | Prefix | Multiply cook progress by 2 to halve smelt time |
+| `BaseOven_GetSmeltingSpeed_Patch` | `BaseOven.GetSmeltingSpeed` | Postfix | Multiply return value by 2 to halve smelt time |
 
 ## Lifecycle
 
@@ -47,12 +47,12 @@ All extend `BaseOven` and apply cook progress through `IncreaseCookTime(deltaTim
 
 ## What NOT to Touch Without Care
 
-- **Patch target:** `BaseOven.IncreaseCookTime(float amount)` signature may change by Rust version.
+- **Patch target:** `BaseOven.GetSmeltingSpeed` signature may change by Rust version.
 - **Fuel consumption:** Fuel burn rate is tied to `cookingTemperature` in `Cook()`, not `GetSmeltingSpeed`. Fuel still burns at vanilla rate; only cook progress is doubled. This matches vanilla behavior (higher temp = faster fuel burn + faster cook).
 
 ## Performance
 
-- Single Prefix per `IncreaseCookTime` call (runs when ovens are cooking).
+- Single Postfix per `GetSmeltingSpeed` call (runs when ovens are cooking).
 - Minimal: one multiplication per oven tick (~0.5s interval per oven).
 
 ## Build & Deploy
@@ -61,4 +61,4 @@ All extend `BaseOven` and apply cook progress through `IncreaseCookTime(deltaTim
 .\build.ps1
 ```
 
-Output: `<server root>\HarmonyMods\SmeltingSpeed.dll`. Load: `harmony.load SmeltingSpeed`.
+Output: `D:\!RustServer\HarmonyMods\SmeltingSpeed.dll`. Load: `harmony.load SmeltingSpeed`.

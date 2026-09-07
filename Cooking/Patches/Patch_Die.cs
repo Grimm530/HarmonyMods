@@ -1,5 +1,5 @@
 using HarmonyLib;
-using CookingPlugin = Oxide.Plugins.Cooking;
+using CookingPlugin = Harmony.Plugins.Cooking;
 
 namespace CookingHarmony.Patches
 {
@@ -9,7 +9,6 @@ namespace CookingHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null) return;
 
             if (__instance is BasePlayer player)
             {

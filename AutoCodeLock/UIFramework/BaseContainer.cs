@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Facepunch;
-using Oxide.Ext.Chaos.Pooling;
-using Oxide.Game.Rust.Cui;
+using Ext.Chaos.Pooling;
+using Game.Rust.Cui;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class BaseContainer : IPoolable
 {

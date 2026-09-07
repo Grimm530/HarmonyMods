@@ -4,9 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.IO;
-using System.Reflection;
 using System.Threading.Tasks;
-using HarmonyLib;
 using UnityEngine;
 
 namespace CustomMapGen.Utility
@@ -37,7 +35,8 @@ namespace CustomMapGen.Utility
         private static readonly float GridCellSize = 146.3f;
 
         public static byte[] Render(out int imageWidth, out int imageHeight, out UnityEngine.Color background,
-            float scale, bool includeMonumentNames, bool includeGrid, int oceanMargin = 150, string fontResourcesPath = null, string preferredFont = null)
+            float scale, bool includeMonumentNames, bool includeGrid, int oceanMargin = 150, string fontResourcesPath = null, string preferredFont = null,
+            bool includeCargoPath = false)
         {
             imageWidth = 0;
             imageHeight = 0;
@@ -119,8 +118,11 @@ namespace CustomMapGen.Utility
 
             background = output[0, 0];
 
+            if (includeCargoPath)
+                RenderCargoPath(ref output, mapRes, margin);
+
             if (includeMonumentNames)
-                RenderMonuments(ref output, mapRes, imageWidth, margin, fontResourcesPath, preferredFont);
+                RenderMonuments(ref output, mapRes, margin, fontResourcesPath, preferredFont);
 
             if (includeGrid)
             {
@@ -223,7 +225,104 @@ namespace CustomMapGen.Utility
             return position;
         }
 
-        private static void RenderMonuments(ref MapOutput output, int mapRes, int imageWidth, int oceanMargin, string fontResourcesPath = null, string preferredFont = null)
+        /// <summary>
+        /// GDI bitmap is north-up (ToBitmap flips Unity y=0 south). Same convention as MapImageOverlay and the encoded PNG.
+        /// </summary>
+        private static void WorldToGdi(Vector3 world, int mapRes, int margin, out float x, out float y)
+        {
+            float nx = TerrainMeta.NormalizeX(world.x);
+            float nz = TerrainMeta.NormalizeZ(world.z);
+            x = margin + nx * mapRes;
+            y = margin + (1f - nz) * mapRes;
+        }
+
+        private static List<Vector3> SimplifyPatrolLoop(IList<Vector3> points, float minSep)
+        {
+            var result = new List<Vector3>(Math.Min(points.Count, 160));
+            result.Add(points[0]);
+            Vector3 last = points[0];
+            float minSepSq = minSep * minSep;
+            for (int i = 1; i < points.Count; i++)
+            {
+                if ((points[i] - last).sqrMagnitude < minSepSq)
+                    continue;
+                result.Add(points[i]);
+                last = points[i];
+            }
+            if (result.Count < 2)
+                return new List<Vector3>(points);
+            return result;
+        }
+
+        private static void RenderCargoPath(ref MapOutput output, int mapRes, int oceanMargin)
+        {
+            var path = TerrainMeta.Path;
+            var points = TerrainPathAccess.GetOceanPatrolFar(path);
+            if (points == null || points.Count < 2)
+            {
+                UnityEngine.Debug.LogWarning("[CustomMapGen] Cargo path skipped: OceanPatrolFar is empty. Not falling back to the RHIB close path.");
+                return;
+            }
+
+            var simplified = SimplifyPatrolLoop(points, 90f);
+            UnityEngine.Debug.Log($"[CustomMapGen] Rendering cargo path ({simplified.Count} of {points.Count} Far nodes)...");
+            var penColor = System.Drawing.Color.FromArgb(200, 220, 90, 20);
+            using (var bmp = output.ToBitmap())
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var pen = new Pen(penColor, 3f))
+                {
+                    var pts = new System.Drawing.PointF[simplified.Count];
+                    for (int i = 0; i < simplified.Count; i++)
+                    {
+                        WorldToGdi(simplified[i], mapRes, oceanMargin, out float x, out float y);
+                        pts[i] = new System.Drawing.PointF(x, y);
+                    }
+                    if (pts.Length >= 2)
+                    {
+                        g.DrawLines(pen, pts);
+                        float closeSq = (simplified[0] - simplified[simplified.Count - 1]).sqrMagnitude;
+                        float maxClose = World.Size * 0.12f;
+                        if (closeSq < maxClose * maxClose)
+                            g.DrawLine(pen, pts[pts.Length - 1], pts[0]);
+                    }
+                }
+                output.FromBitmap(bmp);
+            }
+        }
+
+        private static Vector3 MonumentLabelWorldPos(MonumentInfo monument)
+        {
+            Vector3 pos = monument.transform.position;
+            if (monument.Bounds.size.sqrMagnitude > 1f)
+                pos = monument.transform.TransformPoint(monument.Bounds.center);
+            return pos;
+        }
+
+        private static bool AllowsWaterLabel(string text, string prefabLower)
+        {
+            return text.IndexOf("Oil Rig", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("Underwater Lab", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("Harbor", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("Iceberg", StringComparison.OrdinalIgnoreCase) >= 0
+                || prefabLower.Contains("oil_rig") || prefabLower.Contains("oilrig")
+                || prefabLower.Contains("underwater_lab")
+                || prefabLower.Contains("harbor");
+        }
+
+        private static bool IsLandMonumentInOcean(Vector3 pos, string text, string prefabLower)
+        {
+            if (AllowsWaterLabel(text, prefabLower))
+                return false;
+            if (TerrainMeta.HeightMap == null)
+                return false;
+            float terrainY = TerrainMeta.HeightMap.GetHeight(pos);
+            float waterY = TerrainMeta.WaterMap != null ? TerrainMeta.WaterMap.GetHeight(pos) : 0f;
+            return terrainY < waterY - 1.5f;
+        }
+
+        private static void RenderMonuments(ref MapOutput output, int mapRes, int oceanMargin, string fontResourcesPath = null, string preferredFont = null)
         {
             UnityEngine.Debug.Log("[CustomMapGen] 3/4 | Proceeding map data...");
             var path = TerrainMeta.Path;
@@ -237,75 +336,98 @@ namespace CustomMapGen.Utility
                 return;
             }
             UnityEngine.Debug.Log($"[CustomMapGen] 3/4 | Rendering monuments... (font: {Path.GetFileName(fontPath)} path={fontPath})");
-            int offset = imageWidth - mapRes - oceanMargin;
             float mapSize = (float)World.Size;
+            float imageScale = (mapRes + oceanMargin * 2) / 3300f;
 
-            var list = new List<(string name, int x, int y)>();
+            var list = new List<(string name, int x, int y, int rank, int fontSize)>();
             foreach (MonumentInfo m in monumentsRender)
             {
-                if (m == null) continue;
-                string name = GetMonumentName(m);
-                if (string.IsNullOrEmpty(name)) continue;
-                if (m.mapIcon != null && !name.ToLowerInvariant().Contains("train")) continue;
-                if (!m.shouldDisplayOnMap && !name.ToLowerInvariant().Contains("train")) continue;
+                if (m == null || !MonumentMapLabels.TryGet(m, out var label))
+                    continue;
 
-                var pos = m.transform.position;
+                var pos = MonumentLabelWorldPos(m);
                 string prefabLower = m.name?.ToLowerInvariant() ?? "";
-                bool isFishingVillage = name.ToLowerInvariant().Contains("fishing village");
-                if (isFishingVillage && (prefabLower.Contains("underwater_lab") || prefabLower.Contains("fishing_village")))
-                {
+                if (label.Text.IndexOf("Fishing Village", StringComparison.OrdinalIgnoreCase) >= 0)
                     pos = SnapFishingVillageToShore(pos, mapSize);
+                if (IsLandMonumentInOcean(pos, label.Text, prefabLower))
+                {
+                    UnityEngine.Debug.Log($"[CustomMapGen] Skipping ocean label '{label.Text}' at {pos} ({m.name})");
+                    continue;
                 }
-                int x = (int)((pos.x + mapSize / 2) / mapSize * mapRes) + offset;
-                int y = (int)((pos.z + mapSize / 2) / mapSize * mapRes) + offset;
-                if (name.ToLowerInvariant().Contains("oil rig") || name.ToLowerInvariant().Contains("oilrig") || prefabLower.Contains("oil_rig"))
+
+                WorldToGdi(pos, mapRes, oceanMargin, out float fx, out float fy);
+                int x = (int)fx;
+                int y = (int)fy;
+                if (AllowsWaterLabel(label.Text, prefabLower) && (prefabLower.Contains("oil") || label.Text.IndexOf("Oil Rig", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
                     x = Mathf.Clamp(x, oceanMargin, mapRes + oceanMargin);
                     y = Mathf.Clamp(y, oceanMargin, mapRes + oceanMargin);
                 }
-                list.Add((name, x, y));
+                list.Add((label.Text, x, y, label.Rank, MonumentMapLabels.FontSize(label.Rank, imageScale)));
             }
 
-            foreach (var (name, x, y) in list)
-                RenderText(name, fontPath, 22, System.Drawing.Color.Black, ref output, x, y);
+            list.Sort((a, b) => b.rank.CompareTo(a.rank));
+            DrawAllLabels(ref output, fontPath, list);
         }
 
-        private static void RenderText(string text, string fontPath, int fontSize, System.Drawing.Color color, ref MapOutput output, int xx, int yy)
+        private static void DrawAllLabels(ref MapOutput output, string fontPath, List<(string name, int x, int y, int rank, int fontSize)> list)
         {
             string absPath = Path.GetFullPath(fontPath);
-            if (!File.Exists(absPath))
+            if (!File.Exists(absPath) || list.Count == 0)
                 return;
             using (var bmp = output.ToBitmap())
             using (var pfc = new PrivateFontCollection())
             {
-                try
-                {
-                    pfc.AddFontFile(absPath);
-                }
+                try { pfc.AddFontFile(absPath); }
                 catch (Exception ex)
                 {
                     UnityEngine.Debug.LogWarning($"[CustomMapGen] Failed to load font {Path.GetFileName(absPath)}: {ex.Message}");
                     return;
                 }
                 if (pfc.Families == null || pfc.Families.Length == 0)
-                {
-                    UnityEngine.Debug.LogWarning($"[CustomMapGen] Font file has no families: {Path.GetFileName(absPath)}");
                     return;
-                }
+
                 bool useBold = absPath.IndexOf("dinprobold", StringComparison.OrdinalIgnoreCase) >= 0;
                 var style = useBold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
-                using (var font = new Font(pfc.Families[0], fontSize, style))
+                var fill = System.Drawing.Color.FromArgb(255, 250, 246, 232);
+                var outline = System.Drawing.Color.FromArgb(220, 18, 18, 18);
                 using (var g = System.Drawing.Graphics.FromImage(bmp))
-                using (var brush = new SolidBrush(color))
+                using (var fillBrush = new SolidBrush(fill))
+                using (var outlineBrush = new SolidBrush(outline))
                 {
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                    var size = g.MeasureString(text, font);
-                    float dx = xx - size.Width / 2f;
-                    float dy = yy - size.Height / 2f;
-                    g.TranslateTransform(dx, dy);
-                    g.RotateTransform(180f);
-                    g.ScaleTransform(-1f, 1f);
-                    g.DrawString(text, font, brush, 0f, -size.Height);
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    var fonts = new Dictionary<int, Font>();
+                    try
+                    {
+                        foreach (var item in list)
+                        {
+                            if (!fonts.TryGetValue(item.fontSize, out var font))
+                            {
+                                font = new Font(pfc.Families[0], item.fontSize, style);
+                                fonts[item.fontSize] = font;
+                            }
+                            var size = g.MeasureString(item.name, font);
+                            float dx = item.x - size.Width / 2f;
+                            float dy = item.y - size.Height / 2f;
+                            const int halo = 2;
+                            for (int ox = -halo; ox <= halo; ox++)
+                            {
+                                for (int oy = -halo; oy <= halo; oy++)
+                                {
+                                    if (ox == 0 && oy == 0)
+                                        continue;
+                                    g.DrawString(item.name, font, outlineBrush, dx + ox, dy + oy);
+                                }
+                            }
+                            g.DrawString(item.name, font, fillBrush, dx, dy);
+                        }
+                    }
+                    finally
+                    {
+                        foreach (var font in fonts.Values)
+                            font.Dispose();
+                    }
                 }
                 output.FromBitmap(bmp);
             }
@@ -351,14 +473,8 @@ namespace CustomMapGen.Utility
                             float y2 = y1 + cellPixels;
                             if (x1 < oceanMargin || y1 < oceanMargin || x2 > imageWidth - oceanMargin || y2 > imageWidth - oceanMargin)
                                 continue;
-                            string label = k <= 25 ? $"{(char)(65 + k)}{cellCount - l}" : $"{(char)(65 + (k / 26 - 1))}{(char)(65 + k % 26)}{cellCount - l}";
-                            float dx = x1 + pad;
-                            float dy = y1 + pad + (cellPixels - pad * 6f);
-                            g.TranslateTransform(dx, dy);
-                            g.RotateTransform(180f);
-                            g.ScaleTransform(-1f, 1f);
-                            g.DrawString(label, font, brush, 0f, -font.Height);
-                            g.ResetTransform();
+                            string label = k <= 25 ? $"{(char)(65 + k)}{l + 1}" : $"{(char)(65 + (k / 26 - 1))}{(char)(65 + k % 26)}{l + 1}";
+                            g.DrawString(label, font, brush, x1 + pad, y1 + pad);
                         }
                     }
                 }
@@ -382,47 +498,6 @@ namespace CustomMapGen.Utility
             }
         }
 
-        private static string GetMonumentName(MonumentInfo monument)
-        {
-            if (monument == null) return null;
-            try
-            {
-                var phraseProp = monument.GetType().GetProperty("displayPhrase", BindingFlags.Public | BindingFlags.Instance);
-                var phrase = phraseProp?.GetValue(monument);
-                if (phrase != null)
-                {
-                    var isValidMethod = phrase.GetType().GetMethod("IsValid", Type.EmptyTypes);
-                    if (true.Equals(isValidMethod?.Invoke(phrase, null)))
-                    {
-                        var enProp = phrase.GetType().GetProperty("english", BindingFlags.Public | BindingFlags.Instance);
-                        var en = enProp?.GetValue(phrase) as string;
-                        if (!string.IsNullOrEmpty(en)) return en.Replace("\n", "");
-                    }
-                }
-                if (monument.Type == MonumentType.Cave) return "Cave";
-                if (!string.IsNullOrEmpty(monument.name) && monument.name.Contains("power_sub")) return "Power Sub Station";
-                return PrefabPathToDisplayName(monument.name) ?? monument.GetType().Name;
-            }
-            catch { return monument?.GetType().Name; }
-        }
-
-        private static string PrefabPathToDisplayName(string path)
-        {
-            if (string.IsNullOrEmpty(path)) return null;
-            string name = path;
-            int slash = name.LastIndexOfAny(new[] { '/', '\\' });
-            if (slash >= 0) name = name.Substring(slash + 1);
-            name = name.Replace("(Clone)", "").Replace(".prefab", "").Trim();
-            if (string.IsNullOrEmpty(name)) return null;
-            var parts = name.Replace('_', ' ').Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
-            {
-                if (parts[i].Length > 0)
-                    parts[i] = char.ToUpperInvariant(parts[i][0]) + (parts[i].Length > 1 ? parts[i].Substring(1).ToLowerInvariant() : "");
-            }
-            return string.Join(" ", parts);
-        }
-
         private struct MapOutput
         {
             private readonly UnityEngine.Color[] _pixels;
@@ -444,7 +519,7 @@ namespace CustomMapGen.Utility
                 var bmp = new Bitmap(_w, _h);
                 for (int i = 0; i < _h; i++)
                     for (int j = 0; j < _w; j++)
-                        bmp.SetPixel(j, i, this[j, i].ToSystemDrawingColor());
+                        bmp.SetPixel(j, _h - 1 - i, this[j, i].ToSystemDrawingColor());
                 return bmp;
             }
 
@@ -453,7 +528,7 @@ namespace CustomMapGen.Utility
                 for (int i = 0; i < _h; i++)
                     for (int j = 0; j < _w; j++)
                     {
-                        var p = bmp.GetPixel(j, i);
+                        var p = bmp.GetPixel(j, _h - 1 - i);
                         this[j, i] = new UnityEngine.Color(p.R / 255f, p.G / 255f, p.B / 255f, p.A / 255f);
                     }
             }

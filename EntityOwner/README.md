@@ -1,6 +1,6 @@
 # EntityOwner (Harmony)
 
-Oxide **Entity Owner 3.4.3** (Calytic) port as a standalone Harmony mod (no Oxide runtime).
+Legacy **Entity Owner 3.4.3** (Calytic) port as a standalone Harmony mod (Harmony-only runtime).
 
 ## Load order
 

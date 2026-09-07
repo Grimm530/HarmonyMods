@@ -8,7 +8,7 @@ using System.Text;
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using Rust;
 using UnityEngine;
 using Random = UnityEngine.Random;
@@ -91,7 +91,7 @@ namespace RemoverToolHarmony
 
         #endregion Fields
 
-        #region Oxide Hooks
+        #region Harmony Hooks
 
         public override void HarmonyInit()
         {
@@ -352,7 +352,7 @@ namespace RemoverToolHarmony
             }
         }
 
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region Initializing
 
@@ -1183,7 +1183,7 @@ namespace RemoverToolHarmony
                     _shouldPay = shouldPay && _configData.remove.priceEnabled;
                     _shouldRefund = shouldRefund && _configData.remove.refundEnabled;
                     _instance.PrintDebug($"{Player.displayName}({Player.userID}) have Enabled the remover tool.");
-                    Interface.CallHook("OnRemoverToolActivated", Player);
+                    HarmonyModInterface.CallHook("OnRemoverToolActivated", Player);
                 }
                 else
                 {
@@ -1431,7 +1431,7 @@ namespace RemoverToolHarmony
                     {
                         _instance.PrintDebug($"{Player.displayName}({Player.userID}) have Disabled the remover tool.");
                     }
-                    Interface.CallHook("OnRemoverToolDeactivated", Player);
+                    HarmonyModInterface.CallHook("OnRemoverToolDeactivated", Player);
                 }
                 DestroyAllUI(Player);
                 Destroy(this);
@@ -1467,7 +1467,7 @@ namespace RemoverToolHarmony
             }
             if (removeType != RemoveType.Normal)
             {
-                var result = Interface.CallHook("CanAdminRemove", player, targetEntity, removeType.ToString());
+                var result = HarmonyModInterface.CallHook("CanAdminRemove", player, targetEntity, removeType.ToString());
                 if (result != null)
                 {
                     Print(player, result is string ? (string)result : Lang("BeBlocked", player.UserIDString));
@@ -1597,7 +1597,7 @@ namespace RemoverToolHarmony
                     return false;
                 }
             }
-            var result = Interface.CallHook("canRemove", player, targetEntity);
+            var result = HarmonyModInterface.CallHook("canRemove", player, targetEntity);
             if (result != null)
             {
                 reason = result is string ? (string)result : Lang("BeBlocked", player.UserIDString);
@@ -1741,7 +1741,7 @@ namespace RemoverToolHarmony
             var codeLock = baseLock as CodeLock;
             if (codeLock != null)
             {
-                var obj = Interface.CallHook("CanUseLockedEntity", player, codeLock);
+                var obj = HarmonyModInterface.CallHook("CanUseLockedEntity", player, codeLock);
                 if (obj is bool)
                 {
                     return (bool)obj;
@@ -1830,7 +1830,7 @@ namespace RemoverToolHarmony
                 }
                 if (dropContainer || dropItems)
                 {
-                    if (Interface.CallHook("OnDropContainerEntity", targetEntity) == null)
+                    if (HarmonyModInterface.CallHook("OnDropContainerEntity", targetEntity) == null)
                     {
                         if (dropContainer)
                         {
@@ -2187,7 +2187,7 @@ namespace RemoverToolHarmony
 
                 default:
                     {
-                        var result = Interface.CallHook("OnRemovableEntityCheckOrPay", targetEntity, player, itemName, currencyInfo.Amount, currencyInfo.SkinId, check);
+                        var result = HarmonyModInterface.CallHook("OnRemovableEntityCheckOrPay", targetEntity, player, itemName, currencyInfo.Amount, currencyInfo.SkinId, check);
                         if (result is bool)
                         {
                             return (bool)result;
@@ -2209,7 +2209,7 @@ namespace RemoverToolHarmony
             player.inventory.GetAllItems(list);
             foreach (var item in list)
             {
-                if (item.info.itemid == itemId && !item.IsBusy() && (currencyInfo.SkinId < 0 || item.skin == (ulong)currencyInfo.SkinId))
+                if (item.info.itemid == itemId && (currencyInfo.SkinId < 0 || item.skin == (ulong)currencyInfo.SkinId))
                 {
                     count += item.amount;
                 }
@@ -2230,7 +2230,7 @@ namespace RemoverToolHarmony
             player.inventory.GetAllItems(list);
             foreach (var item in list)
             {
-                if (item.info.itemid == itemId && !item.IsBusy() && (currencyInfo.SkinId < 0 || item.skin == (ulong)currencyInfo.SkinId))
+                if (item.info.itemid == itemId && (currencyInfo.SkinId < 0 || item.skin == (ulong)currencyInfo.SkinId))
                 {
                     var need = amount - take;
                     if (need > 0)
@@ -2331,7 +2331,7 @@ namespace RemoverToolHarmony
 
                         default:
                             {
-                                var result = Interface.CallHook("OnRemovableEntityGiveRefund", targetEntity, player, itemName, currencyInfo.Amount, currencyInfo.SkinId);
+                                var result = HarmonyModInterface.CallHook("OnRemovableEntityGiveRefund", targetEntity, player, itemName, currencyInfo.Amount, currencyInfo.SkinId);
                                 if (result == null)
                                 {
                                     flag = true;
@@ -2672,7 +2672,7 @@ namespace RemoverToolHarmony
             if (entity != null && !entity.IsDestroyed)
             {
                 _instance.PrintDebug($"{player.displayName}({player.userID}) has removed {entity.ShortPrefabName}({entity.OwnerID} | {entity.transform.position})", true);
-                Interface.CallHook("OnNormalRemovedEntity", player, entity);
+                HarmonyModInterface.CallHook("OnNormalRemovedEntity", player, entity);
                 entity.Kill(gibs ? BaseNetworkable.DestroyMode.Gib : BaseNetworkable.DestroyMode.None);
             }
         }
@@ -2862,7 +2862,7 @@ namespace RemoverToolHarmony
             {
                 return null;
             }
-            var result = Interface.CallHook("OnRemovableEntityInfo", entity, player) as Dictionary<string, object>;
+            var result = HarmonyModInterface.CallHook("OnRemovableEntityInfo", entity, player) as Dictionary<string, object>;
             if (result != null)
             {
                 return new RemovableEntityInfo(result);
@@ -4379,7 +4379,7 @@ namespace RemoverToolHarmony
             {
                 return;
             }
-            //Interface.Oxide.DataFileSystem.WriteObject(Name + "_old", jObject);
+            //HarmonyModInterface.Mods.DataFileSystem.WriteObject(Name + "_old", jObject);
             VersionNumber oldVersion;
             if (GetConfigVersionPre(config, out oldVersion))
             {
@@ -4519,7 +4519,7 @@ namespace RemoverToolHarmony
                         }
                     }
                     Config.WriteObject(config);
-                    // Interface.Oxide.DataFileSystem.WriteObject(Name + "_new", jObject);
+                    // HarmonyModInterface.Mods.DataFileSystem.WriteObject(Name + "_new", jObject);
                 }
             }
         }

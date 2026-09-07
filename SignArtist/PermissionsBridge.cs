@@ -12,14 +12,14 @@ using UnityEngine;
 
 namespace SignArtistHarmony
 {
-    /// <summary>Oxide-compatible user permission data (local mirror).</summary>
+    /// <summary>Harmony-compatible user permission data (local mirror).</summary>
     public class UserData
     {
         public HashSet<string> Perms  { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> Groups { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Oxide-compatible group permission data (local mirror).</summary>
+    /// <summary>Harmony-compatible group permission data (local mirror).</summary>
     public class GroupData
     {
         public HashSet<string> Perms  { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -28,7 +28,7 @@ namespace SignArtistHarmony
         public int    Rank        { get; set; }
     }
 
-    /// <summary>Oxide permission.* parity via Permissions Harmony mod (lazy reflection binding).</summary>
+    /// <summary>Harmony permission.* parity via Permissions Harmony mod (lazy reflection binding).</summary>
     public static class PermissionsBridge
     {
         private static Type   _permType;

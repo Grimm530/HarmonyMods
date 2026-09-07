@@ -8,7 +8,7 @@ using UnityEngine;
 namespace TeleportGUI
 {
     /// <summary>
-    /// Oxide-free localization bridge. The parent mod owns lifecycle wiring through
+    /// Harmony localization bridge. The parent mod owns lifecycle wiring through
     /// Initialize/Shutdown and can retrieve safely formatted messages through Get.
     /// </summary>
     public static class TeleportGUILanguage

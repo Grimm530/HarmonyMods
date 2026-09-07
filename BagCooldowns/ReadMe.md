@@ -2,7 +2,7 @@
 
 Persistent reference for AI when modifying, extending, or debugging the **BagCooldowns** Harmony mod.
 
-**Mod type:** Harmony mod. Loaded by HarmonyLoader from `HarmonyMods/`. No Oxide lifecycle hooks.
+**Mod type:** Harmony mod. Loaded by HarmonyLoader from `HarmonyMods/`. Harmony-only lifecycle hooks.
 
 ---
 

@@ -26,7 +26,7 @@ public class LootContainer_OnAttacked_Patch
     [HarmonyPrefix]
     private static bool Prefix(BaseCombatEntity __instance, HitInfo info)
     {
-        if (__instance == null || info == null || info.Initiator == null)
+        if (info == null || info.Initiator == null)
             return true;
 
         var lootContainer = __instance as LootContainer;

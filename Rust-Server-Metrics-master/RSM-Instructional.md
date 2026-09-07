@@ -23,7 +23,7 @@ src/RustServerMetrics/
     ├── BasePlayer_*.cs            # Player-related patches
     ├── Bootstrap_*.cs             # Server startup patches
     ├── NetWrite_*.cs              # Network packet patches
-    ├── OxideMod_*.cs              # Oxide plugin metrics patches
+    ├── OxideMod_*.cs              # Harmony mod metrics patches
     ├── Performance_*.cs           # Performance monitoring patches
     ├── ServerMgr_*.cs             # Server manager patches
     └── Delayed/                   # Patches applied after server start
@@ -70,7 +70,7 @@ src/RustServerMetrics/
 **Key Methods**:
 - `Initialize()`: Sets up the logger, loads configuration, and initializes the uploader
 - `StartLoggingMetrics()`: Begins periodic metric collection via `InvokeRepeating`
-- `OnOxidePluginMetrics(Dictionary<string, double> metrics)`: Receives Oxide plugin hook times and calculates initialization vs runtime metrics
+- `OnOxidePluginMetrics(Dictionary<string, double> metrics)`: Receives Harmony mod hook times and calculates initialization vs runtime metrics
 - `OnHarmonyModMetrics()`: **NEW** - Collects HarmonyMod plugin information
 - `UploadPacket<T>(string ID, T data, Action<StringBuilder, T> serializer)`: Queues metrics for upload
 
@@ -115,7 +115,7 @@ The mod uses HarmonyLib to patch Rust server code at runtime. Patches are organi
 - `BasePlayer_PerformanceReport_Patch`: Hooks client performance reports
 - `NetWrite_PacketID_Patch`: Tracks network packet types
 - `NetWrite_Send_Patch`: Tracks network send operations
-- `OxideMod_OnFrame_Patch`: Collects Oxide plugin metrics
+- `OxideMod_OnFrame_Patch`: Collects Harmony mod metrics
 - `Performance_FPSTimer_Patch`: Tracks server FPS
 - `ServerMgr_OpenConnection_Patch`: Tracks new connections
 
@@ -129,7 +129,7 @@ The mod uses HarmonyLib to patch Rust server code at runtime. Patches are organi
 ## HarmonyMod Tracking Feature
 
 ### Overview
-Added functionality to automatically track HarmonyMod plugins in the same way Oxide plugins are tracked, appearing seamlessly in Grafana dashboards.
+Added functionality to automatically track HarmonyMod plugins in the same way Harmony mods are tracked, appearing seamlessly in Grafana dashboards.
 
 ### Implementation Details
 
@@ -139,7 +139,7 @@ Added functionality to automatically track HarmonyMod plugins in the same way Ox
 1. Uses reflection to access `HarmonyLoader.GetHarmonyMods()` without a direct compile-time dependency
 2. Iterates through loaded HarmonyMods using the `HarmonyModInfo` struct
 3. Uploads each HarmonyMod as a metric in the `oxide_plugins` measurement
-4. Uses `hookTime=1` to indicate the mod is loaded (vs. Oxide plugins which use actual hook execution times)
+4. Uses `hookTime=1` to indicate the mod is loaded (vs. Harmony mods which use actual hook execution times)
 
 **Key Implementation Points**:
 
@@ -154,17 +154,17 @@ Added functionality to automatically track HarmonyMod plugins in the same way Ox
    - Fields are accessed via reflection: `nameField.GetValue(modInfo)`
 
 3. **Data Format**:
-   - Uses the same `oxide_plugins` measurement as Oxide plugins
+   - Uses the same `oxide_plugins` measurement as Harmony mods
    - Format: `plugin="ModName" hookTime=1`
    - No type tags or version tags (per user requirement for seamless integration)
 
 4. **Collection Frequency**:
    - Called every 5 seconds via `InvokeRepeating(OnHarmonyModMetrics, UnityEngine.Random.Range(1f, 2f), 5f)`
-   - Less frequent than Oxide plugins (which report on every frame)
+   - Less frequent than Harmony mods (which report on every frame)
 
 5. **Error Handling**:
    - Comprehensive error logging with `Debug.LogWarning()` for debugging
-   - Graceful failure - if HarmonyMod tracking fails, Oxide plugin tracking continues
+   - Graceful failure - if HarmonyMod tracking fails, Harmony mod tracking continues
    - Logs assembly names searched if type resolution fails
 
 **Code Flow**:
@@ -307,6 +307,152 @@ oxide_plugins,server="server-01",plugin="PluginName" hookTime=0.123,initTime=45.
 - After initialization completes, all subsequent hook times are tracked as "running" metrics
 - This separation prevents one-time initialization operations (like file scanning, large file parsing) from skewing runtime performance averages
 
+## Windows launchers (Grafana / InfluxDB 1.x)
+
+For a desktop-style “double-click to start” workflow, use the scripts in `Ps1&Batch/`:
+
+| File | Purpose |
+|------|---------|
+| `Start-Grafana.bat` / `Start-Grafana.ps1` | Starts Grafana and opens the UI; closing the window stops the server process started by that session. Optional: `GRAFANA_SERVER_EXE`, `GRAFANA_URL`. |
+| `Start-InfluxDB.bat` / `Start-InfluxDB.ps1` | Starts `influxd` (InfluxDB 1.x); closing the window stops that process. Optional: `INFLUXD_EXE`, `INFLUXD_CONFIG`. |
+| `stop-grafana.bat` | Stops Grafana service or kills `grafana-server.exe`. |
+| `stop-influxdb.bat` | Kills `influxd.exe`. |
+| **`Start-Grafana-AsAdmin.bat`** / **`Elevate-Start-Grafana.ps1`** | Same as Grafana starter but requests **UAC elevation**. Use when Grafana must bind privileged ports or write under `Program Files`. |
+| **`Start-InfluxDB-AsAdmin.bat`** / **`Elevate-Start-InfluxDB.ps1`** | Same for InfluxDB elevated. |
+| **`Launch-Grafana-UAC.vbs`** / **`Launch-InfluxDB-UAC.vbs`** | Same as elevated PowerShell, via **`Shell.Application.ShellExecute`** — reliable for **desktop shortcuts** when paths contain **`&`** and **`!`**. |
+
+**Why these live at repo root:** the folder name `Ps1&Batch` contains **`&`**. In PowerShell, `&` inside a **`-Command` string** is the [call operator](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_operators), so one-liners like `Start-Process ... '-Command','cd \"...\Ps1&Batch\"; ...'` **fail to parse**. Elevated launchers avoid that by calling **`Start-Process` with `-ArgumentList` array** and **`-File`** pointing at the `.ps1` so the path is one argument, not re-parsed as a script block.
+
+**Recommended elevated shortcut (pick one):**
+
+| Method | Target / action |
+|--------|------------------|
+| **VBScript (best for `.lnk`)** | **`Launch-Grafana-UAC.vbs`** / **`Launch-InfluxDB-UAC.vbs`** — builds the `Ps1&Batch\...` path in code so **`&` and `!` are never parsed by the shortcut field**. Point the desktop shortcut at this `.vbs` only. |
+| **Batch** | **`Start-Grafana-AsAdmin.bat`** / **`Start-InfluxDB-AsAdmin.bat`** — runs `Elevate-*.ps1` from repo root (no `&` in the path you configure). |
+
+### Desktop shortcut (`.lnk`) — common failure
+
+**Two fields:** In shortcut properties, **Target** must be **only** the `.exe` path. Put **`-NoProfile …`** in **Arguments**. If you paste the whole line into **Target**, Explorer may treat the first switch (e.g. `-NoProfile`) as the program name and show: *“The name '-NoProfile' specified in the Target box is not valid.”*
+
+**If you use `powershell.exe` + `-File`**, the path after `-File` **must be in double quotes** because of **`&` in `Ps1&Batch`**. Without quotes, the command breaks at `&`.
+
+- **Target:** `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`  
+- **Arguments:** `-NoProfile -ExecutionPolicy Bypass -File "D:\!RustServer\.cursor\HarmonyMods\Rust-Server-Metrics-master\Elevate-Start-Grafana.ps1"`
+
+**Single-field shortcut (only Target, leave Arguments empty):** one executable + one argument, no switches in the “wrong” place:
+
+```text
+C:\Windows\System32\wscript.exe "D:\!RustServer\.cursor\HarmonyMods\Rust-Server-Metrics-master\Launch-Grafana-UAC.vbs"
+```
+
+**Single-field shortcut (elevated PowerShell, `& script.ps1` equivalent):** the elevated process must use **`-File`** with a **single-quoted** path (so `&` inside `Ps1&Batch` is literal). The outer `powershell.exe` path must be the **full file**, not the `v1.0` **folder**. Copy-paste lines are in **`DesktopShortcut-Grafana-one-line.txt`** at repo root.
+
+**Two windows vs one:** **`Start-Grafana-AsAdmin.bat`** / **`Elevate-Start-Grafana.ps1`** exit the **non-elevated** launcher right after UAC spawn so you normally see **only** the elevated Grafana console. (If you still use a **custom** outer `powershell -NoExit -Command "Start-Process ..."`, you will get **two** windows — drop outer `-NoExit` unless you want that.)
+
+**If the elevated window “does not stay open”:** **`Start-Process -Verb RunAs` with `-ArgumentList` as several strings** can drop arguments — **`Elevate-Start-Grafana.ps1`** passes **one** `-ArgumentList` string to avoid that.
+
+Putting **`Start-Process ... -ArgumentList ...`** in the shortcut **Arguments** box is fragile (nested quoting). Prefer **`Launch-Grafana-UAC.vbs`** or **`Start-Grafana-AsAdmin.bat`** as the shortcut **Target** so you do not hand-assemble PowerShell.
+
+**Start in (working directory):** this is **only** the initial folder for the **first** `powershell.exe` Windows starts. It does **not** magically run `Start-Grafana.ps1` from there. Your script runs **only** because the command line includes **`-File` with a full path** to that `.ps1` (or a path **relative to Start in** — we use **absolute** paths so **Start in does not matter**). Setting **Start in** to `C:\Windows\System32\WindowsPowerShell\v1.0` is a red herring (Explorer often fills it); either **clear Start in** or set it to the repo root for clarity: `D:\!RustServer\.cursor\HarmonyMods\Rust-Server-Metrics-master`.
+
+**If your Target stops at** `-ArgumentList '-NoExit','-NoProfile','-ExecutionPolicy` **with nothing after**, the shortcut is **truncated** — Windows never receives `-File 'D:\...\Start-Grafana.ps1'`, so **nothing** runs your Grafana script. Use the **complete** one-liner from **`DesktopShortcut-Grafana-one-line.txt`**, or split **Target** / **Arguments** and point **`-File`** at **`Elevate-Start-Grafana.ps1`** (repo root, no `&` in path).
+
+Dashboard auto-update (hookTime → avgRunningTime) uses `res/Grafana-Dashboard.json` in this repo, with a fallback to `HarmonyMods\ps1scripts\Grafana-Dashboard.json` if present.
+
+**Grafana “No data” but Influx logs show `POST /write` 204:** the Rust mod and Influx credentials are fine. The dashboard needs the **DS_INFLUXDB** template variable set to your Influx **data source** in Grafana (not the same JSON as `HarmonyMods_Data/ServerMetrics/Configuration.json`). If the URL contains `var-DS_INFLUXDB=` with nothing after the `=`, open the variable dropdown, pick your InfluxDB source, then **Save dashboard**. Re-importing `Ps1&Batch/Grafana-Dashboard.json` runs the import wizard so you map **DS_INFLUXDB** once.
+
+`run-grafana-console.ps1` at the repo root is a **thin wrapper** (delegates only) around `Ps1&Batch\Start-Grafana.ps1` — same behavior, **not** a Grafana installer. Safe to delete if no shortcut points at it; prefer `Ps1&Batch\Start-Grafana.bat` / `Start-Grafana-AsAdmin.bat`.
+
+## Fork maintenance and upstream updates
+
+This directory is **ignored by the parent `!RustServer` repo** (`.cursor/*`), so it keeps its own **`.git`** directory here. Treat this folder as a **small fork**: public code flows from GitHub; your tooling and Harmony/metrics changes stay on `master` as commits **on top of** [RustyMoose/Rust.ServerMetrics](https://github.com/RustyMoose/Rust.ServerMetrics) `main`.
+
+### Remotes (one-time)
+
+| Remote | URL | Default branch | Role |
+|--------|-----|------------------|------|
+| `rustymoose` | `https://github.com/RustyMoose/Rust.ServerMetrics.git` | `main` | **Pull updates from here** (maintained fork). |
+| `upstream` | `https://github.com/features-not-bugs/Rust-ServerMetrics.git` | `master` | Archived original; optional diff only. |
+
+Add if missing:
+
+```powershell
+cd .cursor\HarmonyMods\Rust-Server-Metrics-master
+git remote add rustymoose https://github.com/RustyMoose/Rust.ServerMetrics.git
+git remote add upstream   https://github.com/features-not-bugs/Rust-ServerMetrics.git
+```
+
+On a new machine, if Git reports **dubious ownership**, allow this directory once:  
+`git config --global --add safe.directory "D:/!RustServer/.cursor/HarmonyMods/Rust-Server-Metrics-master"`  
+(adjust the path to match your checkout.)
+
+### What is “ours” vs upstream
+
+Run any time (no merge):
+
+```powershell
+.\scripts\Compare-ToUpstream.ps1                 # vs rustymoose/main (default)
+.\scripts\Compare-ToUpstream.ps1 -Target upstream # vs archived upstream/master
+```
+
+Equivalent: `git fetch rustymoose main` then `git diff rustymoose/main HEAD --name-status`.
+
+**Files that exist only on your side** (`A` in that diff — RustyMoose does not ship them):  
+`CHANGELOG.md`, `Ps1&Batch/*`, `RSM-Instructional.md`, `build.ps1`, `run-grafana-console.ps1`, `scripts/Compare-ToUpstream.ps1`, extra `scripts/AssemblyPublicizer/...` artifacts you committed for local builds, and `src/RustServerMetrics/HarmonyAssemblyStubs/*`.
+
+**Files both sides have but you changed** (`M` — merge conflicts usually show up here when they touch the same areas):  
+`README.md`, `scripts/SteamDownloader.ps1`, `scripts/unprivate-dependencies.ps1`,  
+`src/RustServerMetrics/HarmonyPatches/Delayed/InvokeHandlerBase_DoTick_Patch.cs`,  
+`src/RustServerMetrics/HarmonyPatches/Delayed/ServerMgr_Metrics_Patches.cs`,  
+`src/RustServerMetrics/HarmonyPatches/Performance_FPSTimer_Patch.cs`,  
+`src/RustServerMetrics/MetricsLogger.cs`, `src/RustServerMetrics/ReportUploader.cs`,  
+and the `update-*-dependencies*.bat` scripts.
+
+After a successful merge from `rustymoose/main`, re-run the compare script: **`Commits on remote not in your branch`** should be empty, and the diff stat should only list your intentional customizations again.
+
+### Playbook: pull a new RustyMoose release
+
+Do this from `master` (or your working branch).
+
+1. **Optional safety net**  
+   `git branch backup/pre-merge-$(Get-Date -Format yyyyMMdd) HEAD`
+
+2. **See what you are about to take in**  
+   ```powershell
+   git fetch rustymoose main
+   git log --oneline HEAD..rustymoose/main
+   ```  
+   If that prints nothing, you are already caught up.
+
+3. **Merge** (keeps a clear merge commit; good for servers):  
+   `git merge rustymoose/main`  
+   Or **rebase** (linear history; rewrites SHAs of your local-only commits):  
+   `git rebase rustymoose/main` — only use if you understand force-push implications.
+
+4. **Resolve conflicts** (if any)  
+   Prefer **their** changes for boilerplate they own, then re-apply your behavior in **`MetricsLogger.cs`**, **`ReportUploader.cs`**, and Harmony patches. Use `git diff backup/...` or `git show backup/...:path` if you kept a backup branch.
+
+5. **Verify build**  
+   ```powershell
+   .\build.ps1 -NonInteractive
+   ```  
+   Fix compile errors before restarting the game server.
+
+6. **Deploy**  
+   Copy the built `RustServerMetrics.dll` to `HarmonyMods` (your `build.ps1` may already target `D:\!RustServer\HarmonyMods\`). **Never** replace the DLL while the Rust server is running.
+
+7. **Commit**  
+   `git commit` if the merge stopped for conflicts, or commit the merge result with a message like `merge: rustymoose main through <date>`.
+
+### What not to do
+
+- Do **not** `git merge upstream/master --allow-unrelated-histories` from a **single squashed snapshot** with no shared Git ancestor; Git will produce mass `add/add` conflicts. This repo was **rebased onto `rustymoose/main` once** so `master` now shares history; routine updates are normal merges.
+- Prefer **RustyMoose** over the archived repo for pulls; `upstream` is useful only for comparison or if RustyMoose lags.
+
+### Reference branches
+
+- **`backup/pre-rustymoose-merge`** — snapshot of `master` before the one-time rebase onto RustyMoose (old squashed history). Keep until you are sure you do not need it.
+
 ## Build Process
 
 ### Dependencies
@@ -411,18 +557,18 @@ WHERE "plugin" = 'RustVehicles'
 - More flexible and resilient to changes in the HarmonyMod loader
 
 ### Why Same Measurement?
-- User requirement: HarmonyMod plugins should appear seamlessly with Oxide plugins
+- User requirement: HarmonyMod plugins should appear seamlessly with Harmony mods
 - Simplifies Grafana dashboard queries (no filtering needed)
 - Consistent data structure for all plugin metrics
 
 ### Why hookTime=1?
-- Oxide plugins use actual hook execution times
+- Harmony mods use actual hook execution times
 - HarmonyMods don't have hook execution times (they're IL patches)
 - `1` indicates "loaded" status, making it easy to filter in Grafana if needed
 - Simple, consistent value that's easy to query
 
 ### Why 5 Second Interval?
-- Less frequent than Oxide plugins (which report every frame)
+- Less frequent than Harmony mods (which report every frame)
 - Reduces database writes for static "loaded" status
 - Still frequent enough to track mod loading/unloading
 - Random initial delay (1-2 seconds) prevents thundering herd
@@ -459,9 +605,9 @@ Potential improvements:
   - Maintains backward compatibility with `hookTime` field
 - **HarmonyMod Tracking**: Added automatic tracking of HarmonyMod plugins
 - **Reflection-Based Access**: Uses reflection to avoid compile-time dependencies
-- **Seamless Integration**: HarmonyMod plugins appear in same measurement as Oxide plugins
+- **Seamless Integration**: HarmonyMod plugins appear in same measurement as Harmony mods
 - **Debug Logging Control**: HarmonyMod success log message only appears when Debug Logging is enabled in configuration
 
 ### Previous Versions
-- Original: Oxide plugin tracking only
+- Original: Harmony mod tracking only
 - Metrics collection for server performance, network, players, etc.

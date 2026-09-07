@@ -33,8 +33,7 @@ Write-Host ""
 $SolutionPath = Join-Path $PSScriptRoot "RustServerMetrics.sln"
 $ProjectPath = Join-Path $PSScriptRoot "src\RustServerMetrics\RustServerMetrics.csproj"
 $OutputPath = Join-Path $PSScriptRoot "src\RustServerMetrics\bin\$Configuration\net48\RustServerMetrics.dll"
-$workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
-$TargetPath = Join-Path $workspaceRoot "HarmonyMods\RustServerMetrics.dll"
+$TargetPath = "D:\!RustServer\HarmonyMods\RustServerMetrics.dll"
 $Platform = "Any CPU"
 
 # Check if solution exists
@@ -46,9 +45,12 @@ if (-not (Test-Path $SolutionPath)) {
 # Check if MSBuild is available
 $msbuildPath = $null
 $msbuildPaths = @(
+    "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
     "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
     "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
     "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+    "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+    "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
     "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe",
     "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe",
     "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
@@ -77,6 +79,22 @@ if ($null -eq $msbuildPath) {
 Write-Host "Using MSBuild: $msbuildPath" -ForegroundColor Gray
 Write-Host ""
 
+# SDK-style projects can be built with dotnet CLI, which is more reliable
+# when Visual Studio Build Tools lacks SDK resolver components.
+$useDotnetCli = $false
+$dotnetPath = "${env:ProgramFiles}\dotnet\dotnet.exe"
+$isSdkStyleProject = $false
+if (Test-Path $ProjectPath) {
+    $projectContent = Get-Content $ProjectPath -Raw
+    $isSdkStyleProject = $projectContent -match "<Project\s+Sdk="
+}
+if ($isSdkStyleProject -and (Test-Path $dotnetPath)) {
+    $useDotnetCli = $true
+    Write-Host "Detected SDK-style project; using dotnet CLI for restore/build." -ForegroundColor Yellow
+    Write-Host "Using dotnet: $dotnetPath" -ForegroundColor Gray
+    Write-Host ""
+}
+
 # Optional: Update dependencies (platform-specific)
 $updateDeps = if ($nonInteractive) { "N" } else { Read-Host "Update dependencies before building? (y/N)" }
 if ($updateDeps -eq "y" -or $updateDeps -eq "Y") {
@@ -84,7 +102,7 @@ if ($updateDeps -eq "y" -or $updateDeps -eq "Y") {
     Write-Host "Updating $Configuration dependencies..." -ForegroundColor Cyan
     
     # Check if Rust server path exists
-    $rustServerPath = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path "RustDedicated_Data\Managed"
+    $rustServerPath = "D:\!RustServer\RustDedicated_Data\Managed"
     if (-not (Test-Path $rustServerPath)) {
         Write-Host "WARNING: Rust server path not found: $rustServerPath" -ForegroundColor Yellow
         Write-Host "Skipping dependency update. Build may fail if dependencies are outdated." -ForegroundColor Yellow
@@ -198,12 +216,16 @@ if ($msbuildPath -like "*dotnet.exe") {
     # Try to find MSBuild via vswhere (Visual Studio Installer)
     $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     if (Test-Path $vswherePath) {
-        $vsPath = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-        if ($vsPath) {
-            $vsMsbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\MSBuild.exe"
-            if (Test-Path $vsMsbuildPath) {
-                $msbuildPath = $vsMsbuildPath
-                Write-Host "Found MSBuild: $msbuildPath" -ForegroundColor Green
+        # Search all matching VS installs (Community/Professional/Enterprise/BuildTools)
+        $vsPaths = & $vswherePath -products * -requires Microsoft.Component.MSBuild -property installationPath
+        foreach ($vsPath in $vsPaths) {
+            if (-not [string]::IsNullOrWhiteSpace($vsPath)) {
+                $vsMsbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\MSBuild.exe"
+                if (Test-Path $vsMsbuildPath) {
+                    $msbuildPath = $vsMsbuildPath
+                    Write-Host "Found MSBuild: $msbuildPath" -ForegroundColor Green
+                    break
+                }
             }
         }
     }
@@ -216,20 +238,39 @@ if ($msbuildPath -like "*dotnet.exe") {
 
 # Restore NuGet packages first
 Write-Host "Restoring NuGet packages..." -ForegroundColor Cyan
-$restoreArgs = @(
-    $SolutionPath,
-    "/t:Restore",
-    "/v:minimal",
-    "/nologo"
-)
-& $msbuildPath $restoreArgs
+if ($useDotnetCli) {
+    $dotnetRestoreArgs = @(
+        "restore",
+        $SolutionPath,
+        "--verbosity", "minimal"
+    )
+    & $dotnetPath $dotnetRestoreArgs
+} else {
+    $restoreArgs = @(
+        $SolutionPath,
+        "/t:Restore",
+        "/v:minimal",
+        "/nologo"
+    )
+    & $msbuildPath $restoreArgs
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNING: NuGet restore may have failed, but continuing with build..." -ForegroundColor Yellow
 }
 Write-Host ""
 
 # Build the solution
-& $msbuildPath $buildArgs
+if ($useDotnetCli) {
+    $dotnetBuildArgs = @(
+        "build",
+        $SolutionPath,
+        "-c", $Configuration,
+        "-v", "minimal"
+    )
+    & $dotnetPath $dotnetBuildArgs
+} else {
+    & $msbuildPath $buildArgs
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""

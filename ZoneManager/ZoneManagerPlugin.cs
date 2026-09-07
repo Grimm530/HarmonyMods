@@ -2,10 +2,10 @@ using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Configuration;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Configuration;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust;
 using System;
 using System.Collections;
@@ -18,7 +18,7 @@ using System.Text;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     [Info("Zone Manager", "k1lly0u Grimm530", "3.1.11")]
     [Description("An advanced management system for creating in-game zones")]
@@ -66,7 +66,7 @@ namespace Oxide.Plugins
         private const int TARGET_LAYERS = ~(1 << 10 | 1 << 18 | 1 << 28 | 1 << 29);
         #endregion
 
-        #region Oxide Hooks
+        #region Harmony Hooks
         private void Init()
         {
             Instance = this;
@@ -105,7 +105,7 @@ namespace Oxide.Plugins
                 zones.Remove(zoneId);
 
                 UnityEngine.Object.DestroyImmediate(zone.gameObject);
-                Interface.CallHook("OnZoneErased", zoneId);
+                HarmonyModInterface.CallHook("OnZoneErased", zoneId);
             }
 
             temporaryZones.Remove(plugin);
@@ -386,7 +386,7 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private object OnBetterChat(Oxide.Core.Libraries.Covalence.IPlayer iPlayer, string message)
+        private object OnBetterChat(Harmony.Core.Libraries.Covalence.IPlayer iPlayer, string message)
         {
             BasePlayer player = iPlayer.Object as BasePlayer;
             return OnPlayerChat(player, message, ConVar.Chat.ChatChannel.Global);
@@ -581,7 +581,7 @@ namespace Oxide.Plugins
             if (!baseEntity.IsValid() || baseEntity.IsDestroyed)
                 return;
 
-            if (Interface.CallHook("CanSpawnInZone", baseEntity) != null)
+            if (HarmonyModInterface.CallHook("CanSpawnInZone", baseEntity) != null)
                 return;
 
             if (baseEntity is BaseCorpse corpse)
@@ -1256,7 +1256,7 @@ namespace Oxide.Plugins
                 Pool.FreeUnmanaged(ref keepInList);
                 Pool.FreeUnmanaged(ref whitelist);
 
-                Interface.CallHook("OnZoneDestroyed", definition.Id);
+                HarmonyModInterface.CallHook("OnZoneDestroyed", definition.Id);
             }
 
             private void EmptyZone()
@@ -1278,7 +1278,7 @@ namespace Oxide.Plugins
             public void InitializeZone(Definition definition)
             {
                 if (this.definition == null)
-                    Interface.CallHook("OnZoneInitialize", definition.Id);
+                    HarmonyModInterface.CallHook("OnZoneInitialize", definition.Id);
                 
                 this.definition = definition;
 
@@ -2152,7 +2152,7 @@ namespace Oxide.Plugins
                 else SendMessage(player, zone.definition.EnterMessage, player.displayName);
             }
 
-            Interface.CallHook("OnEnterZone", zone.definition.Id, player);
+            HarmonyModInterface.CallHook("OnEnterZone", zone.definition.Id, player);
         }
 
         private void OnPlayerExitZone(BasePlayer player, Zone zone)
@@ -2192,7 +2192,7 @@ namespace Oxide.Plugins
                 else SendMessage(player, zone.definition.LeaveMessage, player.displayName);
             }
 
-            Interface.CallHook("OnExitZone", zone.definition.Id, player);
+            HarmonyModInterface.CallHook("OnExitZone", zone.definition.Id, player);
         }
 
         private void UpdateMetabolismForPlayer(BasePlayer player)
@@ -2283,7 +2283,7 @@ namespace Oxide.Plugins
 
             zone.OnEntityEnterZone(baseEntity);
 
-            Interface.CallHook("OnEntityEnterZone", zone.definition.Id, baseEntity);
+            HarmonyModInterface.CallHook("OnEntityEnterZone", zone.definition.Id, baseEntity);
         }
 
         private void OnEntityExitZone(BaseEntity baseEntity, Zone zone)
@@ -2311,7 +2311,7 @@ namespace Oxide.Plugins
 
             zone.OnEntityExitZone(baseEntity, !entityZones.HasFlag(ZoneFlags.NoDecay));
 
-            Interface.CallHook("OnEntityExitZone", zone.definition.Id, baseEntity);
+            HarmonyModInterface.CallHook("OnEntityExitZone", zone.definition.Id, baseEntity);
         }
         #endregion
 
@@ -2743,7 +2743,7 @@ namespace Oxide.Plugins
             zone.definition = definition;
             zone.Reset();
 
-            Interface.CallHook(update ? "OnZoneUpdated" : "OnZoneCreated", zoneId);
+            HarmonyModInterface.CallHook(update ? "OnZoneUpdated" : "OnZoneCreated", zoneId);
             
             return true;
         }
@@ -2800,7 +2800,7 @@ namespace Oxide.Plugins
                 set.Remove(zoneId);
 
             UnityEngine.Object.DestroyImmediate(zone.gameObject);
-            Interface.CallHook("OnZoneErased", zoneId);
+            HarmonyModInterface.CallHook("OnZoneErased", zoneId);
             return true;
         }
 
@@ -3855,7 +3855,7 @@ namespace Oxide.Plugins
             
             zone.Reset();
             
-            Interface.CallHook("OnZoneUpdated", zoneId);
+            HarmonyModInterface.CallHook("OnZoneUpdated", zoneId);
             
             if (!zone.definition.IsTemporary)
                 SaveData();
@@ -3982,7 +3982,7 @@ namespace Oxide.Plugins
             UpdateZoneDefinition(zone, args, arg.Player());
             zone.Reset();
             
-            Interface.CallHook("OnZoneUpdated", zoneId);
+            HarmonyModInterface.CallHook("OnZoneUpdated", zoneId);
             if (!zone.definition.IsTemporary)
                 SaveData();
         }
@@ -4152,7 +4152,7 @@ namespace Oxide.Plugins
             {
                 CuiHelper.DestroyUi(player, ZMUI);
                 
-                Interface.CallHook("OnZoneUpdated", zoneId);
+                HarmonyModInterface.CallHook("OnZoneUpdated", zoneId);
                 
                 if (!zone.definition.IsTemporary)
                     SaveData();
@@ -4221,7 +4221,7 @@ namespace Oxide.Plugins
                 public string Color { get; set; }
             }
 
-            public Oxide.Core.VersionNumber Version { get; set; }
+            public Harmony.Core.VersionNumber Version { get; set; }
         }
 
         protected override void LoadConfig()
@@ -4293,7 +4293,7 @@ namespace Oxide.Plugins
 
         private void LoadData()
         {
-            data = Interface.Oxide.DataFileSystem.GetFile("ZoneManager/zone_data");
+            data = HarmonyModInterface.Mods.DataFileSystem.GetFile("ZoneManager/zone_data");
             data.Settings.Converters = new JsonConverter[] { new StringEnumConverter(), new Vector3Converter(), new ZoneFlagsConverter() };
 
             storedData = data.ReadObject<StoredData>() ?? new StoredData();

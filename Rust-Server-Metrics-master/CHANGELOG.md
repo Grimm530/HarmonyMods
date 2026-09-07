@@ -7,11 +7,11 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 ## [Custom Build] - 2026-01-06
 
 ### Added
-- **HarmonyMod Plugin Tracking**: Automatic tracking of HarmonyMod plugins alongside Oxide plugins
+- **HarmonyMod Plugin Tracking**: Automatic tracking of HarmonyMod plugins alongside Harmony mods
   - New method `OnHarmonyModMetrics()` in `MetricsLogger.cs`
   - Collects HarmonyMod plugin information every 5 seconds
-  - HarmonyMod plugins appear in the same `oxide_plugins` measurement as Oxide plugins
-  - Uses `hookTime=1` to indicate loaded status (vs. actual execution times for Oxide plugins)
+  - HarmonyMod plugins appear in the same `oxide_plugins` measurement as Harmony mods
+  - Uses `hookTime=1` to indicate loaded status (vs. actual execution times for Harmony mods)
 
 ### Changed
 - **MetricsLogger.StartLoggingMetrics()**: Added periodic call to `OnHarmonyModMetrics()` every 5 seconds
@@ -25,7 +25,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
   - Falls back to searching all loaded assemblies if type not found by name
   - Accesses `HarmonyModInfo` struct fields via reflection (`GetField()` not `GetProperty()`)
   
-- **Data Format**: HarmonyMod plugins use identical format to Oxide plugins
+- **Data Format**: HarmonyMod plugins use identical format to Harmony mods
   - Measurement: `oxide_plugins`
   - Format: `plugin="ModName" hookTime=1`
   - No type tags or version tags (seamless integration per user requirement)
@@ -33,7 +33,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 - **Error Handling**: Comprehensive error logging for debugging
   - Logs assembly names searched if type resolution fails
   - Logs specific failure points (method not found, null returns, etc.)
-  - Graceful failure - Oxide plugin tracking continues if HarmonyMod tracking fails
+  - Graceful failure - Harmony mod tracking continues if HarmonyMod tracking fails
 
 ### Files Modified
 1. `src/RustServerMetrics/MetricsLogger.cs`
@@ -58,7 +58,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 
 ### Testing
 - Verified HarmonyMod plugins appear in InfluxDB `oxide_plugins` measurement
-- Confirmed format matches Oxide plugins exactly
+- Confirmed format matches Harmony mods exactly
 - Tested reflection-based type resolution with multiple assembly names
 - Verified error handling and logging
 
@@ -73,7 +73,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 ---
 
 ## Original Version
-- Oxide plugin tracking
+- Harmony mod tracking
 - Server performance metrics
 - Network statistics
 - Player metrics

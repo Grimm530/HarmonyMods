@@ -53,7 +53,7 @@ Copyright © 2025 Grimm530. All rights reserved.
 Patch notes:
 2/22/2026 - Fixed issue with vehicles not returning loot from containers when destroyed.
 5/11/2026 - Karuza Custom Vehicles: discover vehicles from KaruzaEntitiesCommon.json API when RustCar/RustHelicopter/RustPlane JSON folders are empty or incomplete.
-8/15/2026 - Use Clans now includes Facepunch native clans (clanId / ClanManager) without dropping Oxide Clans / Rust:IO Clans. Clear vanilla owner-lock so clan mates can mount.
+8/15/2026 - Use Clans now includes Facepunch native clans (clanId / ClanManager) without dropping legacy Clans / Rust:IO Clans. Clear vanilla owner-lock so clan mates can mount.
 
 */
 using System;
@@ -79,7 +79,7 @@ using Random = UnityEngine.Random;
 namespace RustVehiclesHarmony
 {
     /// <summary>
-    /// RustVehicles 2.0.5 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// RustVehicles 2.0.5 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     [Info("Rust Vehicles", "Grimm530", "2.0.5")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
@@ -136,8 +136,8 @@ namespace RustVehiclesHarmony
         public readonly Dictionary<string, string> commandToVehicleType = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         private Dictionary<string, CustomVehicleConfig> _catalogByName;
-        private static readonly string KaruzaCatalogPath = Path.Combine(Interface.Oxide.ConfigDirectory, "KaruzaCatalog", "KaruzaVehicleItemManager.cs");
-        private static readonly string KaruzaEntitiesCommonConfigPath = Path.Combine(Interface.Oxide.ConfigDirectory, "KaruzaEntitiesCommon.json");
+        private static readonly string KaruzaCatalogPath = Path.Combine(HarmonyModInterface.Mods.ConfigDirectory, "KaruzaCatalog", "KaruzaVehicleItemManager.cs");
+        private static readonly string KaruzaEntitiesCommonConfigPath = Path.Combine(HarmonyModInterface.Mods.ConfigDirectory, "KaruzaEntitiesCommon.json");
         private const int KaruzaApiEntityTypePlane = 1;
         private const int KaruzaApiEntityTypeHelicopter = 2;
         private const int KaruzaApiEntityTypeCar = 3;
@@ -4669,7 +4669,7 @@ namespace RustVehiclesHarmony
                         return false;
                     }
                     Instance.SaveData();
-                    Interface.CallHook("OnLicensedVehicleRemoved", playerId, vehicleType);
+                    HarmonyModInterface.CallHook("OnLicensedVehicleRemoved", playerId, vehicleType);
                     return true;
                 }
 
@@ -4794,7 +4794,7 @@ namespace RustVehiclesHarmony
         {
             try
             {
-                vehicleDatabase = Interface.Oxide.DataFileSystem.ReadObject<VehicleDatabase>("RustVehicles/RustVehicles");
+                vehicleDatabase = HarmonyModInterface.Mods.DataFileSystem.ReadObject<VehicleDatabase>("RustVehicles/RustVehicles");
             }
             catch
             {
@@ -4814,7 +4814,7 @@ namespace RustVehiclesHarmony
 
             private void SaveData()
             {
-                Interface.Oxide.DataFileSystem.WriteObject("RustVehicles/RustVehicles", vehicleDatabase);
+                HarmonyModInterface.Mods.DataFileSystem.WriteObject("RustVehicles/RustVehicles", vehicleDatabase);
             }
 
             internal void OnNewSave()
@@ -4837,7 +4837,7 @@ namespace RustVehiclesHarmony
             }
             #endregion DataFile
 
-        #region Oxide Hooks & Integration
+        #region Harmony Hooks & Integration
         internal void Init()
         {
             LoadData();
@@ -4997,10 +4997,10 @@ namespace RustVehiclesHarmony
             {
                 var pluginName = "KaruzaVehicleChatCommand";
                 PrintError($"{pluginName} Detected!");
-                NextTick(() => Interface.Oxide.UnloadPlugin(pluginName));
+                NextTick(() => HarmonyModInterface.Mods.UnloadPlugin(pluginName));
                 PrintError($"Unloaded {pluginName} to prevent plugin conflict...");
 
-                NextTick(() => Interface.Oxide.ReloadPlugin(Name));
+                NextTick(() => HarmonyModInterface.Mods.ReloadPlugin(Name));
                 return;
             }
         }
@@ -5070,7 +5070,7 @@ namespace RustVehiclesHarmony
             SaveData();
             Instance = null;
         }
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -5602,7 +5602,7 @@ namespace RustVehiclesHarmony
         }
         #endregion Player
 
-        #endregion Oxide Hooks
+        #endregion Harmony Hooks
 
         #region Intergration: RustTranslationAPI
 
@@ -5816,7 +5816,7 @@ namespace RustVehiclesHarmony
 
             vehicle.RecordDeath();
             vehiclesCache.Remove(entity);
-            Interface.CallHook("OnLicensedVehicleDeath", vehicle.PlayerId, vehicle.VehicleType);
+            HarmonyModInterface.CallHook("OnLicensedVehicleDeath", vehicle.PlayerId, vehicle.VehicleType);
         }
 
         #endregion CheckEntity
@@ -6547,9 +6547,9 @@ namespace RustVehiclesHarmony
         {
             var folderPaths = new[]
             {
-                Path.Combine(Interface.Oxide.ConfigDirectory, "RustCar"),
-                Path.Combine(Interface.Oxide.ConfigDirectory, "RustHelicopter"),
-                Path.Combine(Interface.Oxide.ConfigDirectory, "RustPlane")
+                Path.Combine(HarmonyModInterface.Mods.ConfigDirectory, "RustCar"),
+                Path.Combine(HarmonyModInterface.Mods.ConfigDirectory, "RustHelicopter"),
+                Path.Combine(HarmonyModInterface.Mods.ConfigDirectory, "RustPlane")
             };
 
             foreach (var folderPath in folderPaths)
@@ -7947,12 +7947,12 @@ namespace RustVehiclesHarmony
                             if (AddVehicleLicense(target.userID, vehicleType))
                             {
                                 Print(arg, $"You successfully purchased the vehicle({vehicleName}) for {target.displayName}");
-                                Interface.CallHook("OnLicensedVehiclePurchased", target, vehicleType);
+                                HarmonyModInterface.CallHook("OnLicensedVehiclePurchased", target, vehicleType);
                                 return;
                             }
 
                             Print(arg, $"{target.displayName} has purchased vehicle({vehicleName})");
-                            Interface.CallHook("OnLicensedVehiclePurchased", target, vehicleType);
+                            HarmonyModInterface.CallHook("OnLicensedVehiclePurchased", target, vehicleType);
                         }
                         return;
                 }
@@ -8028,7 +8028,7 @@ namespace RustVehiclesHarmony
             }
                     vehicles.Add(vehicleType, OwnedVehicle.New(player.userID, vehicleType));
             SaveData();
-            Interface.CallHook("OnLicensedVehiclePurchased", player, vehicleType, response);
+            HarmonyModInterface.CallHook("OnLicensedVehiclePurchased", player, vehicleType, response);
             if (response) Print(player, Lang("VehiclePurchased", player.UserIDString, settings.DisplayName, configData.chat.spawnCommand));
             return true;
         }
@@ -8160,7 +8160,7 @@ namespace RustVehiclesHarmony
             {
                 return false;
             }
-            var obj = Interface.CallHook("CanLicensedVehicleSpawn", player, vehicle.VehicleType, position, rotation);
+            var obj = HarmonyModInterface.CallHook("CanLicensedVehicleSpawn", player, vehicle.VehicleType, position, rotation);
             if (obj != null)
             {
                 var s = obj as string;
@@ -8207,10 +8207,12 @@ namespace RustVehiclesHarmony
             var entity = settings.SpawnVehicle(player, vehicle, position, rotation);
             if (entity == null)
             {
+                if (response)
+                    Print(player, Lang("NotSpawnedOrRecalled", player.UserIDString, settings.DisplayName));
                 return;
             }
 
-            Interface.CallHook("OnLicensedVehicleSpawned", entity, player, vehicle.VehicleType);
+            HarmonyModInterface.CallHook("OnLicensedVehicleSpawned", entity, player, vehicle.VehicleType);
             if (!response) return;
             Print(player, Lang("VehicleSpawned", player.UserIDString, settings.DisplayName));
         }
@@ -8381,7 +8383,7 @@ namespace RustVehiclesHarmony
                 return false;
             }
 
-            var obj = Interface.CallHook("CanLicensedVehicleRecall", vehicle.Entity, player, vehicle.VehicleType, position, rotation);
+            var obj = HarmonyModInterface.CallHook("CanLicensedVehicleRecall", vehicle.Entity, player, vehicle.VehicleType, position, rotation);
             if (obj != null)
             {
                 var s = obj as string;
@@ -8454,7 +8456,7 @@ namespace RustVehiclesHarmony
                 return;
             }
 
-            Interface.CallHook("OnLicensedVehicleRecalled", vehicleEntity, player, vehicle.VehicleType);
+            HarmonyModInterface.CallHook("OnLicensedVehicleRecalled", vehicleEntity, player, vehicle.VehicleType);
             Print(player, Lang("VehicleRecalled", player.UserIDString, settings.DisplayName));
         }
 
@@ -8537,7 +8539,7 @@ namespace RustVehiclesHarmony
                 var entityToKill = vehicle.Entity;
                 entityToKill.Kill(BaseNetworkable.DestroyMode.Gib);
                 if (!response) return true;
-                Interface.CallHook("OnLicensedVehicleKilled", player, vehicle.VehicleType, response);
+                HarmonyModInterface.CallHook("OnLicensedVehicleKilled", player, vehicle.VehicleType, response);
                 if (player.IsConnected)
                     Print(player, Lang("VehicleKilled", player.UserIDString, settings.DisplayName));
                 return true;

@@ -5,14 +5,15 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Game.Rust.Cui
+namespace Game.Rust.Cui
 {
-    // Simplified: no Oxide pooling. JsonTextWriter works without ArrayPool.
+    // Simplified: Harmony-only pooling. JsonTextWriter works without ArrayPool.
 
     public static class CuiHelper
     {
@@ -77,14 +78,27 @@ namespace Oxide.Game.Rust.Cui
             return AddUi(player, ToJson(elements));
         }
 
+        private static readonly Type RpcTargetType = Type.GetType("RpcTarget, Assembly-CSharp");
+        private static readonly MethodInfo RpcTargetPlayer = RpcTargetType?.GetMethod("Player", new[] { typeof(string), typeof(BasePlayer) });
+        private static readonly MethodInfo ClientRpcString = typeof(BaseEntity).GetMethod("ClientRPC", new[] { RpcTargetType, typeof(string) });
+
+        private static void SendCommunityUiRpc(BasePlayer player, string function, string payload)
+        {
+            if (CommunityEntity.ServerInstance == null || RpcTargetType == null || RpcTargetPlayer == null || ClientRpcString == null)
+                return;
+
+            object target = RpcTargetPlayer.Invoke(null, new object[] { function, player });
+            ClientRpcString.Invoke(CommunityEntity.ServerInstance, new object[] { target, payload });
+        }
+
         public static bool AddUi(BasePlayer player, string json)
         {
             if (player?.net != null)
             {
-                // Clients only forward ConsoleGen commands. Rewrite Oxide-style UI_Kits
+                // Clients only forward ConsoleGen commands. Rewrite compat-style UI_Kits
                 // callbacks to cui.endtest so KitsHarmony.Patches.Cui_Endtest_Patch can route them.
                 json = RewriteHarmonyButtonCommands(json);
-                CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection ), json);
+                SendCommunityUiRpc(player, "AddUI", json);
                 return true;
             }
 
@@ -92,7 +106,7 @@ namespace Oxide.Game.Rust.Cui
         }
 
         /// <summary>
-        /// Oxide plugins use custom console commands on CUI buttons. Under Harmony those
+        /// Harmony mods use custom console commands on CUI buttons. Under Harmony those
         /// never leave the client. Bridge BuyableUI commands through cui.endtest RBBUI.
         /// </summary>
         private static string RewriteHarmonyButtonCommands(string json)
@@ -109,7 +123,7 @@ namespace Oxide.Game.Rust.Cui
         {
             if (player?.net != null)
             {
-                CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection ), elem);
+                SendCommunityUiRpc(player, "DestroyUI", elem);
                 return true;
             }
 

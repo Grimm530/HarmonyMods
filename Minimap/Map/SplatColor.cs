@@ -1,4 +1,4 @@
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public enum SplatColor
 {

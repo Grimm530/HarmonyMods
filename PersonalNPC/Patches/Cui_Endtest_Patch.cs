@@ -6,7 +6,7 @@ using UnityEngine;
 namespace PersonalNPCHarmony.Patches
 {
     /// <summary>
-    /// Clients only forward ConsoleGen commands, so Oxide-style pnpc / pnpchelper.* CUI buttons
+    /// Clients only forward ConsoleGen commands, so compat-style pnpc / pnpchelper.* CUI buttons
     /// never reach the server. RustCui rewrites them to "cui.endtest PNPC ..." /
     /// "cui.endtest PNPCHELPER ..."; this prefix unwraps the marker and runs the real handler.
     /// Any other payload falls through so InventoryShortcuts, Kits, TCUpgrade etc. keep working.

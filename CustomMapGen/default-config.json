@@ -46,5 +46,13 @@
     "FlattenShoreAndBay": true,
     "BiomeAxisAngle": "TopDesertBottomSnow",
     "LootAxisAngle": "LeftTier0RightTier2"
+  },
+  "DistanceRules": [],
+  "NearbyPrefabRules": [],
+  "BlockedPrefabPercents": [],
+  "RiverSettings": {
+    "Count": -1,
+    "Width": -1,
+    "MinLength": -1
   }
 }

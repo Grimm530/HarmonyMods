@@ -10,7 +10,7 @@ namespace ServerQoL.Patches
         private static void Postfix(BaseNetworkable __instance)
         {
             ServerQoLService service = ServerQoLMod.Service;
-            if (service == null || __instance == null) return;
+            if (service == null) return;
             if (__instance is BasePlayer) return;
 
             try
@@ -32,7 +32,7 @@ namespace ServerQoL.Patches
         private static void Postfix(BasePlayer __instance)
         {
             ServerQoLService service = ServerQoLMod.Service;
-            if (service == null || __instance == null) return;
+            if (service == null) return;
             try
             {
                 service.OnPlayerInit(__instance);

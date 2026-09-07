@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Oxide.Ext.Chaos.Pooling;
+namespace Ext.Chaos.Pooling;
 
 public class GenericPoolCollection<T>
 {

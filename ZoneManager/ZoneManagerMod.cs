@@ -1,11 +1,19 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.ZoneManager;
+using GrimmCuiHarmony;
+using HarmonyPlugin = Harmony.Plugins.ZoneManager;
+using GrimmCuiHarmony;
 
 namespace ZoneManagerHarmony
 {
@@ -51,7 +59,7 @@ namespace ZoneManagerHarmony
     public class ZoneManagerMod : IHarmonyModHooks
     {
         public static ZoneManagerMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         public const string AppDomainApiKey = "ZoneManager_ApiType";
         public const string AppDomainPluginKey = "ZoneManager_Plugin";
@@ -69,14 +77,16 @@ namespace ZoneManagerHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadDefaultMessages();
                 plugin.HarmonyLoadConfig();
             }
@@ -133,8 +143,8 @@ namespace ZoneManagerHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
 
             UnregisterConsoleCommands();
 
@@ -146,7 +156,8 @@ namespace ZoneManagerHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[ZoneManager] Harmony mod unloaded.");
         }
@@ -208,10 +219,10 @@ namespace ZoneManagerHarmony
                 for (int i = 0; i < args.Length; i++)
                     types[i] = args[i]?.GetType() ?? typeof(object);
 
-                var mi = typeof(OxidePlugin).GetMethod(method, bf, null, types, null);
+                var mi = typeof(HarmonyPlugin).GetMethod(method, bf, null, types, null);
                 if (mi == null)
                 {
-                    foreach (var m in typeof(OxidePlugin).GetMethods(bf))
+                    foreach (var m in typeof(HarmonyPlugin).GetMethods(bf))
                     {
                         if (!string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase)) continue;
                         if (m.GetParameters().Length == args.Length) { mi = m; break; }
@@ -271,16 +282,16 @@ namespace ZoneManagerHarmony
             }
         }
 
-        private void ScanChatCommands(OxidePlugin plugin)
+        private void ScanChatCommands(HarmonyPlugin plugin)
         {
             _chatCommandNames.Clear();
             _chatMethodMap.Clear();
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                 if (attrs == null || attrs.Length == 0) continue;
-                foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                 {
                     if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                     string name = attr.Command.Trim();
@@ -291,16 +302,16 @@ namespace ZoneManagerHarmony
             }
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var mi = typeof(OxidePlugin).GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player, command, args }); return; }
 
-                mi = typeof(OxidePlugin).GetMethod(methodName, bf, null, new[] { typeof(BasePlayer) }, null);
+                mi = typeof(HarmonyPlugin).GetMethod(methodName, bf, null, new[] { typeof(BasePlayer) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { player }); return; }
             }
             catch (Exception ex)
@@ -316,11 +327,11 @@ namespace ZoneManagerHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -347,7 +358,7 @@ namespace ZoneManagerHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var mi = typeof(OxidePlugin).GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
                 mi?.Invoke(plugin, new object[] { arg });
             }
             catch (Exception ex)

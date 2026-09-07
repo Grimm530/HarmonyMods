@@ -1,6 +1,6 @@
 # Backpacks (Harmony Mod)
 
-Standalone Harmony mod that gives each player an **extra-inventory backpack**: open via F1 `backpack` or by **clicking the on-screen backpack button**, persist to JSON, and on death either **drop** a dropped-backpack entity or **erase** contents (config). No Oxide; follows HARMONY_MODS_GUIDE.
+Standalone Harmony mod that gives each player an **extra-inventory backpack**: open via F1 `backpack` or by **clicking the on-screen backpack button**, persist to JSON, and on death either **drop** a dropped-backpack entity or **erase** contents (config). Harmony-only; follows HARMONY_MODS_GUIDE.
 
 ## Mod Identity
 
@@ -27,7 +27,7 @@ Standalone Harmony mod that gives each player an **extra-inventory backpack**: o
 
 ## Persistent Data Model
 
-- **Config:** `HarmonyConfig/Backpacks.json` (or `oxide/config/Backpacks.json`, `Config/Backpacks.json`, server root `Backpacks.json`). Options: Drop on death, Erase on death, Capacity (slots), Minimum despawn time; **Show backpack button**, **Button image path** (e.g. `HarmonyImages/Backpack/backpackgz.png`), **Button image URL** (optional override), **Button position** (anchormin/anchormax).
+- **Config:** `HarmonyConfig/Backpacks.json` (or `legacy/config/Backpacks.json`, `Config/Backpacks.json`, server root `Backpacks.json`). Options: Drop on death, Erase on death, Capacity (slots), Minimum despawn time; **Show backpack button**, **Button image path** (e.g. `HarmonyImages/Backpack/backpackgz.png`), **Button image URL** (optional override), **Button position** (anchormin/anchormax).
 - **Per-player data:** `HarmonyMods_Data/BackpacksData/<steamid>.json` (default; configurable via **Data folder path**) — list of `BackpackItemEntry` (itemid, amount, slot, condition, maxCondition, blueprint, skin, contents for nested items). The mod **only** reads/writes these JSON files; it does **not** write to the server save or to FileStorage (sv.files.*.db).
 
 ## Harmony Patches
@@ -80,7 +80,7 @@ Standalone Harmony mod that gives each player an **extra-inventory backpack**: o
 
 ## Relation to Oxide Backpacks Plugin
 
-The WhiteThunder **Backpacks** Oxide plugin (`.cursor/Oxide.Plugins.Cant-Use/Backpacks.cs`) is a full-featured plugin with permissions, GUI, multi-page backpacks, gather/retrieve modes, and Oxide hooks. This Harmony mod is a **minimal standalone** port: one container per player, JSON persistence, drop/erase on death, open via command. It does **not** call Oxide; it patches the game directly per HARMONY_MODS_GUIDE.
+The WhiteThunder **Backpacks** Harmony mod (`.cursor/Harmony.Plugins.Cant-Use/Backpacks.cs`) is a full-featured plugin with permissions, GUI, multi-page backpacks, gather/retrieve modes, and Harmony hooks. This Harmony mod is a **minimal standalone** port: one container per player, JSON persistence, drop/erase on death, open via command. It does **not** call Oxide; it patches the game directly per HARMONY_MODS_GUIDE.
 
 ## Build & Deploy
 
@@ -88,4 +88,4 @@ The WhiteThunder **Backpacks** Oxide plugin (`.cursor/Oxide.Plugins.Cant-Use/Bac
 .\build.ps1
 ```
 
-Output: `D:\!RustServer\HarmonyMods\Backpacks.dll`. Load with `harmony.load Backpacks`. Config path: `HarmonyConfig/Backpacks.json` (or oxide/config, etc.).
+Output: `D:\!RustServer\HarmonyMods\Backpacks.dll`. Load with `harmony.load Backpacks`. Config path: `HarmonyConfig/Backpacks.json` (or legacy/config, etc.).

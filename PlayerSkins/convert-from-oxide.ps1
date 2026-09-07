@@ -1,14 +1,14 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\PlayerSkins.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\PlayerSkins.cs"
 $dst = Join-Path $PSScriptRoot "PlayerSkinsPlugin.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
 # --- Usings: strip Oxide runtime, keep Chaos / Facepunch / etc. ---
 foreach ($using in @(
-    "using Oxide.Core;",
-    "using Oxide.Core.Libraries;",
-    "using Oxide.Core.Plugins;"
+    "using Harmony.Core;",
+    "using Harmony.Core.Libraries;",
+    "using Harmony.Core.Plugins;"
 )) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
@@ -18,7 +18,7 @@ if ($text -notmatch "(?m)^using PlayerSkinsHarmony;\r?\n") {
 }
 
 # --- Namespace ---
-$text = $text.Replace("namespace Oxide.Plugins", "namespace PlayerSkinsHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace PlayerSkinsHarmony")
 
 # --- Class declaration ---
 $newClass = @"
@@ -150,7 +150,7 @@ $lineCount = ($text -split "`n").Count
 Write-Host "Wrote $dst ($lineCount lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core[^.]" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core[^.]" },
     @{ Name = "ChaosPlugin"; Pattern = "ChaosPlugin" },
     @{ Name = "[Info("; Pattern = '\[Info\("PlayerSkins"' },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
@@ -159,7 +159,7 @@ $checks = @(
     @{ Name = "permission.RegisterPermission"; Pattern = "permission\.RegisterPermission" },
     @{ Name = "lang.RegisterMessages"; Pattern = "lang\.RegisterMessages" },
     @{ Name = "[Chaos.Permission]"; Pattern = "\[Chaos\.Permission\]" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "class PlayerSkinsPlugin"; Pattern = "class PlayerSkinsPlugin" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" },
     @{ Name = "PermissionsBridge"; Pattern = "PermissionsBridge\.RegisterPermission" },

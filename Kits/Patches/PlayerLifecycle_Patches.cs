@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace KitsHarmony.Patches
 {
-    /// <summary>Oxide OnPlayerRespawned → BasePlayer.RespawnAt postfix.</summary>
+    /// <summary>Harmony OnPlayerRespawned → BasePlayer.RespawnAt postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.RespawnAt))]
     public static class BasePlayer_RespawnAt_Patch
     {
@@ -22,7 +22,7 @@ namespace KitsHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
+    /// <summary>Harmony OnPlayerDisconnected → BasePlayer.OnDisconnected postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.OnDisconnected))]
     public static class BasePlayer_OnDisconnected_Patch
     {
@@ -40,7 +40,7 @@ namespace KitsHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnPlayerDeath → BasePlayer.Die postfix.</summary>
+    /// <summary>Harmony OnPlayerDeath → BasePlayer.Die postfix.</summary>
     [HarmonyPatch(typeof(BasePlayer), nameof(BasePlayer.Die))]
     public static class BasePlayer_Die_Patch
     {
@@ -59,7 +59,7 @@ namespace KitsHarmony.Patches
     }
 
     /// <summary>
-    /// Oxide OnNewSave — when SaveRestore.Load runs with a new wipe.
+    /// compat OnNewSave — when SaveRestore.Load runs with a new wipe.
     /// Calls Kits.OnNewSave so AutoWipe can clear player kit data.
     /// </summary>
     [HarmonyPatch(typeof(SaveRestore), nameof(SaveRestore.Load))]

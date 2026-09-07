@@ -34,7 +34,7 @@ namespace PlayerSkinsHarmony.Patches
         {
             if (!__state) return;
             var plugin = PlayerSkinsMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try
             {
                 Item newItem = __instance.GetActiveItem();

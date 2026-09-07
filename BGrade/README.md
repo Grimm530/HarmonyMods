@@ -1,6 +1,6 @@
 # BGrade (Harmony)
 
-Oxide **BGrade 1.1.6** port as a standalone Harmony mod (no Oxide runtime). Auto-upgrades building blocks when placed.
+Legacy **BGrade 1.1.6** port as a standalone Harmony mod (Harmony-only runtime). Auto-upgrades building blocks when placed.
 
 ## Load order
 

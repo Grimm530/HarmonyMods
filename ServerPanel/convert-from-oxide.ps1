@@ -1,26 +1,26 @@
 # Converts the Oxide ServerPanel / ServerPanelPopUps sources into the Harmony port sources.
-# Source stays untouched in .cursor/Oxide.Plugins.Cant-Use; output lands next to this script.
+# Source stays untouched in .cursor/Harmony.Plugins.Cant-Use; output lands next to this script.
 $ErrorActionPreference = "Stop"
 
 function Convert-Panel {
-    $src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\ServerPanel.cs"
+    $src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\ServerPanel.cs"
     $dst = Join-Path $PSScriptRoot "ServerPanel.cs"
     if (-not (Test-Path $src)) { throw "Source not found: $src" }
     $text = [System.IO.File]::ReadAllText($src)
 
     # --- Usings / namespaces -------------------------------------------------
-    foreach ($using in @("using Oxide.Core;", "using Oxide.Core.Libraries;", "using Oxide.Core.Libraries.Covalence;", "using Oxide.Core.Plugins;")) {
+    foreach ($using in @("using Harmony.Core;", "using Harmony.Core.Libraries;", "using Harmony.Core.Libraries.Covalence;", "using Harmony.Core.Plugins;")) {
         $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
     }
     # Longer namespace first.
-    $text = $text.Replace("using Oxide.Plugins.ServerPanelExtensionMethods;", "using ServerPanelHarmony.ServerPanelExtensionMethods;")
-    $text = $text.Replace("namespace Oxide.Plugins.ServerPanelExtensionMethods", "namespace ServerPanelHarmony.ServerPanelExtensionMethods")
-    $text = $text.Replace("namespace Oxide.Plugins", "namespace ServerPanelHarmony")
+    $text = $text.Replace("using Harmony.Plugins.ServerPanelExtensionMethods;", "using ServerPanelHarmony.ServerPanelExtensionMethods;")
+    $text = $text.Replace("namespace Harmony.Plugins.ServerPanelExtensionMethods", "namespace ServerPanelHarmony.ServerPanelExtensionMethods")
+    $text = $text.Replace("namespace Harmony.Plugins", "namespace ServerPanelHarmony")
 
     # --- Class declaration ---------------------------------------------------
     $newClass = @"
     /// <summary>
-    /// ServerPanel 2.0.20 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// ServerPanel 2.0.20 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// </summary>
     public class ServerPanel : ServerPanelPluginBase
 "@
@@ -151,7 +151,7 @@ function Convert-Panel {
 
     # --- Extension-method permission bridge ----------------------------------
     $text = $text.Replace("internal static Permission perm;", "internal static HarmonyPermissionHelper perm;")
-    $text = $text.Replace("perm ??= Interface.Oxide.GetLibrary<Permission>();", "perm ??= ServerPanelHost.Instance?.Permission;")
+    $text = $text.Replace("perm ??= HarmonyModInterface.Mods.GetLibrary<Permission>();", "perm ??= ServerPanelHost.Instance?.Permission;")
 
     [System.IO.File]::WriteAllText($dst, $text)
     Write-Host "Wrote $dst"
@@ -159,23 +159,23 @@ function Convert-Panel {
 }
 
 function Convert-PopUps {
-    $src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\ServerPanelPopUps.cs"
+    $src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\ServerPanelPopUps.cs"
     $dst = Join-Path $PSScriptRoot "ServerPanelPopUps.cs"
     if (-not (Test-Path $src)) { throw "Source not found: $src" }
     $text = [System.IO.File]::ReadAllText($src)
 
-    foreach ($using in @("using Oxide.Core;", "using Oxide.Core.Libraries;", "using Oxide.Core.Libraries.Covalence;", "using Oxide.Core.Plugins;")) {
+    foreach ($using in @("using Harmony.Core;", "using Harmony.Core.Libraries;", "using Harmony.Core.Libraries.Covalence;", "using Harmony.Core.Plugins;")) {
         $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
     }
-    $text = $text.Replace("using Oxide.Plugins.ServerPanelPopUpsExtensionMethods;", "using ServerPanelHarmony.ServerPanelPopUpsExtensionMethods;")
-    $text = $text.Replace("namespace Oxide.Plugins.ServerPanelPopUpsExtensionMethods", "namespace ServerPanelHarmony.ServerPanelPopUpsExtensionMethods")
-    $text = $text.Replace("namespace Oxide.Plugins", "namespace ServerPanelHarmony")
+    $text = $text.Replace("using Harmony.Plugins.ServerPanelPopUpsExtensionMethods;", "using ServerPanelHarmony.ServerPanelPopUpsExtensionMethods;")
+    $text = $text.Replace("namespace Harmony.Plugins.ServerPanelPopUpsExtensionMethods", "namespace ServerPanelHarmony.ServerPanelPopUpsExtensionMethods")
+    $text = $text.Replace("namespace Harmony.Plugins", "namespace ServerPanelHarmony")
 
     # ServerPanel PopUps ships its own copy of the shared CUI helper classes; the ServerPanel file
     # already declares them at namespace level, so drop the duplicate here.
     $newClass = @"
     /// <summary>
-    /// ServerPanel Pop Ups 2.0.20 ported for Harmony (no Oxide), hosted by the ServerPanel mod.
+    /// ServerPanel Pop Ups 2.0.20 ported for Harmony (Harmony-only), hosted by the ServerPanel mod.
     /// </summary>
     public class ServerPanelPopUps : ServerPanelPluginBase
 "@
@@ -245,7 +245,7 @@ function Convert-PopUps {
     $text = [regex]::Replace($text, $unloadEnd, { param($m) $m.Groups[1].Value + $harmonyLifecycle }, 1)
 
     $text = $text.Replace("internal static Permission perm;", "internal static HarmonyPermissionHelper perm;")
-    $text = $text.Replace("perm ??= Interface.Oxide.GetLibrary<Permission>();", "perm ??= ServerPanelHost.Instance?.Permission;")
+    $text = $text.Replace("perm ??= HarmonyModInterface.Mods.GetLibrary<Permission>();", "perm ??= ServerPanelHost.Instance?.Permission;")
 
     [System.IO.File]::WriteAllText($dst, $text)
     Write-Host "Wrote $dst"
@@ -256,12 +256,12 @@ $panel = Convert-Panel
 $popups = Convert-PopUps
 
 $checks = @(
-    @{ Name = "using Oxide.Core"; Pattern = "using Oxide\.Core" },
+    @{ Name = "using Harmony.Core"; Pattern = "using Oxide\.Core" },
     @{ Name = "RustPlugin"; Pattern = "RustPlugin" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "[ChatCommand]"; Pattern = "\[ChatCommand" },
     @{ Name = "[PluginReference]"; Pattern = "\[PluginReference" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "GetLibrary<Permission>"; Pattern = "GetLibrary<Permission>" },
     @{ Name = "static Permission perm"; Pattern = "static Permission perm" },
     @{ Name = "HarmonyInit"; Pattern = "HarmonyInit" }

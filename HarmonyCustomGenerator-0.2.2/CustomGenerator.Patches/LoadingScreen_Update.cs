@@ -12,8 +12,11 @@ internal static class LoadingScreen_Update
 {
 	private static MethodBase TargetMethod()
 	{
-		return AccessTools.Method(typeof(LoadingScreen), "Update", new Type[1] { typeof(string) }, (Type[])null);
+		var type = AccessTools.TypeByName("LoadingScreen") ?? typeof(LoadingScreen);
+		return AccessTools.Method(type, "Update", new Type[] { typeof(string) });
 	}
+
+	private static bool Prepare() => TargetMethod() != null;
 
 	private static void Prefix(ref string strType)
 	{

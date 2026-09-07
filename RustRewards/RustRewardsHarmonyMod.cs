@@ -1,10 +1,19 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
+using GrimmRewards.Patches;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace RustRewardsHarmony
 {
@@ -35,7 +44,9 @@ namespace RustRewardsHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             RustRewardsHost.Init(root);
             _plugin = new RustRewards();
@@ -126,6 +137,7 @@ namespace RustRewardsHarmony
             RustRewardsHost.Shutdown();
             _plugin = null;
             _pluginWrapper = null;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
         }
 
@@ -149,7 +161,7 @@ namespace RustRewardsHarmony
             catch { }
         }
 
-        /// <summary>Oxide-style Call surface (IsBotReSpawn, GetNPCType, IsNight, HappyHour, etc.).</summary>
+        /// <summary>compat-style Call surface (IsBotReSpawn, GetNPCType, IsNight, HappyHour, etc.).</summary>
         public object Call(string method, params object[] args)
         {
             if (_plugin == null || string.IsNullOrEmpty(method)) return null;

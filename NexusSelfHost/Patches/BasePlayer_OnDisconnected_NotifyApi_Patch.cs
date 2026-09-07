@@ -1,4 +1,5 @@
 using System;
+using NexusSelfHost;
 using System.Net.Http;
 using System.Reflection;
 using System.Text;
@@ -48,8 +49,7 @@ namespace NexusSelfHost.Patches
 
         static void Postfix(object __instance)
         {
-            if (__instance == null) return;
-            if (string.Equals(Environment.GetEnvironmentVariable("NEXUS_NOTIFY_PLAYER_DISCONNECT"), "0", StringComparison.OrdinalIgnoreCase))
+            if (!NexusSelfHostOptions.NotifyPlayerDisconnect)
                 return;
 
             // NexusServer.TransferEntityImpl: RegisterTransfers(toZone) runs before KickAfterServerTransfer.

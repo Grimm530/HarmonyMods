@@ -4,19 +4,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.MovementSpeed;
+using HarmonyPlugin = Harmony.Plugins.MovementSpeed;
 
 namespace MovementSpeedHarmony
 {
     /// <summary>
     /// Harmony entry for MovementSpeed 1.0.9. Exposes Add/Remove run+swim boosts for SkillTree RoadRunner
-    /// via AppDomain MovementSpeed_ApiType (static methods) that SkillTree PluginManager.Find resolves.
+    /// via AppDomain MovementSpeed_ApiType (static methods) that SkillTree ModManager.Find resolves.
     /// Config: HarmonyConfig/MovementSpeed.json
     /// </summary>
     public class MovementSpeedMod : IHarmonyModHooks
     {
         public static MovementSpeedMod Instance { get; private set; }
-        public static OxidePlugin Plugin { get; private set; }
+        public static HarmonyPlugin Plugin { get; private set; }
 
         public const string AppDomainApiKey = "MovementSpeed_ApiType";
         public const string AppDomainReadyCallbacksKey = "MovementSpeed_ReadyCallbacks";
@@ -33,7 +33,7 @@ namespace MovementSpeedHarmony
 
             try
             {
-                Plugin = new OxidePlugin();
+                Plugin = new HarmonyPlugin();
                 Plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -311,7 +311,7 @@ namespace MovementSpeedHarmony
     }
 }
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class MovementSpeed
     {

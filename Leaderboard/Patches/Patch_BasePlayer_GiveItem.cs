@@ -7,7 +7,7 @@ public static class Patch_BasePlayer_GiveItem
 {
     static void Postfix(BasePlayer __instance, Item item, BaseEntity.GiveItemReason reason)
     {
-        if (__instance == null || item?.info == null) return;
+        if (item?.info == null) return;
         if (!SteamIdHelper.IsSteamId(__instance.userID)) return;
 
         var mod = LeaderboardMod.Instance;

@@ -7,7 +7,6 @@ public static class Patch_BaseCombatEntity_Die
 {
     static void Postfix(BaseCombatEntity __instance, HitInfo info)
     {
-        if (__instance == null) return;
         var mod = LeaderboardMod.Instance;
         if (mod == null) return;
 

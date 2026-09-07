@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using ConVar;
 using CompanionServer;
@@ -63,6 +64,7 @@ namespace BetterChatHarmony
             StartPeriodicSave();
 
             Debug.Log("[BetterChat] Loaded. Groups/titles + coloured names/messages. Config: HarmonyConfig/BetterChat.json");
+            Debug.Log("[BetterChat] Give notices hidden (NoGiveNotices): Chat.Broadcast / BroadcastPlayerAction / Record");
             Debug.Log("[BetterChat] Chat: /chat  /colour  /colours  /mcolour  /mcolours   Console: betterchat");
             LogConfigSummary();
             LogPermissionsLink();
@@ -536,14 +538,177 @@ namespace BetterChatHarmony
 
         public void SendFormatted(BetterChatMessage chatMessage, Chat.ChatChannel channel)
         {
+            if (chatMessage?.Player == null) return;
+
+            // BetterChat owns sayImpl (Priority.High) and skips ChatTranslator's prefix.
+            // Translate per recipient here so foreign chat reaches English clients.
+            if (IsChatTranslatorActive())
+            {
+                SendFormattedTranslated(chatMessage, channel);
+                return;
+            }
+
+            SendFormattedImmediate(chatMessage, channel, chatMessage.Message);
+        }
+
+        /// <summary>
+        /// Per-recipient translation via ChatTranslator, then BetterChat titles/colours.
+        /// RCON/Discord relay uses server-default language (empty targetId → en).
+        /// </summary>
+        private void SendFormattedTranslated(BetterChatMessage chatMessage, Chat.ChatChannel channel)
+        {
+            var player = chatMessage.Player;
+            var originalMessage = chatMessage.Message ?? "";
+            var senderId = player.UserIDString;
+            bool translateForSender = GetChatTranslatorBool("TranslateForSender", false);
+            bool showBoth = GetChatTranslatorBool("ShowBothMessages", false);
+
+            // Card table chat: keep original (matches ChatTranslator standalone behaviour).
+            if (channel == Chat.ChatChannel.Cards)
+            {
+                SendFormattedImmediate(chatMessage, channel, originalMessage);
+                return;
+            }
+
+            // One relay line in server default language for Discord / RCON consumers.
+            TranslateViaChatTranslator(originalMessage, string.Empty, senderId, relayText =>
+            {
+                var relay = string.IsNullOrEmpty(relayText) ? originalMessage : relayText;
+                RecordChatEntry(chatMessage, channel, relay);
+            });
+
+            switch (channel)
+            {
+                case Chat.ChatChannel.Team:
+                {
+                    var team = RelationshipManager.ServerInstance?.FindPlayersTeam(player.userID) ?? player.Team;
+                    if (team == null) return;
+                    var output = RenderWithMessage(chatMessage, originalMessage);
+                    string name = (output.Username ?? player.displayName).EscapeRichText();
+                    string msg = output.Message ?? originalMessage;
+                    string color = output.Color ?? "#55aaff";
+                    team.BroadcastTeamChat(player.userID, name, msg, color);
+                    var connections = team.GetOnlineMemberConnections();
+                    if (connections == null) return;
+                    for (int i = 0; i < connections.Count; i++)
+                    {
+                        var conn = connections[i];
+                        var target = conn?.player as BasePlayer;
+                        if (target == null || !target.IsConnected) continue;
+                        DeliverTranslatedLine(chatMessage, channel, player, target, originalMessage,
+                            senderId, translateForSender, showBoth, conn);
+                    }
+                    return;
+                }
+                case Chat.ChatChannel.Clan:
+                {
+                    if (player.clanId == 0 || ClanManager.ServerInstance == null) return;
+                    if (!ClanManager.ServerInstance.TryGetClanMemberConnections(player.clanId, out var clanConns) ||
+                        clanConns == null || clanConns.Count == 0)
+                        return;
+                    for (int i = 0; i < clanConns.Count; i++)
+                    {
+                        var conn = clanConns[i];
+                        var target = conn?.player as BasePlayer;
+                        if (target == null || !target.IsConnected) continue;
+                        DeliverTranslatedLine(chatMessage, channel, player, target, originalMessage,
+                            senderId, translateForSender, showBoth, conn);
+                    }
+                    return;
+                }
+                case Chat.ChatChannel.Local:
+                {
+                    float rangeSq = Chat.localChatRange * Chat.localChatRange;
+                    var blocked = chatMessage.BlockedReceivers;
+                    var senderPos = player.transform.position;
+                    foreach (var target in BasePlayer.activePlayerList)
+                    {
+                        if (target == null || !target.IsConnected) continue;
+                        if (IsBlocked(blocked, target.UserIDString)) continue;
+                        float sqr = (senderPos - target.transform.position).sqrMagnitude;
+                        if (sqr > rangeSq) continue;
+                        DeliverTranslatedLine(chatMessage, channel, player, target, originalMessage,
+                            senderId, translateForSender, showBoth, null);
+                    }
+                    return;
+                }
+                default:
+                {
+                    var blocked = chatMessage.BlockedReceivers;
+                    foreach (var target in BasePlayer.activePlayerList)
+                    {
+                        if (target == null || !target.IsConnected) continue;
+                        if (IsBlocked(blocked, target.UserIDString)) continue;
+                        DeliverTranslatedLine(chatMessage, channel, player, target, originalMessage,
+                            senderId, translateForSender, showBoth, null);
+                    }
+                    return;
+                }
+            }
+        }
+
+        private void DeliverTranslatedLine(
+            BetterChatMessage template,
+            Chat.ChatChannel channel,
+            BasePlayer sender,
+            BasePlayer target,
+            string originalMessage,
+            string senderId,
+            bool translateForSender,
+            bool showBoth,
+            Network.Connection conn)
+        {
+            if (target == null || !target.IsConnected) return;
+
+            if (ReferenceEquals(sender, target) && !translateForSender)
+            {
+                SendLineTo(template, channel, originalMessage, target, conn);
+                return;
+            }
+
+            TranslateViaChatTranslator(originalMessage, target.UserIDString, senderId, translated =>
+            {
+                if (target == null || !target.IsConnected) return;
+                var text = string.IsNullOrEmpty(translated) ? originalMessage : translated;
+                if (showBoth && !string.Equals(text, originalMessage, StringComparison.Ordinal))
+                    text = originalMessage + "\n" + text;
+                SendLineTo(template, channel, text, target, conn);
+            });
+        }
+
+        private static void SendLineTo(
+            BetterChatMessage template,
+            Chat.ChatChannel channel,
+            string messageBody,
+            BasePlayer target,
+            Network.Connection conn)
+        {
+            var output = RenderWithMessage(template, messageBody);
+            string line = output.Chat;
+            if (string.IsNullOrEmpty(line))
+            {
+                string name = (output.Username ?? template.Player?.displayName ?? "?").EscapeRichText();
+                line = name + ": " + (output.Message ?? messageBody);
+            }
+
+            int ch = (int)channel;
+            ulong userId = template.Player != null ? template.Player.userID : 0UL;
+            if (conn != null)
+                ConsoleNetwork.SendClientCommand(conn, "chat.add", ch, userId, line);
+            else if (target != null && target.IsConnected)
+                target.SendConsoleCommand("chat.add", ch, userId, line);
+        }
+
+        private void SendFormattedImmediate(BetterChatMessage chatMessage, Chat.ChatChannel channel, string messageBody)
+        {
             var player = chatMessage.Player;
             if (player == null) return;
-            var output = chatMessage.GetOutput();
+            var output = RenderWithMessage(chatMessage, messageBody);
             ulong userId = player.userID;
             string userIdString = player.UserIDString;
             int ch = (int)channel;
             string name = (output.Username ?? player.displayName).EscapeRichText();
-            string msg = output.Message ?? chatMessage.Message;
+            string msg = output.Message ?? messageBody;
             string color = output.Color ?? "#55aaff";
             // chat.add2 name is overwritten by the client when steamid matches a connected
             // player. chat.add puts the whole formatted line in the message body (Oxide BetterChat).
@@ -619,17 +784,102 @@ namespace BetterChatHarmony
                 }
             }
 
+            RecordChatEntry(chatMessage, channel, messageBody);
+        }
+
+        private static ChatRenderOutput RenderWithMessage(BetterChatMessage template, string messageBody)
+        {
+            var saved = template.Message;
+            template.Message = messageBody ?? "";
+            var output = template.GetOutput();
+            template.Message = saved;
+            return output;
+        }
+
+        private static void RecordChatEntry(BetterChatMessage chatMessage, Chat.ChatChannel channel, string messageBody)
+        {
+            var player = chatMessage?.Player;
+            if (player == null) return;
+            var output = RenderWithMessage(chatMessage, messageBody);
+            string color = output.Color ?? "#55aaff";
             Debug.Log("[" + channel + "] " + output.Console);
             int unixTime = (int)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
             Chat.Record(new Chat.ChatEntry
             {
                 Channel = channel,
                 Message = output.Console,
-                UserId = userIdString,
+                UserId = player.UserIDString,
                 Username = player.displayName,
                 Color = color,
                 Time = unixTime
             });
+        }
+
+        private static bool IsChatTranslatorActive()
+        {
+            try
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    var t = asm.GetType("ChatTranslator.ChatTranslatorMod");
+                    if (t == null) continue;
+                    var inst = t.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                    if (inst == null) return false;
+                    var api = t.GetMethod("IsTranslationAPIAvailable", BindingFlags.Public | BindingFlags.Static);
+                    if (api != null && api.Invoke(null, null) is bool ok)
+                        return ok;
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static void TranslateViaChatTranslator(string message, string targetId, string senderId, Action<string> callback)
+        {
+            if (callback == null) return;
+            try
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    var t = asm.GetType("ChatTranslator.ChatTranslatorMod");
+                    if (t == null) continue;
+                    var m = t.GetMethod("Translate", BindingFlags.Public | BindingFlags.Static);
+                    if (m == null) continue;
+                    m.Invoke(null, new object[] { message ?? "", targetId ?? "", senderId ?? "", callback });
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[BetterChat] ChatTranslator: " + ex.Message);
+            }
+            callback(message ?? "");
+        }
+
+        private static bool GetChatTranslatorBool(string configPropertyName, bool fallback)
+        {
+            try
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    var cfgType = asm.GetType("ChatTranslator.ChatTranslatorConfig");
+                    if (cfgType == null) continue;
+                    var configProp = cfgType.GetProperty("Config", BindingFlags.Public | BindingFlags.Static);
+                    var config = configProp?.GetValue(null);
+                    if (config == null) return fallback;
+                    // ConfigData uses JsonProperty names; map common keys to C# property names.
+                    string propName = configPropertyName;
+                    if (configPropertyName == "TranslateForSender") propName = "TranslateForSender";
+                    else if (configPropertyName == "ShowBothMessages") propName = "ShowBothMessages";
+                    var p = config.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+                    if (p != null && p.GetValue(config) is bool b)
+                        return b;
+                    return fallback;
+                }
+            }
+            catch { }
+            return fallback;
         }
 
         private static bool IsBlocked(List<string> blocked, string id)

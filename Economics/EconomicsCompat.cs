@@ -1,6 +1,6 @@
 /*
- * Harmony shims so the ported Economics Extended 3.10.4 can run without Oxide/Carbon.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims so the ported Economics Extended 3.10.4 can run without legacy plugin host/Carbon.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -93,7 +93,7 @@ namespace EconomicsHarmony
     }
 
     /// <summary>
-    /// Offline Steam account stub — Oxide covalence keeps these in allPlayers after join;
+    /// Offline Steam account stub — compat covalence keeps these in allPlayers after join;
     /// without that DB, we still need Steam64 targets for admin deposit/setbalance/withdraw.
     /// </summary>
     public class OfflinePlayerWrapper : IPlayer
@@ -529,7 +529,7 @@ namespace EconomicsHarmony
     {
         public Plugin Find(string name)
         {
-            // Optional Oxide plugins (PlaytimeTracker / DiscordMessages) — no Harmony ports yet.
+            // Optional Harmony mods (PlaytimeTracker / DiscordMessages) — no Harmony ports yet.
             return null;
         }
     }
@@ -850,21 +850,21 @@ namespace EconomicsHarmony
 
     #endregion
 
-    #region Interface / Oxide stub
+    #region Interface / mod runtime stub
 
-    public class OxideStub
+    public class ModRuntimeStub
     {
-        public DataFileSystem DataFileSystem => Interface.DataFileSystem;
+        public DataFileSystem DataFileSystem => HarmonyModInterface.DataFileSystem;
         public string DataDirectory => EconomicsHost.Instance?.DataDirectory ?? "";
         public void LogError(string message) => Debug.LogError("[Economics] " + message);
         public object CallHook(string name, params object[] args) => null;
-        public void NextTick(Action action) => Interface.NextTick(action);
+        public void NextTick(Action action) => HarmonyModInterface.NextTick(action);
     }
 
-    public static class Interface
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
-        public static OxideStub Oxide { get; } = new OxideStub();
+        public static ModRuntimeStub Mods { get; } = new ModRuntimeStub();
 
         public static object CallHook(string name, params object[] args) => null;
         public static object Call(string name, params object[] args) => null;
@@ -944,7 +944,7 @@ namespace EconomicsHarmony
                 }
                 try
                 {
-                    Interface.NextTick(() =>
+                    HarmonyModInterface.NextTick(() =>
                     {
                         try { callback?.Invoke(code, response); }
                         catch (Exception ex) { Debug.LogWarning("[Economics] webrequest callback: " + ex.Message); }
@@ -988,7 +988,7 @@ namespace EconomicsHarmony
             Directory.CreateDirectory(Path.Combine(modData, "logs"));
             Instance.DataDirectory = dataDir;
             Instance.ModDataDirectory = modData;
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
 
             var configPath = Path.Combine(configDir, "Economics.json");
             JToken data = null;

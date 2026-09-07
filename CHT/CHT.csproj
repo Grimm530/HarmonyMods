@@ -39,4 +39,13 @@
     <Reference Include="UnityEngine.TerrainModule"><HintPath>$(RustManaged)\UnityEngine.TerrainModule.dll</HintPath></Reference>
     <Reference Include="UnityEngine.TerrainPhysicsModule"><HintPath>$(RustManaged)\UnityEngine.TerrainPhysicsModule.dll</HintPath></Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="CHT\RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="CHT\Patches\CuiEndtestPatch.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="CHT\Patches\CuiEndtestRebind.cs" /></ItemGroup>
 </Project>

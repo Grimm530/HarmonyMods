@@ -29,14 +29,14 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Oxide.Game.Rust.Cui;
+using Game.Rust.Cui;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace RustVehiclesGUIHarmony
 {
     /// <summary>
-    /// RustVehiclesGUI 1.0.5 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// RustVehiclesGUI 1.0.5 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// Vehicle purchases and spawns are delegated to the RustVehicles Harmony mod.
     /// </summary>
     [Info("Rust Vehicles GUI", "Grimm530", "1.0.5")]
@@ -168,6 +168,7 @@ namespace RustVehiclesGUIHarmony
                 ["CorePluginNotLoaded"] = "Vehicle system plugin is not loaded!",
                 ["NoPermission"] = "You don't have permission to use vehicles!",
                 ["VipOnly"] = "This vehicle is VIP only.",
+                ["ShopVipOnly"] = "VIP only",
                 ["PickupRequiresRustVehicles"] = "Please purchase RustVehicles to use this feature.",
                 ["ImageRegistry"] = "Image registry: {0} keys (see server log)",
 
@@ -199,7 +200,7 @@ namespace RustVehiclesGUIHarmony
                 ["Free"] = "Free",
                 ["UnknownPrice"] = "Unknown Price",
                 ["PriceUnknown"] = "Price Unknown",
-                ["AlreadyOwned"] = "Already Owned",
+                ["AlreadyOwned"] = "Already Purchased",
                 ["CurrentlySpawned"] = "Currently Spawned",
                 ["AvailableToSpawn"] = "Available to Spawn",
                 ["Available"] = "Available",
@@ -219,6 +220,7 @@ namespace RustVehiclesGUIHarmony
                 ["CorePluginNotLoaded"] = "Плагин транспортной системы не загружен!",
                 ["NoPermission"] = "У вас нет прав для использования транспорта!",
                 ["VipOnly"] = "Этот транспорт только для VIP.",
+                ["ShopVipOnly"] = "Только VIP",
                 ["PickupRequiresRustVehicles"] = "Для этой функции требуется RustVehicles.",
                 ["ImageRegistry"] = "Реестр изображений: {0} ключей (см. лог сервера)",
 
@@ -496,7 +498,7 @@ namespace RustVehiclesGUIHarmony
         }
 
 
-        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             LoadConfig();
@@ -580,6 +582,30 @@ namespace RustVehiclesGUIHarmony
         }
 
         #endregion
+
+        /// <summary>
+        /// Runs a RustVehicles chat handler on the server. CUI buttons cannot use
+        /// <c>SendConsoleCommand("chat.say", ...)</c> — the client does not send that back under Harmony.
+        /// </summary>
+        private void RunCoreChatCommand(BasePlayer player, string methodName, string command, params string[] args)
+        {
+            var core = CorePlugin;
+            if (core == null || !core.IsLoaded)
+            {
+                player.ChatMessage(Lang("CorePluginNotLoaded", player));
+                return;
+            }
+
+            try
+            {
+                core.Call(methodName, player, command, args ?? Array.Empty<string>());
+            }
+            catch (Exception ex)
+            {
+                DebugUI($"[CORE] {methodName} failed: {ex.Message}");
+                player.ChatMessage("[RustVehiclesGUI] Failed to run " + command);
+            }
+        }
 
         #region Console Commands
 
@@ -686,18 +712,7 @@ namespace RustVehiclesGUIHarmony
             ClearVehicleListCache(player.userID);
             _playerOwnedVehiclesCache.Remove(player.userID);
 
-            try
-            {
-                var buyCommand = $"/buy {vehicleType}";
-                if (player != null && !player.IsDestroyed && player.net?.connection != null)
-                {
-                    player.SendConsoleCommand("chat.say", buyCommand);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugUI($"[BUY] Error sending command: {ex.Message}");
-            }
+            RunCoreChatCommand(player, "CmdBuyVehicle", "buy", vehicleType);
         }
 
         [ConsoleCommand("vgui.clearcache")]
@@ -737,18 +752,7 @@ namespace RustVehiclesGUIHarmony
                 return;
             }
 
-            try
-            {
-                var spawnCommand = $"/spawn {vehicleType}";
-                if (player != null && !player.IsDestroyed && player.net?.connection != null)
-                {
-                    player.SendConsoleCommand("chat.say", spawnCommand);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugUI($"[SPAWN] Error sending command: {ex.Message}");
-            }
+            RunCoreChatCommand(player, "CmdSpawnVehicle", "spawn", vehicleType);
         }
 
         [ConsoleCommand("vgui.recall")]
@@ -792,19 +796,7 @@ namespace RustVehiclesGUIHarmony
 
             DestroyAllUI(player);
 
-            try
-            {
-                var recallCommand = $"/recall {vehicleType}";
-                DebugUI($"[RECALL] Sending command: '{recallCommand}'");
-                if (player != null && !player.IsDestroyed && player.net?.connection != null)
-                {
-                    player.SendConsoleCommand("chat.say", recallCommand);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugUI($"[RECALL] Error sending command: {ex.Message}");
-            }
+            RunCoreChatCommand(player, "CmdRecallVehicle", "recall", vehicleType);
         }
 
         [ConsoleCommand("vgui.pickup")]
@@ -854,19 +846,7 @@ namespace RustVehiclesGUIHarmony
 
             DestroyAllUI(player);
 
-            try
-            {
-                var pickupCommand = "/pickup";
-                DebugUI($"[PICKUP] Sending command: '{pickupCommand}'");
-                if (player != null && !player.IsDestroyed && player.net?.connection != null)
-                {
-                    player.SendConsoleCommand("chat.say", pickupCommand);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugUI($"[PICKUP] Error sending command: {ex.Message}");
-            }
+            RunCoreChatCommand(player, "CmdPickup", "pickup");
         }
 
         [ConsoleCommand("vgui.kill")]
@@ -883,18 +863,7 @@ namespace RustVehiclesGUIHarmony
 
             DestroyAllUI(player);
 
-            try
-            {
-                var killCommand = $"/kill {vehicleType}";
-                if (player != null && !player.IsDestroyed && player.net?.connection != null)
-                {
-                    player.SendConsoleCommand("chat.say", killCommand);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugUI($"[KILL] Error sending command: {ex.Message}");
-            }
+            RunCoreChatCommand(player, "CmdKillVehicle", "kill", vehicleType);
         }
 
         [ConsoleCommand("vgui.close")]
@@ -1316,7 +1285,8 @@ namespace RustVehiclesGUIHarmony
                 DebugServerPanel($"[SERVERPANEL] RefreshServerPanelContent: Cleared image queue for player {player.userID}");
             }
             
-            if (ServerPanel != null && ServerPanel.IsLoaded)
+            var panel = ServerPanel;
+            if (panel != null && panel.IsLoaded)
             {
                 NextTick(() =>
                 {
@@ -1326,9 +1296,12 @@ namespace RustVehiclesGUIHarmony
                         return;
                     }
                     
-                    DebugServerPanel($"[SERVERPANEL] RefreshServerPanelContent: Refreshing ServerPanel page 0 (internal page: {_playerShopPage.GetValueOrDefault(player.userID, 0) + 1})");
-                    
-                    RustVehiclesGUIHost.RunPlayerConsoleCommand(player, "UI_ServerPanel", "menu", "page", "0");
+                    DebugServerPanel($"[SERVERPANEL] RefreshServerPanelContent: Refreshing ServerPanel content (internal page: {_playerShopPage.GetValueOrDefault(player.userID, 0) + 1})");
+
+                    // Harmony CUI never registers UI_ServerPanel in ConsoleSystem.Index.Server.Dict.
+                    // Oxide used SendConsoleCommand; the Harmony port must redraw via ServerPanel's API
+                    // so Buy/Manage/pagination actually rebuild the plugin page.
+                    panel.Call("API_OnServerPanelRefreshContent", player);
                 });
             }
             else
@@ -1884,37 +1857,45 @@ namespace RustVehiclesGUIHarmony
 					elements.Add(noImageText.GetText(Lang("AddImage", player, suggestion), $"vehicle_{i}"));
 				}
 
+                var textBack = new ImageSettings
+                {
+                    AnchorMin = "0.03 0.11",
+                    AnchorMax = "0.97 0.33",
+                    Color = IColor.CreateTransparent()
+                };
+                elements.Add(textBack.GetImage($"vehicle_{i}", $"vehicle_{i}_textback"));
+
                 var nameText = new TextSettings
                 {
                     AnchorMin = "0.05 0.22",
                     AnchorMax = "0.95 0.32",
-                    FontSize = 10,
+                    FontSize = 11,
                     IsBold = true,
                     Align = TextAnchor.MiddleCenter,
                     Color = IColor.CreateWhite()
                 };
 
-                elements.Add(nameText.GetText(vehicle.DisplayName, $"vehicle_{i}"));
+                elements.Add(WithTextOutline(nameText.GetText(vehicle.DisplayName, $"vehicle_{i}", $"vehicle_{i}_name")));
 
                 var infoText = new TextSettings
                 {
                     AnchorMin = "0.05 0.12",
                     AnchorMax = "0.95 0.22",
-                    FontSize = 8,
+                    FontSize = 10,
+                    IsBold = true,
                     Align = TextAnchor.MiddleCenter,
-                    Color = isShop ? (vehicle.CanAfford ? IColor.Create("#90EE90") : IColor.Create("#FF6B6B")) : IColor.Create("#87CEEB")
+                    Color = GetShopStatusTextColor(vehicle, isShop)
                 };
 
-                elements.Add(infoText.GetText(vehicle.StatusInfo, $"vehicle_{i}"));
+                elements.Add(WithTextOutline(infoText.GetText(vehicle.StatusInfo, $"vehicle_{i}", $"vehicle_{i}_status")));
 
                 if (isShop)
                 {
-                    var buttonColor = vehicle.CanAfford ? "#5cb85c" : "#d9534f";
                     var actionButton = new ButtonSettings
                     {
                         AnchorMin = "0.40 0.02",
                         AnchorMax = "0.60 0.1",
-                        ButtonColor = IColor.Create(buttonColor),
+                        ButtonColor = IColor.Create(GetShopBuyButtonColor(vehicle)),
                         Color = IColor.CreateWhite(),
                         FontSize = 8,
                         IsBold = true,
@@ -2641,7 +2622,7 @@ namespace RustVehiclesGUIHarmony
 
 		private string GetCoreConfigPath()
 		{
-			var cfgDir = Interface.Oxide.ConfigDirectory;
+			var cfgDir = HarmonyModInterface.Mods.ConfigDirectory;
 			var rv = $"{cfgDir}/RustVehicles.json";
 			var vl = $"{cfgDir}/VehicleLicence.json";
 
@@ -2699,7 +2680,7 @@ namespace RustVehiclesGUIHarmony
 
 		private string GetCoreDataPath()
 		{
-			var dataDir = Interface.Oxide.DataDirectory;
+			var dataDir = HarmonyModInterface.Mods.DataDirectory;
 			var rv = $"{dataDir}/RustVehicles/RustVehicles.json";
 			var vl = $"{dataDir}/VehicleLicence/VehicleLicence.json";
 
@@ -2753,6 +2734,59 @@ namespace RustVehiclesGUIHarmony
             }
 
             return true;
+        }
+
+        private static string GetShopBuyButtonColor(VehicleDisplayInfo vehicle)
+        {
+            if (vehicle.IsOwned) return "#f0ad4e";
+            if (vehicle.CanAfford) return "#5cb85c";
+            return "#d9534f";
+        }
+
+        private static IColor GetShopStatusTextColor(VehicleDisplayInfo vehicle, bool isShop)
+        {
+            if (!isShop)
+                return IColor.CreateWhite();
+            if (vehicle.IsOwned)
+                return IColor.Create("#FFD27A");
+            if (!vehicle.HasPermission || !vehicle.CanAfford)
+                return IColor.Create("#FFE566");
+            return IColor.CreateWhite();
+        }
+
+        private static CuiElement WithTextOutline(CuiElement element)
+        {
+            if (element?.Components == null)
+                return element;
+            element.Components.Add(new CuiOutlineComponent
+            {
+                Color = "0 0 0 1",
+                Distance = "1.5 -1.5"
+            });
+            return element;
+        }
+
+        private void ApplyShopPurchaseLabels(VehicleDisplayInfo vehicle, BasePlayer player, string permissionType, bool isOwned, string priceInfo, bool canAfford)
+        {
+            vehicle.IsOwned = isOwned;
+            vehicle.HasPermission = player == null || HasVehiclePermission(player, permissionType);
+
+            if (isOwned)
+            {
+                vehicle.CanAfford = false;
+                vehicle.StatusInfo = Lang("AlreadyOwned", player);
+                return;
+            }
+
+            if (!vehicle.HasPermission)
+            {
+                vehicle.CanAfford = false;
+                vehicle.StatusInfo = Lang("ShopVipOnly", player);
+                return;
+            }
+
+            vehicle.CanAfford = canAfford;
+            vehicle.StatusInfo = priceInfo;
         }
 
         private string GetPlayerInfo(BasePlayer player)
@@ -3070,30 +3104,18 @@ namespace RustVehiclesGUIHarmony
                 
                 var priceInfo = GetConfigPriceInfo(vData, player);
                 var canAfford = CanPlayerAfford(player, vData);
-                
-                if (isOwned)
-                {
-                    canAfford = false;
-                    priceInfo = Lang("AlreadyOwned", player);
-                    DebugUI($"[VEHICLE OWNERSHIP] Setting {vehicleType} to unaffordable (already owned)");
-                }
-                else if (player != null && !HasVehiclePermission(player, vehicleType))
-                {
-                    canAfford = false;
-                }
-                
                 var vehicleCategory = DetermineVehicleCategory(vehicleType, displayName);
 
-                return new VehicleDisplayInfo
+                var vehicle = new VehicleDisplayInfo
                 {
                     VehicleType = vehicleType,
                     DisplayName = displayName,
                     Image = null /* deferred */,
-                    StatusInfo = priceInfo,
-                    CanAfford = canAfford,
                     IsSpawned = false,
                     Category = vehicleCategory
                 };
+                ApplyShopPurchaseLabels(vehicle, player, vehicleType, isOwned, priceInfo, canAfford);
+                return vehicle;
             }
             catch (Exception ex)
             {
@@ -3172,31 +3194,19 @@ namespace RustVehiclesGUIHarmony
                 
                 var priceInfo = GetConfigPriceInfoFromJObject(vehicleData, player);
                 var canAfford = CanPlayerAffordFromJObject(player, vehicleData);
-                
-                if (isOwned)
-                {
-                    canAfford = false;
-                    priceInfo = Lang("AlreadyOwned", player);
-                    DebugUI($"[VEHICLE OWNERSHIP] Setting {vehicleType} to unaffordable (already owned)");
-                }
-                else if (player != null && !HasVehiclePermission(player, actualVehicleType))
-                {
-                    canAfford = false;
-                }
-                
                 var vehicleCategory = DetermineVehicleCategory(actualVehicleType, displayName);
 
-				return new VehicleDisplayInfo
+				var vehicle = new VehicleDisplayInfo
                 {
 					VehicleType = actualVehicleType,
 					DisplayName = displayName,
                     Image = null,
-                    StatusInfo = priceInfo,
-                    CanAfford = canAfford,
                     IsSpawned = false,
 					Category = vehicleCategory,
 					ImageKey = GetImageKeyFromSection(vehicleType)
                 };
+                ApplyShopPurchaseLabels(vehicle, player, actualVehicleType, isOwned, priceInfo, canAfford);
+                return vehicle;
             }
             catch (Exception ex)
             {
@@ -3834,7 +3844,7 @@ namespace RustVehiclesGUIHarmony
                 
                 if (player != null && !HasVehiclePermission(player, vehicle.VehicleType))
                 {
-                    vehicle.CanAfford = false;
+                    ApplyShopPurchaseLabels(vehicle, player, vehicle.VehicleType, false, vehicle.StatusInfo, vehicle.CanAfford);
                 }
                 
                 if (category == "all" || vehicle.Category == category)
@@ -3853,7 +3863,7 @@ namespace RustVehiclesGUIHarmony
             
             try
             {
-                var configPath = $"{Interface.Oxide.ConfigDirectory}/KaruzaCatalog/KaruzaVehicleItemManager.cs";
+                var configPath = $"{HarmonyModInterface.Mods.ConfigDirectory}/KaruzaCatalog/KaruzaVehicleItemManager.cs";
                 if (!System.IO.File.Exists(configPath))
                 {
                     PrintWarning($"KaruzaVehicleItemManager.cs not found at: {configPath}");
@@ -3903,7 +3913,7 @@ namespace RustVehiclesGUIHarmony
             
             try
             {
-                var configPath = $"{Interface.Oxide.ConfigDirectory}/KaruzaCatalog/KaruzaVehicleItemManager.cs";
+                var configPath = $"{HarmonyModInterface.Mods.ConfigDirectory}/KaruzaCatalog/KaruzaVehicleItemManager.cs";
                 if (!System.IO.File.Exists(configPath))
                 {
                     DebugKaruzaVehicles($"KaruzaVehicleItemManager.cs not found at: {configPath}");
@@ -5117,7 +5127,7 @@ namespace RustVehiclesGUIHarmony
                     PrintWarning("Added missing Image Throttle configuration");
                 }
                 
-                var configPath = $"{Interface.Oxide.ConfigDirectory}/{Name}.json";
+                var configPath = $"{HarmonyModInterface.Mods.ConfigDirectory}/{Name}.json";
                 if (System.IO.File.Exists(configPath))
                 {
                     var rawJson = System.IO.File.ReadAllText(configPath);
@@ -5185,6 +5195,8 @@ namespace RustVehiclesGUIHarmony
             public string Image { get; set; }
             public string StatusInfo { get; set; }
             public bool CanAfford { get; set; }
+            public bool IsOwned { get; set; }
+            public bool HasPermission { get; set; } = true;
             public bool IsSpawned { get; set; }
             public string Category { get; set; } = "all";
             public string ImageKey { get; set; }
@@ -5599,34 +5611,42 @@ namespace RustVehiclesGUIHarmony
             };
             container.Add(imagePanel.GetImage(cardName, cardName + "_bg"));
 
+            var textBack = new ImageSettings
+            {
+                AnchorMin = "0.04 0.18",
+                AnchorMax = "0.96 0.42",
+                Color = IColor.CreateTransparent()
+            };
+            container.Add(textBack.GetImage(cardName, cardName + "_textback"));
+
             var nameText = new TextSettings
             {
                 AnchorMin = "0.05 0.30", 
                 AnchorMax = "0.95 0.40",
-                FontSize = 10,
+                FontSize = 11,
                 IsBold = true,
                 Align = TextAnchor.MiddleCenter,
-                Color = IColor.Create("#E2DBD3", 90)
+                Color = IColor.CreateWhite()
             };
-            container.Add(nameText.GetText(vehicle.DisplayName, cardName));
+            container.Add(WithTextOutline(nameText.GetText(vehicle.DisplayName, cardName, cardName + "_name")));
 
-            var statusColor = vehicle.CanAfford ? IColor.Create("#90EE90") : IColor.Create("#FF6B6B");
             var statusText = new TextSettings
             {
                 AnchorMin = "0.05 0.20", 
                 AnchorMax = "0.95 0.28",
-                FontSize = 8,
+                FontSize = 10,
+                IsBold = true,
                 Align = TextAnchor.MiddleCenter,
-                Color = statusColor
+                Color = GetShopStatusTextColor(vehicle, true)
             };
-            container.Add(statusText.GetText(vehicle.StatusInfo, cardName));
+            container.Add(WithTextOutline(statusText.GetText(vehicle.StatusInfo, cardName, cardName + "_status")));
 
 
             var buyButton = new ButtonSettings
             {
                 AnchorMin = "0.40 0.02", 
                 AnchorMax = "0.60 0.18",
-                ButtonColor = vehicle.CanAfford ? IColor.Create("#4a90e2") : IColor.Create("#666666"),
+                ButtonColor = IColor.Create(GetShopBuyButtonColor(vehicle)),
                 Color = IColor.CreateWhite(),
                 FontSize = 8,
                 IsBold = true,
@@ -5634,7 +5654,7 @@ namespace RustVehiclesGUIHarmony
             };
 
             var buttonText = vehicle.IsSpawned ? Lang("Spawned", player) : Lang("Buy", player);
-            var command = vehicle.CanAfford && !vehicle.IsSpawned ? $"vgui.buy {vehicle.VehicleType}" : string.Empty;
+            var command = vehicle.IsSpawned ? string.Empty : $"vgui.buy {vehicle.VehicleType}";
 
             container.AddRange(buyButton.GetButton(buttonText, command, cardName));
         }
@@ -5842,26 +5862,35 @@ namespace RustVehiclesGUIHarmony
             };
             container.Add(imagePanel.GetImage(cardName, cardName + "_bg"));
 
+            var textBack = new ImageSettings
+            {
+                AnchorMin = "0.04 0.14",
+                AnchorMax = "0.96 0.42",
+                Color = IColor.CreateTransparent()
+            };
+            container.Add(textBack.GetImage(cardName, cardName + "_textback"));
+
             var nameText = new TextSettings
             {
                 AnchorMin = "0.05 0.30", 
                 AnchorMax = "0.95 0.40",
-                FontSize = 10,
+                FontSize = 11,
                 IsBold = true,
                 Align = TextAnchor.MiddleCenter,
-                Color = IColor.Create("#E2DBD3", 90)
+                Color = IColor.CreateWhite()
             };
-            container.Add(nameText.GetText(vehicle.DisplayName, cardName));
+            container.Add(WithTextOutline(nameText.GetText(vehicle.DisplayName, cardName, cardName + "_name")));
 
             var statusText = new TextSettings
             {
                 AnchorMin = "0.05 0.16", 
                 AnchorMax = "0.95 0.27",
-                FontSize = 8,
+                FontSize = 10,
+                IsBold = true,
                 Align = TextAnchor.MiddleCenter,
-                Color = IColor.Create("#87CEEB", 90)
+                Color = IColor.CreateWhite()
             };
-            container.Add(statusText.GetText(vehicle.StatusInfo, cardName));
+            container.Add(WithTextOutline(statusText.GetText(vehicle.StatusInfo, cardName, cardName + "_status")));
 
             var buttonWidth = 0.18f;
             var buttonHeight = 0.12f;
@@ -5951,7 +5980,7 @@ namespace RustVehiclesGUIHarmony
         {
             try
             {
-                var imagesDir = System.IO.Path.Combine(Interface.Oxide.DataDirectory, "RustVehiclesGUI", "images");
+                var imagesDir = System.IO.Path.Combine(HarmonyModInterface.Mods.DataDirectory, "RustVehiclesGUI", "images");
                 if (!System.IO.Directory.Exists(imagesDir))
                 {
                     DebugUI($"[IMG] Local images directory not found: {imagesDir}");
@@ -6016,7 +6045,7 @@ namespace RustVehiclesGUIHarmony
                 if (string.IsNullOrEmpty(key)) return false;
                 if (_imageKeyToPngId.TryGetValue(key, out id) && id != 0) return true;
 
-                var imagesDir = System.IO.Path.Combine(Interface.Oxide.DataDirectory, "RustVehiclesGUI", "images");
+                var imagesDir = System.IO.Path.Combine(HarmonyModInterface.Mods.DataDirectory, "RustVehiclesGUI", "images");
                 if (!System.IO.Directory.Exists(imagesDir)) return false;
 
                 var candidates = new List<string>
@@ -6061,7 +6090,7 @@ namespace RustVehiclesGUIHarmony
 
         private string GetPlayerSettingsPath()
         {
-            var dataDir = System.IO.Path.Combine(Interface.Oxide.DataDirectory, "RustVehiclesGUI", "players");
+            var dataDir = System.IO.Path.Combine(HarmonyModInterface.Mods.DataDirectory, "RustVehiclesGUI", "players");
             if (!System.IO.Directory.Exists(dataDir))
             {
                 System.IO.Directory.CreateDirectory(dataDir);

@@ -5,14 +5,14 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos;
-using Oxide.Ext.Chaos.UIFramework;
+using Grimm.Chaos;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 using UnityEngine.UI;
 
-using Color = Oxide.Ext.Chaos.UIFramework.Color;
-using Font = Oxide.Ext.Chaos.UIFramework.Font;
-using UIAnchor = Oxide.Ext.Chaos.UIFramework.Anchor;
+using Color = Ext.Chaos.UIFramework.Color;
+using Font = Ext.Chaos.UIFramework.Font;
+using UIAnchor = Ext.Chaos.UIFramework.Anchor;
 
 namespace AutoCodeLockHarmony
 {
@@ -131,7 +131,7 @@ namespace AutoCodeLockHarmony
 
         public void OnEntitySpawnedCodeLock(CodeLock codeLock)
         {
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (!codeLock)
                     return;
@@ -142,7 +142,7 @@ namespace AutoCodeLockHarmony
 
         public void OnEntitySpawnedDoorCloser(DoorCloser doorCloser)
         {
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (!doorCloser)
                     return;
@@ -237,7 +237,7 @@ namespace AutoCodeLockHarmony
             if (playerData == null)
                 return;
 
-            Interface.NextTick(() =>
+            HarmonyModInterface.NextTick(() =>
             {
                 if (!player || !entity || entity.IsDestroyed)
                     return;
@@ -373,7 +373,7 @@ namespace AutoCodeLockHarmony
                 if (entity.OwnerID == 0UL)
                     entity.OwnerID = userId;
 
-                object externalPlugins = Interface.CallHook("CanAutoLock", player);
+                object externalPlugins = HarmonyModInterface.CallHook("CanAutoLock", player);
                 if (externalPlugins != null)
                 {
                     SendMessage(player, "Notification.NotLocked.Plugin",

@@ -6,7 +6,7 @@ using UnityEngine;
 namespace NexusSelfHost.Patches
 {
     /// <summary>
-    /// When the Nexus zone WebSocket (WSS) cannot connect (e.g. self-signed cert → UnityTls rejects it),
+    /// When the Nexus zone WebSocket (WSS) is down (API restart drops connections; self-signed cert; slow reconnect),
     /// NexusZoneClient.Update() runs every ~30s and calls DispatchError("Socket is not connected for zone X"),
     /// which spams the log. The zone socket is only for real-time push (messages from Nexus to the server);
     /// HTTP (zone/info, zone/map, zone/variables, etc.) still works. We suppress this specific error so
@@ -34,7 +34,7 @@ namespace NexusSelfHost.Patches
             if (!_loggedOnce)
             {
                 _loggedOnce = true;
-                Debug.Log("[NexusSelfHost] Zone WebSocket is not connected (TLS/cert issue). Suppressing repeated 'Socket is not connected' errors. HTTP API (map, variables, etc.) still works.");
+                Debug.Log("[NexusSelfHost] Zone WebSocket is not connected (e.g. Nexus API just restarted, WSS still reconnecting, or self-signed TLS rejected for wss). Suppressing repeated 'Socket is not connected' errors. HTTP (zone/info, map, variables) still works.");
             }
             return false; // skip original DispatchError
         }

@@ -127,7 +127,7 @@ namespace SpawnsHarmony
             return null;
         }
 
-        // ---- Oxide-compatible API (static for AppDomain / ZoneManager) ----
+        // ---- Harmony-compatible API (static for AppDomain / ZoneManager) ----
 
         public static object GetSpawns(string filename)
         {

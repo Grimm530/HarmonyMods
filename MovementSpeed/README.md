@@ -1,6 +1,6 @@
 # MovementSpeed (Harmony port)
 
-Oxide-free port of **MovementSpeed 1.0.9** (imthenewguy). Applies permission- and API-driven run/swim speed via `BasePlayer.ApplyInheritedVelocity`. SkillTree **RoadRunner** (and related swim buffs) call this mod's API.
+Harmony port of **MovementSpeed 1.0.9** (imthenewguy). Applies permission- and API-driven run/swim speed via `BasePlayer.ApplyInheritedVelocity`. SkillTree **RoadRunner** (and related swim buffs) call this mod's API.
 
 ## Paths
 

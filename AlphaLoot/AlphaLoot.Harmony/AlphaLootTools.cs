@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using Facepunch;
 using Newtonsoft.Json;
 using UnityEngine;
 using Arg = ConsoleSystem.Arg;
@@ -141,6 +143,11 @@ public static class AlphaLootTools
 			itemIds = list,
 			protocol = Rust.Protocol.printable
 		}, (Formatting)1));
+	}
+
+	public static void AddItems(Arg arg, StringView[] shortnames, AlphaLootMod mod)
+	{
+		AddItems(arg, shortnames?.Select(s => s.ToString()).ToArray(), mod);
 	}
 
 	public static void AddItems(Arg arg, string[] shortnames, AlphaLootMod mod)

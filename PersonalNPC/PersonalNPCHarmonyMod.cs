@@ -1,11 +1,19 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using System.Reflection;
+using GrimmCuiHarmony;
 using System.Text;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace PersonalNPCHarmony
 {
@@ -39,7 +47,9 @@ namespace PersonalNPCHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
 
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             PersonalNPCHost.Init(root);
@@ -89,11 +99,12 @@ namespace PersonalNPCHarmony
             _helper = null;
             _builder = null;
             _serverInitialized = false;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
         }
 
         /// <summary>
-        /// Replaces Oxide's [PluginReference] injection. Merged plugins get a LocalPluginBridge;
+        /// Replaces legacy's [PluginReference] injection. Merged plugins get a LocalPluginBridge;
         /// soft dependencies that are not ported stay null, matching the original null checks.
         /// </summary>
         private void WireBridges(PersonalNPCHost host)
@@ -310,7 +321,7 @@ namespace PersonalNPCHarmony
 
         /// <summary>
         /// Runs one of our console commands locally. Used by Cui_Endtest_Patch and by GUI shortcut
-        /// buttons, which under Oxide would bounce off the client console.
+        /// buttons, which under Harmony would bounce off the client console.
         /// </summary>
         public void DispatchConsole(string command, IReadOnlyList<string> args, Network.Connection connection)
         {
@@ -387,7 +398,7 @@ namespace PersonalNPCHarmony
 
             if (name.Equals("pnpc", StringComparison.OrdinalIgnoreCase))
             {
-                // Helper's Frankenstein unlock gate runs first (Oxide OnPlayerCommand).
+                // Helper's Frankenstein unlock gate runs first (Harmony OnPlayerCommand).
                 try
                 {
                     if (_helper?.OnPlayerCommand(player, "pnpc", args) != null)
@@ -408,7 +419,7 @@ namespace PersonalNPCHarmony
             return true;
         }
 
-        /// <summary>Whitespace split that honours double quotes, matching Oxide's chat parser.</summary>
+        /// <summary>Whitespace split that honours double quotes, matching original plugin's chat parser.</summary>
         internal static string[] SplitArgs(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return Array.Empty<string>();

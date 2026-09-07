@@ -1,7 +1,7 @@
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Plugins;
+using Harmony.Core;
+using Harmony.Core.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,7 +17,7 @@ using UnityEngine;
  * Updated how velocity is impelemented. Capped airborn velicity at 6.2m/s. I do not recommend going above 10 speed.
  */
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
 	[Info("MovementSpeed", "imthenewguy", "1.0.9")]
 	[Description("Permission based run and swim speeds")]
@@ -106,7 +106,7 @@ namespace Oxide.Plugins
             catch (Exception ex)
             {
                 UnityEngine.Debug.LogException(ex);
-                Interface.Oxide.UnloadPlugin(Name);
+                HarmonyModInterface.Mods.UnloadPlugin(Name);
             }
         }
 
@@ -919,7 +919,7 @@ namespace Oxide.Plugins
         {
             if (!Components.TryGetValue(id, out var component)) return;
             component.PauseSpeed(pause);
-            Interface.Oxide.LogInfo($"Setting speed pause for {id}: {pause}");
+            HarmonyModInterface.Mods.LogInfo($"Setting speed pause for {id}: {pause}");
         }
 
         public void AddRunSpeedBoost(BasePlayer player, string plugin, float mod, float duration, bool force)

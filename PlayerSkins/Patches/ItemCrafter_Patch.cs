@@ -41,7 +41,7 @@ namespace PlayerSkinsHarmony.Patches
         {
             var item = _craftedItem;
             _craftedItem = null;
-            if (task == null || __instance == null || item == null) return;
+            if (task == null || item == null) return;
             try { PlayerSkinsMod.Instance?.Plugin?.OnItemCraftFinished(task, item, __instance); }
             catch (Exception ex) { Debug.LogWarning("[PlayerSkins] OnItemCraftFinished: " + ex.Message); }
         }

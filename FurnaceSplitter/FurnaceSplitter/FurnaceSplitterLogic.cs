@@ -10,9 +10,9 @@ namespace FurnaceSplitter
         {
             bool debug = FurnaceSplitterConfig.Config?.debug == true;
 
-            if (playerInventory == null || oven?.inventory == null || oven.fuelType == null)
+            if (playerInventory == null || oven?.inventory == null || oven.fuelType == null || oven is Composter)
             {
-                if (debug) FurnaceSplitterConfig.Log($"AutoAddFuel: skip - null inventory/fuelType");
+                if (debug) FurnaceSplitterConfig.Log($"AutoAddFuel: skip - null inventory/fuelType or composter");
                 return;
             }
 
@@ -26,8 +26,7 @@ namespace FurnaceSplitter
             var info = FurnaceSplitterMod.GetOvenInfo(oven);
 
             int neededFuel = (int)Math.Ceiling(info.FuelNeeded);
-            // Explicit 3-arg call — ItemContainer.GetAmount(int,bool,bool) after Facepunch API change
-            int fuelInOven = oven.inventory.GetAmount(oven.fuelType.itemid, false, false);
+            int fuelInOven = oven.inventory.GetAmount(oven.fuelType.itemid, false);
             neededFuel -= fuelInOven;
 
             var playerFuel = new List<Item>();
@@ -59,7 +58,7 @@ namespace FurnaceSplitter
                         break;
                 }
 
-                int currentTotal = oven.inventory.GetAmount(oven.fuelType.itemid, false, false);
+                int currentTotal = oven.inventory.GetAmount(oven.fuelType.itemid, false);
                 if (currentTotal >= capacity)
                     break;
 

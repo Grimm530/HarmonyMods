@@ -7,7 +7,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <LangVersion>12.0</LangVersion>
     <RootNamespace>BetterChatHarmony</RootNamespace>
-    <Description>Harmony mod: BetterChat groups/titles plus ColouredChat name and message colours. No Oxide required.</Description>
+    <Description>Harmony mod: BetterChat groups/titles plus ColouredChat name and message colours. Harmony-only required.</Description>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Data">

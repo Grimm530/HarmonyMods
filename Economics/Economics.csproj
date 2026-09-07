@@ -5,7 +5,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12</LangVersion>
     <RootNamespace>EconomicsHarmony</RootNamespace>
-    <Description>Harmony mod: Economics Extended 3.10.4 (Oxide-free). Config: HarmonyConfig/Economics.json</Description>
+    <Description>Harmony mod: Economics Extended 3.10.4 (Harmony). Config: HarmonyConfig/Economics.json</Description>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>

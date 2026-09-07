@@ -1,15 +1,21 @@
 using Facepunch;
+using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rust;
+using Rust.Ai.Gen2;
+using Rust.Ai.Gen2.Nav;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
@@ -17,6 +23,8 @@ using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.SceneManagement;
+using Newtonsoft.Json.Serialization;
+using Color = UnityEngine.Color;
 using static RaidableBases.RaidableBasesExtensionMethods.ExtensionMethods;
 
 namespace RaidableBases
@@ -25,6 +33,134 @@ namespace RaidableBases
     {
 
         #region Commands
+
+
+        private static bool HasArgument(string[] args, string value)
+        {
+            return args != null && Array.Exists(args, arg => arg.Equals(value, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static UiType GetMovableUiType(string[] args)
+        {
+            if (HasArgument(args, "buyable") || HasArgument(args, "buy")) return UiType.Buyable;
+            if (HasArgument(args, "cooldown") || HasArgument(args, "cooldowns")) return UiType.Cooldown;
+            if (HasArgument(args, "delay") || HasArgument(args, "pvpdelay")) return UiType.Delay;
+            if (HasArgument(args, "lockout") || HasArgument(args, "lockouts")) return UiType.Lockout;
+            if (HasArgument(args, "pasteprogress") || HasArgument(args, "paste") || HasArgument(args, "progress")) return UiType.PasteProgress;
+            if (HasArgument(args, "status")) return UiType.Status;
+            if (HasArgument(args, "teleport")) return UiType.Teleport;
+            return UiType.Invalid;
+        }
+
+        private int GetRequestedPurchaseType(BasePlayer player, string[] args)
+        {
+            bool pve = HasArgument(args, "pve");
+            bool pvp = HasArgument(args, "pvp");
+
+            if (pve && pvp)
+            {
+                return -1;
+            }
+
+            if (pve)
+            {
+                return 1;
+            }
+
+            if (pvp)
+            {
+                return 2;
+            }
+
+            bool pveOnly = player != null && player.HasPermission("raidablebases.buyraid.pveonly");
+            bool pvpOnly = player != null && player.HasPermission("raidablebases.buyraid.pvponly");
+
+            if (pveOnly && pvpOnly)
+            {
+                return -1;
+            }
+
+            if (pveOnly)
+            {
+                return 1;
+            }
+
+            if (pvpOnly)
+            {
+                return 2;
+            }
+
+            return 0;
+        }
+
+        private bool CanBuyRaidType(BasePlayer player, int purchaseType)
+        {
+            if (player == null || purchaseType < 0)
+            {
+                return false;
+            }
+
+            return purchaseType switch
+            {
+                1 => !player.HasPermission("raidablebases.buyraid.pvponly"),
+                2 => config.Settings.Buyable.AllowBuyPVP && !player.HasPermission("raidablebases.buyraid.pveonly"),
+                _ => true
+            };
+        }
+
+        private bool IsFreePurchase(IPlayer user, BasePlayer buyer, string[] args)
+        {
+            return HasArgument(args, "free") && user?.IsAdmin == true ||
+                user != null && !user.IsServer && user.HasPermission("raidablebases.buyraid.free") ||
+                buyer != null && buyer.HasPermission("raidablebases.buyraid.free");
+        }
+
+        internal void CloseBuyableUi(BasePlayer player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            if (config.UI.BuyableCooldowns.BuyOnly)
+            {
+                UI.PrivateEvents.Remove(player.userID);
+                UI.DestroyTimer(player, player.userID, UiType.Cooldown);
+                if (!UI.DestroyUi(player, UiType.Cooldown))
+                {
+                    CuiHelper.DestroyUi(player, "RB_UI_Cooldown");
+                }
+            }
+
+            if (config.UI.Lockout.BuyOnly)
+            {
+                UI.PublicEvents.Remove(player.userID);
+                UI.DestroyTimer(player, player.userID, UiType.Lockout);
+                if (!UI.DestroyUi(player, UiType.Lockout))
+                {
+                    CuiHelper.DestroyUi(player, "RB_UI_Lockout");
+                }
+            }
+
+            UI.DestroyBuyableUi(player);
+        }
+
+        [ConsoleCommand("rb.info")]
+        private void ccmdTargetInfo(ConsoleSystem.Arg arg)
+        {
+            if (!arg.Player().Is(out BasePlayer player) || !player.IsAdmin && !player.HasPermission("raidablebases.infoui"))
+            {
+                return;
+            }
+
+            if (string.Equals(arg.GetString(0), "clear", StringComparison.OrdinalIgnoreCase))
+            {
+                _targetInfo?.Hide(player);
+                return;
+            }
+
+            _targetInfo?.Show(player, arg);
+        }
 
         [ConsoleCommand("ui_buyraid")]
         private void ccmdBuyRaid(ConsoleSystem.Arg arg)
@@ -36,52 +172,84 @@ namespace RaidableBases
 
             var player = arg.Player();
 
-            if (player.IsNull() || player.GetIPlayer() == null)
+            if (player == null)
             {
                 return;
             }
 
-            if (arg.GetString(0) == "closeui")
+            string action = arg.GetString(0);
+
+            if (action == "closeui")
             {
-                if (config.UI.BuyableCooldowns.BuyOnly)
-                {
-                    UI.PrivateEvents.Remove(player.userID);
-                    UI.DestroyTimer(player, player.userID, UiType.Cooldown);
-                    if (!UI.DestroyUi(player, UiType.Cooldown))
-                    {
-                        CuiHelper.DestroyUi(player, "RB_UI_Cooldown");
-                    }
-                }
-                if (config.UI.Lockout.BuyOnly)
-                {
-                    UI.PublicEvents.Remove(player.userID);
-                    UI.DestroyTimer(player, player.userID, UiType.Lockout);
-                    if (!UI.DestroyUi(player, UiType.Lockout))
-                    {
-                        CuiHelper.DestroyUi(player, "RB_UI_Lockout");
-                    }
-                }
-                UI.DestroyTimer(player, player.userID, UiType.Buyable);
-                CuiHelper.DestroyUi(player, "RB_UI_Buyable");
+                CloseBuyableUi(player);
                 return;
             }
 
-            if (arg.GetString(0) == "accept_teleport")
+            if (action == "back_to_buyable")
+            {
+                UI.DestroyBuyableUi(player);
+                UI.ShowBuyableUi(player, false);
+                return;
+            }
+
+            if (action == "confirm_type" && arg.HasArgs(3))
+            {
+                string mode = arg.GetString(1).Replace("__", " ");
+                string type = arg.GetString(2).ToLowerInvariant();
+                int purchaseType = type == "pve" ? 1 : type == "pvp" ? 2 : -1;
+
+                if (!RaidableModes.Contains(mode) || !CanBuyRaidType(player, purchaseType))
+                {
+                    SendNotification(player, "BuyableTypeUnavailable");
+                    return;
+                }
+
+                UI.ShowBuyableConfirmationUi(player, mode, type);
+                return;
+            }
+
+            if (action == "confirm_purchase" && arg.HasArgs(3))
+            {
+                string mode = arg.GetString(1);
+                string type = arg.GetString(2).ToLowerInvariant();
+                int purchaseType = type == "pve" ? 1 : type == "pvp" ? 2 : -1;
+
+                if (!CanBuyRaidType(player, purchaseType))
+                {
+                    SendNotification(player, "BuyableTypeUnavailable");
+                    return;
+                }
+
+                if (player.GetIPlayer() != null)
+                {
+                    CommandBuyRaid(player.GetIPlayer(), config.Settings.BuyCommand, new[] { mode, type });
+                }
+
+                return;
+            }
+
+            if (action == "accept_teleport")
             {
                 BuyableTeleport(player);
                 UI.DestroyUi(player, UiType.Teleport);
-                CuiHelper.DestroyUi(player, "RB_UI_Teleport");
                 return;
             }
 
-            if (arg.GetString(0) == "decline_teleport")
+            if (action == "decline_teleport")
             {
                 UI.DestroyUi(player, UiType.Teleport);
-                CuiHelper.DestroyUi(player, "RB_UI_Teleport");
                 return;
             }
 
-            CommandBuyRaid(player.GetIPlayer(), config.Settings.BuyCommand, arg.Args.ToStringArray());
+            if (player.GetIPlayer() != null)
+            {
+                CommandBuyRaid(player.GetIPlayer(), config.Settings.BuyCommand, arg.Args.ToStringArray());
+            }
+        }
+
+        internal void DispatchOnCuiDraggableDrag(BasePlayer player, string name, Vector3 position, CommunityEntity.DraggablePositionSendType dragType)
+        {
+            OnCuiDraggableDrag(player, name, position, dragType);
         }
 
         private void OnCuiDraggableDrag(BasePlayer player, string name, Vector3 position, CommunityEntity.DraggablePositionSendType dragType)
@@ -91,42 +259,55 @@ namespace RaidableBases
                 return;
             }
 
-            UiType uiType = name switch
+            UiType type = name switch
             {
                 "RB_UI_Buyable" => UiType.Buyable,
                 "RB_UI_Cooldown" => UiType.Cooldown,
                 "RB_UI_Delay" => UiType.Delay,
                 "RB_UI_Lockout" => UiType.Lockout,
+                "RB_UI_PasteProgress" => UiType.PasteProgress,
                 "RB_UI_Status" => UiType.Status,
                 "RB_UI_Teleport" => UiType.Teleport,
                 _ => UiType.Invalid
             };
 
-            if (uiType == UiType.Invalid || !UI.Offsets.TryGetValue(player.userID, out var ui) || !ui.TryGetValue(uiType, out var offsets))
+            if (type == UiType.Invalid)
             {
                 return;
             }
 
+            UiOffsets offsets = UI.GetOffsets(player.userID, type);
+
             switch (dragType)
             {
                 case CommunityEntity.DraggablePositionSendType.Relative:
-                    {
-                        Vector2 delta = new Vector2(position.x, position.y);
-                        offsets.Min += delta;
-                        offsets.Max += delta;
-                        offsets.NormalizedAnchor = Vector2.zero;
-                        break;
-                    }
+                case CommunityEntity.DraggablePositionSendType.RelativeAnchor:
+                    Vector2 delta = new(position.x, position.y);
+                    offsets.Min += delta;
+                    offsets.Max += delta;
+                    offsets.NormalizedAnchor = Vector2.zero;
+                    break;
                 case CommunityEntity.DraggablePositionSendType.NormalizedParent:
+                case CommunityEntity.DraggablePositionSendType.NormalizedScreen:
+                    Vector2 normalizedPosition = new(Mathf.Clamp01(position.x), Mathf.Clamp01(position.y));
+                    if (!UI.IsMeaningfulDrag(offsets, normalizedPosition))
                     {
-                        offsets.NormalizedAnchor = new Vector2(position.x, position.y);
-                        break;
+                        return;
                     }
+                    offsets.NormalizedAnchor = normalizedPosition;
+                    break;
                 default:
                     return;
             }
 
-            UI.TrySetMoveUi(player, uiType);
+            UI.RecordUiPosition(player, type);
+
+            // Reimplemented interfaces can be dragged while another interface already provides a cursor.
+            // Explicit move mode only supplies a temporary cursor, so dragging then extends its timer.
+            if (UI.IsMovingUi(player, type))
+            {
+                UI.TrySetMoveUi(player, type);
+            }
 
             if (SaveOffsetDataTimer is { Destroyed: false }) SaveOffsetDataTimer.Reset();
             else SaveOffsetDataTimer = timer.Once(5f, UI.SaveOffsetData);
@@ -137,66 +318,76 @@ namespace RaidableBases
         [ConsoleCommand("rb_ui_move")]
         private void ccmdMovePosition(ConsoleSystem.Arg arg)
         {
-            if (!arg.HasArgs() || !arg.Player().Is(out BasePlayer player))
+            if (!arg.HasArgs() || !arg.Player().Is(out BasePlayer player) || !Enum.TryParse(arg.GetString(0), true, out UiType type) || !UiHandler.IsMovableUi(type))
             {
                 return;
             }
-            if (!Enum.TryParse(arg.GetString(0), true, out UiType type))
-            {
-                return;
-            }
-            if (!UI.Offsets.TryGetValue(player.userID, out var ui) || !ui.TryGetValue(type, out var offsets))
-            {
-                return;
-            }
-            bool moveUI = UI.IsMovingUi(player, type);
-            if (moveUI)
+
+            UI.GetOffsets(player.userID, type);
+
+            if (UI.IsMovingUi(player, type))
             {
                 UI.TrySetMoveUi(player, type, true);
-                moveUI = false;
             }
-            else moveUI = true;
-            switch (type)
+            else
             {
-                case UiType.Buyable: UI.ShowBuyableUi(player, moveUI); break;
-                case UiType.Cooldown: UI.ShowBuyableCooldownsUi(player, moveUI); break;
-                case UiType.Delay: UI.ShowDelayUi(player, moveUI); break;
-                case UiType.Lockout: UI.ShowLockoutsUi(player, moveUI); break;
-                case UiType.Status: UI.ShowStatusUi(player, moveUI); break;
+                UI.TrySetMoveUi(player, type);
             }
+
+            UI.UpdateUi(player, type);
+        }
+
+        protected bool CanReloadConfiguration(IPlayer user)
+        {
+            if (IsGridLoading() || !IsPasteAvailable())
+            {
+                Reply(user, IsGridLoading() ? "GridIsLoading" : "PasteOnCooldown");
+                return false;
+            }
+
+            return true;
+        }
+
+        protected void ReloadConfiguration(IPlayer user)
+        {
+            Reply(user, "ReloadInit");
+            SetOnSun(false);
+            UI.SaveOffsetData();
+            UI.DestroyAll();
+            Reply(user, "ReloadConfig");
+            LoadConfig();
+            UI.LoadOffsetData();
+            Automated.IsMaintainedEnabled = config.Settings.Maintained.Enabled;
+            Automated.StartCoroutine(RaidableType.Maintained, user);
+            Automated.IsScheduledEnabled = config.Settings.Schedule.Enabled;
+            Automated.StartCoroutine(RaidableType.Scheduled, user);
+            buyableEnabled = config.Settings.Buyable.Max > 0;
+            Initialize();
         }
 
         private void CommandReloadConfig(IPlayer user, string command, string[] args)
         {
-            if (user.IsServer || user.Player().IsAdmin)
+            if (!(user.IsServer || user.Player().IsAdmin) || !CanReloadConfiguration(user))
             {
-                if (IsGridLoading() || !IsPasteAvailable())
-                {
-                    Message(user, IsGridLoading() ? "GridIsLoading" : "PasteOnCooldown");
-                    return;
-                }
-                Message(user, "ReloadInit");
-                if (command == "rb.reloadconfig")
-                {
-                    SetOnSun(false);
-                    UI.DestroyAll();
-                    Message(user, "ReloadConfig");
-                    LoadConfig();
-                    Automated.IsMaintainedEnabled = config.Settings.Maintained.Enabled;
-                    Automated.StartCoroutine(RaidableType.Maintained, user);
-                    Automated.IsScheduledEnabled = config.Settings.Schedule.Enabled;
-                    Automated.StartCoroutine(RaidableType.Scheduled, user);
-                    buyableEnabled = config.Settings.Buyable.Max > 0;
-                    Initialize();
-                }
-                if (command == "rb.reloadprofiles")
-                {
-                    ServerMgr.Instance.StartCoroutine(ReloadProfiles(user));
-                }
-                if (command == "rb.reloadtables")
-                {
-                    ServerMgr.Instance.StartCoroutine(ReloadTables(user));
-                }
+                return;
+            }
+
+            if (command == "rb.reloadconfig")
+            {
+                ReloadConfiguration(user);
+                return;
+            }
+
+            Reply(user, "ReloadInit");
+
+            if (command == "rb.reloadprofiles")
+            {
+                ServerMgr.Instance.StartCoroutine(ReloadProfiles(user));
+            }
+
+            if (command == "rb.reloadtables")
+            {
+                ServerMgr.Instance.StartCoroutine(ReloadTables(user));
             }
         }
 
@@ -214,6 +405,7 @@ namespace RaidableBases
             }
             else Unsubscribe(nameof(OnMapMarkerAdded));
             Subscribe(nameof(OnPlayerSleepEnded));
+            GridController.SpawnCache.Clear();
             GridController.LoadSpawns();
             if (ZoneManager != null)
             {
@@ -225,7 +417,7 @@ namespace RaidableBases
             GridController.SetupGrid();
         }
 
-        private readonly Dictionary<string, string?> prefabReplacements = new()
+        private readonly Dictionary<string, string> prefabReplacements = new()
         {
             ["assets/prefabs/building/gates.external.high.adobe/gates.external.high.adobe.prefab"] = "assets/prefabs/building/gates.external.high/gates.external.high.stone/gates.external.high.stone.prefab",
             ["assets/prefabs/building/gates.external.high.legacy/gates.external.high.legacy.prefab"] = "assets/prefabs/building/gates.external.high/gates.external.high.stone/gates.external.high.stone.prefab",
@@ -238,7 +430,7 @@ namespace RaidableBases
             ["assets/prefabs/deployable/jack o lantern/jackolantern.angry.prefab"] = "assets/prefabs/deployable/lantern/lantern.deployed.prefab",
             ["assets/prefabs/deployable/jack o lantern/jackolantern.happy.prefab"] = "assets/prefabs/deployable/lantern/lantern.deployed.prefab",
             ["assets/prefabs/deployable/large wood storage/skins/abyss_dlc_large_wood_box/abyss_dlc_storage_horizontal/abyss_barrel_horizontal.prefab"] = "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab",
-            ["assets/prefabs/deployable/large wood storage/skins/abyss_dlc_large_wood_box/abyss_dlc_storage_vertical/abyss_barrel_vertical.prefab"] = "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab",
+            ["assets/prefabs/deployable/large wood storage/skins/abyss_dlc_large_wood_box/abyss_dlc_storage_vertical/abyss_barrel_vertical.prefab"] = "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab",
             ["assets/prefabs/deployable/large wood storage/skins/jungle_dlc_large_wood_box/jungle_dlc_storage_horizontal/wicker_barrel.prefab"] = "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab",
             ["assets/prefabs/deployable/large wood storage/skins/jungle_dlc_large_wood_box/jungle_dlc_storage_vertical/bamboo_barrel.prefab"] = "assets/prefabs/deployable/woodenbox/woodbox_deployed.prefab",
             ["assets/prefabs/deployable/large wood storage/skins/medieval_large_wood_box/medieval.box.wooden.large.prefab"] = "assets/prefabs/deployable/large wood storage/box.wooden.large.prefab",
@@ -300,20 +492,20 @@ namespace RaidableBases
         {
             ["abovegroundpool"] = "planter.large",
             ["krieg_storage_horizontal"] = "box.wooden.large",
-            ["krieg_storage_vertical"] = "box.wooden.large",
+            ["krieg_storage_vertical"] = "box.wooden",
             ["abyss.barrel.horizontal"] = "box.wooden.large",
-            ["abyss.barrel.vertical"] = "locker",
+            ["abyss.barrel.vertical"] = "box.wooden",
             ["arcade.machine.chippy"] = "electric.battery.rechargable.medium",
             ["attire.egg.suit"] = "wood.armor.pants",
             ["attire.nesthat"] = "wood.armor.helmet",
             ["attire.ninja.suit"] = "hazmatsuit",
             ["attire.snowman.helmet"] = "deer.skull.mask",
-            ["bamboo.barrel"] = "box.wooden.large",
+            ["bamboo.barrel"] = "box.wooden",
             ["barricade.medieval"] = "barricade.metal",
             ["bathtub.planter"] = "planter.triangle",
             ["beachchair"] = "chair",
             ["beachparasol"] = "storageadaptor",
-            ["beachtable"] = "table",
+            ["beachtable"] = "box.wooden",
             ["beachtowel"] = "sleepingbag",
             ["blunderbuss"] = "shotgun.waterpipe",
             ["boogieboard"] = "kayak",
@@ -323,57 +515,57 @@ namespace RaidableBases
             ["cassette"] = "telephone",
             ["cassette.medium"] = "electric.battery.rechargable.small",
             ["cassette.short"] = "electric.timer",
-            ["chair.icethrone"] = "bed",
+            ["chair.icethrone"] = "chair",
             ["chicken.costume"] = "roadsign.kilt",
-            ["chineselantern"] = "hat.miner",
-            ["chineselanternwhite"] = "nightvisiongoggles",
-            ["clatter.helmet"] = "bucket.helmet",
-            ["cocoknight.armor.gloves"] = "burlap.gloves",
-            ["cocoknight.armor.helmet"] = "burlap.headwrap",
-            ["cocoknight.armor.pants"] = "attire.hide.pants",
-            ["cocoknight.armor.torso"] = "attire.hide.poncho",
+            ["chineselantern"] = "ceilinglight",
+            ["chineselanternwhite"] = "ceilinglight",
+            ["clatter.helmet"] = "riot.helmet",
+            ["cocoknight.armor.gloves"] = "woodarmor.gloves",
+            ["cocoknight.armor.helmet"] = "wood.armor.helmet",
+            ["cocoknight.armor.pants"] = "wood.armor.pants",
+            ["cocoknight.armor.torso"] = "wood.armor.jacket",
             ["concretehatchet"] = "hatchet",
             ["concretepickaxe"] = "pickaxe",
-            ["connected.speaker"] = "electric.solarpanel.large",
+            ["connected.speaker"] = "electric.audioalarm",
             ["cupboard.tool.retro"] = "cupboard.tool",
             ["cupboard.tool.shockbyte"] = "cupboard.tool",
-            ["cursedcauldron"] = "electric.furnace",
-            ["discoball"] = "fireplace.stone",
-            ["discofloor"] = "drone",
-            ["discofloor.largetiles"] = "smart.switch",
-            ["discord.trophy"] = "bucket.helmet",
+            ["cursedcauldron"] = "campfire",
+            ["discoball"] = "ceilinglight",
+            ["discofloor"] = "rug",
+            ["discofloor.largetiles"] = "rug",
+            ["discord.trophy"] = "pookie.bear",
             ["diverhatchet"] = "axe.salvaged",
             ["diverpickaxe"] = "pickaxe",
             ["divertorch"] = "Torch",
             ["door.double.hinged.bardoors"] = "door.double.hinged.wood",
-            ["door.hinged.industrial.a"] = "wall.frame.garagedoor",
+            ["door.hinged.industrial.a"] = "door.hinged.metal",
             ["draculacape"] = "hoodie",
             ["draculamask"] = "riot.helmet",
-            ["dragondoorknocker"] = "door.hinged.metal",
-            ["drumkit"] = "fun.guitar",
+            ["dragondoorknocker"] = "sign.wooden.small",
+            ["drumkit"] = "chair",
             ["easterdoorwreath"] = "sign.wooden.small",
             ["factorydoor"] = "door.hinged.metal",
-            ["firework.boomer.blue"] = "tunalight",
-            ["firework.boomer.champagne"] = "flare",
-            ["firework.boomer.green"] = "fuse",
-            ["firework.boomer.orange"] = "weapon.mod.simplesight",
-            ["firework.boomer.pattern"] = "largemedkit",
-            ["firework.boomer.red"] = "battery.small",
-            ["firework.boomer.violet"] = "bucket.helmet",
-            ["firework.romancandle.blue"] = "trap.bear",
-            ["firework.romancandle.green"] = "tincan.alarm",
-            ["firework.romancandle.red"] = "electric.button",
-            ["firework.romancandle.violet"] = "chocolate",
-            ["firework.volcano"] = "pickaxe",
-            ["firework.volcano.red"] = "chair",
-            ["firework.volcano.violet"] = "electric.button",
-            ["fishtrophy"] = "waterjug",
-            ["fogmachine"] = "electric.fuelgenerator.small",
+            ["firework.boomer.blue"] = "pookie.bear",
+            ["firework.boomer.champagne"] = "pookie.bear",
+            ["firework.boomer.green"] = "pookie.bear",
+            ["firework.boomer.orange"] = "pookie.bear",
+            ["firework.boomer.pattern"] = "pookie.bear",
+            ["firework.boomer.red"] = "pookie.bear",
+            ["firework.boomer.violet"] = "pookie.bear",
+            ["firework.romancandle.blue"] = "pookie.bear",
+            ["firework.romancandle.green"] = "pookie.bear",
+            ["firework.romancandle.red"] = "pookie.bear",
+            ["firework.romancandle.violet"] = "pookie.bear",
+            ["firework.volcano"] = "pookie.bear",
+            ["firework.volcano.red"] = "pookie.bear",
+            ["firework.volcano.violet"] = "pookie.bear",
+            ["fishtrophy"] = "sign.wooden.small",
+            ["fogmachine"] = "electric.hbhfsensor",
             ["frankensteinmask"] = "riot.helmet",
             ["frontier_hatchet"] = "hatchet",
-            ["fun.bass"] = "fun.guitar",
-            ["fun.boomboxportable"] = "fun.guitar",
-            ["fun.casetterecorder"] = "fun.guitar",
+            ["fun.bass"] = "sign.wooden.small",
+            ["fun.boomboxportable"] = "pookie.bear",
+            ["fun.casetterecorder"] = "electric.digitalclock",
             ["fun.cowbell"] = "fun.guitar",
             ["fun.flute"] = "fun.guitar",
             ["fun.jerrycanguitar"] = "fun.guitar",
@@ -383,56 +575,56 @@ namespace RaidableBases
             ["gates.external.high.adobe"] = "gates.external.high.stone",
             ["gates.external.high.legacy"] = "gates.external.high.stone",
             ["gates.external.high.frontier"] = "gates.external.high.stone",
-            ["giantcandycanedecor"] = "electric.audioalarm",
-            ["giantlollipops"] = "water.catcher.small",
-            ["gun.water"] = "waterjug",
-            ["gunrack.horizontal"] = "box.wooden",
-            ["gunrack.single.1.horizontal"] = "box.wooden",
-            ["gunrack.single.2.horizontal"] = "box.wooden.large",
-            ["gunrack.single.3.horizontal"] = "box.wooden.large",
-            ["gunrack_stand"] = "locker",
-            ["gunrack_tall.horizontal"] = "locker",
-            ["gunrack_wide.horizontal"] = "locker",
+            ["giantcandycanedecor"] = "electric.hbhfsensor",
+            ["giantlollipops"] = "electric.hbhfsensor",
+            ["gun.water"] = "smg.thompson",
+            ["gunrack.horizontal"] = "sign.wooden.small",
+            ["gunrack.single.1.horizontal"] = "sign.wooden.small",
+            ["gunrack.single.2.horizontal"] = "sign.wooden.small",
+            ["gunrack.single.3.horizontal"] = "sign.wooden.small",
+            ["gunrack_stand"] = "box.wooden",
+            ["gunrack_tall.horizontal"] = "sign.wooden.small",
+            ["gunrack_wide.horizontal"] = "sign.wooden.small",
             ["half.bamboo.shelves"] = "shelves",
             ["halloween.surgeonsuit"] = "hazmatsuit",
             ["hat.bunnyhat"] = "wood.armor.helmet",
-            ["hat.dragonmask"] = "coffeecan.helmet",
-            ["hat.oxmask"] = "coffeecan.helmet",
-            ["hat.rabbitmask"] = "diving.mask",
-            ["hat.ratmask"] = "coffeecan.helmet",
-            ["hat.snakemask"] = "burlap.headwrap",
-            ["hat.tigermask"] = "hat.cap",
-            ["hat.wellipets"] = "prisonerhood",
-            ["hazmat.plushy"] = "diving.mask",
-            ["hazmatsuit.arcticsuit"] = "hazmatsuit_scientist",
+            ["hat.dragonmask"] = "riot.helmet",
+            ["hat.oxmask"] = "riot.helmet",
+            ["hat.rabbitmask"] = "riot.helmet",
+            ["hat.ratmask"] = "riot.helmet",
+            ["hat.snakemask"] = "riot.helmet",
+            ["hat.tigermask"] = "riot.helmet",
+            ["hat.wellipets"] = "coffeecan.helmet",
+            ["hazmat.plushy"] = "pookie.bear",
+            ["hazmatsuit.arcticsuit"] = "hazmatsuit",
             ["hazmatsuit.diver"] = "hazmatsuit",
-            ["hazmatsuit.frontier"] = "metal.facemask",
-            ["hazmatsuit.lumberjack"] = "hazmatsuit_scientist_peacekeeper",
-            ["hazmatsuit.nomadsuit"] = "metal.plate.torso",
+            ["hazmatsuit.frontier"] = "hazmatsuit",
+            ["hazmatsuit.lumberjack"] = "hazmatsuit",
+            ["hazmatsuit.nomadsuit"] = "hazmatsuit",
             ["hazmatsuit.spacesuit"] = "hazmatsuit",
-            ["hazmatyoutooz"] = "jacket.snow",
+            ["hazmatyoutooz"] = "pookie.bear",
             ["heavyscientistyoutooz"] = "pookie.bear",
-            ["hobobarrel"] = "box.wooden.large",
+            ["hobobarrel"] = "campfire",
             ["horse.costume"] = "hoodie",
-            ["huntingtrophylarge"] = "ceilinglight",
-            ["huntingtrophysmall"] = "flashlight.held",
-            ["industrial.wall.light"] = "searchlight",
-            ["industrial.wall.light.blue"] = "electric.simplelight",
-            ["industrial.wall.light.green"] = "electric.simplelight",
-            ["industrial.wall.light.red"] = "electric.simplelight",
+            ["huntingtrophylarge"] = "sign.wooden.small",
+            ["huntingtrophysmall"] = "sign.wooden.small",
+            ["industrial.wall.light"] = "electrical.branch",
+            ["industrial.wall.light.blue"] = "electrical.branch",
+            ["industrial.wall.light.green"] = "electrical.branch",
+            ["industrial.wall.light.red"] = "electrical.branch",
             ["innertube"] = "sled",
-            ["innertube.horse"] = "sled.xmas",
-            ["innertube.unicorn"] = "wrappedgift",
+            ["innertube.horse"] = "sled",
+            ["innertube.unicorn"] = "sled",
             ["jackolantern.angry"] = "lantern",
-            ["jackolantern.happy"] = "tunalight",
+            ["jackolantern.happy"] = "lantern",
             ["jungle.rock"] = "rock",
             ["knife.bone.obsidian"] = "knife.bone",
             ["knife.skinning"] = "knife.combat",
             ["knightsarmour.helmet"] = "coffeecan.helmet",
             ["knightsarmour.skirt"] = "roadsign.kilt",
             ["knighttorso.armour"] = "roadsign.jacket",
-            ["largecandles"] = "torch",
-            ["laserlight"] = "weapon.mod.lasersight",
+            ["largecandles"] = "pookie.bear",
+            ["laserlight"] = "electrical.branch",
             ["legacy bow"] = "bow.hunting",
             ["legacyfurnace"] = "furnace",
             ["lumberjack.hatchet"] = "hatchet",
@@ -441,51 +633,51 @@ namespace RaidableBases
             ["medieval.box.wooden.large"] = "box.wooden.large",
             ["medieval.door.double.hinged.metal"] = "door.double.hinged.metal",
             ["medieval.door.hinged.metal"] = "door.hinged.metal",
-            ["megaphone"] = "fun.guitar",
+            ["megaphone"] = "tincan.alarm",
             ["metal.facemask.hockey"] = "metal.facemask",
             ["metal.facemask.icemask"] = "metal.facemask",
             ["metal.plate.torso.icevest"] = "metal.plate.torso",
-            ["microphonestand"] = "pumpkin",
-            ["minecart.planter"] = "planter.triangle",
+            ["microphonestand"] = "tincan.alarm",
+            ["minecart.planter"] = "box.wooden",
             ["mobilephone"] = "telephone",
-            ["movembermoustache"] = "attire.hide.helterneck",
-            ["movembermoustachecard"] = "attire.hide.pants",
-            ["mummymask"] = "attire.hide.vest",
-            ["newyeargong"] = "black.raspberries",
+            ["movembermoustache"] = "mask.bandana",
+            ["movembermoustachecard"] = "mask.bandana",
+            ["mummymask"] = "riot.helmet",
+            ["newyeargong"] = "target.reactive",
             ["paddlingpool"] = "planter.large",
-            ["photoframe.landscape"] = "sign.wooden.huge",
-            ["photoframe.large"] = "sign.wooden.medium",
-            ["photoframe.portrait"] = "sign.wooden.large",
-            ["piano"] = "fun.guitar",
+            ["photoframe.landscape"] = "sign.wooden.small",
+            ["photoframe.large"] = "sign.wooden.small",
+            ["photoframe.portrait"] = "sign.wooden.small",
+            ["piano"] = "chair",
             ["pistol.water"] = "pistol.eoka",
             ["rail.road.planter"] = "planter.large",
             ["rifle.ak.diver"] = "rifle.ak",
-            ["rifle.ak.ice"] = "rifle.lr300",
-            ["rifle.ak.jungle"] = "rifle.m39",
+            ["rifle.ak.ice"] = "rifle.ak",
+            ["rifle.ak.jungle"] = "rifle.ak",
             ["rifle.ak.med"] = "rifle.ak",
             ["rocket.launcher.dragon"] = "rocket.launcher",
-            ["rockingchair"] = "attire.hide.boots",
-            ["rockingchair.rockingchair2"] = "fish.herring",
-            ["rockingchair.rockingchair3"] = "hatchet",
-            ["rustige_egg_a"] = "weapon.mod.small.scope",
-            ["rustige_egg_b"] = "smg.2",
-            ["rustige_egg_c"] = "crossbow",
-            ["rustige_egg_d"] = "diving.fins",
-            ["rustige_egg_e"] = "door.closer",
-            ["rustige_egg_f"] = "electric.hbhfsensor",
-            ["rustige_egg_g"] = "carburetor3",
-            ["salvaged.bamboo.shelves"] = "fuse",
-            ["santabeard"] = "egg",
-            ["scarecrow"] = "torch",
-            ["sculpture.ice"] = "wallpaper",
+            ["rockingchair"] = "chair",
+            ["rockingchair.rockingchair2"] = "chair",
+            ["rockingchair.rockingchair3"] = "chair",
+            ["rustige_egg_a"] = "pookie.bear",
+            ["rustige_egg_b"] = "pookie.bear",
+            ["rustige_egg_c"] = "pookie.bear",
+            ["rustige_egg_d"] = "pookie.bear",
+            ["rustige_egg_e"] = "pookie.bear",
+            ["rustige_egg_f"] = "pookie.bear",
+            ["rustige_egg_g"] = "pookie.bear",
+            ["salvaged.bamboo.shelves"] = "sign.wooden.small",
+            ["santabeard"] = "mask.bandana",
+            ["scarecrow"] = "box.wooden",
+            ["sculpture.ice"] = "box.wooden",
             ["secretlabchair"] = "chair",
-            ["sign.hanging"] = "lantern",
-            ["sign.hanging.banner.large"] = "wallpaper",
+            ["sign.hanging"] = "sign.wooden.small",
+            ["sign.hanging.banner.large"] = "sign.wooden.small",
             ["sign.hanging.ornate"] = "pie.pumpkin",
-            ["sign.neon.125x125"] = "sign.wooden.large",
-            ["sign.neon.125x215"] = "sign.wooden.large",
+            ["sign.neon.125x125"] = "sign.wooden.small",
+            ["sign.neon.125x215"] = "sign.wooden.small",
             ["sign.neon.125x215.animated"] = "sign.wooden.large",
-            ["sign.neon.xl"] = "sign.woodsign.wooden.hugeen.huge",
+            ["sign.neon.xl"] = "sign.wooden.medium",
             ["sign.neon.xl.animated"] = "sign.wooden.huge",
             ["sign.pictureframe.landscape"] = "sign.wooden.medium",
             ["sign.pictureframe.portrait"] = "sign.wooden.medium",
@@ -493,75 +685,75 @@ namespace RaidableBases
             ["sign.pictureframe.xl"] = "sign.wooden.small",
             ["sign.pictureframe.xxl"] = "sign.wooden.small",
             ["sign.pole.banner.large"] = "sign.wooden.small",
-            ["sign.post.double"] = "advancedcraftingtea_quality",
-            ["sign.post.single"] = "advanceharvestingtea",
-            ["sign.post.town"] = "maxhealthtea.advanced",
-            ["sign.post.town.roof"] = "scraptea.advanced",
-            ["single.shallow.wall.shelves"] = "shelves",
-            ["skull"] = "hat.wolf",
-            ["skull.trophy"] = "pumpkin",
+            ["sign.post.double"] = "tincan.alarm",
+            ["sign.post.single"] = "tincan.alarm",
+            ["sign.post.town"] = "tincan.alarm",
+            ["sign.post.town.roof"] = "tincan.alarm",
+            ["single.shallow.wall.shelves"] = "sign.wooden.medium",
+            ["skull"] = "fat.animal",
+            ["skull.trophy"] = "pookie.bear",
             ["skull.trophy.jar"] = "lantern",
-            ["skull.trophy.jar2"] = "smgbody",
-            ["skull.trophy.table"] = "sofa",
-            ["skull_fire_pit"] = "fireplace.stone",
-            ["skulldoorknocker"] = "electric.button",
-            ["skullspikes"] = "spraycan",
-            ["skullspikes.candles"] = "lantern",
-            ["skullspikes.pumpkin"] = "pumpkin",
-            ["skylantern"] = "lantern",
-            ["skylantern.skylantern.green"] = "pistol.prototype17",
+            ["skull.trophy.jar2"] = "pookie.bear",
+            ["skull.trophy.table"] = "pookie.bear",
+            ["skull_fire_pit"] = "campfire",
+            ["skulldoorknocker"] = "sign.wooden.small",
+            ["skullspikes"] = "tincan.alarm",
+            ["skullspikes.candles"] = "tincan.alarm",
+            ["skullspikes.pumpkin"] = "tincan.alarm",
+            ["skylantern"] = "rock",
+            ["skylantern.skylantern.green"] = "rock",
             ["skylantern.skylantern.orange"] = "rock",
-            ["skylantern.skylantern.purple"] = "chair",
-            ["skylantern.skylantern.red"] = "lantern",
+            ["skylantern.skylantern.purple"] = "rock",
+            ["skylantern.skylantern.red"] = "rock",
             ["smallcandles"] = "lantern",
-            ["snowmachine"] = "batteringram",
-            ["snowman"] = "apple",
-            ["snowmobiletomaha"] = "snowmobilee",
+            ["snowmachine"] = "pookie.bear",
+            ["snowman"] = "box.wooden",
+            ["snowmobiletomaha"] = "snowmobile",
             ["sofa"] = "table",
             ["sofa.pattern"] = "chair",
-            ["soundlight"] = "lantern",
+            ["soundlight"] = "electrical.branch",
             ["spear.cny"] = "spear.wooden",
-            ["spookyspeaker"] = "mailbox",
-            ["unused_storage_barrel_a"] = "tunalight",
-            ["storage_barrel_b"] = "rug",
-            ["storage_barrel_c"] = "trap.landmine",
-            ["strobelight"] = "lantern",
+            ["spookyspeaker"] = "electric.audioalarm",
+            ["unused_storage_barrel_a"] = "box.wooden",
+            ["storage_barrel_b"] = "box.wooden",
+            ["storage_barrel_c"] = "box.wooden",
+            ["strobelight"] = "electrical.branch",
             ["sunglasses"] = "mask.bandana",
             ["sunglasses02black"] = "mask.bandana",
-            ["sunglasses02camo"] = "pants.shorts",
-            ["sunglasses02red"] = "wood.armor.pants",
-            ["sunglasses03black"] = "pants",
-            ["sunglasses03chrome"] = "tshirt.long",
-            ["sunglasses03gold"] = "shirt.collared",
+            ["sunglasses02camo"] = "mask.bandana",
+            ["sunglasses02red"] = "mask.bandana",
+            ["sunglasses03black"] = "mask.bandana",
+            ["sunglasses03chrome"] = "mask.bandana",
+            ["sunglasses03gold"] = "mask.bandana",
             ["sunken.knife"] = "knife.combat",
             ["tool.instant_camera"] = "cctv.camera",
             ["toolgun"] = "hammer",
             ["torch.torch.skull"] = "torch",
-            ["torchholder"] = "torch",
-            ["triangle.rail.road.planter"] = "planter.large",
+            ["torchholder"] = "electrical.branch",
+            ["triangle.rail.road.planter"] = "planter.triangle",
             ["trophy"] = "ammo.rocket.mlrs",
-            ["trophy2023"] = "ammo.rocket.mlrs",
+            ["trophy2023"] = "pookie.bear",
             ["twitch.headset"] = "hat.cap",
             ["twitchrivals2023desk"] = "table",
-            ["twitchsunglasses"] = "hat.miner",
+            ["twitchsunglasses"] = "mask.bandana",
             ["vehicle.car_radio"] = "lantern",
             ["wall.external.high.adobe"] = "wall.external.high",
             ["wall.external.high.legacy"] = "wall.external.high.stone",
-            ["wall.frame.lunar2025_a"] = "woodframe.small",
-            ["wall.frame.lunar2025_b"] = "woodframe.medium",
-            ["wall.frame.lunar2025_c"] = "woodframe.large",
-            ["wantedposter"] = "rug.bear",
-            ["wantedposter.wantedposter2"] = "rug",
-            ["wantedposter.wantedposter3"] = "shirt.collared",
-            ["wantedposter.wantedposter4"] = "semibody",
-            ["wicker.barrel"] = "tunalight",
-            ["xmas.door.garland"] = "door.hinged.wood",
-            ["xmas.double.door.garland"] = "door.double.hinged.wood",
-            ["xmas.lightstring"] = "wiretool",
-            ["xmas.lightstring.advanced"] = "wiretool",
-            ["xmas.window.garland"] = "wall.window.glass.reinforced",
-            ["xmasdoorwreath"] = "door.hinged.wood",
-            ["xylophone"] = "telephone",
+            ["wall.frame.lunar2025_a"] = "door.double.hinged.wood",
+            ["wall.frame.lunar2025_b"] = "door.double.hinged.wood",
+            ["wall.frame.lunar2025_c"] = "door.double.hinged.wood",
+            ["wantedposter"] = "electrical.branch",
+            ["wantedposter.wantedposter2"] = "electrical.branch",
+            ["wantedposter.wantedposter3"] = "electrical.branch",
+            ["wantedposter.wantedposter4"] = "electrical.branch",
+            ["wicker.barrel"] = "box.wooden",
+            ["xmas.door.garland"] = "electric.simplelight",
+            ["xmas.double.door.garland"] = "shutter.wood.a",
+            ["xmas.lightstring"] = "electric.simplelight",
+            ["xmas.lightstring.advanced"] = "electric.simplelight",
+            ["xmas.window.garland"] = "electric.simplelight",
+            ["xmasdoorwreath"] = "sign.wooden.small",
+            ["xylophone"] = "chair",
         };
 
         private Dictionary<string, int> replaced = new();
@@ -579,8 +771,8 @@ namespace RaidableBases
 
                 if (!Array.Exists(args, arg => arg == _editCode.ToString()))
                 {
-                    user.Message($"This action will modify your copypaste files and loot tables to comply with Facepunch's Terms of Service regarding paid content. You should backup your copypaste folder, and loot tables, before proceeding. To confirm, type: {config.Settings.EditCommand} {_editCode}");
-                    user.Message($"Default behavior will delete any content rather than replace it. If you prefer to have it replaced, then specify which to replace: {config.Settings.EditCommand} {_editCode} replace_prefabs replace_loot");
+                    ReplyOrLog(user, $"This action will modify your copypaste files and loot tables to comply with Facepunch's Terms of Service regarding paid content. You should backup your copypaste folder, and loot tables, before proceeding. To confirm, type: {config.Settings.EditCommand} {_editCode}");
+                    ReplyOrLog(user, $"Default behavior will delete any content rather than replace it. If you prefer to have it replaced, then specify which to replace: {config.Settings.EditCommand} {_editCode} replace_prefabs replace_loot");
                     return;
                 }
 
@@ -594,11 +786,11 @@ namespace RaidableBases
             using var sb = DisposableBuilder.Get();
             if (prefabs)
             {
-                HashSet<string> files = new();
+                using var files = DisposableHashSet<string>();
 
                 foreach (string file in GetCopyPasteFiles())
                 {
-                    files.Add(Path.Combine("copypaste", System.IO.Path.GetFileNameWithoutExtension(file)).Replace(".json", ""));
+                    files.Add(Path.Combine("copypaste", GetFileNameWithoutExtension(file)).Replace(".json", ""));
                 }
 
                 Puts("Confirmed. Updating content within {0} copypaste files...", files.Count);
@@ -628,7 +820,7 @@ namespace RaidableBases
 
         private IEnumerator CheckFileForPaidContent(string filename, bool test, bool prefabs)
         {
-            HarmonyDataFile data;
+            DynamicConfigFile data;
             try
             {
                 data = HarmonyDataLayer.GetDatafile(filename);
@@ -705,138 +897,237 @@ namespace RaidableBases
             _editCo = null;
         }
 
-        private readonly List<string> _buyers = new();
+        private ulong BusyNoticeId;
+        private Dictionary<ulong, double> _buyers = new();
         private void CommandBuyRaid(IPlayer user, string command, string[] args)
         {
-            if (user == null)
-            {
-                return;
-            }
-
+            user ??= _consolePlayer;
             var player = user.Player();
 
-            if (user.IsServer && args.Length >= 1 && args[0].IsSteamId())
+            if (DebugMode)
             {
-                player = BasePlayer.FindByID(ulong.Parse(args[0]));
-                args = Array.Empty<string>();
-            }
-            else if (args.Length > 1 && args[1].IsSteamId())
-            {
-                player = BasePlayer.FindByID(ulong.Parse(args[1]));
+                var where = player != null ? player.transform.position.ToString() : "server";
+                var why = args.Length > 0 ? string.Join(" ", args) : "<none>";
+                Puts($"user={user.Name} ({user.Id}), command=/{command}, pos={where}, args=[{why}]");
             }
 
-            if (!player.IsNetworked())
+            string[] retryArgs = args;
+            int index = Array.FindIndex(args, arg => arg.IsSteamId());
+            if (index >= 0)
             {
-                Message(user, args.Length > 1 ? m("TargetNotFoundId", user.Id, args[1]) : "TargetNotFoundNoId");
+                string targetId = args[index];
+
+                if (!BasePlayer.Find(targetId).Is(out BasePlayer target))
+                {
+                    Reply(user, "TargetNotFoundId", targetId);
+                    return;
+                }
+
+                player = target;
+
+                string[] filtered = new string[args.Length - 1];
+
+                if (index > 0)
+                {
+                    Array.Copy(args, 0, filtered, 0, index);
+                }
+
+                if (index < args.Length - 1)
+                {
+                    Array.Copy(args, index + 1, filtered, index, args.Length - index - 1);
+                }
+
+                args = filtered;
+            }
+            else if (player == null)
+            {
+                Reply(user, "TargetNotFoundNoId");
+                return;
+            }
+            else if (!player.IsConnected)
+            {
+                Reply(user, "TargetNotFoundId");
                 return;
             }
 
             var buyer = user.Player() ?? player;
+            ulong userid = buyer.userID;
 
-            if (SaveRestore.IsSaving)
+            if (!buyableEnabled)
             {
-                if (user.IsServer) timer.Once(1f, () => CommandBuyRaid(user, command, args));
-                else Message(buyer, "BuyableServerSaving");
+                SendNotification(buyer, "BuyRaidsDisabled");
                 return;
             }
 
-            if (IsGridLoading())
+            string busy = SaveRestore.IsSaving ? "BuyableServerSaving" : IsGridLoading() ? "GridIsLoading" : null;
+            bool purchaseAttempt = config.Settings.Buyable.RandomOnly || args.Length != 0;
+            if (busy != null && purchaseAttempt)
             {
-                if (user.IsServer) timer.Once(1f, () => CommandBuyRaid(user, command, args));
-                else Message(buyer, "GridIsLoading");
+                if (BusyNoticeId == 0)
+                {
+                    BusyNoticeId = buyer.userID;
+                    NotifyOnce(buyer, busy);
+                }
+                else if (BusyNoticeId != buyer.userID)
+                {
+                    NotifyOnce(buyer, busy);
+                    return;
+                }
+
+                ulong id = buyer.userID;
+                timer.Once(1f, () =>
+                {
+                    if (buyer != null && buyer.IsConnected) CommandBuyRaid(user, command, retryArgs);
+                    else if (BusyNoticeId == id) BusyNoticeId = 0;
+                });
+
                 return;
             }
 
-            string userid = buyer.UserIDString;
-            if (_buyers.Contains(userid)) return;
-            _buyers.Add(userid);
-            InvokeHandler.Instance.Invoke(() => _buyers.Remove(userid), 0.5f);
+            BusyNoticeId = 0;
+
+            double now = Time.timeAsDouble;
+            if (_buyers.TryGetValue(userid, out var t) && t > now)
+            {
+                SendNotification(buyer, "BuyCooldown", Math.Round(t - now, 2));
+                return;
+            }
+            if (_buyers.Count > 10) _buyers.Clear();
+            _buyers[userid] = now + 0.5;
 
             if (!bypassRestarting && ServerMgr.Instance.Restarting && ServerMgr.Instance.restartCoroutine.Current != null)
             {
-                Message(buyer, buyer.IsAdmin ? "BuyableServerRestartingAdmin" : "BuyableServerRestarting");
+                SendNotification(buyer, buyer.IsAdmin ? "BuyableServerRestartingAdmin" : "BuyableServerRestarting");
                 return;
             }
 
             if (config.Settings.Buyable.UsePermission && !user.HasPermission("raidablebases.buyraid"))
             {
-                Message(user, "No Permission");
+                SendNotification(buyer, "No Permission");
                 return;
             }
 
             if (player.HasPermission("raidablebases.banned") || player.HasPermission("raidablebases.buyraid.banned"))
             {
-                Message(player, player.IsAdmin ? "BannedAdmin" : "Banned", player.UserIDString);
+                SendNotification(buyer, buyer.IsAdmin ? "BannedAdmin" : "Banned", buyer.UserIDString);
                 return;
             }
 
-            if (!IsCopyPasteLoaded(out var error))
+            if (!IsPasteEngineReady(out var error))
             {
-                Message(buyer, error);
+                SendNotification(buyer, error);
                 return;
             }
 
-            if (args.Length == 0)
+            if (args.Length == 0) // exposes hook call
             {
-                if (Interface.CallHook("OnPurchaseBase", buyer, player) != null)
+                if (HarmonyModInterface.CallHook("OnPurchaseBase", buyer, player) != null)
                 {
                     return;
                 }
 
-                if (config.UI.Buyable.Enabled)
+                if (!config.Settings.Buyable.RandomOnly)
                 {
-                    UI.ShowBuyableUi(player, false);
+                    if (config.UI.Buyable.Enabled)
+                    {
+                        UI.ShowBuyableUi(buyer, false);
+                    }
+                    else
+                    {
+                        SendNotification(buyer, "BuySyntax", config.Settings.BuyCommand, user.IsServer ? "ID" : user.Id);
+                    }
+
+                    return;
                 }
-                else
+            }
+
+            if (args.Contains("reset") && config.Settings.Buyable.Cooldowns.Costs.Any && data.BuyableCooldowns.ContainsKey(player.userID))
+            {
+                CommandBuyRaidTakePayments(user, buyer, player, -1, Array.Empty<string>());
+                return;
+            }
+
+            string value = config.Settings.Buyable.RandomOnly ? string.Empty : args[0].Replace("__", " ");
+            string mode = null;
+            if (config.Settings.Buyable.RandomOnly)
+            {
+                using var rng = DisposableList<string>();
+
+                foreach (var m in RaidableModes)
                 {
-                    Message(buyer, "BuySyntax", config.Settings.BuyCommand, user.IsServer ? "ID" : user.Id);
+                    if (HasBuyableCooldown(player, m, false) || !CanSpawnDifficultyToday(RaidableType.Purchased, m) || !IsDifficultyAvailable(m, RaidableType.Purchased, false) || !IsDifficultyAvailable(m, RaidableType.Purchased, true))
+                    {
+                        continue;
+                    }
+
+                    int limit = config.Settings.Buyable.Limits.Get(m);
+                    if (limit < 0 || limit > 0 && Get(m, true) >= limit)
+                    {
+                        continue;
+                    }
+
+                    if (!Buildings.Profiles.Values.Exists(profile => profile.Options.Mode == m && profile.Options.Permission.Has(player, RaidableType.Purchased)))
+                    {
+                        continue;
+                    }
+
+                    if (!isDifficultyEnabledAfterWipeOverridden && !IsDifficultyEnabledAfterWipe(m, RaidableType.Purchased, player.UserIDString, out _))
+                    {
+                        continue;
+                    }
+
+                    rng.Add(m);
                 }
-                return;
-            }
 
-            if (args[0].Equals("reset", StringComparison.CurrentCultureIgnoreCase) && config.Settings.Buyable.Cooldowns.Costs.Any)
+                if (rng.Count == 0)
+                {
+                    SendNotification(buyer, "BuyAnotherDifficulty", RaidableMode.Random);
+                    return;
+                }
+
+                mode = rng.GetSecureRandom();
+                value = mode;
+            }
+            else
             {
-                CommandBuyRaidTakePayments(user, buyer, player, Array.Empty<string>());
-                return;
+                mode = GetRaidableMode(value, user, buyer);
             }
 
-            if (!buyableEnabled && !buyer.HasPermission("raidablebases.canbypass"))
+            int purchaseType = GetRequestedPurchaseType(player, args);
+            if (!CanBuyRaidType(player, purchaseType))
             {
-                Message(buyer, "BuyRaidsDisabled");
+                SendNotification(buyer, "BuyableTypeUnavailable");
                 return;
             }
 
-            string value = args[0].Replace("__", " ");
-            string mode = GetRaidableMode(value, user, buyer);
-
-            if (HasBuyableCooldown(buyer, mode))
+            if (HasBuyableCooldown(player, mode, true))
             {
                 return;
             }
 
             if (!CanSpawnDifficultyToday(RaidableType.Purchased, mode))
             {
-                if (!CanFileMode(user, buyer)) Message(buyer, "No Permission To Buy File", value);
-                else if (!FileExists(value)) Message(buyer, "FileDoesNotExist2", value);
-                else Message(buyer, "BuyDifficultyNotAvailableToday", mode);
+                if (!CanFileMode(user, buyer)) SendNotification(buyer, "No Permission To Buy File", value);
+                else if (!FileExists(value)) SendNotification(buyer, "FileDoesNotExist2", value);
+                else SendNotification(buyer, "BuyDifficultyNotAvailableToday", mode);
                 return;
             }
 
-            if (!config.Settings.Include.Any && (!args.Contains("free") || user == null || !user.IsAdmin))
+            if (!config.Settings.Include.Any && !IsFreePurchase(user, buyer, args))
             {
-                Message(player, "NoBuyableEventsCostsEnabled");
+                SendNotification(buyer, "NoBuyableEventsCostsEnabled");
                 return;
             }
 
             if (mode == RaidableMode.Random || !IsDifficultyAvailable(mode, RaidableType.Purchased, false))
             {
-                Message(buyer, "BuyAnotherDifficulty", value);
+                SendNotification(buyer, "BuyAnotherDifficulty", value);
                 return;
             }
 
             if (!IsDifficultyAvailable(mode, RaidableType.Purchased, true))
             {
-                Message(buyer, "BuyRaidNotConfiguredProperly");
+                SendNotification(buyer, "BuyRaidNotConfiguredProperly");
                 return;
             }
 
@@ -844,58 +1135,61 @@ namespace RaidableBases
             {
                 if (config.Settings.Buyable.AutoCloseUi)
                 {
-                    UI.DestroyTimer(player, player.userID, UiType.Buyable);
-                    CuiHelper.DestroyUi(player, "RB_UI_Buyable");
+                    UI.DestroyBuyableUi(buyer);
                 }
-                Message(buyer, "Max Events", command, config.Settings.Buyable.Max);
+                SendNotification(buyer, "Max Events", command, config.Settings.Buyable.Max);
                 return;
             }
 
             int max = config.Settings.Buyable.Limits.Get(mode);
             if (max < 0 || max > 0 && Get(mode, true) >= max)
             {
-                Message(buyer, "Max Events", mode, max);
+                SendNotification(buyer, "Max Events", mode, max);
                 return;
             }
 
             if (IsEventOwner(player, true))
             {
-                CuiHelper.DestroyUi(player, "RB_UI_Buyable");
-                Message(buyer, "BuyableAlreadyOwner");
+                SendNotification(buyer, "BuyableAlreadyOwner");
+                UI.DestroyBuyableUi(buyer);
                 return;
             }
 
-            if (IsQueued(player, GetMembers(buyer.userID)))
+            using var members = GetMembers(buyer, out bool delay);
+
+            if (IsQueued(player, members))
             {
-                CuiHelper.DestroyUi(player, "RB_UI_Buyable");
+                UI.DestroyBuyableUi(buyer);
+                if (delay) _buyers[userid] = now + 15;
                 return;
             }
 
-            if (!Buildings.Profiles.Values.Exists(profile =>
-                    profile?.Options != null
-                    && string.Equals(profile.Options.Mode, mode, StringComparison.OrdinalIgnoreCase)
-                    && profile.Options.Permission.Has(player, RaidableType.Purchased)))
+            if (!Buildings.Profiles.Values.Exists(profile => profile.Options.Mode == mode && profile.Options.Permission.Has(player, RaidableType.Purchased)))
             {
-                Message(player, "No Permission To Buy");
+                SendNotification(buyer, "No Permission To Buy");
                 return;
             }
 
             if (!isDifficultyEnabledAfterWipeOverridden && !IsDifficultyEnabledAfterWipe(mode, RaidableType.Purchased, player.UserIDString, out double remainingHours))
             {
                 double remainingSeconds = remainingHours * 3600;
-                Message(player, "BuyAnotherDifficultyWipeTimed", mode, FormatTime(remainingSeconds, player.UserIDString));
+                SendNotification(buyer, "BuyAnotherDifficultyWipeTimed", mode, FormatTime(remainingSeconds, buyer.UserIDString));
                 return;
             }
 
-            CuiHelper.DestroyUi(player, "RB_UI_Buyable");
+            UI.DestroyBuyableUi(buyer);
 
-            if (Interface.CallHook("OnPurchaseTakePayments", buyer, player, value, mode) is object obj && obj != null)
+            if (HarmonyModInterface.CallHook("OnPurchaseTakePayments", buyer, player, value, mode) is object obj && obj != null)
             {
-                Message(player, obj is string str ? str : "No Permission");
+                SendNotification(buyer, obj is string str ? str : "No Permission");
                 return;
             }
 
-            CommandBuyRaidTakePayments(user, buyer, player, args, false, mode, value);
+            if (DebugMode) Puts($"{user.Name} ({user.Id}): attempt to take payment");
+
+            int level = GetLevelFromMode(mode);
+
+            CommandBuyRaidTakePayments(user, buyer, player, level, args, false, mode, value);
         }
 
         private bool RemovePlayer(BasePlayer player, bool justEntered = true, float tolerance = 1f)
@@ -908,7 +1202,7 @@ namespace RaidableBases
                 if (!raid.InRangeTolerance(v, tolerance)) continue;
                 if (raid.RemovePlayer(player, raid.Location, raid.ProtectionRadius, raid.Type, justEntered))
                 {
-                    Message(player, "Another plugin has forcefully removed you from this event!");
+                    SendNotification(player, "Another plugin has forcefully removed you from this event!");
                     return true;
                 }
             }
@@ -926,42 +1220,42 @@ namespace RaidableBases
             return false;
         }
 
-        private bool HasBuyableCooldown(BasePlayer buyer, int level)
+        private bool HasBuyableCooldown(BasePlayer buyer, int level, bool message = true)
         {
-            return GetModeFromLevel(level, out string mode) && HasBuyableCooldown(buyer, mode, true);
+            return GetModeFromLevel(level, out string mode) && HasBuyableCooldown(buyer, mode, message);
         }
 
-        public void CommandBuyRaidTakePayments(IPlayer user, BasePlayer buyer, BasePlayer player, string[] args, bool reset = true, string mode = RaidableMode.Disabled, string value = null)
+        public void CommandBuyRaidTakePayments(IPlayer user, BasePlayer buyer, BasePlayer player, int level, string[] args, bool reset = true, string mode = RaidableMode.Disabled, string value = null)
         {
             var payments = new Payments(buyer);
             var money = reset ? config.Settings.Buyable.Cooldowns.Costs.Money : config.Settings.Include.Economics ? config.Settings.Economics.Get(mode) : 0.0;
             var points = reset ? config.Settings.Buyable.Cooldowns.Costs.Points : config.Settings.Include.ServerRewards ? config.Settings.ServerRewards.Get(mode) : 0;
             var options = reset ? new() { config.Settings.Buyable.Cooldowns.Costs.Custom } : config.Settings.Include.Custom && config.Settings.Custom.TryGetValue(mode, out var val) ? val : new();
-            var free = (args.Contains("free") && user != null && user.IsAdmin) || (user != null && !user.IsServer && user.HasPermission("raidablebases.buyraid.free")) || (buyer != null && buyer.HasPermission("raidablebases.buyraid.free"));
+            var free = IsFreePurchase(user, buyer, args);
             if (free)
             {
                 InitializeFreePayments(buyer, player, payments);
             }
             if (InvalidCustomPayment(buyer, player, payments, options, free))
             {
+                if (DebugMode) Puts($"{user.Name} ({user.Id}): attempt to take custom payment failed");
                 return;
             }
             if (InvalidEconomicsPayment(buyer, player, payments, money, free))
             {
+                if (DebugMode) Puts($"{user.Name} ({user.Id}): attempt to take payment failed");
                 return;
             }
             if (InvalidServerRewardsPayment(buyer, player, payments, points, free))
             {
+                if (DebugMode) Puts($"{user.Name} ({user.Id}): attempt to take rp failed");
                 return;
             }
             if (payments.valid)
             {
                 ProcessValidPayments(user, buyer, player, payments, mode, reset, free, value, args);
             }
-            else
-            {
-                ProcessInvalidPayments(buyer, options, money, points);
-            }
+            else ProcessInvalidPayments(buyer, options, level, money, points, reset);
         }
 
         private void InitializeFreePayments(BasePlayer buyer, BasePlayer player, Payments payments)
@@ -986,7 +1280,7 @@ namespace RaidableBases
             return !free && points > 0 && ServerRewards.CanCall() && (payments.ServerRewards = TryBuyRaidServerRewards(points, buyer, player)) == null;
         }
 
-        private void ProcessValidPayments(IPlayer user, BasePlayer buyer, BasePlayer player, Payments payments, string mode, bool reset, bool free, string value, string[] args)
+        private bool ProcessValidPayments(IPlayer user, BasePlayer buyer, BasePlayer player, Payments payments, string mode, bool reset, bool free, string value, string[] args)
         {
             if (!reset)
             {
@@ -994,43 +1288,57 @@ namespace RaidableBases
                 if (value != null && Buildings.Profiles.ContainsKey(value) && !FileExists(value)) value = null;
                 if (config.Settings.Buyable.Refunds.Repeat && despawnCooldowns.TryGetValue(player.userID, out var t) && t.Item2 == mode && FileExists(t.Item1)) value = t.Item1;
 
-                payments.type = args.Contains("pve") || player.HasPermission("raidablebases.buyraid.pveonly") ? 1 : args.Contains("pvp") || player.HasPermission("raidablebases.buyraid.pvponly") ? 2 : 0;
+                payments.type = GetRequestedPurchaseType(player, args);
 
-                payments.Take(false);
+                if (BuyRaid(mode, payments, player, value, free))
+                {
+                    if (DebugMode) Puts($"{user.Name} ({user.Id}): successful payment");
+                    payments.Take(false);
+                    return true;
+                }
 
-                BuyRaid(mode, payments, player, value, free);
+                return false;
             }
             else if (data.BuyableCooldowns.Remove(player.userID))
             {
                 payments.Take(true);
                 UI.UpdateUi(player, UiType.Cooldown);
-                Message(buyer, "RemovedCooldownFor", player.displayName, player.UserIDString);
+                SendNotification(buyer, "RemovedCooldownFor", player.displayName, player.UserIDString);
+                return true;
             }
+            SendNotification(buyer, "NoCooldownFor", player.displayName, player.UserIDString);
+            return false;
         }
 
-        private void ProcessInvalidPayments(BasePlayer buyer, List<CustomCostOptions> options, double money, int points)
+        private void ProcessInvalidPayments(BasePlayer buyer, List<CustomCostOptions> options, int level, double money, int points, bool reset)
         {
-            if (options.Count > 0 && (!config.Settings.Include.Custom && options.Exists(o => o.Enabled) || !options.Exists(o => o.Enabled)))
+            bool hasCustomCost = options.Exists(o => o.isItem || o.isPlugin);
+
+            if (money > 0 && (!Economics.CanCall() && !IQEconomic.CanCall() && !BankSystem.CanCall()))
             {
-                Message(buyer, "CustomWithdrawDisabled");
-            }
-            else if (money > 0 && (!Economics.CanCall() && !IQEconomic.CanCall() && !BankSystem.CanCall()))
-            {
-                Message(buyer, "EconomicsWithdrawDisabled");
+                if (DebugMode) Puts($"{buyer.displayName} ({buyer.UserIDString}): invalid payment, no economy plugin is loaded");
+                SendNotification(buyer, "EconomicsWithdrawDisabled");
             }
             else if (points > 0 && !ServerRewards.CanCall())
             {
-                Message(buyer, "ServerRewardPointsDisabled");
+                if (DebugMode) Puts($"{buyer.displayName} ({buyer.UserIDString}): invalid payment, server rewards is not loaded");
+                SendNotification(buyer, "ServerRewardPointsDisabled");
             }
-            else if (money == 0 && config.Settings.Include.Economics && (Economics.CanCall() || IQEconomic.CanCall() || BankSystem.CanCall()))
+            else if (!reset && hasCustomCost && !config.Settings.Include.Custom)
             {
-                Message(buyer, "NoBuyableEventsCostConfigured");
+                if (DebugMode) Puts($"{buyer.displayName} ({buyer.UserIDString}): invalid custom payment configuration, Require Custom Costs is not true!");
+                SendNotification(buyer, "CustomWithdrawDisabled");
             }
-            else if (points == 0 && config.Settings.Include.ServerRewards && ServerRewards.CanCall())
+            else if (!reset && !hasCustomCost && config.Settings.Include.Custom)
             {
-                Message(buyer, "NoBuyableEventsCostConfigured");
+                if (DebugMode) Puts($"{buyer.displayName} ({buyer.UserIDString}): invalid custom payment configuration, no payment is enabled!");
+                SendNotification(buyer, "CustomWithdrawDisabled");
             }
-            else Message(buyer, "NoBuyableEventsCostConfigured");
+            else
+            {
+                if (DebugMode) Puts($"{buyer.displayName} ({buyer.UserIDString}): invalid payment");
+                SendNotification(buyer, "NoBuyableEventsCostConfigured");
+            }
         }
 
         public bool IsQueued(BasePlayer player, HashSet<ulong> members)
@@ -1041,7 +1349,7 @@ namespace RaidableBases
                 {
                     if (sp.type == RaidableType.Purchased && sp.userid == member)
                     {
-                        Message(player, player.userID == sp.userid ? "BuyableAlreadyQueued" : "BuyableAlreadyQueuedAllied");
+                        SendNotification(player, player.userID == sp.userid ? "BuyableAlreadyQueued" : "BuyableAlreadyQueuedAllied");
 
                         return true;
                     }
@@ -1070,12 +1378,13 @@ namespace RaidableBases
         {
             if (RaidableModes.Count == 0 && IsGridLoading())
             {
-                Message(user, "GridIsLoading");
+                Reply(user, "GridIsLoading");
                 return;
             }
 
             var player = user.Player();
             bool isAdmin = user.IsServer || player.IsAdmin;
+            bool isConnected = player != null && player.IsConnected;
             string arg = args.Length >= 1 ? args[0].ToLower() : string.Empty;
 
             switch (arg)
@@ -1085,12 +1394,12 @@ namespace RaidableBases
                         var nearest = GetNearestBase(player.transform.position);
                         if (nearest == null || nearest.AllowPVP || !nearest.IsParticipant(player) || !CanBypassLock(nearest, player))
                         {
-                            Message(player, "CommandNotAllowed");
+                            SendNotification(player, "CommandNotAllowed");
                             return;
                         }
                         if (nearest.Type == RaidableType.Purchased && player.HasPermission("raidablebases.buyraid.pveonly"))
                         {
-                            Message(player, "CommandNotAllowed");
+                            SendNotification(player, "CommandNotAllowed");
                             return;
                         }
                         nearest._currentSphereColor = SphereColor.None;
@@ -1109,7 +1418,7 @@ namespace RaidableBases
                     }
                 case "version":
                     {
-                        Message(user, $"RaidableBases {Version} by nivex");
+                        Reply(user, $"RaidableBases {Version} by nivex");
                         return;
                     }
                 case "unban":
@@ -1131,7 +1440,7 @@ namespace RaidableBases
                         }
                         else
                         {
-                            if (user.IsServer) { user.Message("You must specify a user! rb unban <steamid>"); return; }
+                            if (user.IsServer) { Puts("You must specify a user! rb unban <steamid>"); return; }
                             Revoke(user.Id);
                         }
                         void Revoke(string userid)
@@ -1141,13 +1450,13 @@ namespace RaidableBases
                                 if (permission.GroupHasPermission(group, "raidablebases.banned"))
                                 {
                                     permission.RevokeGroupPermission(group, "raidablebases.banned");
-                                    user.Message($"Banned permission has been removed from group: {group}");
+                                    ReplyOrLog(user, $"Banned permission has been removed from group: {group}");
                                 }
                             }
                             if (permission.UserHasPermission(userid, "raidablebases.banned"))
                             {
                                 permission.RevokeUserPermission(userid, "raidablebases.banned");
-                                user.Message($"Banned permission has been revoked.");
+                                ReplyOrLog(user, $"Banned permission has been revoked.");
                             }
                         }
                         return;
@@ -1172,7 +1481,7 @@ namespace RaidableBases
                         {
                             wiped = true;
                             bool ret = CheckForWipe(config.Settings.Wipe.RemoveFromList);
-                            Message(user, ret ? "Wipe successful." : "There's nothing to wipe.");
+                            Reply(user, ret ? "Wipe successful." : "There's nothing to wipe.");
                         }
 
                         return;
@@ -1191,7 +1500,7 @@ namespace RaidableBases
                         if (isAdmin)
                         {
                             isDifficultyEnabledAfterWipeOverridden = !isDifficultyEnabledAfterWipeOverridden;
-                            Message(user, $"Bypassing wipe time check: {isDifficultyEnabledAfterWipeOverridden}");
+                            Reply(user, $"Bypassing wipe time check: {isDifficultyEnabledAfterWipeOverridden}");
                         }
 
                         return;
@@ -1201,7 +1510,7 @@ namespace RaidableBases
                         if (isAdmin)
                         {
                             bypassRestarting = !bypassRestarting;
-                            Message(user, $"Bypassing restart check: {bypassRestarting}");
+                            Reply(user, $"Bypassing restart check: {bypassRestarting}");
                         }
 
                         return;
@@ -1212,21 +1521,21 @@ namespace RaidableBases
                         {
                             int removed = BaseEntity.saveList.RemoveWhere(IsKilled);
 
-                            Message(user, $"Removed {removed} invalid entities from the save list.");
+                            Reply(user, $"Removed {removed} invalid entities from the save list.");
 
                             if (SaveRestore.IsSaving)
                             {
                                 SaveRestore.IsSaving = false;
-                                Message(user, "Server save has been canceled. You must type server.save again, and then restart your server.");
+                                Reply(user, "Server save has been canceled. You must type server.save again, and then restart your server.");
                             }
-                            else Message(user, "Server save is operating normally.");
+                            else Reply(user, "Server save is operating normally.");
                         }
 
                         return;
                     }
                 case "tp":
                     {
-                        if (player.IsNetworked() && (isAdmin || user.HasPermission("raidablebases.allow")))
+                        if (isConnected && (isAdmin || user.HasPermission("raidablebases.allow")))
                         {
                             RaidableBase raid = null;
                             float num = 9999f;
@@ -1251,23 +1560,6 @@ namespace RaidableBases
 
                         return;
                     }
-                case "isblocked":
-                    {
-                        if (isAdmin && player)
-                        {
-                            Vector3 v = player.transform.position;
-                            if (player.IsFlying && Physics.Raycast(player.eyes.HeadRay(), out var hit, 500f, targetMask2, QueryTriggerInteraction.Ignore))
-                            {
-                                v = hit.point;
-                                DrawText(player, 5f, Color.red, v, "!");
-                            }
-                            var blocked = SpawnsController.IsLocationBlocked(v);
-                            Message(user, "IsLocationBlocked: " + blocked);
-                            var baseName = Buildings.Profiles.FirstOrDefault().Key;
-                            Queues.Test(user, baseName, v, out _, 50f);
-                        }
-                        return;
-                    }
                 case "test":
                     {
                         if (isAdmin && player != null)
@@ -1290,14 +1582,14 @@ namespace RaidableBases
                         if (player != null && isAdmin)
                         {
                             SpawnsController.GetSpawnHeight(player.transform.position, player: player);
-                            if (SpawnsController.IsSafeZone(player.transform.position)) Message(user, "Safe zone position");
-                            if (SpawnsController.IsMonumentPosition(player.transform.position, 0f)) Message(user, "Monument position");
+                            if (SpawnsController.IsSafeZone(player.transform.position)) Reply(user, "Safe zone position");
+                            if (SpawnsController.IsMonumentPosition(player.transform.position, 0f)) Reply(user, "Monument position");
                         }
                         return;
                     }
                 case "grid":
                     {
-                        if (player.IsNetworked() && (isAdmin || user.HasPermission("raidablebases.ddraw")))
+                        if (isConnected && (isAdmin || user.HasPermission("raidablebases.ddraw")))
                         {
                             ShowGrid(player, args.Length == 2 && args[1] == "all", args.Length == 2 ? args[1] : string.Empty);
                         }
@@ -1315,28 +1607,46 @@ namespace RaidableBases
                         {
                             int num = Queues.queue.Count;
                             Queues.RestartCoroutine();
-                            Message(user, $"Cleared and refunded {num} in the queue.");
+                            Reply(user, $"Cleared and refunded {num} in the queue.");
                         }
                         return;
                     }
                 case "resetui":
                     {
-                        UiHandler.DestroyUi(player);
-                        if (UI.Offsets.TryGetValue(player.userID, out var ui))
+                        if (player == null)
                         {
-                            if (args.Length == 1) UI.Offsets.Remove(player.userID);
-                            if (args.Contains("buyable")) ui.Remove(UiType.Buyable);
-                            if (args.Contains("cooldown")) ui.Remove(UiType.Cooldown);
-                            if (args.Contains("delay")) ui.Remove(UiType.Delay);
-                            if (args.Contains("lockout")) ui.Remove(UiType.Lockout);
-                            if (args.Contains("status")) ui.Remove(UiType.Status);
-                            Message(player, "ResetUI");
+                            return;
                         }
+
+                        UiType uiType = args.Length == 1 ? UiType.Invalid : GetMovableUiType(args);
+
+                        if (args.Length > 1 && uiType == UiType.Invalid)
+                        {
+                            SendNotification(player, "Invalid argument!");
+                            return;
+                        }
+
+                        _targetInfo?.Hide(player);
+                        UI.DestroyAllUi(player);
+
+                        if (args.Length == 1)
+                        {
+                            UI.Offsets.Remove(player.userID);
+                        }
+                        else if (UI.Offsets.TryGetValue(player.userID, out Dictionary<UiType, UiOffsets> offsets))
+                        {
+                            offsets.Remove(uiType);
+                        }
+
+                        UI.SaveOffsetData();
+                        UI.UpdateUi(player, UiType.Buyable);
                         UI.UpdateUi(player, UiType.Cooldown);
                         UI.UpdateUi(player, UiType.Delay);
                         UI.UpdateUi(player, UiType.Lockout);
+                        UI.UpdateUi(player, UiType.PasteProgress);
                         UI.UpdateUi(player, UiType.Status);
-                        Message(player, "Your UI settings have been reset to defaults.");
+                        UI.UpdateUi(player, UiType.Teleport);
+                        SendNotification(player, "Your UI settings have been reset to defaults.");
                         return;
                     }
                 case "setui":
@@ -1361,51 +1671,64 @@ namespace RaidableBases
                 ShowNextScheduledEvent(user);
             }
 
-            if (player.IsNetworked())
+            if (isConnected)
             {
                 DrawRaidLocations(player, isAdmin || player.HasPermission("raidablebases.ddraw"));
             }
         }
 
-        private readonly Dictionary<string, UiType> uiMappings = new()
+        private void SetDefaultsForOffsetType(BasePlayer player, UiType uiType, UiOffsets offsets)
         {
-            { "buyable", UiType.Buyable },
-            { "cooldown", UiType.Cooldown },
-            { "delay", UiType.Delay },
-            { "lockout", UiType.Lockout },
-            { "status", UiType.Status }
-        };
+            if (player == null || offsets == null)
+            {
+                return;
+            }
 
-        private void SaveUiOffset(BasePlayer player, UiType uiType, UiOffsets os)
-        {
             switch (uiType)
             {
                 case UiType.Buyable:
-                    (config.UI.Buyable.OffsetMin, config.UI.Buyable.OffsetMax) = (os.Min, os.Max);
+                    (config.UI.Buyable.OffsetMin, config.UI.Buyable.OffsetMax, config.UI.Buyable.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaultBuyableOffsets = offsets.Clone();
                     break;
                 case UiType.Cooldown:
-                    (config.UI.BuyableCooldowns.OffsetMin, config.UI.BuyableCooldowns.OffsetMax) = (os.Min, os.Max);
+                    (config.UI.BuyableCooldowns.OffsetMin, config.UI.BuyableCooldowns.OffsetMax, config.UI.BuyableCooldowns.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaulCooldownOffsets = offsets.Clone();
                     break;
                 case UiType.Delay:
-                    (config.UI.Delay.OffsetMin, config.UI.Delay.OffsetMax) = (os.Min, os.Max);
+                    (config.UI.Delay.OffsetMin, config.UI.Delay.OffsetMax, config.UI.Delay.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaultDelayOffsets = offsets.Clone();
                     break;
                 case UiType.Lockout:
-                    (config.UI.Lockout.OffsetMin, config.UI.Lockout.OffsetMax) = (os.Min, os.Max);
+                    (config.UI.Lockout.OffsetMin, config.UI.Lockout.OffsetMax, config.UI.Lockout.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaultLockoutOffsets = offsets.Clone();
+                    break;
+                case UiType.PasteProgress:
+                    (config.UI.PasteProgress.OffsetMin, config.UI.PasteProgress.OffsetMax, config.UI.PasteProgress.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaultPasteProgressOffsets = offsets.Clone();
                     break;
                 case UiType.Status:
-                    (config.UI.Status.OffsetMin, config.UI.Status.OffsetMax) = (os.Min, os.Max);
+                    (config.UI.Status.OffsetMin, config.UI.Status.OffsetMax, config.UI.Status.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaultStatusOffsets = offsets.Clone();
                     break;
+                case UiType.Teleport:
+                    (config.UI.Teleport.OffsetMin, config.UI.Teleport.OffsetMax, config.UI.Teleport.NormalizedAnchor) = (offsets.Min, offsets.Max, offsets.NormalizedAnchor);
+                    UI.DefaultTeleportOffsets = offsets.Clone();
+                    break;
+                default:
+                    return;
             }
 
-            Message(player, $"You have saved the default offsets for the {uiType} UI.");
+            SendNotification(player, $"You have saved the default offsets for the {uiType} UI.");
 
             SaveConfig();
 
-            foreach (var data in UI.Offsets.ToList())
+            using var offsetCollections = UI.Offsets.Values.ToPooledList();
+
+            foreach (var col in offsetCollections)
             {
-                if (data.Value.ContainsKey(uiType))
+                if (col.ContainsKey(uiType))
                 {
-                    data.Value[uiType] = new UiOffsets(os.Min, os.Max);
+                    col[uiType] = offsets.Clone();
                 }
             }
 
@@ -1419,7 +1742,7 @@ namespace RaidableBases
 
         private bool CanBypassLock(RaidableBase raid, BasePlayer player)
         {
-            return raid.ownerId == 0uL || raid.BypassUseOwners() || raid.ownerId.IsSteamId() || raid.IsAlly(player);
+            return raid.ownerId == 0uL || raid.BypassUseOwners() || raid.IsAlly(player);
         }
 
         public void HandleHintsCommand(BasePlayer player)
@@ -1427,7 +1750,7 @@ namespace RaidableBases
             var nearest = GetNearestBase(player.transform.position);
             if (nearest == null)
             {
-                Message(player, "TargetTooFar");
+                SendNotification(player, "TargetTooFar");
                 return;
             }
 
@@ -1438,31 +1761,31 @@ namespace RaidableBases
             {
                 if (nearest.HintCooldowns.Count > 0)
                 {
-                    Message(player, "CommandNotAllowed");
+                    SendNotification(player, "CommandNotAllowed");
                     return;
                 }
 
                 if (!nearest.Options.Permission.Has(player, nearest.Type) || !string.IsNullOrWhiteSpace(opt.Permission) && !player.HasPermission(opt.Permission))
                 {
-                    Message(player, "No Permission");
+                    SendNotification(player, "No Permission");
                     return;
                 }
 
                 if (!opt.Enabled || opt.DrawTime <= 0f)
                 {
-                    Message(player, "CommandNotAllowed");
+                    SendNotification(player, "CommandNotAllowed");
                     return;
                 }
 
                 if (!nearest.IsParticipant(player) || !CanBypassLock(nearest, player))
                 {
-                    Message(player, "OwnerLocked");
+                    SendNotification(player, "OwnerLocked");
                     return;
                 }
 
                 if (!nearest.RequiredLootPercentageMet(opt.RequiredLootPercentage, out double percentageMet))
                 {
-                    Message(player, "Hints Loot Requirement", Math.Round(percentageMet, 2), opt.RequiredLootPercentage);
+                    SendNotification(player, "Hints Loot Requirement", Math.Round(percentageMet, 2), opt.RequiredLootPercentage);
                     return;
                 }
 
@@ -1505,57 +1828,43 @@ namespace RaidableBases
                 });
             }
 
-            Message(player, objects.Count > 0 ? "Hints Drawn On Screen" : "Hints None Available");
+            SendNotification(player, objects.Count > 0 ? "Hints Drawn On Screen" : "Hints None Available");
 
-            Interface.CallHook("OnRaidableBaseHint", player, nearest.Location, nearest.ProtectionRadius, nearest.Options.Level, nearest.GetLootAmountRemaining(), nearest.GetOwner(), nearest.GetRaiders());
+            HarmonyModInterface.CallHook("OnRaidableBaseHint", player, nearest.Location, nearest.ProtectionRadius, nearest.Options.Level, nearest.GetLootAmountCounted(), nearest.GetOwner(), nearest.GetRaiders());
         }
 
         public void HandleUiCommand(BasePlayer player, string[] args)
         {
-            if (!isInitialized || args.Length == 1)
+            UiType uiType = GetMovableUiType(args);
+
+            if (!isInitialized || player == null || args.Length == 1 || uiType == UiType.Invalid)
             {
-                Message(player, "Invalid argument!");
+                SendNotification(player, "Invalid argument!");
                 return;
             }
 
-            UiHandler.DestroyUi(player);
-
-            if (UI.Offsets.TryGetValue(player.userID, out var ui))
-            {
-                foreach (var (arg, uiType) in uiMappings)
-                {
-                    if (args.Contains(arg) && ui.TryGetValue(uiType, out var os))
-                    {
-                        SaveUiOffset(player, uiType, os);
-                        return;
-                    }
-                }
-
-                Message(player, "No matching UI type found for the provided arguments.");
-            }
-            else
-            {
-                Message(player, "No UI offsets found for your user ID.");
-            }
+            UiOffsets offsets = UI.GetOffsets(player.userID, uiType).Clone();
+            UI.DestroyUi(player, uiType);
+            SetDefaultsForOffsetType(player, uiType, offsets);
         }
 
         private void CommandInvite(IPlayer user, BasePlayer player, string[] args)
         {
-            if (args.Length < 2) { Message(user, "Invite Usage", config.Settings.HunterCommand); return; }
-            if (!(RustCore.FindPlayer(args[1]) is BasePlayer target)) { Message(user, "TargetNotFoundId", args[1]); return; }
+            if (args.Length < 2) { Reply(user, "Invite Usage", config.Settings.HunterCommand); return; }
+            if (!(RustCore.FindPlayer(args[1]) is BasePlayer target)) { Reply(user, "TargetNotFoundId", args[1]); return; }
             var isAllowed = user.IsServer || player.IsAdmin || player.HasPermission("fauxadmin.allowed");
-            var raid = isAllowed ? GetNearestBase(target.transform.position) : Raids.FirstOrDefault(x => x.ownerId.IsSteamId() && (x.ownerId == player.userID || x.IsAlly(player.userID, x.ownerId)));
-            if (raid == null) { Message(user, isAllowed ? "TargetTooFar" : "Invite Ownership Error"); return; }
-            if (!isAllowed && !player.HasPermission("raidablebases.invitecommand") && !raid.IsAlly(player.userID, target.userID)) { Message(user, "Invite Not Ally"); return; }
-            if (!isAllowed && !raid.IsPayLocked && raid.HasLockout(target)) { Message(user, "Invite Lockout Error"); Message(target, "Invite Failed"); return; }
+            var raid = isAllowed ? GetNearestBase(target.transform.position) : Raids.FirstOrDefault(x => x.ownerId.IsSteamId() && (x.ownerId == player.userID || x.IsAlly(player, x.ownerId)));
+            if (raid == null) { Reply(user, isAllowed ? "TargetTooFar" : "Invite Ownership Error"); return; }
+            if (!isAllowed && !player.HasPermission("raidablebases.invitecommand") && !raid.IsAlly(player, target)) { Reply(user, "Invite Not Ally"); return; }
+            if (!isAllowed && !raid.IsPayLocked && raid.HasLockout(target)) { Reply(user, "Invite Lockout Error"); SendNotification(target, "Invite Failed"); return; }
             if (!raid.raiders.TryGetValue(target.userID, out var raider)) raid.raiders[target.userID] = raider = new(target);
-            if (InRange(raid.Location, target.transform.position, raid.ProtectionRadius * 1.5f)) raider.lastActiveTime = Time.time;
-            if (user.IsServer || player.IsAdmin || user.HasPermission("raidablebases.allow")) Message(user, $"You can use this command to set them as the owner of this raid: {config.Settings.EventCommand} setowner {target.userID}");
+            if (InRange(raid.Location, target.transform.position, raid.ProtectionRadius * 1.5f)) raider.lastActiveTime = Time.timeAsDouble;
+            if (user.IsServer || player.IsAdmin || user.HasPermission("raidablebases.allow")) Reply(user, $"You can use this command to set them as the owner of this raid: {config.Settings.EventCommand} setowner {target.userID}");
             raider.IsAlly = true;
             raider.IsAllowed = true;
             raider.IsParticipant = true;
-            Message(target, "Invite Allowed", user.Name);
-            Message(user, "Invite Success", target.displayName);
+            SendNotification(target, "Invite Allowed", user.Name);
+            Reply(user, "Invite Success", target.displayName);
         }
 
         protected void DrawRaidLocations(BasePlayer player, bool hasPerm)
@@ -1577,16 +1886,23 @@ namespace RaidableBases
                 {
                     foreach (var raid in Raids)
                     {
-                        int num = BasePlayer.activePlayerList.Count(x => x.IsNetworked() && x.Distance(raid.Location) <= raid.ProtectionRadius * 3f);
+                        int num = BasePlayer.activePlayerList.Count(x => x != null && x.Distance(raid.Location) <= raid.ProtectionRadius * 3f);
                         int distance = Mathf.CeilToInt(player.transform.position.Distance(raid.Location));
                         string message = mx("RaidMessage", player.UserIDString, distance, num);
                         string flag = mx(raid.GetAllowKey(), player.UserIDString);
 
                         DrawText(player, 15f, Color.yellow, raid.Location, string.Format("<size=24>{0}{1} {2} [{3} {4}] {5}</size>", raid.BaseName, flag, raid.Type + ":" + raid.Mode(player.UserIDString, true), message, FormatGridReference(player, raid.Location), raid.Location));
 
-                        foreach (var ri in raid.raiders.Values.Where(x => x.IsAlly && x.player.IsNetworked()))
+                        foreach (var ri in raid.raiders.Values)
                         {
-                            DrawText(player, 15f, Color.yellow, ri.player.transform.position, $"<size=24>{mx("Ally", player.UserIDString).Replace(":", string.Empty)}</size>");
+                            BasePlayer ally = ri.player;
+
+                            if (!ri.IsAlly || ally == null || !ally.IsConnected)
+                            {
+                                continue;
+                            }
+
+                            DrawText(player, 15f, Color.yellow, ally.transform.position, $"<size=24>{mx("Ally", player.UserIDString).Replace(":", string.Empty)}</size>");
                         }
 
                         if (raid.ownerId.IsSteamId() && raid.GetOwner() is BasePlayer owner)
@@ -1614,7 +1930,7 @@ namespace RaidableBases
             }
             else message = FormatTime(time, user.Id);
 
-            QueueNotification(user, "Next", message);
+            SendNotification(user, "Next", message);
         }
 
         protected void ShowLadder(IPlayer user)
@@ -1643,8 +1959,8 @@ namespace RaidableBases
                 sb.Append(modes[i].template.Replace("Points", " " + points).Replace("Total", total + " "));
             }
 
-            QueueNotification(user, "RankedPoints", info.Raids, info.Points, info.TotalRaids, info.TotalPoints, user.IsServer ? rf(sb.ToString()) : sb.ToString());
-            QueueNotification(user, "RankedWins2", config.Settings.HunterCommand);
+            SendNotification(user, "RankedPoints", info.Raids, info.Points, info.TotalRaids, info.TotalPoints, user.IsServer ? rf(sb.ToString()) : sb.ToString());
+            SendNotification(user, "RankedWins2", config.Settings.HunterCommand);
         }
 
         protected void ShowLadder(IPlayer user, string[] args)
@@ -1660,7 +1976,7 @@ namespace RaidableBases
                 {
                     data.Players[user.Id] = new();
                 }
-                QueueNotification(user, "Your ranked stats have been reset.");
+                SendNotification(user, "Your ranked stats have been reset.");
                 return;
             }
 
@@ -1691,7 +2007,7 @@ namespace RaidableBases
                 }
             }
 
-            if (ladder.Count < 30 && ConVar.Server.hostname.EndsWith("ed Test"))
+            if (ladder.Count < 30 && ConVar.Server.hostname.EndsWith("rs Test Server"))
             {
                 for (int i = 0; i < 30 - ladder.Count; i++)
                 {
@@ -1708,7 +2024,7 @@ namespace RaidableBases
 
             if (ladder.Count == 0)
             {
-                QueueNotification(user, "Ladder Insufficient Players");
+                SendNotification(user, "Ladder Insufficient Players");
                 return;
             }
 
@@ -1744,7 +2060,7 @@ namespace RaidableBases
                   .Replace("{points}", $"{points}");
             }
 
-            QueueNotification(user, sb.ToString());
+            SendNotification(user, sb.ToString());
         }
 
         private int GetLevelFromMode(string mode)
@@ -1771,18 +2087,10 @@ namespace RaidableBases
             return -1;
         }
 
-        private bool GetModeFromLevel(int val, out string mode)
-        {
-            return GetModeFromLevel(val.ToString(), out mode);
-        }
-
-        private bool GetModeFromLevel(string value, out string mode)
+        private bool GetModeFromLevel(int level, out string mode)
         {
             mode = null;
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
+
             foreach (var profile in Buildings.Profiles.Values)
             {
                 string m = profile?.Options?.Mode;
@@ -1790,17 +2098,14 @@ namespace RaidableBases
                 {
                     continue;
                 }
-                if (profile.Options.Level.ToString() == value)
-                {
-                    mode = m;
-                    return true;
-                }
-                if (profile.Options.Mode.Equals(value, StringComparison.OrdinalIgnoreCase))
+
+                if (profile.Options.Level == level)
                 {
                     mode = m;
                     return true;
                 }
             }
+
             return false;
         }
 
@@ -1811,7 +2116,7 @@ namespace RaidableBases
                 return RaidableMode.Random;
             }
 
-            if (GetModeFromLevel(value, out var modeFromLevel))
+            if (int.TryParse(value, out int level) && GetModeFromLevel(level, out string modeFromLevel))
             {
                 return modeFromLevel;
             }
@@ -1823,7 +2128,7 @@ namespace RaidableBases
                     return mode;
                 }
             }
-            
+
             return GetFileMode(caller, buyer, value);
         }
 
@@ -1874,7 +2179,7 @@ namespace RaidableBases
         {
             foreach (var (key, profile) in Buildings.Profiles)
             {
-                if (key.Equals(baseName, StringComparison.OrdinalIgnoreCase) || profile.Options.AdditionalBases.Exists(extra => extra.Key.Equals(baseName, StringComparison.OrdinalIgnoreCase)))
+                if (profile.Options.Mode == key || key.Equals(baseName, StringComparison.OrdinalIgnoreCase) || profile.Options.AdditionalBases.Exists(extra => extra.Key.Equals(baseName, StringComparison.OrdinalIgnoreCase)))
                 {
                     val = (key, profile);
                     return true;
@@ -1973,18 +2278,32 @@ namespace RaidableBases
         {
             var player = user.Player();
             bool isAllowed = user.IsServer || player.IsAdmin || user.HasPermission("raidablebases.allow");
-            if (!CanCommandContinue(player, user, isAllowed, args))
+
+            if (HandledCommandArguments(player, user, isAllowed, args))
+            {
+                return;
+            }
+
+            string mode = RaidableMode.Random;
+            string baseName = null;
+
+            if (command == config.Settings.EventCommand && !TryResolveManualEventArguments(user, args, out mode, out baseName))
+            {
+                return;
+            }
+
+            if (!CanCommandContinue(player, user, isAllowed))
             {
                 return;
             }
             if (RaidableModes.Count == 0)
             {
-                Message(user, "GridIsLoading");
+                Reply(user, "GridIsLoading");
                 return;
             }
             if (command == config.Settings.EventCommand) // rbe
             {
-                ProcessEventCommand(user, player, isAllowed, args);
+                ProcessEventCommand(user, player, isAllowed, mode, baseName);
             }
             else if (command == config.Settings.ConsoleCommand) // rbevent
             {
@@ -1992,26 +2311,36 @@ namespace RaidableBases
             }
         }
 
-        protected void ProcessEventCommand(IPlayer user, BasePlayer player, bool isAllowed, string[] args) // rbe
+        protected void ProcessEventCommand(IPlayer user, BasePlayer player, bool isAllowed, string mode, string baseName) // rbe
         {
-            if (!isAllowed || !player.IsNetworked())
+            if (!isAllowed || player == null || !player.IsConnected)
             {
                 return;
             }
 
-            var baseName = Array.Find(args, FileExists);
-            var mode = GetRaidableMode(Array.Find(args, IsRaidableMode));
+            if (baseName != null && !FileExists(baseName))
+            {
+                SendNotification(user, "FileDoesNotExist2", baseName);
+                return;
+            }
+
             var (key, profile) = GetBuilding(RaidableType.Manual, mode, baseName, null);
 
             if (!IsProfileValid(key, profile, true, RaidableType.Manual))
             {
-                QueueNotification(user, profile == null ? "BuildingNotConfigured" : GetDebugMessage(mode, RaidableType.Manual, false, true, user.Id, key, profile.Options));
+                SendNotification(user, profile == null ? "BuildingNotConfigured" : GetDebugMessage(mode, RaidableType.Manual, false, true, user.Id, key, profile.Options));
                 return;
             }
 
-            if (!Physics.Raycast(player.eyes.HeadRay(), out var hit, isAllowed ? Mathf.Infinity : 100f, targetMask2, QueryTriggerInteraction.Ignore))
+            if (!Physics.Raycast(player.eyes.HeadRay(), out var hit, isAllowed ? Mathf.Infinity : 100f, targetMask2 | Layers.Mask.Default, QueryTriggerInteraction.Ignore))
             {
-                QueueNotification(user, "LookElsewhere");
+                SendNotification(user, "LookElsewhere");
+                return;
+            }
+
+            if (!player.IsAdmin && SpawnsController.IsAreaSafetyQueryAvailable)
+            {
+                SendNotification(user, "You must wait to use this command until the current request is completed.");
                 return;
             }
 
@@ -2020,7 +2349,7 @@ namespace RaidableBases
 
             if (!safe && !player.IsFlying && InRange(player.transform.position, hit.point, 50f))
             {
-                QueueNotification(user, "PasteIsBlockedStandAway");
+                SendNotification(user, "PasteIsBlockedStandAway");
                 return;
             }
 
@@ -2029,38 +2358,27 @@ namespace RaidableBases
             if (safe && (isAllowed || !SpawnsController.IsMonumentPosition(hit.point, profile.Options.ProtectionRadius(RaidableType.Manual))))
             {
                 var spawns = GridController.Spawns.Values.FirstOrDefault(s => s.GetLocations(CacheType.Generic).Exists(t => InRange2D(t.Location, hit.point, M_RADIUS)) || s.GetLocations(CacheType.Seabed).Exists(t => InRange2D(t.Location, hit.point, M_RADIUS)));
-                var point = hit.point + new Vector3(0f, profile.Options.Setup.PasteHeightAdjustment);
                 RandomBase rb = new();
+                rb.Position = hit.point;
+                rb.user = user;
                 rb.Instance = this;
                 rb.BaseName = key;
                 rb.Profile = profile;
-                rb.Position = point;
                 rb.type = RaidableType.Manual;
                 rb.spawns = spawns ??= new(this);
                 rb.payments = new();
                 rb.payments.admin = player.IsAdmin;
                 rb.pasteData = GetPasteData(key);
+                rb.admin = player.IsAdmin && player.IsFlying && player.isInvisible && player.IsHoldingEntity<Hammer>() ? player : null;
                 ParseListedOptions(rb);
-                if (profile.Options.Setup.ForcedHeight != -1)
-                {
-                    point.y = profile.Options.Setup.ForcedHeight;
-                }
-                point.y += rb.baseHeight;
-                if (PasteBuilding(rb))
-                {
-                    DrawText(player, 10f, Color.red, point, rb.BaseName);
-                    if (ConVar.Server.hostname.Contains("Test Server"))
-                    {
-                        DrawSphere(player, 30f, Color.blue, point, rb.pasteData.radius);
-                    }
-                    pasted = true;
-                }
+                pasted = true;
+                loadCoroutines[rb] = ServerMgr.Instance.StartCoroutine(PasteManualEvent(rb, hit.point, player, user));
             }
-            else QueueNotification(user, "PasteIsBlocked");
+            else SendNotification(user, "PasteIsBlocked");
 
             if (!pasted && Queues.Messages.Any())
             {
-                QueueNotification(user, IsGridLoading() ? "GridIsLoading" : Queues.Messages.GetLast(user.Id));
+                SendNotification(user, IsGridLoading() ? "GridIsLoading" : Queues.Messages.GetLast(user.Id));
             }
         }
 
@@ -2069,34 +2387,234 @@ namespace RaidableBases
             if (IsGridLoading())
             {
                 int count = GridController.Spawns.TryGetValue(RaidableType.Grid, out var value) ? value.Spawns.Count : 0;
-                QueueNotification(user, "GridIsLoadingFormatted", (Time.realtimeSinceStartup - GridController.gridTime).ToString("N02"), count);
+                SendNotification(user, "GridIsLoadingFormatted", (Time.realtimeSinceStartupAsDouble - GridController.gridTime).ToString("N02"), count);
                 return;
             }
             if (isAllowed)
             {
+                BasePlayer owner = null;
+                if (args.Length == 2 && ulong.TryParse(args[1], out var id) && id.IsSteamId()) owner = BasePlayer.FindByID(id);
                 int events = 1;
-                if (args.Length == 2) { if (!int.TryParse(args[1], out events)) events = 1; }
-                for (int i = 0; i < events; i++) { SpawnRandomBase(RaidableType.Manual, GetRaidableMode(Array.Find(args, IsRaidableMode)), Array.Find(args, FileExists), isAllowed, null, null, isAllowed && user.IsConnected ? user : null); }
-                Message(player, "BaseQueued", Queues.queue.Count);
+                if (args.Length == 2 && !args[1].IsSteamId() && int.TryParse(args[1], out var evts) && MeetsManualEventMaximum(owner, user, evts)) events = evts;
+                for (int i = 0; i < events; i++) { SpawnRandomBase(RaidableType.Manual, GetRaidableMode(Array.Find(args, IsRaidableMode)), Array.Find(args, FileExists), isAllowed, null, owner, isAllowed && user.IsConnected ? user : null); }
+                SendNotification(player, "BaseQueued", Queues.queue.Count);
             }
         }
 
-        private bool CanCommandContinue(BasePlayer player, IPlayer user, bool isAllowed, string[] args)
+        private bool CanCommandContinue(BasePlayer player, IPlayer user, bool isAllowed)
         {
-            if (HandledCommandArguments(player, user, isAllowed, args))
+            if (!IsPasteEngineReady(out var error))
             {
+                Reply(user, error);
                 return false;
             }
 
-            if (!IsCopyPasteLoaded(out var error))
+            return MeetsManualEventMaximum(player, user, 1);
+        }
+
+        private bool TryResolveManualEventArguments(IPlayer user, string[] args, out string mode, out string baseName)
+        {
+            bool hasDifficulty = false;
+            bool hasBaseName = false;
+            mode = RaidableMode.Random;
+            baseName = null;
+
+            foreach (string arg in args)
             {
-                Message(user, error);
-                return false;
+                bool isDifficulty = TryGetManualEventMode(arg, out string resolvedMode);
+                bool isBase = TryGetManualEventBaseName(arg, out string resolvedBaseName);
+
+                if (!isDifficulty && !isBase)
+                {
+                    ReplyUnknownManualEventArgument(user, arg);
+                    return false;
+                }
+
+                if (isDifficulty && !hasDifficulty)
+                {
+                    mode = resolvedMode;
+                    hasDifficulty = true;
+                }
+
+                if (isBase && !hasBaseName)
+                {
+                    baseName = resolvedBaseName;
+                    hasBaseName = true;
+                }
             }
 
-            if (!(user.IsServer || player.IsAdmin || user.HasPermission("raidablebases.bypassmaxmanualeventlimit")) && Get(RaidableType.Manual) >= config.Settings.Manual.Max)
+            return true;
+        }
+
+        private bool TryGetManualEventMode(string value, out string mode)
+        {
+            if (value.Equals(RaidableMode.Random, StringComparison.OrdinalIgnoreCase))
             {
-                QueueNotification(user, "Max Events", RaidableType.Manual, config.Settings.Manual.Max);
+                mode = RaidableMode.Random;
+                return true;
+            }
+
+            if (int.TryParse(value, out int level) && GetModeFromLevel(level, out mode))
+            {
+                return true;
+            }
+
+            foreach (string configuredMode in GetRaidableModes())
+            {
+                if (configuredMode.Equals(value, StringComparison.OrdinalIgnoreCase))
+                {
+                    mode = configuredMode;
+                    return true;
+                }
+            }
+
+            mode = RaidableMode.Random;
+            return false;
+        }
+
+        private bool TryGetManualEventBaseName(string value, out string baseName)
+        {
+            foreach (var (key, profile) in Buildings.Profiles)
+            {
+                if (key.Equals(value, StringComparison.OrdinalIgnoreCase))
+                {
+                    baseName = key;
+                    return true;
+                }
+
+                foreach (string additionalBase in profile.Options.AdditionalBases.Keys)
+                {
+                    if (additionalBase.Equals(value, StringComparison.OrdinalIgnoreCase))
+                    {
+                        baseName = additionalBase;
+                        return true;
+                    }
+                }
+            }
+
+            baseName = null;
+            return false;
+        }
+
+        private void ReplyUnknownManualEventArgument(IPlayer user, string value)
+        {
+            using var candidates = DisposableList<string>();
+            candidates.AddRange(ManualEventHelperCommands);
+
+            foreach (string mode in GetRaidableModes())
+            {
+                AddManualEventCandidate(candidates, mode);
+            }
+
+            AddManualEventCandidate(candidates, RaidableMode.Random);
+
+            foreach (var (key, profile) in Buildings.Profiles)
+            {
+                AddManualEventCandidate(candidates, key);
+
+                foreach (string additionalBase in profile.Options.AdditionalBases.Keys)
+                {
+                    AddManualEventCandidate(candidates, additionalBase);
+                }
+            }
+
+            int maximumDistance = Math.Max(2, value.Length / 3);
+            using var matches = DisposableList<(string Value, int Distance)>();
+            using var previous = DisposableList<int>();
+            using var current = DisposableList<int>();
+
+            foreach (string candidate in candidates)
+            {
+                int distance = GetEditDistance(value, candidate, previous, current);
+
+                if (distance <= maximumDistance)
+                {
+                    matches.Add((candidate, distance));
+                }
+            }
+
+            matches.Sort((a, b) =>
+            {
+                int result = a.Distance.CompareTo(b.Distance);
+                return result != 0 ? result : string.Compare(a.Value, b.Value, StringComparison.OrdinalIgnoreCase);
+            });
+
+            using var closestMatches = DisposableList<string>();
+
+            for (int i = 0; i < matches.Count && i < 3; i++)
+            {
+                closestMatches.Add(matches[i].Value);
+            }
+
+            string suggestions = closestMatches.Count == 0
+                ? string.Empty
+                : en
+                    ? $" Did you mean: {string.Join(", ", closestMatches)}?"
+                    : $" Возможно, вы имели в виду: {string.Join(", ", closestMatches)}?";
+
+            ReplyOrLog(user, en
+                ? $"Unknown /{config.Settings.EventCommand} argument '{value}'. Nothing was spawned.{suggestions}"
+                : $"Неизвестный аргумент /{config.Settings.EventCommand}: '{value}'. База не была создана.{suggestions}");
+        }
+
+        private static void AddManualEventCandidate(List<string> candidates, string value)
+        {
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (candidates[i].Equals(value, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            candidates.Add(value);
+        }
+
+        private static int GetEditDistance(string value, string candidate, List<int> previous, List<int> current)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return candidate?.Length ?? 0;
+            }
+
+            if (string.IsNullOrEmpty(candidate))
+            {
+                return value.Length;
+            }
+
+            previous.Clear();
+            current.Clear();
+
+            for (int i = 0; i <= candidate.Length; i++)
+            {
+                previous.Add(i);
+                current.Add(0);
+            }
+
+            for (int valueIndex = 1; valueIndex <= value.Length; valueIndex++)
+            {
+                current[0] = valueIndex;
+                char valueCharacter = char.ToLowerInvariant(value[valueIndex - 1]);
+
+                for (int candidateIndex = 1; candidateIndex <= candidate.Length; candidateIndex++)
+                {
+                    int substitutionCost = valueCharacter == char.ToLowerInvariant(candidate[candidateIndex - 1]) ? 0 : 1;
+                    current[candidateIndex] = Math.Min(
+                        Math.Min(current[candidateIndex - 1] + 1, previous[candidateIndex] + 1),
+                        previous[candidateIndex - 1] + substitutionCost);
+                }
+
+                (previous, current) = (current, previous);
+            }
+
+            return previous[candidate.Length];
+        }
+
+        private bool MeetsManualEventMaximum(BasePlayer player, IPlayer user, int num)
+        {
+            if (!(user.IsServer || player.IsAdmin || user.HasPermission("raidablebases.bypassmaxmanualeventlimit")) && Get(RaidableType.Manual) + num > config.Settings.Manual.Max)
+            {
+                SendNotification(user, "Max Events", RaidableType.Manual, config.Settings.Manual.Max);
                 return false;
             }
 
@@ -2110,85 +2628,75 @@ namespace RaidableBases
                 return false;
             }
 
+            bool isConnected = player != null && player.IsConnected;
             switch (args[0].ToLower())
             {
                 case "despawn":
-                    if (player.IsNetworked() && (isAllowed || player.HasPermission("raidablebases.despawn.buyraid")))
+                    if (isConnected && (isAllowed || player.HasPermission("raidablebases.despawn.buyraid")))
                     {
                         DespawnBase(player, isAllowed);
                     }
                     return true;
                 case "draw":
-                    if (player.IsNetworked())
+                    if (isConnected)
                     {
                         DrawSpheres(player, isAllowed);
                     }
                     return true;
-                case "checkflat":
-                    {
-                        if (!isAllowed) return false;
-                        if (args.Length != 2 || !float.TryParse(args[1], out var radius) || radius <= 0f) radius = 20f;
-                        Message(user, SpawnsController.IsObstructed(player.transform.position, radius, 2.5f, -1f, player.IsHeadUnderwater(), player) ? "Obstruction test failed" : "Obstruction test passed");
-                        var landLevel = SpawnsController.GetLandLevel(player.transform.position, radius, 5f, player.IsHeadUnderwater(), player, player.UserIDString);
-                        DrawText(player, 30f, Color.red, player.transform.position, $"{landLevel.y - landLevel.x:N01}");
-                        Message(user, SpawnsController.IsFlatTerrain(landLevel, 2.5f) ? "Terrain is flat" : "Terrain is not flat");
-                        return true;
-                    }
                 case "debug":
                     {
-                        if (!isAllowed) return false;
+                        if (!isAllowed) return true;
                         DebugMode = !DebugMode;
-                        Queues.Messages._user = DebugMode ? user : null;
-                        Message(user, $"Debug mode (v{Version}): {DebugMode}");
-                        ConfigCheckFrames(user);
+                        Queues.Messages.User = DebugMode ? user : null;
+                        Reply(user, $"Debug mode (v{Version}): {DebugMode}");
                         if (DebugMode)
                         {
-                            if (!_ownershipReady) Message(user, "Steam Inventory definitions are not yet available.");
+                            if (!_ownershipReady) Reply(user, "Steam Inventory definitions are not yet available.");
                             if (IsGridBroken())
                             {
-                                Message(user, "Another plugin has prevented the grid from loading? It is not functioning, it has been canceled by another process.");
+                                Reply(user, "Another plugin has prevented the grid from loading? It is not functioning, it has been canceled by another process.");
                             }
                             if (GridController.step != 0)
                             {
-                                if (GridController.step == int.MaxValue) Message(user, "Grid has not initialied.");
-                                else if (GridController.step > 0) Message(user, $"Grid last completed step: {GridController.step - 1} with {GridController.progress}/{GridController.progressTotal} read");
+                                if (GridController.step == int.MaxValue) Reply(user, "Grid has not initialized.");
+                                else if (GridController.step > 0) Reply(user, $"Grid last completed step: {GridController.step - 1} with {GridController.progress}/{GridController.progressTotal} read");
                             }
-                            TimeSpan uptime = TimeSpan.FromSeconds(Time.realtimeSinceStartup);
-                            Message(user, $"Server Uptime: {uptime.Days}d {uptime.Hours}h {uptime.Minutes}m {uptime.Seconds}s");
-                            Message(user, $"Scheduled Events Running: {Automated._scheduledCoroutine != null}");
-                            Message(user, $"Maintained Events Running: {Automated._maintainedCoroutine != null}");
-                            Message(user, $"Queues Pending: {Queues.queue.Count}");
-                            if (!AnyCopyPasteFileExists && !GridController.BadFrameRate)
+                            TimeSpan uptime = TimeSpan.FromSeconds(Time.realtimeSinceStartupAsDouble);
+                            Reply(user, $"Server Uptime: {uptime.Days}d {uptime.Hours}h {uptime.Minutes}m {uptime.Seconds}s");
+                            Reply(user, $"Scheduled Events Running: {Automated._scheduledCoroutine != null}");
+                            Reply(user, $"Maintained Events Running: {Automated._maintainedCoroutine != null}");
+                            Reply(user, $"Queues Pending: {Queues.queue.Count}");
+                            if (!AnyCopyPasteFileExists)
                             {
-                                Message(user, "No copypaste file in any profile exists!");
+                                Reply(user, "No copypaste file in any profile exists!");
                             }
                             if (Queues.Messages.Any())
                             {
-                                Message(user, $"DEBUG: Last messages:");
+                                Reply(user, $"DEBUG: Last messages:");
                                 Queues.Messages.PrintAll(user);
                             }
-                            else Message(user, "No debug messages.");
+                            else Reply(user, "No debug messages.");
                             if (exConf is JsonException)
                             {
-                                Message(user, $"{exConf.Message}\n\n\nYour config contains a json error!");
+                                Reply(user, $"{exConf.Message}\n\n\nYour config contains a json error!");
                             }
                             foreach (var error in profileErrors)
                             {
-                                Message(user, $"Json error found in {error}");
+                                Reply(user, $"Json error found in {error}");
                             }
                             int points = 0;
                             foreach (var (type, spawns) in GridController.Spawns)
                             {
                                 if (spawns.Spawns.Count > 0)
                                 {
-                                    Message(user, $"Potential points on {type}: {spawns.Spawns.Count} available/{spawns.Cached.Select(x => x.Value).Count()} with temporary holds.");
+                                    Reply(user, $"Potential points on {type}: {spawns.Spawns.Count} available/{spawns.Cached.Select(x => x.Value).Count()} with temporary holds.");
                                     points += spawns.Spawns.Count;
                                 }
                             }
                             if (IsGridBroken())
                             {
                                 if (points > 1000) { GridController.gridCoroutine = null; Puts("Grid activated with {0} points, you need to find whatever plugin you have that's breaking this plugin. There's no reason the grid should partially load then stop without finishing.", points); }
-                                else Message(user, "You must reload RaidableBases or type rb.reloadconfig to load the grid.");
+                                else Reply(user, "You must reload RaidableBases or type rb.reloadconfig to load the grid.");
                             }
 
                         }
@@ -2196,7 +2704,7 @@ namespace RaidableBases
                     }
                 case "kill_cleanup":
                     {
-                        if (!isAllowed || player == null) return false;
+                        if (!isAllowed || player == null) return true;
                         var num = 0;
                         using var tmp = FindEntitiesOfType<BaseEntity>(player.transform.position, 100f);
                         foreach (var entity in tmp)
@@ -2207,9 +2715,8 @@ namespace RaidableBases
                                 num++;
                             }
                         }
-                        ;
-                        if (num == 0) Message(user, "You must use the command near the base that you want to despawn. It cannot be owned by a player.");
-                        else Message(user, $"Kill sent for {num} entities.");
+                        if (num == 0) Reply(user, "You must use the command near the base that you want to despawn. It cannot be owned by a player.");
+                        else Reply(user, $"Kill sent for {num} entities.");
                         return true;
                     }
                 case "despawnall":
@@ -2228,14 +2735,14 @@ namespace RaidableBases
                         if (isAllowed)
                         {
                             string mode = args.Length > 1 ? GetRaidableMode(args[1]) : RaidableMode.Random;
-                            if (mode == RaidableMode.Random) mode = GetRaidableModes().GetRandom();
+                            if (mode == RaidableMode.Random) mode = GetRaidableModes().GetSecureRandom();
                             RaidableBase.GenerateLoot(this, user, mode, args);
                         }
                         return true;
                     }
                 case "active":
                     {
-                        if (!isAllowed) return false;
+                        if (!isAllowed) return true;
 
                         var sb = new StringBuilder();
 
@@ -2276,7 +2783,7 @@ namespace RaidableBases
                             {
                                 foreach (var extra in profile.Options.AdditionalBases.Keys)
                                 {
-                                    if (FileExists(extra) && data.Cycle.CanSpawn(RaidableType.Maintained, profile.Options.Mode, extra, player))
+                                    if (FileExists(extra) && data.Cycle.CanSpawn(RaidableType.Maintained, profile.Options.Mode, extra, player, false))
                                     {
                                         if (current != profile.Options.Mode)
                                         {
@@ -2289,14 +2796,14 @@ namespace RaidableBases
                             }
                         }
 
-                        Message(user, sb.ToString());
+                        Reply(user, sb.ToString());
 
                         return true;
                     }
                 case "expire":
                 case "resetcooldown":
                     {
-                        if (!isAllowed) return false;
+                        if (!isAllowed) return true;
                         if (args.Length >= 2)
                         {
                             var target = RustCore.FindPlayer(args[1]);
@@ -2311,18 +2818,18 @@ namespace RaidableBases
                                     }
                                     data.BuyableCooldowns.Remove(target.userID);
                                     UI.UpdateUi(target, UiType.Cooldown);
-                                    Message(user, "RemovedCooldownFor", target.displayName, target.UserIDString);
+                                    Reply(user, "RemovedCooldownFor", target.displayName, target.UserIDString);
                                 }
                                 if (args.Length == 2 || args[2] == "lockout")
                                 {
                                     data.Lockouts.Remove(target.UserIDString);
                                     UI.UpdateUi(target, UiType.Lockout);
-                                    QueueNotification(user, "RemovedLockFor", target.displayName, target.UserIDString);
+                                    SendNotification(user, "RemovedLockFor", target.displayName, target.UserIDString);
                                 }
                             }
                             return true;
                         }
-                        Message(user, "Target not found");
+                        Reply(user, "Target not found");
                         return true;
                     }
                 case "expireall":
@@ -2350,22 +2857,22 @@ namespace RaidableBases
                             {
                                 if (!(GetNearestBase(target.transform.position) is RaidableBase raid))
                                 {
-                                    QueueNotification(user, "TargetTooFar");
+                                    SendNotification(user, "TargetTooFar");
                                 }
                                 else if (raid.TrySetPayLock(new(target) { Economics = new(this, target) }, !args.Contains("lockout")))
                                 {
-                                    QueueNotification(user, "RaidLockedTo", target.displayName);
+                                    SendNotification(user, "RaidLockedTo", target.displayName);
                                 }
-                                else QueueNotification(user, "You must use clearowner first.");
+                                else SendNotification(user, "You must use clearowner first.");
                             }
-                            else QueueNotification(user, "TargetNotFoundId", args[1]);
+                            else SendNotification(user, "TargetNotFoundId", args[1]);
                         }
 
                         return true;
                     }
                 case "clearowner":
                     {
-                        if (player.IsNetworked() && (isAllowed || user.HasPermission("raidablebases.clearowner")))
+                        if (isConnected && (isAllowed || user.HasPermission("raidablebases.clearowner")))
                         {
                             var target = player;
                             if (isAllowed && args.Length >= 2 && RustCore.FindPlayer(args[1]) is BasePlayer other)
@@ -2374,15 +2881,15 @@ namespace RaidableBases
                             }
                             if (!(GetNearestBase(target.transform.position) is RaidableBase raid))
                             {
-                                QueueNotification(user, "TooFar");
+                                SendNotification(user, "TooFar");
                             }
                             else if (isAllowed || raid.ownerId == player.userID)
                             {
-                                raid.ResetEventLock();
+                                raid.ResetEventLock(false);
                                 raid.raiders.Clear();
-                                QueueNotification(user, "RaidOwnerCleared");
+                                SendNotification(user, "RaidOwnerCleared");
                             }
-                            else QueueNotification(user, "OwnerLocked");
+                            else SendNotification(user, "OwnerLocked");
                         }
 
                         return true;
@@ -2419,7 +2926,7 @@ namespace RaidableBases
             {
                 Automated.IsMaintainedEnabled = !Automated.IsMaintainedEnabled;
                 Automated.StartCoroutine(RaidableType.Maintained);
-                Message(user, $"Toggled maintained events {(Automated.IsMaintainedEnabled ? "on" : "off")}");
+                Reply(user, $"Toggled maintained events {(Automated.IsMaintainedEnabled ? "on" : "off")}");
                 if (args.Contains("maintained"))
                 {
                     config.Settings.Maintained.Enabled = Automated.IsMaintainedEnabled;
@@ -2432,7 +2939,7 @@ namespace RaidableBases
             {
                 Automated.IsScheduledEnabled = !Automated.IsScheduledEnabled;
                 Automated.StartCoroutine(RaidableType.Scheduled);
-                Message(user, $"Toggled scheduled events {(Automated.IsScheduledEnabled ? "on" : "off")}");
+                Reply(user, $"Toggled scheduled events {(Automated.IsScheduledEnabled ? "on" : "off")}");
                 if (args.Contains("scheduled"))
                 {
                     config.Settings.Schedule.Enabled = Automated.IsScheduledEnabled;
@@ -2443,27 +2950,35 @@ namespace RaidableBases
 
             if (config.Settings.Buyable.Max > 0)
             {
-                Message(user, $"Toggled buyable events {((buyableEnabled = !buyableEnabled) ? "on" : "off")}");
+                Reply(user, $"Toggled buyable events {((buyableEnabled = !buyableEnabled) ? "on" : "off")}");
             }
 
             Queues.Paused = !buyableEnabled && !Automated.IsScheduledEnabled && !Automated.IsMaintainedEnabled;
             IsScheduledReload = args.Contains("scheduled_reload") && Queues.Paused;
             if (args.Contains("scheduled_reload"))
             {
-                Message(user, $"Scheduled reload after all events despawn has been {(IsScheduledReload ? "enabled" : "disabled")}");
+                Reply(user, $"Scheduled reload after all events despawn has been {(IsScheduledReload ? "enabled" : "disabled")}");
             }
-            Message(user, $"Toggled queue/spawn manager {(Queues.Paused ? "off" : "on")}");
+            Reply(user, $"Toggled queue/spawn manager {(Queues.Paused ? "off" : "on")}");
         }
 
         private void CommandPopulate(IPlayer user, string command, string[] args)
         {
             if (args.Length == 0)
             {
-                Message(user, "Valid arguments: 0 1 2 3 4 all");
+                Reply(user, "Valid arguments: 0 1 2 3 4 all");
                 return;
             }
 
-            List<LootItem> lootList = new(ItemManager.GetItemDefinitions().Where(def => !BlacklistedItems.Contains(def.shortname)).Select(def => new LootItem(def.shortname)));
+            using var lootList = DisposableList<LootItem>();
+
+            foreach (ItemDefinition def in ItemManager.GetItemDefinitions())
+            {
+                if (!BlacklistedItems.Contains(def.shortname))
+                {
+                    lootList.Add(new(def.shortname));
+                }
+            }
 
             foreach (var arg in args)
             {
@@ -2491,7 +3006,7 @@ namespace RaidableBases
                         currentLootList.Sort((x, y) => x.shortname.CompareTo(y.shortname));
                         HarmonyDataLayer.WriteObject(Path.Combine(Name, "Editable_Lists", mode), currentLootList);
 
-                        Message(user, $"Created Editable_Lists/{mode}.json");
+                        Reply(user, $"Created Editable_Lists/{mode}.json");
                     }
                 }
             }
@@ -2505,7 +3020,7 @@ namespace RaidableBases
             {
                 val.profile.Options.Enabled = !val.profile.Options.Enabled;
                 SaveProfile(val.key, val.profile.Options);
-                QueueNotification(user, val.profile.Options.Enabled ? "ToggleProfileEnabled" : "ToggleProfileDisabled", val.key);
+                SendNotification(user, val.profile.Options.Enabled ? "ToggleProfileEnabled" : "ToggleProfileDisabled", val.key);
             }
         }
 
@@ -2557,22 +3072,1607 @@ namespace RaidableBases
                     SaveProfile(key, profile.Options);
                 }
                 sb.Length -= 2;
-                user.Message($"\n{sb}\nChanged {search} for {changes} bases to {value}");
+                ReplyOrLog(user, $"\n{sb}\nChanged {search} for {changes} bases to {value}");
             }
-            else user.Message("No changes required.");
+            else ReplyOrLog(user, "No changes required.");
+        }
+
+
+        private bool TryGetConfigProfile(IPlayer user, string[] args, out string profileName, out BaseProfile profile)
+        {
+            profileName = args.Length > 1 ? string.Join(" ", args, 1, args.Length - 1).Trim().Trim('"') : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(profileName))
+            {
+                ReplyOrLog(user, "You must specify a profile name.");
+                profile = null;
+                return false;
+            }
+
+            foreach (var entry in Buildings.Profiles)
+            {
+                if (entry.Key.Equals(profileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    profileName = entry.Key;
+                    profile = entry.Value;
+                    return true;
+                }
+            }
+
+            ReplyOrLog(user, $"Profile '{profileName}' was not found.");
+            profile = null;
+            return false;
+        }
+
+        [Flags]
+        private enum ItemDefinitionFlags
+        {
+            None = 0,
+            ItemModDeployable = 1 << 0,
+            ItemModEntity = 1 << 1,
+            ItemModProjectile = 1 << 2,
+            ItemModCatapultBoulder = 1 << 3,
+            ItemModCookable = 1 << 4,
+            AttackEntity = 1 << 5,
+            BaseSiegeWeapon = 1 << 6,
+            ThrownWeapon = 1 << 7
+        }
+
+        private readonly Dictionary<ItemDefinition, ItemDefinitionFlags> DefinitionToItemModType = new();
+
+        private void AddDefinitionFlag(ItemDefinition def, ItemDefinitionFlags flag)
+        {
+            DefinitionToItemModType.TryGetValue(def, out var flags);
+            DefinitionToItemModType[def] = flags | flag;
+        }
+
+        private bool HasDefinitionFlag(ItemDefinition def, ItemDefinitionFlags flags)
+        {
+            return def != null && DefinitionToItemModType.TryGetValue(def, out var value) && (value & flags) != 0;
+        }
+
+        private bool IsWeaponItemDefinition(ItemDefinition def)
+        {
+            return def != null && (def.category == ItemCategory.Weapon || HasDefinitionFlag(def, ItemDefinitionFlags.AttackEntity | ItemDefinitionFlags.BaseSiegeWeapon));
+        }
+
+        private bool IsAmmoItemDefinition(ItemDefinition def)
+        {
+            return def != null && (def.category == ItemCategory.Ammunition || HasDefinitionFlag(def, ItemDefinitionFlags.ItemModProjectile | ItemDefinitionFlags.ItemModCatapultBoulder));
+        }
+
+        private bool IsCookableItemDefinition(ItemDefinition def) => HasDefinitionFlag(def, ItemDefinitionFlags.ItemModCookable);
+
+        private bool IsThrownWeaponItemDefinition(ItemDefinition def) => HasDefinitionFlag(def, ItemDefinitionFlags.ThrownWeapon);
+
+        private void CommandAcceptedItems(IPlayer user, string[] args)
+        {
+            BasePlayer player = user.Player();
+            if (player == null)
+            {
+                ReplyOrLog(user, "This command must be used by a player.");
+                return;
+            }
+
+            if (!TryGetConfigProfile(user, args, out string profileName, out var profile))
+            {
+                return;
+            }
+
+            List<string> configured = profile.Options.AllowedWeaponAndAmmoShortnames;
+            HashSet<string> accepted = new(configured, StringComparer.OrdinalIgnoreCase);
+            int added = 0;
+
+            void Add(ItemDefinition def)
+            {
+                if (def != null && accepted.Add(def.shortname))
+                {
+                    configured.Add(def.shortname);
+                    added++;
+                }
+            }
+
+            void ProcessItem(Item item)
+            {
+                if (item?.info == null)
+                {
+                    return;
+                }
+
+                bool isWeapon = IsWeaponItemDefinition(item.info);
+
+                if (isWeapon || IsAmmoItemDefinition(item.info))
+                {
+                    Add(item.info);
+                }
+
+                if (isWeapon && item.GetHeldEntity() is BaseProjectile projectile)
+                {
+                    Add(projectile.primaryMagazine?.ammoType);
+                }
+            }
+
+            using var items = player.GetAllItems();
+            items.ForEach(ProcessItem);
+
+            Item backpack = player.inventory.GetBackpackWithInventory();
+            backpack?.contents?.itemList?.ForEach(ProcessItem);
+
+            configured.Sort(StringComparer.OrdinalIgnoreCase);
+            SaveProfile(profileName, profile.Options);
+            ReplyOrLog(user, added > 0
+                ? $"Added {added} weapon and ammo shortname{(added == 1 ? string.Empty : "s")} to '{profileName}'."
+                : $"No new weapon or ammo shortnames were found for '{profileName}'.");
+        }
+
+        private void CommandRetrieveItems(IPlayer user, string[] args)
+        {
+            BasePlayer player = user.Player();
+            if (player == null)
+            {
+                ReplyOrLog(user, "This command must be used by a player.");
+                return;
+            }
+
+            if (!TryGetConfigProfile(user, args, out string profileName, out var profile))
+            {
+                return;
+            }
+
+            List<string> configured = profile.Options.AllowedWeaponAndAmmoShortnames;
+            if (configured.Count == 0)
+            {
+                ReplyOrLog(user, $"'{profileName}' has no accepted weapon or ammo shortnames configured.");
+                return;
+            }
+
+            HashSet<string> unique = new(StringComparer.OrdinalIgnoreCase);
+            using var definitions = DisposableList<ItemDefinition>();
+            using var invalid = DisposableList<string>();
+            using var unsupported = DisposableList<string>();
+
+            foreach (string configuredShortname in configured)
+            {
+                string shortname = configuredShortname.Trim();
+                if (!unique.Add(shortname))
+                {
+                    continue;
+                }
+
+                ItemDefinition def = ItemManager.FindItemDefinition(shortname);
+                if (def == null)
+                {
+                    invalid.Add(shortname);
+                    continue;
+                }
+
+                if (!IsWeaponItemDefinition(def) && !IsAmmoItemDefinition(def))
+                {
+                    unsupported.Add(shortname);
+                    continue;
+                }
+
+                definitions.Add(def);
+            }
+
+            if (definitions.Count == 0)
+            {
+                ReplyOrLog(user, $"'{profileName}' has no valid weapon or ammo items to retrieve." +
+                    (invalid.Count > 0 ? $" Invalid shortnames: {string.Join(", ", invalid)}." : string.Empty) +
+                    (unsupported.Count > 0 ? $" Non-weapon or ammo shortnames: {string.Join(", ", unsupported)}." : string.Empty));
+                return;
+            }
+
+            Item backpack = player.inventory.GetBackpackWithInventory();
+            ItemContainer backpackContainer = backpack?.contents;
+
+            int GetFreeSlots(ItemContainer container)
+            {
+                return container == null ? 0 : Math.Max(0, container.capacity - container.itemList.Count);
+            }
+
+            bool HasSpaceForItems(int amount)
+            {
+                int spacesFree = GetFreeSlots(player.inventory.containerMain) +
+                    GetFreeSlots(player.inventory.containerBelt) +
+                    GetFreeSlots(backpackContainer);
+
+                return amount <= spacesFree;
+            }
+
+            if (!HasSpaceForItems(definitions.Count))
+            {
+                ReplyOrLog(user, $"You do not have enough free inventory slots to retrieve all {definitions.Count} items from '{profileName}'.");
+                return;
+            }
+
+            int retrieved = 0;
+            using var failed = DisposableList<string>();
+            GiveItemOptions giveOptions = backpackContainer == null ? GiveItemOptions.None : GiveItemOptions.BackpackOverflow;
+
+            foreach (ItemDefinition def in definitions)
+            {
+                Item item = ItemManager.Create(def, 1, 0uL);
+                if (item == null)
+                {
+                    failed.Add(def.shortname);
+                    continue;
+                }
+
+                if (!player.inventory.GiveItem(item, null, giveOptions))
+                {
+                    failed.Add(def.shortname);
+                    item.Remove();
+                    continue;
+                }
+
+                retrieved++;
+            }
+
+            ReplyOrLog(user, $"Retrieved {retrieved} item{(retrieved == 1 ? string.Empty : "s")} from '{profileName}'." +
+                (invalid.Count > 0 ? $" Invalid shortnames skipped: {string.Join(", ", invalid)}." : string.Empty) +
+                (unsupported.Count > 0 ? $" Non-weapon or ammo shortnames skipped: {string.Join(", ", unsupported)}." : string.Empty) +
+                (failed.Count > 0 ? $" Items that could not be given: {string.Join(", ", failed)}." : string.Empty));
+        }
+
+        private class ConfigPresetController : IDisposable
+        {
+            private const string FULL_PREFIX = "RBC2.Full.";
+            private const string CONFIG_PREFIX = "RBC2.Config.";
+            private const string PROFILES_PREFIX = "RBC2.Profiles.";
+            private const string LOOT_TABLES_PREFIX = "RBC2.LootTables.";
+            private const string REPLACE = "$";
+            private const string IMPORT_UI = "RB_UI_ConfigImport";
+            private const int CHUNK_LENGTH = 3000;
+            private const int CUI_INPUT_LIMIT = 16000;
+            private const int COMMAND_PACKET_OVERHEAD = 64;
+            private const int MAX_ENCODED_LENGTH = 4_000_000;
+            private const int MAX_JSON_BYTES = 32 * 1024 * 1024;
+            private const float IMPORT_TIMEOUT = 900f;
+            private RaidableBases Instance;
+            private HashSet<ulong> _importUiUsers = new();
+            private PresetImport _activeImport;
+            private Timer _importTimer;
+
+            private enum PayloadScope
+            {
+                Full,
+                Config,
+                Profiles,
+                LootTables
+            }
+
+            public ConfigPresetController(RaidableBases instance)
+            {
+                Instance = instance;
+            }
+
+            private class Package
+            {
+                [JsonProperty("v")]
+                public int FormatVersion = 4;
+
+                [JsonProperty("r")]
+                public string PluginVersion;
+
+                [JsonProperty("e")]
+                public bool English;
+
+                [JsonProperty("c")]
+                public JObject Config;
+
+                [JsonProperty("b")]
+                public JObject ProfileBaseline;
+
+                [JsonProperty("p")]
+                public Dictionary<string, JObject> Profiles = new(StringComparer.OrdinalIgnoreCase);
+
+                [JsonProperty("l")]
+                public Dictionary<string, List<LootItem>> LootTables = new(StringComparer.OrdinalIgnoreCase);
+            }
+
+            private class PayloadContractResolver : DefaultContractResolver
+            {
+                protected override JsonProperty CreateProperty(MemberInfo member, MemberSerialization memberSerialization)
+                {
+                    JsonProperty property = base.CreateProperty(member, memberSerialization);
+
+                    if (member.DeclaringType != typeof(Package))
+                    {
+                        property.PropertyName = member.Name;
+                    }
+
+                    return property;
+                }
+
+                protected override JsonObjectContract CreateObjectContract(Type objectType)
+                {
+                    JsonObjectContract contract = base.CreateObjectContract(objectType);
+                    var extensionDataGetter = contract.ExtensionDataGetter;
+                    var extensionDataSetter = contract.ExtensionDataSetter;
+
+                    if (extensionDataGetter != null)
+                    {
+                        contract.ExtensionDataGetter = target => extensionDataGetter(target).Select(entry => new KeyValuePair<object, object>($"@{entry.Key}", entry.Value));
+                    }
+
+                    if (extensionDataSetter != null)
+                    {
+                        contract.ExtensionDataSetter = (target, name, value) => extensionDataSetter(target, name.Length > 0 && name[0] == '@' ? name.Substring(1) : name, value);
+                    }
+
+                    return contract;
+                }
+            }
+
+            private static JsonSerializer CreatePayloadSerializer()
+            {
+                return JsonSerializer.Create(new JsonSerializerSettings
+                {
+                    ContractResolver = new PayloadContractResolver()
+                });
+            }
+
+            private static JObject ToPayloadObject(object value)
+            {
+                return JObject.FromObject(value, CreatePayloadSerializer());
+            }
+
+            private static T FromPayloadObject<T>(JToken value)
+            {
+                return value.ToObject<T>(CreatePayloadSerializer());
+            }
+
+            private class CommandFile
+            {
+                [JsonProperty("Commands")]
+                public List<string> Commands = new();
+            }
+
+            private class PayloadFile
+            {
+                [JsonProperty("Full")]
+                public string Full;
+
+                [JsonProperty("Config")]
+                public string Config;
+
+                [JsonProperty("Profiles")]
+                public string Profiles;
+
+                [JsonProperty("Loot Tables")]
+                public string LootTables;
+
+                [JsonProperty("Commands")]
+                public List<string> Commands;
+
+                [JsonProperty("Config Commands", NullValueHandling = NullValueHandling.Ignore)]
+                public List<string> ConfigCommands;
+
+                [JsonProperty("Profiles Commands", NullValueHandling = NullValueHandling.Ignore)]
+                public List<string> ProfilesCommands;
+
+                [JsonProperty("Loot Tables Commands", NullValueHandling = NullValueHandling.Ignore)]
+                public List<string> LootTablesCommands;
+            }
+
+            private class PresetImport
+            {
+                public string Id;
+                public uint Checksum;
+                public int TotalLength;
+                public string[] Chunks;
+                public int Received;
+            }
+
+            private static bool HaveSameJsonProperties(JObject left, JObject right)
+            {
+                if (left.Count != right.Count)
+                {
+                    return false;
+                }
+
+                foreach (var property in left.Properties())
+                {
+                    if (right.Property(property.Name) == null)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            private static JToken CreatePatch(JToken baseline, JToken value)
+            {
+                if (JToken.DeepEquals(baseline, value))
+                {
+                    return null;
+                }
+
+                if (baseline is JObject baselineObject && value is JObject valueObject && HaveSameJsonProperties(baselineObject, valueObject))
+                {
+                    JObject patch = new();
+
+                    foreach (var property in valueObject.Properties())
+                    {
+                        JToken childPatch = CreatePatch(baselineObject[property.Name], property.Value);
+
+                        if (childPatch != null)
+                        {
+                            patch[property.Name] = childPatch;
+                        }
+                    }
+
+                    return patch.HasValues ? patch : null;
+                }
+
+                return new JObject
+                {
+                    [REPLACE] = value?.DeepClone() ?? JValue.CreateNull()
+                };
+            }
+
+            private static JToken ApplyPatch(JToken baseline, JToken patch)
+            {
+                if (patch is not JObject patchObject)
+                {
+                    return patch?.DeepClone() ?? JValue.CreateNull();
+                }
+
+                if (patchObject.Count == 1)
+                {
+                    JProperty replacement = patchObject.Property(REPLACE);
+
+                    if (replacement != null)
+                    {
+                        return replacement.Value.DeepClone();
+                    }
+                }
+
+                JObject result = baseline is JObject baselineObject ? (JObject)baselineObject.DeepClone() : new JObject();
+
+                foreach (var property in patchObject.Properties())
+                {
+                    result[property.Name] = ApplyPatch(result[property.Name], property.Value);
+                }
+
+                return result;
+            }
+
+            private void GetLootPaths(List<string> paths)
+            {
+                if (HarmonyDataLayer.ExistsDatafile(Path.Combine(Name, "Default_Loot")))
+                {
+                    paths.Add("Default_Loot");
+                }
+
+                string[] folders = { "Difficulty_Loot", "Weekday_Loot", "Base_Loot" };
+
+                foreach (string folder in folders)
+                {
+                    foreach (string file in HarmonyDataLayer.GetFiles(Path.Combine(Name, folder), "*.json"))
+                    {
+                        string path = $"{folder}/{GetFileNameWithoutExtension(file)}";
+
+                        if (!ContainsIgnoreCase(paths, path))
+                        {
+                            paths.Add(path);
+                        }
+                    }
+                }
+            }
+
+            private static bool ContainsIgnoreCase(List<string> values, string value)
+            {
+                for (int i = 0; i < values.Count; i++)
+                {
+                    if (values[i].Equals(value, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            private static bool IsValidLootPath(string path)
+            {
+                if (string.IsNullOrWhiteSpace(path) || path.Contains(".."))
+                {
+                    return false;
+                }
+
+                string normalized = path.Replace('\\', '/');
+
+                if (normalized.Equals("Default_Loot", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                int separator = normalized.IndexOf('/');
+
+                if (separator <= 0 || separator != normalized.LastIndexOf('/'))
+                {
+                    return false;
+                }
+
+                string folder = normalized.Substring(0, separator);
+                string fileName = normalized.Substring(separator + 1);
+
+                if (!folder.Equals("Difficulty_Loot", StringComparison.OrdinalIgnoreCase)
+                    && !folder.Equals("Weekday_Loot", StringComparison.OrdinalIgnoreCase)
+                    && !folder.Equals("Base_Loot", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                return IsValidProfileName(fileName);
+            }
+
+            private List<LootItem> ReadLootTable(string path)
+            {
+                try
+                {
+                    string dataPath = Path.Combine(Name, path.Replace('/', Path.DirectorySeparatorChar));
+                    return HarmonyDataLayer.ReadObject<List<LootItem>>(dataPath) ?? new();
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidDataException($"Loot table '{path}' could not be read: {ex.Message}", ex);
+                }
+            }
+
+            private bool IsLootItemUsable(LootItem item, bool allProbabilitiesZero)
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.shortname) || item.amount <= 0 || !allProbabilitiesZero && item.probability <= 0f)
+                {
+                    return false;
+                }
+
+                string shortname = item.shortname;
+
+                if (shortname.Equals("chocholate", StringComparison.OrdinalIgnoreCase))
+                {
+                    shortname = "chocolate";
+                }
+
+                if (shortname.EndsWith(".bp", StringComparison.OrdinalIgnoreCase))
+                {
+                    shortname = shortname.Substring(0, shortname.Length - 3);
+                }
+
+                if (Instance.BlacklistedItems.Exists(value => value.Equals(shortname, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
+
+                ItemDefinition def = ItemManager.FindItemDefinition(shortname);
+
+                return def != null && (!Instance.config.BlockPaidContent || !Instance.RequiresOwnership(def, 0));
+            }
+
+            private Package CreatePackage(out int lootTableCount, out int lootItemCount, out int skippedLootItemCount)
+            {
+                Package package = new()
+                {
+                    PluginVersion = Version.ToString(),
+                    English = en,
+                    Config = ToPayloadObject(Instance.config)
+                };
+
+                using var profileNames = DisposableList<string>();
+                profileNames.AddRange(Instance.Buildings.Profiles.Keys);
+                profileNames.Sort(StringComparer.OrdinalIgnoreCase);
+
+                if (profileNames.Count > 0)
+                {
+                    package.ProfileBaseline = ToPayloadObject(Instance.Buildings.Profiles[profileNames[0]].Options);
+
+                    foreach (string profileName in profileNames)
+                    {
+                        JObject profile = ToPayloadObject(Instance.Buildings.Profiles[profileName].Options);
+                        JToken patch = CreatePatch(package.ProfileBaseline, profile);
+                        package.Profiles[profileName] = patch as JObject ?? new JObject();
+                    }
+                }
+
+                lootTableCount = 0;
+                lootItemCount = 0;
+                skippedLootItemCount = 0;
+
+                using var lootPaths = DisposableList<string>();
+                GetLootPaths(lootPaths);
+                lootPaths.Sort(StringComparer.OrdinalIgnoreCase);
+
+                foreach (string path in lootPaths)
+                {
+                    List<LootItem> source = ReadLootTable(path);
+                    List<LootItem> exported = source;
+
+                    List<LootItem> configured = source.FindAll(item => item != null && !string.IsNullOrWhiteSpace(item.shortname));
+                    bool allProbabilitiesZero = configured.Count > 0 && configured.All(item => item.probability == 0f);
+                    exported = source.FindAll(item => IsLootItemUsable(item, allProbabilitiesZero));
+                    skippedLootItemCount += source.Count - exported.Count;
+
+                    package.LootTables[path] = exported;
+                    lootTableCount++;
+                    lootItemCount += exported.Count;
+                }
+
+                return package;
+            }
+
+            private static string ToBase64(byte[] bytes)
+            {
+                return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            }
+
+            private static byte[] FromBase64(string value)
+            {
+                string base64 = value.Replace('-', '+').Replace('_', '/');
+
+                switch (base64.Length % 4)
+                {
+                    case 0: break;
+                    case 2: base64 += "=="; break;
+                    case 3: base64 += "="; break;
+                    default: throw new FormatException("The preset payload has invalid Base64 padding.");
+                }
+
+                return Convert.FromBase64String(base64);
+            }
+
+            private static string GetPrefix(PayloadScope scope)
+            {
+                switch (scope)
+                {
+                    case PayloadScope.Full: return FULL_PREFIX;
+                    case PayloadScope.Config: return CONFIG_PREFIX;
+                    case PayloadScope.Profiles: return PROFILES_PREFIX;
+                    case PayloadScope.LootTables: return LOOT_TABLES_PREFIX;
+                    default: throw new ArgumentOutOfRangeException(nameof(scope));
+                }
+            }
+
+            private static bool IncludesConfig(PayloadScope scope)
+            {
+                return scope == PayloadScope.Full || scope == PayloadScope.Config;
+            }
+
+            private static bool IncludesProfiles(PayloadScope scope)
+            {
+                return scope == PayloadScope.Full || scope == PayloadScope.Profiles;
+            }
+
+            private static bool IncludesLootTables(PayloadScope scope)
+            {
+                return scope == PayloadScope.Full || scope == PayloadScope.LootTables;
+            }
+
+            private static bool TryGetPayloadScope(string encoded, out PayloadScope scope, out int prefixLength)
+            {
+                scope = PayloadScope.Full;
+                prefixLength = 0;
+
+                if (string.IsNullOrEmpty(encoded))
+                {
+                    return false;
+                }
+
+                if (encoded.StartsWith(FULL_PREFIX, StringComparison.Ordinal))
+                {
+                    prefixLength = FULL_PREFIX.Length;
+                    return true;
+                }
+
+                if (encoded.StartsWith(CONFIG_PREFIX, StringComparison.Ordinal))
+                {
+                    scope = PayloadScope.Config;
+                    prefixLength = CONFIG_PREFIX.Length;
+                    return true;
+                }
+
+                if (encoded.StartsWith(PROFILES_PREFIX, StringComparison.Ordinal))
+                {
+                    scope = PayloadScope.Profiles;
+                    prefixLength = PROFILES_PREFIX.Length;
+                    return true;
+                }
+
+                if (encoded.StartsWith(LOOT_TABLES_PREFIX, StringComparison.Ordinal))
+                {
+                    scope = PayloadScope.LootTables;
+                    prefixLength = LOOT_TABLES_PREFIX.Length;
+                    return true;
+                }
+
+                return false;
+            }
+
+            private static Package GetScopedPackage(Package package, PayloadScope scope)
+            {
+                return new Package
+                {
+                    FormatVersion = package.FormatVersion,
+                    PluginVersion = package.PluginVersion,
+                    English = package.English,
+                    Config = IncludesConfig(scope) ? package.Config : null,
+                    ProfileBaseline = IncludesProfiles(scope) ? package.ProfileBaseline : null,
+                    Profiles = IncludesProfiles(scope) ? package.Profiles : null,
+                    LootTables = IncludesLootTables(scope) ? package.LootTables : null
+                };
+            }
+
+            private static string Encode(Package package, PayloadScope scope)
+            {
+                string json;
+
+                using (StringWriter writer = new(CultureInfo.InvariantCulture))
+                using (JsonTextWriter jsonWriter = new(writer))
+                {
+                    jsonWriter.Formatting = Formatting.None;
+                    CreatePayloadSerializer().Serialize(jsonWriter, GetScopedPackage(package, scope));
+                    json = writer.ToString();
+                }
+
+                byte[] compressed = Facepunch.Utility.Compression.Compress(Encoding.UTF8.GetBytes(json));
+                return GetPrefix(scope) + ToBase64(compressed);
+            }
+
+            private PayloadFile CreatePayloads(out int lootTableCount, out int lootItemCount, out int skippedLootItemCount)
+            {
+                Package package = CreatePackage(out lootTableCount, out lootItemCount, out skippedLootItemCount);
+
+                return new PayloadFile
+                {
+                    Full = Encode(package, PayloadScope.Full),
+                    Config = Encode(package, PayloadScope.Config),
+                    Profiles = Encode(package, PayloadScope.Profiles),
+                    LootTables = Encode(package, PayloadScope.LootTables)
+                };
+            }
+
+            private string CreateFullPayload()
+            {
+                Package package = CreatePackage(out _, out _, out _);
+                return Encode(package, PayloadScope.Full);
+            }
+
+            private static List<string> CreateCommands(string encoded, out int payloadLength)
+            {
+                payloadLength = encoded.Length;
+                List<string> commands = new();
+
+                if (encoded.Length <= CHUNK_LENGTH)
+                {
+                    commands.Add($"rb.config {encoded}");
+                    return commands;
+                }
+
+                string id = GetChecksum(encoded).ToString("X8", CultureInfo.InvariantCulture);
+                int chunkCount = (encoded.Length + CHUNK_LENGTH - 1) / CHUNK_LENGTH;
+
+                commands.Add($"rb.config begin {id} {chunkCount} {encoded.Length}");
+
+                for (int index = 0; index < chunkCount; index++)
+                {
+                    int offset = index * CHUNK_LENGTH;
+                    int length = Math.Min(CHUNK_LENGTH, encoded.Length - offset);
+                    commands.Add($"rb.config chunk {id} {index} {encoded.Substring(offset, length)}");
+                }
+
+                commands.Add($"rb.config apply {id}");
+                return commands;
+            }
+
+            private static uint GetChecksum(string value)
+            {
+                unchecked
+                {
+                    uint hash = 2166136261u;
+
+                    for (int i = 0; i < value.Length; i++)
+                    {
+                        hash ^= value[i];
+                        hash *= 16777619u;
+                    }
+
+                    return hash;
+                }
+            }
+
+            private static uint GetCrc32(byte[] bytes)
+            {
+                uint crc = uint.MaxValue;
+
+                for (int i = 0; i < bytes.Length; i++)
+                {
+                    crc ^= bytes[i];
+
+                    for (int bit = 0; bit < 8; bit++)
+                    {
+                        crc = (crc & 1u) != 0u ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+                    }
+                }
+
+                return ~crc;
+            }
+
+            private static uint ReadUInt32(byte[] bytes, int index)
+            {
+                return (uint)bytes[index] | (uint)bytes[index + 1] << 8 | (uint)bytes[index + 2] << 16 | (uint)bytes[index + 3] << 24;
+            }
+
+            private static Package Decode(string encoded, out PayloadScope scope)
+            {
+                if (encoded.Length > MAX_ENCODED_LENGTH)
+                {
+                    throw new InvalidDataException($"The preset payload exceeds the {MAX_ENCODED_LENGTH:N0} character limit.");
+                }
+
+                if (!TryGetPayloadScope(encoded, out scope, out int prefixLength))
+                {
+                    throw new FormatException("The preset payload has an invalid header.");
+                }
+
+                string payload = encoded.Substring(prefixLength);
+                byte[] compressed = FromBase64(payload);
+
+                if (compressed.Length < 18)
+                {
+                    throw new InvalidDataException("The preset payload was truncated or corrupted by the console.");
+                }
+
+                uint expectedCrc = ReadUInt32(compressed, compressed.Length - 8);
+                uint expectedSize = ReadUInt32(compressed, compressed.Length - 4);
+
+                if (expectedSize > (uint)MAX_JSON_BYTES)
+                {
+                    throw new InvalidDataException($"The uncompressed preset exceeds the {MAX_JSON_BYTES:N0} byte limit.");
+                }
+
+                byte[] jsonBytes;
+
+                try
+                {
+                    jsonBytes = Facepunch.Utility.Compression.Uncompress(compressed);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidDataException("The preset payload was truncated or corrupted by the console.", ex);
+                }
+
+                if (jsonBytes == null || (uint)jsonBytes.Length != expectedSize || GetCrc32(jsonBytes) != expectedCrc)
+                {
+                    throw new InvalidDataException("The preset payload was truncated or corrupted by the console.");
+                }
+
+                string json = Encoding.UTF8.GetString(jsonBytes);
+                JObject packageObject = JObject.Parse(json);
+                int formatVersion = packageObject["v"]?.Value<int>() ?? 0;
+
+                if (formatVersion != 4)
+                {
+                    throw new InvalidDataException($"Unsupported preset format version: {formatVersion}.");
+                }
+
+                Package package = packageObject.ToObject<Package>(CreatePayloadSerializer());
+
+                return package ?? throw new JsonException("The preset package is empty.");
+            }
+
+            private static bool IsValidProfileName(string profileName)
+            {
+                return !string.IsNullOrWhiteSpace(profileName) && !profileName.Contains("..") && profileName.IndexOf('/') == -1 && profileName.IndexOf('\\') == -1 && profileName.IndexOfAny(Path.GetInvalidFileNameChars()) == -1;
+            }
+
+            private static string WriteCommands(string fileName, List<string> commands)
+            {
+                string dataPath = Path.Combine(Name, "Presets", GetFileNameWithoutExtension(fileName));
+                HarmonyDataLayer.WriteObject(dataPath, new CommandFile { Commands = commands });
+                return Path.Combine(HarmonyDataLayer.DataDirectory, $"{dataPath}.json");
+            }
+
+            private static string WritePayload(string fileName, PayloadFile payloads)
+            {
+                string dataPath = Path.Combine(Name, "Presets", GetFileNameWithoutExtension(fileName));
+                HarmonyDataLayer.WriteObject(dataPath, payloads);
+                return Path.Combine(HarmonyDataLayer.DataDirectory, $"{dataPath}.json");
+            }
+
+            private static int GetUiPayloadLimit()
+            {
+                int commandLimit = Math.Max(1, ConVar.Server.maxpacketsize_command - COMMAND_PACKET_OVERHEAD);
+                return Math.Min(CUI_INPUT_LIMIT, Math.Min(MAX_ENCODED_LENGTH, commandLimit));
+            }
+
+            private static bool TryPrepare(Package package, PayloadScope scope, out Configuration importedConfig, out Dictionary<string, BuildingOptions> importedProfiles, out Dictionary<string, List<LootItem>> importedLootTables, out string error)
+            {
+                importedConfig = null;
+                importedProfiles = new(StringComparer.OrdinalIgnoreCase);
+                importedLootTables = new(StringComparer.OrdinalIgnoreCase);
+                error = null;
+
+                bool languageMismatch = package.English != en;
+
+                if (languageMismatch && scope != PayloadScope.Full)
+                {
+                    error = "Config, Profiles, and Loot Tables presets can only be imported by the same language version of Raidable Bases. Use the Full preset to import between English and Russian.";
+                    return false;
+                }
+
+                if (IncludesConfig(scope))
+                {
+                    if (package.Config == null)
+                    {
+                        error = "The preset does not contain the plugin configuration.";
+                        return false;
+                    }
+
+                    try
+                    {
+                        importedConfig = FromPayloadObject<Configuration>(package.Config);
+                    }
+                    catch (Exception ex)
+                    {
+                        error = $"The plugin configuration could not be read: {ex.Message}";
+                        return false;
+                    }
+
+                    if (importedConfig == null)
+                    {
+                        error = "The preset contains an empty plugin configuration.";
+                        return false;
+                    }
+                }
+
+                if (IncludesProfiles(scope))
+                {
+                    package.Profiles ??= new(StringComparer.OrdinalIgnoreCase);
+
+                    if (package.Profiles.Count > 0 && package.ProfileBaseline == null)
+                    {
+                        error = "The preset contains profiles without a profile baseline.";
+                        return false;
+                    }
+
+                    HashSet<string> profileNames = new(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var (profileName, patch) in package.Profiles)
+                    {
+                        if (!IsValidProfileName(profileName))
+                        {
+                            error = $"The preset contains an invalid profile name: {profileName}.";
+                            return false;
+                        }
+
+                        if (!profileNames.Add(profileName))
+                        {
+                            error = $"The preset contains duplicate profile names: {profileName}.";
+                            return false;
+                        }
+
+                        try
+                        {
+                            JToken profileToken = ApplyPatch(package.ProfileBaseline, patch ?? new JObject());
+                            BuildingOptions options = FromPayloadObject<BuildingOptions>(profileToken);
+
+                            if (options == null)
+                            {
+                                error = $"The preset profile '{profileName}' is empty.";
+                                return false;
+                            }
+
+                            importedProfiles[profileName] = options;
+                        }
+                        catch (Exception ex)
+                        {
+                            error = $"The preset profile '{profileName}' could not be read: {ex.Message}";
+                            return false;
+                        }
+                    }
+                }
+
+                if (IncludesLootTables(scope))
+                {
+                    package.LootTables ??= new(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var (path, lootItems) in package.LootTables)
+                    {
+                        string normalized = path?.Replace('\\', '/');
+
+                        if (!IsValidLootPath(normalized))
+                        {
+                            error = $"The preset contains an invalid loot table path: {path}.";
+                            return false;
+                        }
+
+                        importedLootTables[normalized] = lootItems ?? new();
+                    }
+                }
+
+                return true;
+            }
+
+            private bool WriteProfileIfChanged(string dataPath, BuildingOptions options)
+            {
+                if (Instance.DataFileExists(dataPath))
+                {
+                    try
+                    {
+                        JObject existing = HarmonyDataLayer.ReadObject<JObject>(dataPath);
+                        JToken imported = JToken.FromObject(options);
+
+                        if (JToken.DeepEquals(existing, imported))
+                        {
+                            return false;
+                        }
+                    }
+                    catch
+                    {
+                        // An invalid or unreadable profile should be replaced.
+                    }
+                }
+
+                HarmonyDataLayer.WriteObject(dataPath, options);
+                return true;
+            }
+
+            private bool WriteLootTableIfChanged(string dataPath, List<LootItem> lootItems)
+            {
+                if (Instance.DataFileExists(dataPath))
+                {
+                    try
+                    {
+                        var existing = HarmonyDataLayer.ReadObject<List<LootItem>>(dataPath);
+
+                        if (JToken.DeepEquals(
+                            JToken.FromObject(existing ?? new List<LootItem>()),
+                            JToken.FromObject(lootItems ?? new List<LootItem>())))
+                        {
+                            return false;
+                        }
+                    }
+                    catch
+                    {
+                        // An invalid or unreadable existing loot table should be replaced.
+                    }
+                }
+
+                HarmonyDataLayer.WriteObject(dataPath, lootItems);
+                return true;
+            }
+
+            private bool Import(IPlayer user, string encoded, bool directConsolePaste = false)
+            {
+                if (Instance.IsGridLoading() || !Instance.IsPasteAvailable())
+                {
+                    Instance.Reply(user, Instance.IsGridLoading() ? "GridIsLoading" : "PasteOnCooldown");
+                    return false;
+                }
+
+                try
+                {
+                    Package package = Decode(encoded, out PayloadScope scope);
+
+                    if (!TryPrepare(package, scope, out var importedConfig, out var importedProfiles, out var importedLootTables, out string error))
+                    {
+                        Instance.ReplyOrLog(user, error);
+                        return false;
+                    }
+
+                    List<string> backupCommands = CreateCommands(CreateFullPayload(), out _);
+                    string backupPath = WriteCommands($"rb.config.backup_{DateTime.UtcNow:yyyyMMdd_HHmmss}", backupCommands);
+
+                    if (IncludesConfig(scope))
+                    {
+                        Instance.config = importedConfig;
+                        Instance.SaveConfig();
+                    }
+
+                    int changedProfileCount = 0;
+
+                    foreach (var (profileName, options) in importedProfiles)
+                    {
+                        string dataPath = Path.Combine(Name, "Profiles", profileName);
+
+                        if (WriteProfileIfChanged(dataPath, options))
+                        {
+                            changedProfileCount++;
+                        }
+                    }
+
+                    int importedLootItemCount = 0;
+                    int changedLootTableCount = 0;
+
+                    foreach (var (lootPath, lootItems) in importedLootTables)
+                    {
+                        string dataPath = Path.Combine(Name, lootPath.Replace('/', Path.DirectorySeparatorChar));
+
+                        if (WriteLootTableIfChanged(dataPath, lootItems))
+                        {
+                            changedLootTableCount++;
+                            importedLootItemCount += lootItems.Count;
+                        }
+                    }
+
+                    switch (scope)
+                    {
+                        case PayloadScope.Full:
+                            Instance.ReplyOrLog(user, $"Applied the full preset: config, {changedProfileCount} changed profile{(changedProfileCount == 1 ? string.Empty : "s")}, and {changedLootTableCount} changed loot table{(changedLootTableCount == 1 ? string.Empty : "s")} with {importedLootItemCount} item entr{(importedLootItemCount == 1 ? "y" : "ies")}.");
+                            break;
+                        case PayloadScope.Config:
+                            Instance.ReplyOrLog(user, "Applied the config preset.");
+                            break;
+                        case PayloadScope.Profiles:
+                            Instance.ReplyOrLog(user, $"Applied the profiles preset: {changedProfileCount} of {importedProfiles.Count} profile{(importedProfiles.Count == 1 ? string.Empty : "s")} changed.");
+                            break;
+                        case PayloadScope.LootTables:
+                            Instance.ReplyOrLog(user, $"Applied the loot tables preset: {changedLootTableCount} of {importedLootTables.Count} loot table{(importedLootTables.Count == 1 ? string.Empty : "s")} changed with {importedLootItemCount} item entr{(importedLootItemCount == 1 ? "y" : "ies")}.");
+                            break;
+                    }
+
+                    Instance.ReplyOrLog(user, $"Backup: {backupPath}");
+
+                    if (!string.Equals(package.PluginVersion, Version.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        Instance.ReplyOrLog(user, $"The preset was created with Raidable Bases {package.PluginVersion ?? "unknown"} and was imported by {Version}.");
+                    }
+
+                    Instance.ReloadConfiguration(user);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    string guidance = directConsolePaste
+                        ? $" The console may have truncated the payload. Config, Profiles, and Loot Tables values up to {GetUiPayloadLimit():N0} characters can be pasted into 'rb.config import'; use Commands from rb.json for Full imports or longer values."
+                        : string.Empty;
+                    Instance.ReplyOrLog(user, $"Failed to apply the configuration preset: {ex.Message}{guidance}");
+                    return false;
+                }
+            }
+
+            public void ForgetImportUi(ulong userid)
+            {
+                _importUiUsers.Remove(userid);
+            }
+
+            private void DestroyImportUi(IPlayer user)
+            {
+                if (user == null)
+                {
+                    return;
+                }
+
+                if (user.Object is BasePlayer player)
+                {
+                    CuiHelper.DestroyUi(player, IMPORT_UI);
+                    ForgetImportUi(player.userID);
+                    return;
+                }
+
+                if (ulong.TryParse(user.Id, out ulong userid))
+                {
+                    ForgetImportUi(userid);
+                }
+            }
+
+            private void ShowImportUi(IPlayer user)
+            {
+                if (user?.Object is not BasePlayer player)
+                {
+                    Instance.ReplyOrLog(user, "The full-string import window can only be opened in-game.");
+                    return;
+                }
+
+                DestroyImportUi(user);
+
+                UiHandler.UiPalette palette = Instance.UI.GetPalette();
+                CuiElementContainer container = new();
+                int payloadLimit = GetUiPayloadLimit();
+                const float width = 720f;
+                const float height = 194f;
+                const string body = IMPORT_UI + "_Body";
+                const string inputPanel = IMPORT_UI + "_InputPanel";
+
+                UiHandler.AddCuiPanel(container, palette.Background, "0.5 0.5", "0.5 0.5",
+                    FormattableString.Invariant($"{-width * 0.5f:0.#} {-height * 0.5f:0.#}"),
+                    FormattableString.Invariant($"{width * 0.5f:0.#} {height * 0.5f:0.#}"),
+                    "Overlay", IMPORT_UI, cursor: true, keyboard: true);
+                UiHandler.AddCuiPanel(container, palette.Accent, "0 1", "1 1", "0 -2", "0 0", IMPORT_UI, IMPORT_UI + "_Accent");
+                UiHandler.AddCuiPanel(container, palette.Accent, "0 1", "0 1", "18 -31", "24 -25", IMPORT_UI, IMPORT_UI + "_Dot");
+                UiHandler.AddCuiElement(container, "Configuration Import", 21, TextAnchor.MiddleLeft, palette.Accent,
+                    "0 1", "1 1", "32 -47", "-62 -7", IMPORT_UI, IMPORT_UI + "_Title");
+                UiHandler.AddCuiButton(container, palette.Panel, "rb.config import.close", "×", palette.Accent, 20, TextAnchor.MiddleCenter,
+                    "1 1", "1 1", "-52 -48", "-18 -14", IMPORT_UI, IMPORT_UI + "_Close");
+                UiHandler.AddCuiElement(container, "Paste one RBC2 value or exported rb.config command, then press Enter.", 13, TextAnchor.MiddleLeft, palette.Muted,
+                    "0 1", "1 1", "18 -75", "-18 -47", IMPORT_UI, IMPORT_UI + "_Instructions", false);
+
+                UiHandler.AddCuiPanel(container, palette.Cell, "0 0", "1 1", "18 18", "-18 -79", IMPORT_UI, body);
+                UiHandler.AddCuiElement(container, $"Maximum input: {payloadLimit:N0} characters • Commands must be entered in order", 12, TextAnchor.MiddleLeft, palette.Muted,
+                    "0 1", "1 1", "12 -31", "-12 -5", body, IMPORT_UI + "_Limit", false);
+                UiHandler.AddCuiPanel(container, palette.Panel, "0 0", "1 1", "12 12", "-12 -35", body, inputPanel);
+                UiHandler.AddCuiInput(container, "rb.config import", payloadLimit, palette.Text, 12, TextAnchor.MiddleLeft,
+                    "0 0", "1 1", "10 4", "-10 -4", inputPanel, IMPORT_UI + "_Input");
+
+                if (CuiHelper.AddUi(player, container))
+                {
+                    _importUiUsers.Add(player.userID);
+                }
+                else
+                {
+                    Instance.ReplyOrLog(user, "The configuration import interface could not be opened. Paste imports through the server or F1 console instead.");
+                }
+            }
+
+            private void ClearImport()
+            {
+                _importTimer?.Destroy();
+                _importTimer = null;
+                _activeImport = null;
+            }
+
+            private void RefreshImportTimeout()
+            {
+                _importTimer?.Destroy();
+                _importTimer = Instance.timer.Once(IMPORT_TIMEOUT, () =>
+                {
+                    _activeImport = null;
+                    _importTimer = null;
+                });
+            }
+
+            private bool TryGetImport(IPlayer user, string id, out PresetImport import)
+            {
+                import = _activeImport;
+
+                if (import == null || !import.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
+                {
+                    Instance.ReplyOrLog(user, "No matching configuration preset import is active. Paste its begin command first.");
+                    return false;
+                }
+
+                return true;
+            }
+
+            private void BeginImport(IPlayer user, IReadOnlyList<string> args)
+            {
+                if (args.Count != 4 || !uint.TryParse(args[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint checksum) || !int.TryParse(args[2], out int chunkCount) || !int.TryParse(args[3], out int totalLength))
+                {
+                    Instance.ReplyOrLog(user, "Invalid configuration preset begin command.");
+                    return;
+                }
+
+                int expectedChunks = totalLength > 0 ? (totalLength + CHUNK_LENGTH - 1) / CHUNK_LENGTH : 0;
+
+                if (totalLength <= 0 || totalLength > MAX_ENCODED_LENGTH || chunkCount != expectedChunks)
+                {
+                    Instance.ReplyOrLog(user, "The configuration preset begin command contains invalid length information.");
+                    return;
+                }
+
+                ClearImport();
+                _activeImport = new()
+                {
+                    Id = checksum.ToString("X8", CultureInfo.InvariantCulture),
+                    Checksum = checksum,
+                    TotalLength = totalLength,
+                    Chunks = new string[chunkCount]
+                };
+                RefreshImportTimeout();
+                Instance.ReplyOrLog(user, $"Started configuration preset import {_activeImport.Id}. Waiting for {chunkCount} chunks.");
+            }
+
+            private static bool IsChunkTextValid(string value)
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < value.Length; i++)
+                {
+                    char c = value[i];
+
+                    if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '-' && c != '_' && c != '.')
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            private void AddChunk(IPlayer user, IReadOnlyList<string> args)
+            {
+                if (args.Count != 4)
+                {
+                    Instance.ReplyOrLog(user, "Invalid configuration preset chunk command.");
+                    return;
+                }
+
+                if (!TryGetImport(user, args[1], out var import))
+                {
+                    return;
+                }
+
+                if (!int.TryParse(args[2], out int index) || index < 0 || index >= import.Chunks.Length)
+                {
+                    Instance.ReplyOrLog(user, "The configuration preset chunk index is invalid.");
+                    return;
+                }
+
+                string value = args[3];
+                int expectedLength = index == import.Chunks.Length - 1 ? import.TotalLength - index * CHUNK_LENGTH : CHUNK_LENGTH;
+
+                if (value.Length > expectedLength && TryGetPayloadScope(value, out _, out _))
+                {
+                    Instance.ReplyOrLog(user, "This appears to be a complete preset payload, not one chunk of it. Run 'rb.config import' in-game and paste it into the import window.");
+                    return;
+                }
+
+                if (value.Length != expectedLength || !IsChunkTextValid(value))
+                {
+                    Instance.ReplyOrLog(user, $"Configuration preset chunk {index} was truncated or corrupted by the console. Expected {expectedLength:N0} characters but received {value.Length:N0}.");
+                    return;
+                }
+
+                bool replaced = import.Chunks[index] != null;
+                if (!replaced)
+                {
+                    import.Received++;
+                }
+
+                import.Chunks[index] = value;
+                RefreshImportTimeout();
+                Instance.ReplyOrLog(user, $"Configuration preset chunk {index + 1}/{import.Chunks.Length} {(replaced ? "replaced" : "received")} ({import.Received}/{import.Chunks.Length}).");
+            }
+
+            private void ApplyImport(IPlayer user, IReadOnlyList<string> args)
+            {
+                if (args.Count != 2)
+                {
+                    Instance.ReplyOrLog(user, "Invalid configuration preset apply command.");
+                    return;
+                }
+
+                if (!TryGetImport(user, args[1], out var import))
+                {
+                    return;
+                }
+
+                if (import.Received != import.Chunks.Length)
+                {
+                    using var missing = DisposableList<int>();
+                    for (int i = 0; i < import.Chunks.Length; i++)
+                    {
+                        if (import.Chunks[i] == null)
+                        {
+                            missing.Add(i);
+                        }
+                    }
+
+                    Instance.ReplyOrLog(user, $"The configuration preset is missing chunk{(missing.Count == 1 ? string.Empty : "s")}: {string.Join(", ", missing)}.");
+                    return;
+                }
+
+                using var sb = DisposableBuilder.Get();
+                sb.EnsureCapacity(import.TotalLength);
+
+                for (int i = 0; i < import.Chunks.Length; i++)
+                {
+                    sb.Append(import.Chunks[i]);
+                }
+
+                string encoded = sb.ToString();
+
+                if (encoded.Length != import.TotalLength || GetChecksum(encoded) != import.Checksum)
+                {
+                    Instance.ReplyOrLog(user, "The assembled configuration preset was truncated or corrupted. Paste the begin and chunk commands again.");
+                    return;
+                }
+
+                if (Import(user, encoded))
+                {
+                    ClearImport();
+                    DestroyImportUi(user);
+                }
+            }
+
+            public bool TryHandleCommand(IPlayer user, string[] args)
+            {
+                if (args.Length > 0)
+                {
+                    switch (args[0].ToLowerInvariant())
+                    {
+                        case "begin": BeginImport(user, args); return true;
+                        case "chunk": AddChunk(user, args); return true;
+                        case "apply": ApplyImport(user, args); return true;
+                        case "import.close": DestroyImportUi(user); return true;
+                        case "import":
+                            {
+                                if (args.Length == 1)
+                                {
+                                    ShowImportUi(user);
+                                    return true;
+                                }
+
+                                HandleImportUiSubmission(user, args);
+                                return true;
+                            }
+                    }
+
+                    string encoded = string.Concat(args).Trim().Trim('"');
+
+                    if (TryGetPayloadScope(encoded, out _, out _))
+                    {
+                        Import(user, encoded, true);
+                        return true;
+                    }
+                }
+
+                if (args.Length == 0 || !args[0].Equals("export", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (Instance.IsGridLoading())
+                {
+                    Instance.Reply(user, "GridIsLoading");
+                    return true;
+                }
+
+                try
+                {
+                    PayloadFile payloads = CreatePayloads(out int lootTableCount, out int lootItemCount, out int skippedLootItemCount);
+                    List<string> commands = CreateCommands(payloads.Full, out int payloadLength);
+                    int uiPayloadLimit = GetUiPayloadLimit();
+                    payloads.Commands = commands;
+                    payloads.ConfigCommands = payloads.Config.Length >= uiPayloadLimit ? CreateCommands(payloads.Config, out _) : null;
+                    payloads.ProfilesCommands = payloads.Profiles.Length >= uiPayloadLimit ? CreateCommands(payloads.Profiles, out _) : null;
+                    payloads.LootTablesCommands = payloads.LootTables.Length >= uiPayloadLimit ? CreateCommands(payloads.LootTables, out _) : null;
+                    string presetPath = WritePayload("rb", payloads);
+                    int chunkCount = commands.Count == 1 ? 1 : commands.Count - 2;
+                    int profileCount = Instance.Buildings.Profiles.Count;
+
+                    Instance.ReplyOrLog(user, $"Created a {commands.Count}-command configuration preset containing the config, {profileCount} profile{(profileCount == 1 ? string.Empty : "s")}, and {lootTableCount} loot table{(lootTableCount == 1 ? string.Empty : "s")} with {lootItemCount} item entr{(lootItemCount == 1 ? "y" : "ies")}.");
+                    Instance.ReplyOrLog(user, $"Skipped {skippedLootItemCount} loot entr{(skippedLootItemCount == 1 ? "y" : "ies")} with no usable amount, no usable probability, an invalid or blocked shortname, or paid content blocked by the current config.");
+                    Instance.ReplyOrLog(user, $"Payload length: {payloadLength:N0} characters in {chunkCount} chunk{(chunkCount == 1 ? string.Empty : "s")}. Preset file: {presetPath}");
+
+                    Instance.ReplyOrLog(user, $"The preset contains Commands for Full imports and separately shareable Config, Profiles, and Loot Tables values. Values longer than {uiPayloadLimit:N0} characters have their own matching Commands value.");
+                }
+                catch (Exception ex)
+                {
+                    if (user.IsServer) Puts($"Failed to create the configuration preset: {ex}");
+                    else user.Message($"Failed to create the configuration preset: {ex.Message}");
+                }
+
+                return true;
+            }
+
+            private void HandleImportUiSubmission(IPlayer user, string[] args)
+            {
+                string input = string.Join(" ", args, 1, args.Length - 1).Trim();
+
+                if (input.EndsWith(",", StringComparison.Ordinal))
+                {
+                    input = input.Substring(0, input.Length - 1).TrimEnd();
+                }
+
+                input = input.Trim('"');
+
+                if (string.IsNullOrWhiteSpace(input))
+                {
+                    Instance.ReplyOrLog(user, "Nothing was pasted.");
+                    return;
+                }
+
+                const string commandPrefix = "rb.config ";
+
+                if (input.StartsWith(commandPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    input = input.Substring(commandPrefix.Length).TrimStart();
+                }
+
+                if (StartsWithImportAction(input, "begin") || StartsWithImportAction(input, "chunk") || StartsWithImportAction(input, "apply"))
+                {
+                    string[] commandArgs = input.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (commandArgs[0].Equals("begin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        BeginImport(user, commandArgs);
+                        return;
+                    }
+
+                    if (commandArgs[0].Equals("chunk", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddChunk(user, commandArgs);
+                        return;
+                    }
+
+                    ApplyImport(user, commandArgs);
+                    return;
+                }
+
+                string payload = input;
+
+                if (!TryGetPayloadScope(payload, out PayloadScope scope, out _))
+                {
+                    Instance.ReplyOrLog(user, "Paste a recognized RBC2 payload or one rb.config command from rb.json.");
+                    return;
+                }
+
+                if (scope == PayloadScope.Full)
+                {
+                    Instance.ReplyOrLog(user, "Full presets exceed the CUI limit. Paste each entry from Commands here one at a time, in order.");
+                    return;
+                }
+
+                if (payload.Length >= GetUiPayloadLimit())
+                {
+                    Instance.ReplyOrLog(user, $"The pasted value reached the {GetUiPayloadLimit():N0}-character CUI limit and may be incomplete. Paste its matching Commands entries here one at a time, in order.");
+                    return;
+                }
+
+                if (Import(user, payload))
+                {
+                    DestroyImportUi(user);
+                }
+            }
+
+            private static bool StartsWithImportAction(string input, string action)
+            {
+                int length = 0;
+
+                while (length < input.Length && !char.IsWhiteSpace(input[length]))
+                {
+                    length++;
+                }
+
+                return length == action.Length && string.Compare(input, 0, action, 0, length, StringComparison.OrdinalIgnoreCase) == 0;
+            }
+
+            public void Dispose()
+            {
+                ClearImport();
+
+                foreach (ulong userid in _importUiUsers)
+                {
+                    BasePlayer player = RustCore.FindPlayerById(userid);
+
+                    if (player != null)
+                    {
+                        CuiHelper.DestroyUi(player, IMPORT_UI);
+                    }
+                }
+
+                _importUiUsers.Clear();
+            }
+        }
+
+        private void ReplyOrLog(IPlayer user, string message)
+        {
+            if (user.IsServer) Puts(message);
+            else user.Reply(message);
         }
 
         private void CommandConfig(IPlayer user, string command, string[] args)
         {
             if (!user.HasPermission("raidablebases.config"))
             {
-                Message(user, "No Permission");
+                Reply(user, "No Permission");
+                return;
+            }
+
+            if (_configPresetController.TryHandleCommand(user, args))
+            {
                 return;
             }
 
             if (args.Length == 0 || !arguments.Exists(str => args[0].Equals(str, StringComparison.OrdinalIgnoreCase)))
             {
-                Message(user, "ConfigUseFormat", string.Join("|", arguments));
+                Reply(user, "ConfigUseFormat", string.Join("|", arguments));
                 return;
             }
 
@@ -2585,11 +4685,13 @@ namespace RaidableBases
                 case "list": ConfigListBases(user); return;
                 case "toggle": CommandToggleProfile(user, command, args); return;
                 case "stability": case "inventories": CommandPasteOption(user, command, args); return;
+                case "accepted-items": CommandAcceptedItems(user, args); return;
+                case "retrieve-items": CommandRetrieveItems(user, args); return;
                 case "maintained":
                     {
                         Automated.IsMaintainedEnabled = !Automated.IsMaintainedEnabled;
                         Automated.StartCoroutine(RaidableType.Maintained);
-                        Message(user, $"Toggled maintained events {(Automated.IsMaintainedEnabled ? "on" : "off")}");
+                        Reply(user, $"Toggled maintained events {(Automated.IsMaintainedEnabled ? "on" : "off")}");
                         config.Settings.Maintained.Enabled = Automated.IsMaintainedEnabled;
                         SaveConfig();
                         return;
@@ -2598,7 +4700,7 @@ namespace RaidableBases
                     {
                         Automated.IsScheduledEnabled = !Automated.IsScheduledEnabled;
                         Automated.StartCoroutine(RaidableType.Scheduled);
-                        Message(user, $"Toggled scheduled events {(Automated.IsScheduledEnabled ? "on" : "off")}");
+                        Reply(user, $"Toggled scheduled events {(Automated.IsScheduledEnabled ? "on" : "off")}");
                         config.Settings.Schedule.Enabled = Automated.IsScheduledEnabled;
                         SaveConfig();
                         return;
@@ -2646,7 +4748,7 @@ namespace RaidableBases
                     }
                     raid.ForceUpdateMarker();
                 }
-                user.Message("Enabled map markers and dome.");
+                ReplyOrLog(user, "Enabled map markers and dome.");
                 return;
             }
 
@@ -2660,7 +4762,7 @@ namespace RaidableBases
                     }
                     SaveProfile(key, profile.Options);
                 }
-                user.Message("Removed all explosive costs from the profiles.");
+                ReplyOrLog(user, "Removed all explosive costs from the profiles.");
                 return;
             }
 

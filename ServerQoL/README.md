@@ -1,8 +1,8 @@
 # ServerQoL (Harmony)
 
-Combines four small Oxide QoL plugins into one Harmony mod. **No Oxide required.**
+Combines four small Oxide QoL plugins into one Harmony mod. **Harmony-only required.**
 
-| Oxide plugin | Behaviour |
+| Harmony mod | Behaviour |
 |--------------|-----------|
 | UnlockInventory 0.1.0 | Unlocks player main/belt/wear inventories |
 | InfiniteBurn 1.1.0 | Candles last forever; torches stay lit without fuel |
@@ -14,16 +14,16 @@ Combines four small Oxide QoL plugins into one Harmony mod. **No Oxide required.
 1. **0Permissions** (`0Permissions.dll`) — only required for generator owner permission
 2. **ServerQoL** (`ServerQoL.dll`)
 
-Unload the four Oxide plugins before loading this mod so they do not double-apply.
+Unload the four Harmony mods before loading this mod so they do not double-apply.
 
 ## Paths
 
 | Kind | Path |
 |------|------|
 | Config | `HarmonyConfig/ServerQoL.json` |
-| Castle vending (optional) | `HarmonyConfig/CastleVendingSetup.json` (copied from `oxide/config/CastleVendingSetup.json`) |
+| Castle vending (optional) | `HarmonyConfig/CastleVendingSetup.json` (copied from `legacy/config/CastleVendingSetup.json`) |
 
-On first load, missing Harmony files are copied from the matching Oxide config when present.
+On first load, missing Harmony files are copied from the matching original plugin config when present.
 
 ## Permissions
 

@@ -194,7 +194,7 @@ namespace GrimmNPC
                 AddCommand("npccount", arg =>
                 {
                     BasePlayer ply = arg?.Player();
-                    if (ply != null && arg?.Connection != null)
+                    if (ply != null && arg.Connection != null)
                         mod.CmdNpcCount(ply, "npccount", ToStringArgs(arg));
                     else
                         mod.ConNpcCount(arg);
@@ -202,7 +202,7 @@ namespace GrimmNPC
                 AddCommand("npcdiag", arg =>
                 {
                     BasePlayer ply = arg?.Player();
-                    if (ply != null && arg?.Connection != null && (arg.Args == null || arg.Args.Length == 0))
+                    if (ply != null && arg.Connection != null && (arg.Args == null || arg.Args.Length == 0))
                         mod.CmdNpcDiag(ply, "npcdiag", ToStringArgs(arg));
                     else
                         mod.ConNpcDiag(arg);

@@ -10,9 +10,9 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Game.Rust.Cui
+namespace Game.Rust.Cui
 {
-    // Simplified: no Oxide pooling. JsonTextWriter works without ArrayPool.
+    // Simplified: Harmony-only pooling. JsonTextWriter works without ArrayPool.
 
     public static class CuiHelper
     {
@@ -81,7 +81,7 @@ namespace Oxide.Game.Rust.Cui
         {
             if (player?.net != null)
             {
-                // Clients only forward ConsoleGen commands. Rewrite Oxide-style pnpc / pnpchelper
+                // Clients only forward ConsoleGen commands. Rewrite compat-style pnpc / pnpchelper
                 // callbacks to cui.endtest so PersonalNPCHarmony.Patches.Cui_Endtest_Patch routes them.
                 json = RewriteHarmonyButtonCommands(json);
                 CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection ), json);
@@ -92,7 +92,7 @@ namespace Oxide.Game.Rust.Cui
         }
 
         /// <summary>
-        /// Oxide plugins use custom console commands (pnpc / pnpchelper.*) on CUI buttons. Under
+        /// Harmony mods use custom console commands (pnpc / pnpchelper.*) on CUI buttons. Under
         /// Harmony those never leave the client, because the client only forwards ConsoleGen
         /// commands. Bridge them through cui.endtest with a PNPC / PNPCHELPER marker.
         /// The longer pnpchelper prefix must be rewritten first, otherwise "pnpc" would match it.

@@ -5,41 +5,45 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <RootNamespace>IndustrialTransferSpeed</RootNamespace>
-    <Description>Harmony mod: configurable industrial conveyor max stack size per move. More performant than Oxide plugin.</Description>
+    <Description>Harmony mod: configurable industrial conveyor max stack size per move. More performant than Harmony mod.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Rust.Data">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
-    </Reference>
     <Reference Include="Rust.Harmony">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.System">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
     </Reference>
-    <Reference Include="Facepunch.Console">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
-    </Reference>
-    <Reference Include="Facepunch.Network">
-      <HintPath>..\..\..\..\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
-    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="GrimmCuiRegistration.cs" />
+    <Compile Remove="IndustrialCuiHelper.cs" />
+    <Compile Remove="ComposterStorageAdaptor.cs" />
+    <Compile Remove="PlanterIndustrialHarvester.cs" />
+    <Compile Remove="PlanterProductionSettings.cs" />
+    <Compile Remove="PlanterProductionUi.cs" />
+    <Compile Remove="Patches\Cui_Endtest_PlanterProduction_Patch.cs" />
+    <Compile Remove="Patches\Composter_ServerInit_AttachStorageAdaptor_Patch.cs" />
+    <Compile Remove="Patches\DecayEntity_SupportsChildDeployables_Composter_Patch.cs" />
+    <Compile Remove="Patches\IndustrialStorageAdaptor_CanCompletePickup_Composter_Patch.cs" />
+    <Compile Remove="Patches\PlanterBox_ServerInit_AttachStorageAdaptor_Patch.cs" />
+    <Compile Remove="Patches\PlayerLoot_StartLootingEntity_Planter_Patch.cs" />
+    <Compile Remove="Patches\StorageContainer_CanCompletePickup_Composter_Patch.cs" />
+    <Compile Remove="Patches\StorageContainer_PlayerStoppedLooting_Planter_Patch.cs" />
   </ItemGroup>
 </Project>

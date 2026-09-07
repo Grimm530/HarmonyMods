@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Oxide.Plugins.GrimmBossExtensionMethods
+namespace Harmony.Plugins.GrimmBossExtensionMethods
 {
     /// <summary>
     /// Facepunch/Oxide helpers GrimmBoss expects (List.GetRandom, IsSteamId on EncryptedValue/ulong, ToVector3).

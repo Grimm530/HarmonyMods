@@ -1,6 +1,6 @@
 /*
- * Harmony shims so the ported CopyPaste 4.2.81 logic can run without Oxide/Carbon.
- * No Oxide assemblies are referenced or loaded.
+ * Harmony shims so the ported CopyPaste 4.2.81 logic can run without legacy plugin host/Carbon.
+ * Harmony-only assemblies are referenced or loaded.
  */
 using System;
 using System.Collections;
@@ -206,7 +206,7 @@ namespace CopyPasteHarmony
         }
     }
 
-    /// <summary>Dynamic JSON data file compatible with Oxide DynamicConfigFile indexing.</summary>
+    /// <summary>Dynamic JSON data file compatible with compat DynamicConfigFile indexing.</summary>
     public class DynamicConfigFile
     {
         private JObject _data;
@@ -387,8 +387,8 @@ namespace CopyPasteHarmony
         }
     }
 
-    /// <summary>Harmony stand-in for plugin hooks / data IO. No Oxide assembly is loaded or referenced.</summary>
-    public static class Interface
+    /// <summary>Harmony stand-in for plugin hooks / data IO. Harmony-only assembly is loaded or referenced.</summary>
+    public static class HarmonyModInterface
     {
         public static DataFileSystem DataFileSystem { get; set; }
 
@@ -425,7 +425,7 @@ namespace CopyPasteHarmony
             var configDir = Path.Combine(serverRoot, "HarmonyConfig");
             if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
             if (!Directory.Exists(configDir)) Directory.CreateDirectory(configDir);
-            Interface.DataFileSystem = new DataFileSystem(dataDir);
+            HarmonyModInterface.DataFileSystem = new DataFileSystem(dataDir);
             var configPath = Path.Combine(configDir, "CopyPaste.json");
             JObject data = null;
             if (File.Exists(configPath))

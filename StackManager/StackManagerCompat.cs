@@ -1,5 +1,5 @@
 /*
- * Oxide-free shims for AdminMenu 2.1.13 Chaos UI under Harmony.
+ * Harmony shims for AdminMenu 2.1.13 Chaos UI under Harmony.
  */
 using System;
 using System.Collections.Generic;
@@ -10,12 +10,12 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 using UnityEngine;
 
 namespace StackManagerHarmony
 {
-    /// <summary>Oxide Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
+    /// <summary>compat Hash&lt;TKey,TValue&gt; — Dictionary subclass with default-on-miss get.</summary>
     public class Hash<TKey, TValue> : Dictionary<TKey, TValue>
     {
         public new TValue this[TKey key]
@@ -151,7 +151,7 @@ namespace StackManagerHarmony
 
             if (_player != null && _player.IsConnected && _player.net?.connection != null)
             {
-                try { Network.Net.sv.Kick(_player.net.connection, reason); }
+                try { _player.Kick(reason); }
                 catch { }
             }
         }
@@ -224,7 +224,7 @@ namespace StackManagerHarmony
         public double TotalHookTime { get; set; }
     }
 
-    /// <summary>Oxide Chaos PluginInterface-style helper for cross-mod Calls.</summary>
+    /// <summary>compat PluginInterface-style helper for cross-mod Calls.</summary>
     public class PluginHelper
     {
         private readonly string _name;
@@ -452,7 +452,7 @@ namespace StackManagerHarmony
 
     #region Permission / Plugins / Covalence
 
-    /// <summary>Oxide-like permission API; Plugin owner args ignored.</summary>
+    /// <summary>Harmony-like permission API; Plugin owner args ignored.</summary>
     public class PermissionLib
     {
         public bool UserHasPermission(string playerId, string perm) =>
@@ -1100,16 +1100,16 @@ namespace StackManagerHarmony
         }
     }
 
-    /// <summary>Oxide Interface stubs — plugin load/unload is a no-op under Harmony.</summary>
-    public static class Interface
+    /// <summary>Harmony Interface stubs — plugin load/unload is a no-op under Harmony.</summary>
+    public static class HarmonyModInterface
     {
-        public static OxideCompat Oxide { get; } = new OxideCompat();
+        public static HarmonyCompat Mods { get; } = new HarmonyCompat();
     }
 
-    public class OxideCompat
+    public class HarmonyCompat
     {
-        public PluginManager RootPluginManager { get; } = new PluginManager();
-        public string PluginDirectory =>
+        public ModManager RootModManager { get; } = new ModManager();
+        public string ModDirectory =>
             StackManagerHost.Instance != null
                 ? Path.Combine(StackManagerHost.Instance.ServerRoot, "HarmonyMods")
                 : "HarmonyMods";
@@ -1126,7 +1126,7 @@ namespace StackManagerHarmony
         public IEnumerable<PluginLoader> GetPluginLoaders() => Enumerable.Empty<PluginLoader>();
     }
 
-    public class PluginManager
+    public class ModManager
     {
         public IEnumerable<Plugin> GetPlugins()
         {
@@ -1146,7 +1146,7 @@ namespace StackManagerHarmony
     #endregion
 }
 
-namespace Oxide.Ext.Chaos
+namespace Grimm.Chaos
 {
     /// <summary>Stub for [Chaos.Permission] field markers.</summary>
     [AttributeUsage(AttributeTargets.Field)]
@@ -1155,7 +1155,7 @@ namespace Oxide.Ext.Chaos
     }
 }
 
-namespace Oxide.Ext.Chaos.Data
+namespace Grimm.Chaos.Data
 {
     /// <summary>Chaos Datafile&lt;T&gt; alias over StackManager DataFile&lt;T&gt;.</summary>
     public class Datafile<T> : StackManagerHarmony.DataFile<T> where T : class, new()
@@ -1167,7 +1167,7 @@ namespace Oxide.Ext.Chaos.Data
     }
 }
 
-namespace Oxide.Ext.Chaos.Discord
+namespace Grimm.Chaos.Discord
 {
     public class DiscordColor
     {

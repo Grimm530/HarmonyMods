@@ -12,7 +12,7 @@ internal class BasePlayer_Die_Patch
     [HarmonyPrefix]
     private static void Prefix(BasePlayer __instance)
     {
-        if (!LootDebug.IsActive || __instance == null) return;
+        if (!LootDebug.IsActive) return;
         LootDebug.DumpInventory(__instance, "Die");
     }
 }

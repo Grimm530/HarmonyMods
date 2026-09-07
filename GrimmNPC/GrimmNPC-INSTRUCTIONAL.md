@@ -38,7 +38,7 @@ GrimmNPC uses IL (Intermediate Language) patching for direct method access witho
 
 ## Project Overview
 
-GrimmNPC is a Harmony mod for Rust that customizes NPC behavior. Optimized for 1000+ NPCs with 100x performance improvement over Oxide plugins.
+GrimmNPC is a Harmony mod for Rust that customizes NPC behavior. Optimized for 1000+ NPCs with 100x performance improvement over Harmony mods.
 
 **Features**: Direct IL patching, HomePosition/RoamRange/ChaseRange enforcement, combat enhancement (rush/strafe), swimming support, turret targeting control, assist system, dormancy management.
 
@@ -855,7 +855,7 @@ GrimmNPC does NOT patch `AIInformationZone` methods, but its destination clampin
 3. **Stable API**: The reflection-based integration API (`RegisterPending`, `RegisterNpc`, `UnregisterNpc`, `CustomNpcData` properties) is stable and backward-compatible. New properties have defaults, ensuring existing plugins continue to work.
 4. **No Config File Dependencies**: Plugins do NOT need to read or modify GrimmNPC's config file (`HarmonyConfig/GrimmNPC.json`). All global settings are managed internally by GrimmNPC.
 5. **Automatic Feature Application**: New features added to GrimmNPC (e.g., assist system, dynamic navmesh switching) are automatically applied to all registered NPCs without requiring plugin updates.
-6. **Oxide Hook Integration**: GrimmNPC provides `CallOxideHook()` for calling Oxide hooks from Harmony mods. This method is performance-optimized with cached reflection lookups, ensuring minimal overhead even when called infrequently (on death, guard target destroyed, etc.).
+6. **Harmony Hook Integration**: GrimmNPC provides `CallOxideHook()` for calling Harmony hooks from Harmony mods. This method is performance-optimized with cached reflection lookups, ensuring minimal overhead even when called infrequently (on death, guard target destroyed, etc.).
 
 **Example**: If GrimmNPC adds a new `NpcConfig` property like `EnableNewFeature`, plugins do NOT need to:
 - Update their code to set this property
@@ -1005,7 +1005,7 @@ npc.inventory.containerWear.Clear();
 npc.inventory.containerBelt.Clear();
 npc.inventory.containerMain.Clear();
 
-object kitResult = Interface.CallHook("GiveKit", npc, "RaidKit");
+object kitResult = HarmonyModInterface.CallHook("GiveKit", npc, "RaidKit");
 if (kitResult == null || kitResult.ToString().ToLower() == "false")
 {
     // Fallback: manually give belt items if kit failed
@@ -1098,7 +1098,7 @@ private const float SatchelMaxRange = 15f;           // Maximum throw distance
 - **Automatic Configuration**: GrimmNPC automatically applies its internal config to all registered NPCs. Plugins don't need to know about or configure these settings.
 - **Backward Compatibility**: New properties added to `CustomNpcData` have default values, so existing plugins continue to work without updates.
 
-**Complete Integration Steps** (for Oxide plugins using reflection):
+**Complete Integration Steps** (for Harmony mods using reflection):
 
 **Step 1: Find GrimmNPC Type**
 ```csharp
@@ -1358,7 +1358,7 @@ if (distance > npcData.RoamRange)
 
 #### `GrimmNPC.CallOxideHook(string hookName, params object[] args)`
 
-**Purpose**: Calls an Oxide hook via reflection (Harmony mods don't have direct Oxide.Core access). This method is performance-optimized with cached reflection lookups.
+**Purpose**: Calls an Harmony hook via reflection (Harmony mods don't have direct Harmony.Core access). This method is performance-optimized with cached reflection lookups.
 
 **Parameters**:
 - `hookName` - Name of the hook to call (e.g., "OnBomberExplosion", "OnCustomNpcGuardTargetEnd")
@@ -1385,7 +1385,7 @@ GrimmNPC.CallOxideHook("OnBomberExplosion", npc, target);
 
 **When Called**: Infrequently (on NPC death, guard target destroyed, bomber explosion, etc.)
 
-**Note**: This method gracefully handles cases where Oxide is not available (returns `false` without throwing exceptions). External plugins can listen to these hooks using standard Oxide hook syntax.
+**Note**: This method gracefully handles cases where Oxide is not available (returns `false` without throwing exceptions). External plugins can listen to these hooks using standard Harmony hook syntax.
 
 #### `GrimmNPC.ConsumePending(BaseEntity entity)`
 

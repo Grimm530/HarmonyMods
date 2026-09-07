@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using Oxide.Ext.Chaos.TextMeshPro.Fonts;
+using Grimm.Chaos.TextMeshPro.Fonts;
 using Unity.Collections;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.TextMeshPro;
+namespace Grimm.Chaos.TextMeshPro;
 
 public sealed class PermanentMarkerFont : IDisposable
 {

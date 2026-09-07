@@ -3,11 +3,11 @@ using Facepunch.Utility;
 using HarmonyLib;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Oxide.Core;
-using Oxide.Core.Configuration;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Configuration;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using Rust;
 using Rust.Ai.Gen2;
 using System;
@@ -39,29 +39,24 @@ using UnityEngine;
  * Add xp scaling for weapons using shortname (dict<string, double>). If a player kills an animal or npc and the weapon shortname exists in the dict, we use the modifier associated with it.
  */
 
-/* 1.7.14
- * Fixed food spoiling when stored in ExtraPockets. Food already sitting in a pouch is restored fresh.
- * Fixed No_Bee_Damage skill.
- * Added a History button next to Gain Prestige that shows every prestige rank the player has achieved and the benefits each one granted.
- * Added Clever Incubator (Cooking): reduces chicken coop hatch time. At 100% the egg hatches instantly.
- * Added Soft Touch (Cooking): increases the love a chicken gains when petted.
- * Added Factory Farmer (Cooking): increases the number of chickens a coop can hold by 1 per level. Adds a hatch countdown while looting a coop that has no free status widget for the incubating egg.
- * Added Frugal Wrighter (Underwater): refunds a percentage of the materials used when placing boat building pieces.
- * Added Heated Shot (Underwater): increases cannon damage.
- * Added Wind Catcher (Underwater): increases boat speed while the player is at the helm.
- * Added Strategist (Raiding): increases damage dealt by catapults, battering rams and ballistas.
- * Added Replenish (Harvesting): chance for a collectible to grow back after being picked up.
- * Added Friendly Fire (Team): reduces the damage the player deals to their team mates.
- * Updated for August forced wipe.
- * Recycler_Efficiency and Recycler_Speed are now applied via a Harmony postfix on
- * GetRecyclerStats, as Recycler no longer stores efficiency or tick duration per entity.
- * Fixed an issue with melee damage resist only applying against real players.
- * 
+/* 1.7.15
+ * Fixed an issue with craft speed perk.
+ * Fixed crafting XP using blueprint.time (often 0 post-September) instead of GetCraftTime().
+ * Fixed GetCleanItemDefinitions always returning an empty list, which left the shark skinner and deep sea looter loot tables empty.
+ * Excluded hidden items from GetCleanItemDefinitions.
+ * Removed overflow issue from HandleBearBuff.
+ * Fixed the tree points spent counter always showing the first tree's total instead of the tree being viewed.
+ * Fixed the tree navigation buttons not reflecting the tree being viewed, which hid the back button and always sent the forward button to the second tree.
+ * Fixed total points spent being able to double up when a player's data was rebuilt without being cleared first. The counters are now recalculated on each rebuild, so any existing drift corrects itself the next time the player connects.
+ * Removed a max skill points check that could never trigger.
+ * Traps are now detected by entity type instead of prefab name, so re-skinned traps such as the industrial auto turret and bar games shotgun trap now work with the trap damage perks, trap spotter and trap death type. Monument turrets are still excluded.
+ * Added knife.bone.obsidian to the default skinning tools whitelist.
+ * Updated for September Forced (StartSetFlags, cookable float amounts).
  */
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
-    [Info("Skill Tree", "imthenewguy edited by Grimm530", "1.7.14")]
+    [Info("Skill Tree", "imthenewguy edited by Grimm530", "1.7.15")]
     [Description("Skills on a tree!")]
     public partial class SkillTree : RustPlugin
     {
@@ -2323,7 +2318,7 @@ namespace Oxide.Plugins
 
             config.tools_black_white_list_settings.skinning_tools = new HashSet<string>()
             {
-                "knife.bone", "knife.butcher", "knife.combat", "hatchet"
+                "knife.bone", "knife.bone.obsidian", "knife.butcher", "knife.combat", "hatchet"
             };
 
             config.loot_settings.mining_loot_table = DefaultLootItems;
@@ -2785,15 +2780,19 @@ namespace Oxide.Plugins
 
             List<LootItems> items = new List<LootItems>();
 
-            foreach (var item in GetCleanItemDefinitions().Where(x => x.category == ItemCategory.Component))
+            foreach (var item in GetCleanItemDefinitions())
+            {
+                if (item.category != ItemCategory.Component) continue;
                 items.Add(new LootItems(item.shortname, 1, 3));
+            }
 
             result.Add("assets/bundled/prefabs/radtown/crate_underwater_basic.prefab", items);
             result.Add("assets/bundled/prefabs/radtown/underwater_labs/crate_normal_2.prefab", items);
             result.Add("assets/bundled/prefabs/radtown/underwater_labs/crate_normal.prefab", items);
 
-            foreach (var item in GetCleanItemDefinitions().Where(x => x.category == ItemCategory.Electrical || x.category == ItemCategory.Weapon || x.category == ItemCategory.Attire))
+            foreach (var item in GetCleanItemDefinitions())
             {
+                if (item.category != ItemCategory.Electrical && item.category != ItemCategory.Weapon && item.category != ItemCategory.Attire) continue;
                 if (item.category == ItemCategory.Attire || item.category == ItemCategory.Weapon) items.Add(new LootItems(item.shortname, 1, 1));
                 else items.Add(new LootItems(item.shortname, 1, 3));
             }
@@ -3066,7 +3065,7 @@ namespace Oxide.Plugins
             catch (Exception ex)
             {
                 UnityEngine.Debug.LogException(ex);
-                Interface.Oxide.UnloadPlugin(Name);
+                HarmonyModInterface.Mods.UnloadPlugin(Name);
             }
         }
 
@@ -3097,7 +3096,7 @@ namespace Oxide.Plugins
         {
             Unsubscribe(nameof(OnPluginLoaded));
             Instance = this;
-            PCDDATA = Interface.Oxide.DataFileSystem.GetFile(this.Name);            
+            PCDDATA = HarmonyModInterface.Mods.DataFileSystem.GetFile(this.Name);            
 
             if (config.xp_settings.xp_sources.Harbor_Event_Winner == 0) Unsubscribe("OnHarborEventWinner");
             if (config.xp_settings.xp_sources.Junkyard_Event_Winner == 0) Unsubscribe("OnJunkyardEventWinner");
@@ -3554,10 +3553,10 @@ namespace Oxide.Plugins
                     {
                         try
                         {
-                            var df = Interface.Oxide.DataFileSystem.GetFile(Name);
+                            var df = HarmonyModInterface.Mods.DataFileSystem.GetFile(Name);
                             if (df.Exists())
                             {
-                                pcdData = Interface.Oxide.DataFileSystem.ReadObject<PluginInfo>(Name) ?? new PluginInfo();
+                                pcdData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PluginInfo>(Name) ?? new PluginInfo();
                                 if (config.misc_settings.enableDebug)
                                     Puts("[SkillTree] Migrated plugin aggregate from default oxide/data path to custom SkillTree directory.");
                             }
@@ -3572,7 +3571,7 @@ namespace Oxide.Plugins
                 }
                 else
                 {
-                    pcdData = Interface.Oxide.DataFileSystem.ReadObject<PluginInfo>(this.Name);
+                    pcdData = HarmonyModInterface.Mods.DataFileSystem.ReadObject<PluginInfo>(this.Name);
                     if (pcdData == null) pcdData = new PluginInfo();
                 }
             }
@@ -3636,7 +3635,7 @@ namespace Oxide.Plugins
 #if CARBON
         private string FileDirectory => Carbon.Core.Defines.GetDataFolder() + Path.DirectorySeparatorChar;
 #else
-        private string FileDirectory => Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar;
+        private string FileDirectory => HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar;
 #endif
 
         /// <summary>Player JSON folder (trailing separator). Uses custom directory when configured.</summary>
@@ -3652,7 +3651,7 @@ namespace Oxide.Plugins
 #if CARBON
                 return Carbon.Core.Defines.GetDataFolder() + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
 #else
-                return Interface.Oxide.DataDirectory + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
+                return HarmonyModInterface.Mods.DataDirectory + Path.DirectorySeparatorChar + "SkillTree" + Path.DirectorySeparatorChar;
 #endif
             }
         }
@@ -3817,7 +3816,10 @@ namespace Oxide.Plugins
             {
                 get
                 {
-                    return available_points + buff_values.Sum(x => x.Value);
+                    var total = available_points;
+                    foreach (var buff in buff_values)
+                        total += buff.Value;
+                    return total;
                 }
             }
         }
@@ -3868,18 +3870,34 @@ namespace Oxide.Plugins
             public void UpdateScores()
             {
                 orderedList.Clear();
-                if (Instance.config.misc_settings.scoreBoardSettings.maxScores > 0)
+                var sorted = Pool.Get<List<KeyValuePair<ulong, ScoreInfo>>>();
+                try
                 {
-                    var count = 0;
-                    foreach (var score in data.OrderByDescending(x => x.Value.prestige).ThenByDescending(x => x.Value.xp))
+                    foreach (var score in data)
+                        sorted.Add(score);
+                    sorted.Sort((a, b) =>
                     {
-                        orderedList.Add(score);
-                        count++;
-                        if (count > Instance.config.misc_settings.scoreBoardSettings.maxScores)
-                            break;
+                        var prestigeCompare = b.Value.prestige.CompareTo(a.Value.prestige);
+                        return prestigeCompare != 0 ? prestigeCompare : b.Value.xp.CompareTo(a.Value.xp);
+                    });
+
+                    if (Instance.config.misc_settings.scoreBoardSettings.maxScores > 0)
+                    {
+                        var count = 0;
+                        foreach (var score in sorted)
+                        {
+                            orderedList.Add(score);
+                            count++;
+                            if (count > Instance.config.misc_settings.scoreBoardSettings.maxScores)
+                                break;
+                        }
                     }
+                    else orderedList.AddRange(sorted);
                 }
-                else orderedList.AddRange(data.OrderByDescending(x => x.Value.prestige).ThenByDescending(x => x.Value.xp));
+                finally
+                {
+                    Pool.FreeUnmanaged(ref sorted);
+                }
             }
 
             public void Wipe()
@@ -5661,7 +5679,7 @@ namespace Oxide.Plugins
         {
             BuffDetails bd;
             float value;
-            if (!GetBuffDetails(player.userID, out bd) || !bd.GetBuff(Buff.Harvest_Grown_Yield, out value) || Interface.CallHook("STCanReceiveYield", player, plant) != null) return null;
+            if (!GetBuffDetails(player.userID, out bd) || !bd.GetBuff(Buff.Harvest_Grown_Yield, out value) || HarmonyModInterface.CallHook("STCanReceiveYield", player, plant) != null) return null;
 
             var num = (plant.Properties.BaseCloneCount + plant.Genes.GetGeneTypeCount(GrowableGenetics.GeneType.Yield) / 2) * value;
 
@@ -5813,7 +5831,7 @@ namespace Oxide.Plugins
             ActivePickerClass pickerData;
             if (hasAccess || !baseLock.IsLocked() || !ActivePickers.TryGetValue(player.userID, out pickerData)) return null;
 
-            if (Interface.CallHook("STOnLockpickAttempt", player, baseLock) != null) return null;
+            if (HarmonyModInterface.CallHook("STOnLockpickAttempt", player, baseLock) != null) return null;
 
             ActivePickers.Remove(player.userID);
             if (RollSuccessful(pickerData.chance))
@@ -5821,7 +5839,11 @@ namespace Oxide.Plugins
                 if (!string.IsNullOrEmpty(config.effect_settings.lockpick_success_effect)) EffectNetwork.Send(new Effect(config.effect_settings.lockpick_fail_effect, player.transform.position, player.transform.position), player.net.connection);
                 Player.Message(player, string.Format(lang.GetMessage("LockPickSuccess", this, player.UserIDString), config.buff_settings.raid_perk_settings.Lock_Picker_settings.use_delay), config.misc_settings.ChatID);
                 DestroyPicker(player.userID, pickerData);
-                if (config.buff_settings.raid_perk_settings.Lock_Picker_settings.unlock_entity) NextTick(() => baseLock.SetFlag(BaseEntity.Flags.Locked, false));
+                if (config.buff_settings.raid_perk_settings.Lock_Picker_settings.unlock_entity) NextTick(() =>
+                {
+                    using (var scope = baseLock.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate))
+                        scope.Set(BaseEntity.Flags.Locked, false);
+                });
                 return true;
             }
             Player.Message(player, string.Format(lang.GetMessage("LockPickFailed", this, player.UserIDString), config.buff_settings.raid_perk_settings.Lock_Picker_settings.use_delay), config.misc_settings.ChatID);
@@ -6291,7 +6313,7 @@ namespace Oxide.Plugins
         //        if (item.info.category == ItemCategory.Food && RollSuccessful(value) && !config.buff_settings.no_refund_item_skins.Contains(item.skin) && !item.info.shortname.StartsWith("fish.", StringComparison.Ordinal) && !item.info.shortname.StartsWith("clone.", StringComparison.Ordinal) && !item.info.shortname.StartsWith("seed.", StringComparison.Ordinal))
         //        {
         //            if (!PassCookingChecks(item)) return null;
-        //            if (Interface.CallHook("STOnRationTrigger", player, item) != null) return null;
+        //            if (HarmonyModInterface.CallHook("STOnRationTrigger", player, item) != null) return null;
         //            var refunded_item = ItemManager.CreateByName(item.info.shortname, amountToUse, item.skin);
         //            if (item.name != null) refunded_item.name = item.name;
         //            GiveItem(player, refunded_item);
@@ -6616,7 +6638,12 @@ namespace Oxide.Plugins
             {
                 List<BasePlayer> nearby_players = Pool.Get<List<BasePlayer>>();
                 var entities = FindEntitiesOfType<BasePlayer>(player.transform.position, config.ultimate_settings.ultimate_skinning.wolf_team_dist);
-                nearby_players.AddRange(entities.Where(x => x.Team != null && x.Team.teamID == player.Team.teamID));
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    BasePlayer p = entities[i];
+                    if (p.Team != null && p.Team.teamID == player.Team.teamID)
+                        nearby_players.Add(p);
+                }
                 Pool.FreeUnmanaged(ref entities);
 
                 Unsubscribe(nameof(OnPlayerHealthChange));
@@ -6650,7 +6677,7 @@ namespace Oxide.Plugins
 
             BuffDetails bd;
             var tool = player.GetActiveItem();
-            if (config.misc_settings.call_HandleDispenser) Interface.CallHook("OnSkillTreeHandleDispenser", player, dispenser.baseEntity, item);
+            if (config.misc_settings.call_HandleDispenser) HarmonyModInterface.CallHook("OnSkillTreeHandleDispenser", player, dispenser.baseEntity, item);
 
             int tea_addition = 0;
             if (config.misc_settings.prevent_tea_bonus_on_yields)
@@ -6774,7 +6801,15 @@ namespace Oxide.Plugins
                     xp_modifier = config.tools_black_white_list_settings.power_tool_modifier.skinning_xp_modifier;
                     luck_modifier = config.tools_black_white_list_settings.power_tool_modifier.skinning_luck_modifier;
                 }
-                bool isFinalHit = dispenser.containedItems.FirstOrDefault(x => x.amount > 0) == null;
+                bool isFinalHit = true;
+                for (int i = 0; i < dispenser.containedItems.Count; i++)
+                {
+                    if (dispenser.containedItems[i].amount > 0)
+                    {
+                        isFinalHit = false;
+                        break;
+                    }
+                }
                 // Old award xp spot
 
                 if (isFinalHit && dispenser.baseEntity.ShortPrefabName.Equals("shark.corpse") && bd.GetBuff(Buff.SharkSkinner, out var value) && RollSuccessful(value * luck_modifier))
@@ -6796,7 +6831,7 @@ namespace Oxide.Plugins
 
                 if (!isFinalHit && bd.GetBuff(Buff.Instant_Skin, out value) && RollSuccessful((value * luck_modifier)))
                 {
-                    Interface.CallHook("OnInstantGatherTrigger", player, dispenser, this.Name);
+                    HarmonyModInterface.CallHook("OnInstantGatherTrigger", player, dispenser, this.Name);
                     foreach (var r in dispenser.containedItems)
                     {
                         if (r.amount < 1) continue;
@@ -6806,7 +6841,7 @@ namespace Oxide.Plugins
                         else if (bonus_amount > 0)
                         {
                             var newItem = ItemManager.CreateByName(r.itemDef.shortname, bonus_amount);
-                            Interface.CallHook("OnInstantGatherTriggered", player, dispenser, newItem, this.Name);
+                            HarmonyModInterface.CallHook("OnInstantGatherTriggered", player, dispenser, newItem, this.Name);
                             GiveItem(player, newItem);
                         }
 
@@ -6913,7 +6948,7 @@ namespace Oxide.Plugins
 
         int HandleInstantMining(ResourceDispenser dispenser, BasePlayer player, Item item, BuffDetails bd)
         {
-            Interface.CallHook("OnInstantGatherTrigger", player, dispenser, this.Name);
+            HarmonyModInterface.CallHook("OnInstantGatherTrigger", player, dispenser, this.Name);
             var bonusItemAmount = 0;
             foreach (var r in dispenser.containedItems)
             {
@@ -6929,7 +6964,7 @@ namespace Oxide.Plugins
                 else if (bonus_amount > 0)
                 {
                     var newItem = ItemManager.CreateByName(r.itemDef.shortname, bonus_amount);
-                    Interface.CallHook("OnInstantGatherTriggered", player, dispenser, newItem, this.Name);
+                    HarmonyModInterface.CallHook("OnInstantGatherTriggered", player, dispenser, newItem, this.Name);
                     GiveItem(player, newItem);
                 }
 
@@ -6940,7 +6975,7 @@ namespace Oxide.Plugins
 
         int HandleInstantChop(ResourceDispenser dispenser, BasePlayer player, Item item, BuffDetails bd)
         {
-            Interface.CallHook("OnInstantGatherTrigger", player, dispenser, this.Name);
+            HarmonyModInterface.CallHook("OnInstantGatherTrigger", player, dispenser, this.Name);
             var bonusAmount = 0;
             foreach (var r in dispenser.containedItems)
             {
@@ -6956,7 +6991,7 @@ namespace Oxide.Plugins
                 else if (bonus_amount > 0)
                 {
                     var newItem = ItemManager.CreateByName(r.itemDef.shortname, bonus_amount);
-                    Interface.CallHook("OnInstantGatherTriggered", player, dispenser, newItem, this.Name);
+                    HarmonyModInterface.CallHook("OnInstantGatherTriggered", player, dispenser, newItem, this.Name);
                     GiveItem(player, newItem);
                 }
 
@@ -6967,7 +7002,7 @@ namespace Oxide.Plugins
 
         int GetYield(ResourceDispenser dispenser, BasePlayer player, Item item, BuffDetails bd, float gather_modifier, float buffValue)
         {
-            if (Interface.CallHook("STCanReceiveYield", player, dispenser.baseEntity, item) == null)
+            if (HarmonyModInterface.CallHook("STCanReceiveYield", player, dispenser.baseEntity, item) == null)
             {
                 var amount = item.amount * (buffValue * gather_modifier) + (TOD_Sky.Instance.IsNight ? item.amount * (((dispenser.gatherType == ResourceDispenser.GatherType.Ore ? config.xp_settings.night_settings.night_mining_yield_modifier : dispenser.gatherType == ResourceDispenser.GatherType.Tree ? config.xp_settings.night_settings.night_woodcutting_yield_modifier : config.xp_settings.night_settings.night_skinning_yield_modifier) - 1) * gather_modifier) : 0);
                 if (amount > 0.5)
@@ -7098,7 +7133,7 @@ namespace Oxide.Plugins
                 }
                 if (bd.GetBuff(Buff.Regrowth, out value) && RollSuccessful(value * luck_modifier))
                 {
-                    if (Interface.Oxide.CallHook("STOnRespawnTree", player, dispenser) == null)
+                    if (HarmonyModInterface.Mods.CallHook("STOnRespawnTree", player, dispenser) == null)
                         RespawnTree(player, dispenser.baseEntity.PrefabName, dispenser.baseEntity.transform.position, dispenser.baseEntity.transform.rotation);
 
                 }
@@ -7249,7 +7284,7 @@ namespace Oxide.Plugins
             if (item == null || player == null) return;
             if (item.condition != item.maxCondition) return; // means item wasn't repaired.
             if (config.tools_black_white_list_settings.max_repair_blacklist.Contains(item.info.shortname)) return;
-            if (Interface.CallHook("STOnItemRepairWithMaxRepair", item) != null) return;
+            if (HarmonyModInterface.CallHook("STOnItemRepairWithMaxRepair", item) != null) return;
             item.maxCondition = item.info.condition.max;
             item.condition = item.maxCondition;
             item.MarkDirty();
@@ -7406,7 +7441,7 @@ namespace Oxide.Plugins
             float buffValue;
             if (GetBuffDetails(player.userID, out bd) && bd.GetBuff(Buff.Harvest_Wild_Yield, out buffValue))
             {
-                if (Interface.CallHook("STCanReceiveYield", player, entity) == null)
+                if (HarmonyModInterface.CallHook("STCanReceiveYield", player, entity) == null)
                 {
                     foreach (var item in entity.itemList)
                     {
@@ -7420,7 +7455,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            else if (Interface.CallHook("STCanReceiveYield", player, entity) == null)
+            else if (HarmonyModInterface.CallHook("STCanReceiveYield", player, entity) == null)
             {
                 foreach (var item in entity.itemList)
                 {
@@ -7453,7 +7488,7 @@ namespace Oxide.Plugins
         void HandleCollectibleRespawn(BasePlayer player, CollectibleEntity entity, BuffDetails bd)
         {
             if (bd == null || !bd.GetBuff(Buff.Collectible_Respawn, out var value) || !RollSuccessful(value)) return;
-            if (Interface.CallHook("STOnCollectibleRespawn", player, entity) != null) return;
+            if (HarmonyModInterface.CallHook("STOnCollectibleRespawn", player, entity) != null) return;
 
             string prefab = entity.PrefabName;
             Vector3 pos = entity.transform.position;
@@ -7480,7 +7515,7 @@ namespace Oxide.Plugins
 
         Dictionary<ulong, float> Harvester_Ultimate_cooldown = new Dictionary<ulong, float>();
 
-        void OnEntityBuilt(Planner plan, GameObject go)
+        void OnEntityBuilt(Planner plan, GameObject go, string builtItemShortname = null)
         {
             if (go == null) return;
             var player = plan?.GetOwnerPlayer();
@@ -7498,8 +7533,13 @@ namespace Oxide.Plugins
             {
                 BuffDetails bd;
                 PlayerInfo pi;
-                var item = plan.GetItem();
-                if ((item == null || item.info.shortname != "clone.hemp") && GetBuffDetails(player.userID, out bd) && bd.ContainsBuff(Buff.Harvester_Ultimate) && IsUltimateEnabled(player, Buff.Harvester_Ultimate) && pcdData.pEntity.TryGetValue(player.userID, out pi) && !config.ultimate_settings.ultimate_harvesting.blacklist.Contains(item.info.shortname))
+                // Prefer shortname captured before PayForPlacement; fall back to live item if still held.
+                var shortname = builtItemShortname ?? plan.GetItem()?.info?.shortname;
+                if (shortname == "clone.hemp") return;
+                if (shortname != null && config.ultimate_settings.ultimate_harvesting.blacklist != null
+                    && config.ultimate_settings.ultimate_harvesting.blacklist.Contains(shortname))
+                    return;
+                if (GetBuffDetails(player.userID, out bd) && bd.ContainsBuff(Buff.Harvester_Ultimate) && IsUltimateEnabled(player, Buff.Harvester_Ultimate) && pcdData.pEntity.TryGetValue(player.userID, out pi))
                 {
                     if (config.ultimate_settings.ultimate_harvesting.cooldown > 0)
                     {
@@ -7520,8 +7560,10 @@ namespace Oxide.Plugins
                             }
                         }
                     }
+                    if (string.IsNullOrEmpty(pi.plant_genes) || plant.Genes?.Genes == null) return;
                     var genes = plant.Genes.Genes;
-                    for (int i = 0; i < pi.plant_genes.Length; i++)
+                    var geneLen = Math.Min(pi.plant_genes.Length, genes.Length);
+                    for (int i = 0; i < geneLen; i++)
                     {
                         switch (pi.plant_genes[i])
                         {
@@ -7579,7 +7621,13 @@ namespace Oxide.Plugins
 
             if (!ExcludeFromCraftXP(item.info.shortname))
             {
-                var experienceGain = CraftTimes.ContainsKey(task.taskUID) && config.buff_settings.timeBasedCraftingXP ? Math.Round(CraftTimes[task.taskUID] * config.xp_settings.xp_sources.Crafting, 2) : Math.Round((item.info.Blueprint.time + 0.99f) * config.xp_settings.xp_sources.Crafting, 2);
+                // Post-September, ItemBlueprint.time is often 0; real duration lives in GetCraftTime() (overrides / ForceThisCraftTime).
+                float craftSeconds;
+                if (config.buff_settings.timeBasedCraftingXP && CraftTimes.TryGetValue(task.taskUID, out var cachedTime))
+                    craftSeconds = cachedTime;
+                else
+                    craftSeconds = (item.info.Blueprint != null ? item.info.Blueprint.GetCraftTime() : 0f) + 0.99f;
+                var experienceGain = Math.Round(craftSeconds * config.xp_settings.xp_sources.Crafting, 2);
                 AwardXP(player, experienceGain, null, false, false, nameof(config.xp_settings.xp_sources.Crafting));
             }
             BuffDetails bd;
@@ -7655,7 +7703,7 @@ namespace Oxide.Plugins
                 if (bd.GetBuff(Buff.Craft_Speed, out var value))
                 {
                     task.blueprint = UnityEngine.Object.Instantiate(task.blueprint);
-                    var craftingTime = task.blueprint.time;
+                    var craftingTime = task.blueprint.GetCraftTime();
                     var reducedTime = craftingTime - (craftingTime * value);
                     if (reducedTime <= 0) reducedTime = 0.0f;
                     task.blueprint.time = reducedTime;
@@ -7696,8 +7744,9 @@ namespace Oxide.Plugins
 
         float GetModifiedTime(BasePlayer player, ItemCraftTask task)
         {
+            // Always use GetCraftTime() — blueprint.time is often 0 after September Forced unless ForceThisCraftTime is set.
             if (!ShouldApplyWorkbenchMod(task))
-                return task.blueprint.time;
+                return task.blueprint.GetCraftTime();
 
             var workbenchLevel = player.currentCraftLevel;
             var diff = workbenchLevel - task.blueprint.GetWorkbenchLevel();
@@ -7719,7 +7768,7 @@ namespace Oxide.Plugins
                 AwardXP(player, config.xp_settings.xp_sources.CollectGrownPlant, plant, false, false, nameof(config.xp_settings.xp_sources.CollectGrownPlant));
             }
 
-            if (bd != null && bd.GetBuff(Buff.Harvest_Grown_Yield, out var value) && Interface.CallHook("STCanReceiveYield", player, plant, item) == null)
+            if (bd != null && bd.GetBuff(Buff.Harvest_Grown_Yield, out var value) && HarmonyModInterface.CallHook("STCanReceiveYield", player, plant, item) == null)
             {
                 var amount = Convert.ToInt32(Math.Round(value * item.amount + (TOD_Sky.Instance.IsNight && config.xp_settings.night_settings.include_grown_harvesting ? (config.xp_settings.night_settings.night_harvesting_yield_modifier - 1) * item.amount : 0), 0, MidpointRounding.AwayFromZero));
                 if (amount < 1) return;
@@ -7766,19 +7815,15 @@ namespace Oxide.Plugins
 
         bool IsTrap(BaseEntity entity)
         {
-            switch (entity?.ShortPrefabName)
-            {
-                case "flameturret.deployed":
-                case "autoturret_deployed":
-                case "spikes.floor":
-                case "teslacoil.deployed":
-                case "beartrap":
-                case "landmine":
-                case "guntrap.deployed":
-                    return true;
+            if (entity == null) return false;
 
-                default: return false;
-            }
+            // Monument turrets are not player traps.
+            if (entity is NPCAutoTurret) return false;
+
+            // Matched by type rather than prefab name so re-skinned variants are covered automatically
+            // (industrial_autoturret_deployed, gamesroom.shotgun.trap.deployed, etc).
+            // BaseTrap covers spikes.floor, beartrap and landmine.
+            return entity is AutoTurret || entity is GunTrap || entity is FlameTurret || entity is TeslaCoil || entity is BaseTrap;
         }
 
         bool RaidableBasesLoaded() => RaidableBases != null && RaidableBases.IsLoaded;
@@ -7852,6 +7897,7 @@ namespace Oxide.Plugins
             return true;
         }
 
+        bool IsApplyingExcessDamage = false;
         void HandleBearBuff(BasePlayer player, HitInfo info, Rust.DamageType damageType)
         {
             if (HasAnimalBuff(player, AnimalBuff.PolarBear) && OverShields.ContainsKey(player))
@@ -7865,12 +7911,19 @@ namespace Oxide.Plugins
                     info.damageTypes.ScaleAll(0f);
                     Overshield_main(player, shield_value - total_Damage);
                 }
-                else
+                else if (!IsApplyingExcessDamage)
                 {
                     var excess_damage = total_Damage - shield_value;
-                    Unsubscribe("OnEntityTakeDamage");
-                    player.Hurt(excess_damage, damageType);
-                    Subscribe("OnEntityTakeDamage");
+                    IsApplyingExcessDamage = true;
+                    try
+                    {
+                        player.Hurt(excess_damage, damageType);
+                    }
+                    finally
+                    {
+                        IsApplyingExcessDamage = false;
+                    }
+                    
                     info.damageTypes.ScaleAll(0f);
                     RemoveAnimalBuff(player);
                 }
@@ -8533,7 +8586,7 @@ namespace Oxide.Plugins
             if (item.info.category == ItemCategory.Food && RollSuccessful(value) && !config.buff_settings.no_refund_item_skins.Contains(item.skin) && !item.info.shortname.StartsWith("fish.", StringComparison.Ordinal) && !item.info.shortname.StartsWith("clone.", StringComparison.Ordinal) && !item.info.shortname.StartsWith("seed.", StringComparison.Ordinal))
             {
                 if (!PassCookingChecks(item)) return;
-                if (Interface.CallHook("STOnRationTrigger", player, item) != null) return;
+                if (HarmonyModInterface.CallHook("STOnRationTrigger", player, item) != null) return;
                 var refunded_item = ItemManager.CreateByName(item.info.shortname, 1, item.skin);
                 if (item.name != null) refunded_item.name = item.name;
                 if (item.text != null) refunded_item.text = item.text;
@@ -8716,7 +8769,7 @@ namespace Oxide.Plugins
             if (horse != null && bd.GetBuff(Buff.Riding_Speed, out var value))
             {
                 if (horse.modifiers.GetValue(Modifier.ModifierType.HorseGallopSpeed) > value)
-                    if (Interface.CallHook("STCanModifyHorse", player, horse, value) != null) return;
+                    if (HarmonyModInterface.CallHook("STCanModifyHorse", player, horse, value) != null) return;
 
                 if (Cooking != null && Cooking.IsLoaded && Convert.ToBoolean(Cooking.Call("IsHorseBuffed", horse))) return;
                 if (HorseStats.TryGetValue(horse.net.ID.Value, out var horseData))
@@ -8928,10 +8981,10 @@ namespace Oxide.Plugins
             if (config.general_settings.drop_bag_on_death && !permission.UserHasPermission(player.UserIDString, "skilltree.bag.keepondeath"))
             {
                 PlayerInfo pi;
-                if (pcdData.pEntity.TryGetValue(player.userID, out pi) && pi.pouch_items != null && pi.pouch_items.Count > 0 && Interface.CallHook("STOnPouchDrop", player) == null && !player.InSafeZone())
+                if (pcdData.pEntity.TryGetValue(player.userID, out pi) && pi.pouch_items != null && pi.pouch_items.Count > 0 && HarmonyModInterface.CallHook("STOnPouchDrop", player) == null && !player.InSafeZone())
                 {
                     var bag = GenerateBag(player, 42);
-                    if (bag != null && bag.inventory?.itemList != null && bag.inventory.itemList.Count > 0)
+                    if (bag != null && bag.inventory != null && bag.inventory.itemList != null && bag.inventory.itemList.Count > 0)
                     {
                         var pos = player.transform.position;
                         var rot = player.transform.rotation;
@@ -9089,7 +9142,7 @@ namespace Oxide.Plugins
             if (block == null || block.blockDefinition == null || block.blockDefinition.defaultGrade == null) return;
             if (player.IsNpc || !player.userID.IsSteamId()) return;
             if (!GetBuffDetails(player.userID, out var bd) || !bd.GetBuff(Buff.Boat_Refund, out var value)) return;
-            if (Interface.CallHook("STOnBoatBuildRefund", player, block) != null) return;
+            if (HarmonyModInterface.CallHook("STOnBoatBuildRefund", player, block) != null) return;
 
             foreach (ItemAmount itemAmount in block.blockDefinition.defaultGrade.CostToBuild())
             {
@@ -9136,7 +9189,7 @@ namespace Oxide.Plugins
                     BasePlayer attackerPlayer = attacker as BasePlayer;
                     if (attackerPlayer != null && attackerPlayer.userID.IsSteamId()) return;
                 }
-                if (Interface.Oxide.CallHook("isEventPlayer", player) != null) return;
+                if (HarmonyModInterface.Mods.CallHook("isEventPlayer", player) != null) return;
                 SendResurrectionButton(player, player.transform.position);
             }
         }
@@ -9240,7 +9293,7 @@ namespace Oxide.Plugins
         {
             if (lossValue <= 0) return;
             if (config.xp_settings.xp_loss_settings.prevent_offline_xp_loss && !player.IsConnected) return;
-            if (Interface.CallHook("STOnLoseXP", player) != null || (config.xp_settings.prevent_xp_loss && ((EventManager != null && EventManager.IsLoaded && Convert.ToBoolean(EventManager.Call("IsEventPlayer", player))) || (EventHelper != null && EventHelper.IsLoaded && Convert.ToBoolean(EventHelper.Call("EMPlayerDiedAtEvent", player)))))) return;
+            if (HarmonyModInterface.CallHook("STOnLoseXP", player) != null || (config.xp_settings.prevent_xp_loss && ((EventManager != null && EventManager.IsLoaded && Convert.ToBoolean(EventManager.Call("IsEventPlayer", player))) || (EventHelper != null && EventHelper.IsLoaded && Convert.ToBoolean(EventHelper.Call("EMPlayerDiedAtEvent", player)))))) return;
             if (!PassZoneManagerCheck(player)) return;
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return;
             if (config.xp_settings.xp_loss_settings.no_xp_loss_time > 0 && playerData.last_xp_loss.AddSeconds(config.xp_settings.xp_loss_settings.no_xp_loss_time) > DateTime.Now) return;
@@ -9390,7 +9443,7 @@ namespace Oxide.Plugins
             float value;
             if (!bd.GetBuff(Buff.Boat_Speed, out value)) return;
 
-            if (Interface.CallHook("STOnModifyBoatSpeed", player, boat) != null) return;
+            if (HarmonyModInterface.CallHook("STOnModifyBoatSpeed", player, boat) != null) return;
 
             var defaultSpeed = DefaultBoatSpeed(boat.ShortPrefabName);
 
@@ -9426,7 +9479,7 @@ namespace Oxide.Plugins
 
             var boat = PlayerBoat.GetParentPlayerBoat(wheel, true);
             if (boat?.net == null || SailingBoats.ContainsKey(boat.net.ID.Value)) return;
-            if (Interface.CallHook("STOnModifySailingSpeed", player, boat) != null) return;
+            if (HarmonyModInterface.CallHook("STOnModifySailingSpeed", player, boat) != null) return;
 
             var data = new SailingBoatInfo() { playerId = player.userID };
 
@@ -9552,7 +9605,7 @@ namespace Oxide.Plugins
             NewNodesAdded = false;
             QueuedNodes.Clear();
 
-            if (!unloaded) Interface.Oxide.ReloadPlugin(Name);
+            if (!unloaded) HarmonyModInterface.Mods.ReloadPlugin(Name);
         }
 
         void OnServerSave()
@@ -9693,7 +9746,7 @@ namespace Oxide.Plugins
             if (!GetBuffDetails(player.userID, out var bd)) return;
             if (looted_containers.Contains(container.net.ID.Value)) return;
             looted_containers.Add(container.net.ID.Value);
-            if (Interface.CallHook("STCanReceiveBonusLootFromContainer", player, container) != null) return;
+            if (HarmonyModInterface.CallHook("STCanReceiveBonusLootFromContainer", player, container) != null) return;
 
             float value;
             if (config.loot_settings.loot_crate_whitelist.IsNullOrEmpty() || (config.loot_settings.loot_crate_whitelist.Contains(container.PrefabName)))
@@ -9738,7 +9791,9 @@ namespace Oxide.Plugins
 
         string RollTea()
         {
-            var totalWeight = config.buff_settings.tea_looter_settings.TeaDropTable.Sum(x => x.Value);
+            var totalWeight = 0;
+            foreach (var tea in config.buff_settings.tea_looter_settings.TeaDropTable)
+                totalWeight += tea.Value;
             var roll = UnityEngine.Random.Range(0, totalWeight + 1);
 
             var count = 0;
@@ -10179,7 +10234,15 @@ namespace Oxide.Plugins
             if (config.ultimate_settings.ultimate_raiding.use_real_MLRS_entity)
             {
                 //MLRSRepairTimer = timer.Once(10, () => { });
-                mlrs = BaseNetworkable.serverEntities.OfType<MLRS>()?.FirstOrDefault();
+                mlrs = null;
+                foreach (var entity in BaseNetworkable.serverEntities)
+                {
+                    if (entity is MLRS foundMlrs)
+                    {
+                        mlrs = foundMlrs;
+                        break;
+                    }
+                }
                 if (mlrs == null)
                 {
                     Puts("No MLRS found on map. Disabling option to use for raiding ultimate.");
@@ -10488,7 +10551,7 @@ namespace Oxide.Plugins
             UpdatePlayerData(player.userID, removePerms);
             TreeData.Remove(player.userID);
             //if (buffDetails.ContainsKey(player.userID)) buffDetails[player.userID].buff_values.Clear();
-            Interface.Oxide.CallHook("STOnUnloadPlayerData", player);
+            HarmonyModInterface.Mods.CallHook("STOnUnloadPlayerData", player);
             buffDetails.Remove(player.userID);
             notifiedPlayers.Remove(player.userID);
             CoopLooters.Remove(player.userID);
@@ -10581,7 +10644,7 @@ namespace Oxide.Plugins
                         playerData.achieved_level = level;
                     }
                     // Increases the current level of the player to the new level.
-                    Interface.CallHook("STOnPlayerLevel", player, playerData.current_level, level);
+                    HarmonyModInterface.CallHook("STOnPlayerLevel", player, playerData.current_level, level);
                     int currentLevel = playerData.current_level;
                     playerData.current_level = level;
                     if (playerData.prestige_level == 0 || !config.prestige_settings.ignore_level_rewards) GiveLevelRewards(player, level, level - currentLevel);
@@ -10984,9 +11047,9 @@ namespace Oxide.Plugins
             if (ItemDefinitions != null) return ItemDefinitions;
 
             ItemDefinitions = new List<ItemDefinition>();
-            foreach (var def in GetCleanItemDefinitions())
+            foreach (var def in ItemManager.GetItemDefinitions())
             {
-                if (def.steamItem == null && def.steamDlc == null) ItemDefinitions.Add(def);
+                if (!IsPaidItem(def) && !def.hidden) ItemDefinitions.Add(def);
             }
 
             return ItemDefinitions;
@@ -11248,13 +11311,25 @@ namespace Oxide.Plugins
                         arg.ReplyWith($"No player found that matched {searchTerm}");
                         return null;
 
-                    case 1: return found.First();
+                    case 1:
+                        foreach (var p in found) return p;
+                        return null;
                     default:
                         foreach (var member in found)
                             if (member.displayName == searchTerm)
                                 return member;
 
-                        arg.ReplyWith(string.Format("Found multiple matches: {0}", string.Join(", ", found.Select(x => x.displayName))));
+                        var displayNames = Pool.Get<List<string>>();
+                        try
+                        {
+                            foreach (var member in found)
+                                displayNames.Add(member.displayName);
+                            arg.ReplyWith(string.Format("Found multiple matches: {0}", string.Join(", ", displayNames)));
+                        }
+                        finally
+                        {
+                            Pool.FreeUnmanaged(ref displayNames);
+                        }
                         return null;
                 }
             }
@@ -11267,7 +11342,7 @@ namespace Oxide.Plugins
         BasePlayer FindPlayerByID(string id, BasePlayer searchingPlayer = null, bool consoleMsg = true)
         {
             if (!id.IsSteamId()) return null;
-            var player = BasePlayer.activePlayerList.Where(x => x.UserIDString == id).FirstOrDefault();
+            var player = BasePlayer.FindByID(ulong.Parse(id));
             if (player == null)
             {
                 if (searchingPlayer != null) PrintToChat(searchingPlayer, $"No player found matching ID: {id}");
@@ -11279,34 +11354,55 @@ namespace Oxide.Plugins
         private BasePlayer FindPlayerByName(string Playername, BasePlayer SearchingPlayer = null, bool consoleMsg = true)
         {
             var lowered = Playername;
-            var targetList = BasePlayer.allPlayerList.Where(x => x.displayName.Contains(lowered, System.Globalization.CompareOptions.IgnoreCase)).OrderBy(x => x.displayName.Length);
-            if (targetList.Count() == 1)
+            List<BasePlayer> targetList = Pool.Get<List<BasePlayer>>();
+            try
             {
-                return targetList.First();
-            }
-            if (targetList.Count() > 1)
-            {
-                if (targetList.First().displayName.Equals(Playername, StringComparison.OrdinalIgnoreCase))
+                foreach (var p in BasePlayer.allPlayerList)
                 {
-                    return targetList.First();
+                    if (p.displayName.Contains(lowered, System.Globalization.CompareOptions.IgnoreCase))
+                        targetList.Add(p);
                 }
-                if (SearchingPlayer != null)
+                targetList.Sort((a, b) => a.displayName.Length.CompareTo(b.displayName.Length));
+
+                if (targetList.Count == 1)
                 {
-                    PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("MorePlayersFound", this, SearchingPlayer.UserIDString), String.Join(",", targetList.Select(x => x.displayName))));
+                    return targetList[0];
                 }
-                else if (consoleMsg) Puts(string.Format(lang.GetMessage("MorePlayersFound", this), String.Join(",", targetList.Select(x => x.displayName))));
+                if (targetList.Count > 1)
+                {
+                    if (targetList[0].displayName.Equals(Playername, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return targetList[0];
+                    }
+                    var names = Pool.Get<List<string>>();
+                    try
+                    {
+                        foreach (var p in targetList)
+                            names.Add(p.displayName);
+                        var namesJoined = String.Join(",", names);
+                        if (SearchingPlayer != null)
+                            PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("MorePlayersFound", this, SearchingPlayer.UserIDString), namesJoined));
+                        else if (consoleMsg) Puts(string.Format(lang.GetMessage("MorePlayersFound", this), namesJoined));
+                    }
+                    finally
+                    {
+                        Pool.FreeUnmanaged(ref names);
+                    }
+                    return null;
+                }
+                if (targetList.Count == 0)
+                {
+                    if (SearchingPlayer != null)
+                        PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("NoMatch", this, SearchingPlayer.UserIDString), Playername));
+                    else if (consoleMsg) Puts(string.Format(lang.GetMessage("NoMatch", this), Playername));
+                    return null;
+                }
                 return null;
             }
-            if (targetList.Count() == 0)
+            finally
             {
-                if (SearchingPlayer != null)
-                {
-                    PrintToChat(SearchingPlayer, string.Format(lang.GetMessage("NoMatch", this, SearchingPlayer.UserIDString), Playername));
-                }
-                else if (consoleMsg) Puts(string.Format(lang.GetMessage("NoMatch", this), Playername));
-                return null;
+                Pool.FreeUnmanaged(ref targetList);
             }
-            return null;
         }
 
         bool RollSuccessful(float luck)
@@ -11402,7 +11498,7 @@ namespace Oxide.Plugins
         {
             if (DisabledXP.Contains(player.userID)) return;
             bool isModified = false;
-            var hook = Interface.CallHook("CanGainXp", player, plugin, value);
+            var hook = HarmonyModInterface.CallHook("CanGainXp", player, plugin, value);
             if (hook != null) return;
 
             AwardXP(player, value, null, noMod, true, null, isModified);
@@ -11430,7 +11526,7 @@ namespace Oxide.Plugins
             if (!hookAlreadyCalled)
             {
                 if (DisabledXP.Contains(player.userID)) return;
-                var hook = Interface.CallHook("CanGainXp", player, source, value, source_string);
+                var hook = HarmonyModInterface.CallHook("CanGainXp", player, source, value, source_string);
                 if (hook != null) return;
             }
             if (!config.xp_settings.allow_godemode_xp && IsGodMode(player)) return;
@@ -11482,7 +11578,7 @@ namespace Oxide.Plugins
 
             if (!noMod)
             {
-                Interface.Oxide.CallHook("OnXpGain", player, source, value, source_string, HookMods);
+                HarmonyModInterface.Mods.CallHook("OnXpGain", player, source, value, source_string, HookMods);
 
                 foreach (var mod in HookMods)
                     exp += exp * mod;
@@ -11505,7 +11601,7 @@ namespace Oxide.Plugins
             if (playerData.xp_hud) UpdateXP(player, playerData);
             if (permission.UserHasPermission(player.UserIDString, "skilltree.chat") && !notifiedPlayers.Contains(player.userID))
             {
-                if (config.chat_commands.chat_cmd.Count > 1) Player.Message(player, string.Format(lang.GetMessage("AccessReminder", this, player.UserIDString), config.chat_commands.chat_cmd.First()), config.misc_settings.ChatID);
+                if (config.chat_commands.chat_cmd.Count > 1) Player.Message(player, string.Format(lang.GetMessage("AccessReminder", this, player.UserIDString), config.chat_commands.chat_cmd[0]), config.misc_settings.ChatID);
                 notifiedPlayers.Add(player.userID);
             }
         }
@@ -11542,9 +11638,9 @@ namespace Oxide.Plugins
         public void AwardXP(ulong userid, double value, string plugin, bool noMod = false)
         {
             bool isModified = false;
-            var hook = Interface.CallHook("CanGainXp", userid, plugin, value);
+            var hook = HarmonyModInterface.CallHook("CanGainXp", userid, plugin, value);
             if (hook != null) return;
-            var player = BasePlayer.activePlayerList.FirstOrDefault(x => x.userID == userid);
+            var player = BasePlayer.FindByID(userid);
             if (player != null && player.IsConnected) AwardXP(player, value, null, noMod, true, plugin, isModified);
             else AssignPendingXP(userid, value, noMod);
         }
@@ -11693,11 +11789,6 @@ namespace Oxide.Plugins
             if (playerData.available_points <= 0)
             {
                 SendPlayerMessage(player, lang.GetMessage("MaxedSkillPoints", this, player.UserIDString), config.misc_settings.messageSettings.FailLevelUpNoPoints);
-                return false;
-            }
-            if (max_skill_points > 0 && nsi.points_spent >= max_skill_points)
-            {
-                SendPlayerMessage(player, lang.GetMessage("AssignedMaxedSkillPoints", this, player.UserIDString), config.misc_settings.messageSettings.FailLevelUpMaxPoints);
                 return false;
             }
             if (ni.level_current == 0)
@@ -11984,6 +12075,10 @@ namespace Oxide.Plugins
                 return;
             }
 
+            // Clear the spend counters before we rebuild them from buff_values below. Without this a
+            // TreeInfo that survived into a second call accumulates a second time and the counter doubles.
+            foreach (var t in ti.trees) t.Value.points_spent = 0;
+
             if (!GetBuffDetails(player.userID, out var bd)) buffDetails.Add(player.userID, bd = new BuffDetails(player));
             foreach (var cfg in config.trees)
             {
@@ -12159,7 +12254,6 @@ namespace Oxide.Plugins
                     if (!playerData.buff_values.ContainsKey(node.Key)) nodeData.level_current = 0;
                     else nodeData.level_current = playerData.buff_values[node.Key];
                     ni.points_spent += nodeData.level_current;
-                    ti.total_points_spent += nodeData.level_current;
 
                     SetNodePoints(player, nodeData, bd, playerData, cfg.Key, node.Key);
                 }
@@ -12170,6 +12264,12 @@ namespace Oxide.Plugins
 
                 CheckPoints(player, playerData);
             }
+
+            // Derive the total from the per-tree counters we just rebuilt. Doing it here rather than
+            // accumulating inline keeps it correct alongside the RefundTreePoints call above, which
+            // subtracts from the total for trees the player no longer has access to.
+            ti.total_points_spent = 0;
+            foreach (var t in ti.trees) ti.total_points_spent += t.Value.points_spent;
 
             if (TreeData.TryGetValue(player.userID, out var treeData))
             {
@@ -12651,7 +12751,7 @@ namespace Oxide.Plugins
             if (player.IsConnected && player.IsAlive() && playerData.pouch_items != null & playerData.pouch_items.Count > 0)
             {
                 var bag = GenerateBag(player, playerData.pouch_items.Count + 1);
-                if (bag.inventory?.itemList != null)
+                if (bag.inventory != null && bag.inventory.itemList != null)
                 {
                     List<Item> giveItems = Pool.Get<List<Item>>();
                     giveItems.AddRange(bag.inventory.itemList);
@@ -12890,7 +12990,7 @@ namespace Oxide.Plugins
                 CursorEnabled = false,
                 Image = { Color = "1 1 1 0" },
                 RectTransform = { AnchorMin = "0.5 1", AnchorMax = "0.5 1", OffsetMin = "-30.175 -32", OffsetMax = "29.825 -12" }
-            }, "Overlay", "NavigationMenu");
+            }, "SkillTreeBackPanel", "NavigationMenu");
 
             var elementCount = trees.Count < 12 ? trees.Count : 12;
             var totalLength = 0 - ((elementCount * 80) + (elementCount * 10));
@@ -13351,11 +13451,21 @@ namespace Oxide.Plugins
         void CloseSkillTreeOverlay(BasePlayer player)
         {
             if (player == null || !player.IsConnected) return;
+            // SkillTree + NavigationMenu are parented under SkillTreeBackPanel; destroying the root
+            // is enough on the client, but destroy named panels too for older UI still on Overlay.
             CuiHelper.DestroyUi(player, "SkillTree");
-            CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
             CuiHelper.DestroyUi(player, "NavigationMenu");
+            CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
             CuiHelper.DestroyUi(player, "PrestigeConfirmation");
             CuiHelper.DestroyUi(player, "PrestigeHistory");
+            CuiHelper.DestroyUi(player, "respec_confirmation");
+            CuiHelper.DestroyUi(player, "SkillTree_PlayerMenu");
+            CuiHelper.DestroyUi(player, "SkillTree_Buff_Settings");
+            CuiHelper.DestroyUi(player, "SkillTreePlayerSettingsBackPanel");
+            CuiHelper.DestroyUi(player, "SkillTree_UltimateMenu");
+            CuiHelper.DestroyUi(player, "PresetBackpanel");
+            CuiHelper.DestroyUi(player, "PresetPanel");
+            CuiHelper.DestroyUi(player, "VideoConfirmation");
         }
 
         string GetDefaultTreeName(ulong userId)
@@ -14350,13 +14460,13 @@ namespace Oxide.Plugins
         [HookMethod("ForceDropPouch")]
         public void ForceDropPouch(BasePlayer player, bool bypassPerm)
         {
-            if (!bypassPerm && (permission.UserHasPermission(player.UserIDString, "skilltree.bag.keepondeath") || Interface.CallHook("STOnPouchDrop", player) != null)) return;
+            if (!bypassPerm && (permission.UserHasPermission(player.UserIDString, "skilltree.bag.keepondeath") || HarmonyModInterface.CallHook("STOnPouchDrop", player) != null)) return;
 
             PlayerInfo pi;
             if (pcdData.pEntity.TryGetValue(player.userID, out pi) && pi.pouch_items != null && pi.pouch_items.Count > 0)
             {
                 var bag = GenerateBag(player, 42);
-                if (bag != null && bag.inventory?.itemList != null && bag.inventory.itemList.Count > 0)
+                if (bag != null && bag.inventory != null && bag.inventory.itemList != null && bag.inventory.itemList.Count > 0)
                 {
                     var pos = player.transform.position;
                     var rot = player.transform.rotation;
@@ -14730,7 +14840,7 @@ namespace Oxide.Plugins
 
         void AwardEventWinnerXP(ulong winnerID, double xp)
         {
-            var player = BasePlayer.activePlayerList.FirstOrDefault(x => x.userID == winnerID);
+            var player = BasePlayer.FindByID(winnerID);
             if (player != null) AwardXP(player, xp, null, false, false, "Event");
         }
 
@@ -15029,10 +15139,15 @@ namespace Oxide.Plugins
                 if (item?.info == null || item.amount < 1) continue;
 
                 var itemModCookable = item.info.ItemModCookable;
-                if (itemModCookable == null || itemModCookable.becomeOnCooked == null || itemModCookable.amountOfBecome < 1) continue;
+                if (itemModCookable == null || itemModCookable.becomeOnCooked == null) continue;
                 if (item.temperature < itemModCookable.lowTemp || item.temperature > itemModCookable.highTemp || itemModCookable.cookTime < 0) continue;
 
-                var itemToGive = ItemManager.Create(itemModCookable.becomeOnCooked, itemModCookable.amountOfBecome);
+                var rawAmount = itemModCookable.amountOfBecome;
+                var giveAmount = Mathf.FloorToInt(rawAmount);
+                if (rawAmount != giveAmount && UnityEngine.Random.value < rawAmount - giveAmount) giveAmount++;
+                if (giveAmount < 1) continue;
+
+                var itemToGive = ItemManager.Create(itemModCookable.becomeOnCooked, giveAmount);
                 if (itemToGive == null) continue;
 
                 if (!itemToGive.MoveToContainer(inventory))
@@ -16144,7 +16259,20 @@ namespace Oxide.Plugins
 
             var animals = FindEntitiesOfType<BaseEntity>(player.transform.position, 300f);
             animals.RemoveAll(x => x.skinID > 0 || !IsAnimal(x));
-            BaseEntity animal = animals.Count > 0 ? animals.OrderBy(x => Vector3.Distance(x.transform.position, player.transform.position)).First() : null;
+            BaseEntity animal = null;
+            if (animals.Count > 0)
+            {
+                var closestDist = float.MaxValue;
+                foreach (var a in animals)
+                {
+                    var dist = Vector3.Distance(a.transform.position, player.transform.position);
+                    if (dist < closestDist)
+                    {
+                        closestDist = dist;
+                        animal = a;
+                    }
+                }
+            }
 
             if (animal == null)
             {
@@ -16259,7 +16387,7 @@ namespace Oxide.Plugins
 
         void OpenBag(BasePlayer player)
         {
-            if (player.IsDead() || Interface.CallHook("STOnPouchOpen", player) != null) return;
+            if (player.IsDead() || HarmonyModInterface.CallHook("STOnPouchOpen", player) != null) return;
             BuffDetails bd;
             if (GetBuffDetails(player.userID, out bd) && bd.GetBuff(Buff.ExtraPockets, out var value))
             {
@@ -16279,7 +16407,7 @@ namespace Oxide.Plugins
                 ServerMgr.Instance.Invoke(() =>
                 {
                     if (bag != null) bag.PlayerOpenLoot(player, "", false);
-                    Interface.CallHook("STOnPouchOpened", player, bag);
+                    HarmonyModInterface.CallHook("STOnPouchOpened", player, bag);
                 }, 0.1f);
             }
             else
@@ -16723,6 +16851,7 @@ namespace Oxide.Plugins
         bool CheckedButtonReady = false;
         List<BasePlayer> waitingPlayers = new List<BasePlayer>();
         Timer checkTimer;
+        int _checkButtonReadyAttempts;
 
         void CheckButtonReady()
         {
@@ -16740,9 +16869,21 @@ namespace Oxide.Plugins
                     waitingPlayers.Clear();
                     waitingPlayers = null;
                     checkTimer = null;
+                    _checkButtonReadyAttempts = 0;
                 }
                 else
                 {
+                    _checkButtonReadyAttempts++;
+                    if (_checkButtonReadyAttempts >= 24) // ~2 minutes at 5s interval
+                    {
+                        Puts("Extra pockets ImageLibrary image not ready after retries; stopping CheckButtonReady poll.");
+                        CheckedButtonReady = true;
+                        waitingPlayers?.Clear();
+                        waitingPlayers = null;
+                        checkTimer = null;
+                        _checkButtonReadyAttempts = 0;
+                        return;
+                    }
                     checkTimer = timer.In(5f, CheckButtonReady);
                 }
             }
@@ -16758,6 +16899,7 @@ namespace Oxide.Plugins
                 waitingPlayers = null;
                 if (checkTimer != null && !checkTimer.Destroyed) checkTimer.Destroy();
                 checkTimer = null;
+                _checkButtonReadyAttempts = 0;
             }
         }
 
@@ -17277,8 +17419,10 @@ namespace Oxide.Plugins
         bool IsUltimateEnabled(BasePlayer player, Buff buff)
         {
             PlayerInfo playerData;
-            UltimatePlayerSettings buffSettings;
-            return pcdData.pEntity.TryGetValue(player.userID, out playerData) && playerData.ultimate_settings.TryGetValue(buff, out buffSettings) && buffSettings.enabled;
+            if (!pcdData.pEntity.TryGetValue(player.userID, out playerData)) return false;
+            // Missing entry = never toggled; match UltimatePlayerSettings.enabled default (true).
+            if (!playerData.ultimate_settings.TryGetValue(buff, out var buffSettings)) return true;
+            return buffSettings.enabled;
         }
 
         void HandleUltimateToggle(BasePlayer player, Buff buff, PlayerInfo pi)
@@ -17373,7 +17517,17 @@ namespace Oxide.Plugins
             {
                 if (ups.enabled)
                 {
-                    Player.Message(player, string.Format(lang.GetMessage("SkinningUltimateToggleText", this, player.UserIDString), string.Join("</color>, <color=#DFF008>", config.ultimate_settings.ultimate_skinning.enabled_buffs.Select(x => lang.GetMessage(x.Key.ToString().ToLower(), this, player.UserIDString)))), config.misc_settings.ChatID);
+                    var buffNames = Pool.Get<List<string>>();
+                    try
+                    {
+                        foreach (var enabledBuff in config.ultimate_settings.ultimate_skinning.enabled_buffs)
+                            buffNames.Add(lang.GetMessage(enabledBuff.Key.ToString().ToLower(), this, player.UserIDString));
+                        Player.Message(player, string.Format(lang.GetMessage("SkinningUltimateToggleText", this, player.UserIDString), string.Join("</color>, <color=#DFF008>", buffNames)), config.misc_settings.ChatID);
+                    }
+                    finally
+                    {
+                        Pool.FreeUnmanaged(ref buffNames);
+                    }
                 }
                 else
                 {
@@ -17427,7 +17581,12 @@ namespace Oxide.Plugins
                 else MiningUltimateCooldowns.Add(player.userID, Time.time + config.ultimate_settings.ultimate_mining.cooldown);
                 List<BaseEntity> mining_nodes = Pool.Get<List<BaseEntity>>();
                 var entities = FindEntitiesOfType<BaseEntity>(player.transform.position, config.ultimate_settings.ultimate_mining.distance_from_player);
-                mining_nodes.AddRange(entities.Where(x => x.PrefabName.StartsWith("assets/bundled/prefabs/autospawn/resource/ores")));
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    BaseEntity x = entities[i];
+                    if (x.PrefabName.StartsWith("assets/bundled/prefabs/autospawn/resource/ores"))
+                        mining_nodes.Add(x);
+                }
                 Pool.FreeUnmanaged(ref entities);
                 if (mining_nodes.Count > 0)
                 {
@@ -17601,6 +17760,13 @@ namespace Oxide.Plugins
                 Player.Message(player, lang.GetMessage("RequireHarvestingUltimateMsg", this, player.UserIDString), config.misc_settings.ChatID);
                 return;
             }
+            // Opening /setgenes implies the player wants genes applied on plant — ensure ultimate is on.
+            if (pcdData.pEntity.TryGetValue(player.userID, out var pi))
+            {
+                if (!pi.ultimate_settings.TryGetValue(Buff.Harvester_Ultimate, out var ups))
+                    pi.ultimate_settings.Add(Buff.Harvester_Ultimate, ups = new UltimatePlayerSettings());
+                ups.enabled = true;
+            }
             Plant_Gene_Select_background(player);
             Plant_Gene_Select(player);
         }
@@ -17721,7 +17887,7 @@ namespace Oxide.Plugins
 
         private void Card(BasePlayer player, int cardLevel, ulong cardReaderID)
         {
-            if (Interface.CallHook("OnGainXPFromSwipeCard", player, cardLevel, cardReaderID) != null) return;
+            if (HarmonyModInterface.CallHook("OnGainXPFromSwipeCard", player, cardLevel, cardReaderID) != null) return;
             if (config.xp_settings.swipe_card_xp_cooldown > 0)
             {
                 if (!LastSwipe.ContainsKey(player)) LastSwipe.Add(player, Time.time + config.xp_settings.swipe_card_xp_cooldown);
@@ -17766,7 +17932,7 @@ namespace Oxide.Plugins
                     return null;
                 }
 
-                if (Interface.CallHook("OnSwipeAccessLevelBypass", player, cardReader, card) != null) return null;
+                if (HarmonyModInterface.CallHook("OnSwipeAccessLevelBypass", player, cardReader, card) != null) return null;
 
                 item.LoseCondition(1f);
                 Card(player, card.accessLevel, cardReader.net.ID.Value);
@@ -17954,7 +18120,12 @@ namespace Oxide.Plugins
             if (player.InSafeZone()) return;
             List<BasePlayer> neutral_players = Pool.Get<List<BasePlayer>>();
             var entities = FindEntitiesOfType<BasePlayer>(player.transform.position, config.ultimate_settings.ultimate_skinning.stag_danger_dist);
-            neutral_players.AddRange(entities.Where(x => x != player && !x.InSafeZone() && (x.Team == null || player.Team == null || x.Team.teamID != player.Team.teamID)));
+            for (int i = 0; i < entities.Count; i++)
+            {
+                BasePlayer x = entities[i];
+                if (x != player && !x.InSafeZone() && (x.Team == null || player.Team == null || x.Team.teamID != player.Team.teamID))
+                    neutral_players.Add(x);
+            }
             Pool.FreeUnmanaged(ref entities);
             if (neutral_players.Count > 0)
             {
@@ -18072,7 +18243,11 @@ namespace Oxide.Plugins
             {
                 Player.Message(player, string.Format(lang.GetMessage("BoarLootMsg", this, player.UserIDString), (entity.PrefabName.StartsWith("assets/content/nature/plants/mushroom/") ? lang.GetMessage("Mushroom", this, player.UserIDString) : lang.GetMessage("BerryBush", this, player.UserIDString))), config.misc_settings.ChatID);
                 List<ItemDefinition> items = Pool.Get<List<ItemDefinition>>();
-                items.AddRange(component_item_list.Where(x => !config.ultimate_settings.ultimate_skinning.boar_blackList.Contains(x.shortname)));
+                foreach (var componentDef in component_item_list)
+                {
+                    if (!config.ultimate_settings.ultimate_skinning.boar_blackList.Contains(componentDef.shortname))
+                        items.Add(componentDef);
+                }
                 var itemDef = items.GetRandom();
 
                 player.GiveItem(ItemManager.CreateByName(itemDef.shortname, UnityEngine.Random.Range(config.ultimate_settings.ultimate_skinning.boar_min_quantity, config.ultimate_settings.ultimate_skinning.boar_min_quantity)));
@@ -18353,7 +18528,20 @@ namespace Oxide.Plugins
                 }
 
                 if (foundPlayers.Count == 0) arg.ReplyWith($"No players found that matched: {arg.GetString(0)}");
-                else if (foundPlayers.Count > 1) arg.ReplyWith($"Found multiple matches: {string.Join(", ", foundPlayers.Select(x => x.displayName))}");
+                else if (foundPlayers.Count > 1)
+                {
+                    var displayNames = Pool.Get<List<string>>();
+                    try
+                    {
+                        foreach (var p in foundPlayers)
+                            displayNames.Add(p.displayName);
+                        arg.ReplyWith($"Found multiple matches: {string.Join(", ", displayNames)}");
+                    }
+                    finally
+                    {
+                        Pool.FreeUnmanaged(ref displayNames);
+                    }
+                }
                 else player = foundPlayers[0];
 
                 Pool.FreeUnmanaged(ref foundPlayers);
@@ -18815,7 +19003,7 @@ namespace Oxide.Plugins
                 bool flag = Physics.Raycast(player.eyes.HeadRay(), out raycastHit, 5000, LAYER_TARGET);
                 targetPoint = flag ? raycastHit.point : Vector3.zero;
 
-                if (Interface.CallHook("OnRaidingUltimateTargetAcquire", player, targetPoint) != null)
+                if (HarmonyModInterface.CallHook("OnRaidingUltimateTargetAcquire", player, targetPoint) != null)
                     targetPoint = Vector3.zero;
 
                 if (!Instance.PassRaidableBasesCheck(targetPoint, Buff.Raiding_Ultimate))
@@ -18941,7 +19129,8 @@ namespace Oxide.Plugins
                         Instance.mlrs._mounted.EnsureDismounted();
                     }
 
-                    Instance.mlrs.SetFlag(BaseEntity.Flags.Locked, true);
+                    using (var scope = Instance.mlrs.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate))
+                        scope.Set(BaseEntity.Flags.Locked, true);
                     if (Instance.mlrs.IsBroken())
                     {
                         wasDestroyed = true;
@@ -18982,7 +19171,8 @@ namespace Oxide.Plugins
                     if (fired == 0)
                     {
                         CreateGameTip("Position acquired. Firing payload.", player, 5);
-                        Instance.mlrs.SetFlag(BaseEntity.Flags.Reserved6, b: true);
+                        using (var scope = Instance.mlrs.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate))
+                            scope.Set(BaseEntity.Flags.Reserved6, true);
                         Instance.mlrs.radiusModIndex = 0;
                         Instance.mlrs.nextRocketIndex = Mathf.Min(Instance.mlrs.RocketAmmoCount - 1, Instance.mlrs.rocketTubes.Length - 1);
                         Instance.mlrs.rocketOwnerRef.Set(player);
@@ -20001,7 +20191,8 @@ namespace Oxide.Plugins
                     __instance.MaxChickens += Mathf.RoundToInt(slots);
                     __state.applied = true;
                     if (__instance.Animals.Count < __instance.MaxChickens && __instance.HasFlag(BaseEntity.Flags.Reserved3))
-                        __instance.SetFlag(BaseEntity.Flags.Reserved3, false);
+                        using (var scope = __instance.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate))
+                            scope.Set(BaseEntity.Flags.Reserved3, false);
                 }
 
                 if (bd.GetBuff(Buff.Hatch_Speed, out var speed) && speed > 0)
@@ -20923,7 +21114,7 @@ namespace Oxide.Plugins
             if (playerData.pouch_items != null & playerData.pouch_items.Count > 0)
             {
                 var bag = GenerateBag(player, playerData.pouch_items.Count + 1);
-                if (bag.inventory?.itemList != null)
+                if (bag.inventory != null && bag.inventory.itemList != null)
                 {
                     List<Item> giveItems = Pool.Get<List<Item>>();
                     giveItems.AddRange(bag.inventory.itemList);
@@ -20988,7 +21179,7 @@ namespace Oxide.Plugins
             GiveSkillPoints(player, excessPoints);            
 
             if (config.notification_settings.discordSettings.send_prestige_up) SendDiscordMsg(string.Format(lang.GetMessage("PrestigeEarnDiscord", this), player.displayName, player.UserIDString, playerData.prestige_level));
-            Interface.Oxide.CallHook("STOnPlayerPrestigeLevelled", player, newPrestigeLevel);
+            HarmonyModInterface.Mods.CallHook("STOnPlayerPrestigeLevelled", player, newPrestigeLevel);
             if (config.notification_settings.notificationSystemSettings.SendPrestigLevelRewards && prestigeData != null)
             {
                 var benefits = GetPrestigeBenefits(player, newPrestigeLevel, prestigeData);
@@ -21503,7 +21694,7 @@ namespace Oxide.Plugins
                 }
                 catch
                 {
-                    Interface.Oxide.LogInfo($"Encountered error in RunLogic(). Error: {error_string}");
+                    HarmonyModInterface.Mods.LogInfo($"Encountered error in RunLogic(). Error: {error_string}");
                 }
             }
 
@@ -21827,7 +22018,9 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var pointsInTree = playerData.buff_values.Sum(x => x.Value);
+            var pointsInTree = 0;
+            foreach (var buff in playerData.buff_values)
+                pointsInTree += buff.Value;
 
             double cost = 0;
             if (config.misc_settings.presetSettings.setupCosts.chargeRespecCost)
@@ -23364,7 +23557,7 @@ namespace Oxide.Plugins
                 // Split into two AddUI payloads. One giant JSON (core + every node + buff list)
                 // can exceed the client RPC string limit — overlay stays and the menu never appears.
                 var container = new CuiElementContainer();
-                SendCoreMenu(player, container);
+                SendCoreMenu(player, container, tree);
                 CuiHelper.AddUi(player, container);
 
                 container = new CuiElementContainer();
@@ -23372,7 +23565,6 @@ namespace Oxide.Plugins
                 SkillBuffInformation(player, container);
                 STNextUnlock(player, container, tree, null);
                 SkillCurrentPrestige(player, container, playerData);
-                if (nodes.min_points > 0 || nodes.min_level > 0 || nodes.min_prestige > 0) SkillPointsSpent(player, container, tree, treeData, nodes, playerData);
                 if (sendRespec) SkillRespec(player, container, tree, null, playerData);
                 CuiHelper.AddUi(player, container);
             }
@@ -23383,10 +23575,12 @@ namespace Oxide.Plugins
             }
         }
 
-        private void SendCoreMenu(BasePlayer player, CuiElementContainer container)
+        private void SendCoreMenu(BasePlayer player, CuiElementContainer container, string tree = null)
         {
             if (!pcdData.pEntity.TryGetValue(player.userID, out var playerData)) return;
-            var tree = Trees[0];
+            if (string.IsNullOrEmpty(tree)) tree = GetDefaultTreeName(player.userID);
+            if (string.IsNullOrEmpty(tree) && Trees != null && Trees.Count > 0) tree = Trees[0];
+            if (string.IsNullOrEmpty(tree)) return;
             if (!TreeData.TryGetValue(player.userID, out var treeData)) return;
             if (!treeData.trees.TryGetValue(tree, out var nodes)) return;
 
@@ -23396,10 +23590,12 @@ namespace Oxide.Plugins
                 container = new CuiElementContainer();
                 send = true;
             }
+            // Parent under SkillTreeBackPanel so client-side button "close" can dismiss the whole UI
+            // even when Harmony cui.endtest bridging fails (otherwise NeedsCursor traps the player).
             container.Add(new CuiElement
             {
                 Name = "SkillTree",
-                Parent = "Overlay",
+                Parent = "SkillTreeBackPanel",
                 DestroyUi = "SkillTree",
                 Components =
                 {
@@ -23625,7 +23821,7 @@ namespace Oxide.Plugins
 
             #endregion
 
-            TreeNavButtons(player, 0, container);
+            TreeNavButtons(player, Math.Max(0, Trees.IndexOf(tree)), container);
             SkillPointsSpent(player, container, tree, treeData, nodes, playerData);
             SkillAvailablePoints(player, container, playerData);
             SkillRespec(player, container, tree, treeData, playerData);
@@ -23709,7 +23905,9 @@ namespace Oxide.Plugins
 
             container.Add(new CuiButton
             {
-                Button = { Color = "1 1 1 0", Command = "stmenuclosemain" },
+                // Close destroys SkillTreeBackPanel (and nested SkillTree/NavigationMenu) on the client
+                // immediately; Command still runs server-side cleanup when bridging works.
+                Button = { Color = "1 1 1 0", Command = "stmenuclosemain", Close = "SkillTreeBackPanel" },
                 Text = { Text = " ", Font = "robotocondensed-regular.ttf", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "0 0 0 1" },
                 RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-29 -16", OffsetMax = "29 16" }
             }, "SkillTree_close", "SkillTree_close_button");
@@ -23723,11 +23921,7 @@ namespace Oxide.Plugins
         {
             var player = arg.Player();
             if (player == null) return;
-            CuiHelper.DestroyUi(player, "SkillTree");
-            CuiHelper.DestroyUi(player, "SkillTreeBackPanel");
-            CuiHelper.DestroyUi(player, "NavigationMenu");
-            CuiHelper.DestroyUi(player, "PrestigeConfirmation");
-            CuiHelper.DestroyUi(player, "PrestigeHistory");
+            CloseSkillTreeOverlay(player);
         }
 
         [ConsoleCommand("stchangetree")]
@@ -23747,7 +23941,6 @@ namespace Oxide.Plugins
             STSkillScrollPanel(player, tree, container);
             SkillPointsSpent(player, container, tree, treeData, nodes, playerData);
             STNextUnlock(player, container, tree, nodes);
-            if (nodes.min_points > 0 || nodes.min_level > 0 || nodes.min_prestige > 0) SkillPointsSpent(player, container, tree, treeData, nodes, playerData);
             if (config.general_settings.respecType == RespecType.Tree) SkillRespec(player, container, tree, treeData, playerData);
 
             CuiHelper.DestroyUi(player, "SkillDescription");
@@ -23854,7 +24047,11 @@ namespace Oxide.Plugins
                 if (!nodesCount.ContainsKey(node.Value.tier)) nodesCount.Add(node.Value.tier, 1);
                 else nodesCount[node.Value.tier]++;                
             }
-            int widest = nodesCount.OrderByDescending(x => x.Value).FirstOrDefault().Value;
+            int widest = 0;
+            foreach (var tierCount in nodesCount)
+            {
+                if (tierCount.Value > widest) widest = tierCount.Value;
+            }
             int height = nodesCount.Count;
             nodesCount.Clear();
 
@@ -23870,10 +24067,22 @@ namespace Oxide.Plugins
                 if (!treeData.trees.TryGetValue(tree, out nodes)) return result;
             }
 
-            foreach (var node in nodes.nodes.OrderBy(x => x.Value.tier))
+            var nodeList = Pool.Get<List<KeyValuePair<string, NodeInfo>>>();
+            try
             {
-                if (!result.TryGetValue(node.Value.tier, out var data)) result.Add(node.Value.tier, data = new Dictionary<string, NodeInfo>());
-                data.Add(node.Key, node.Value);
+                foreach (var node in nodes.nodes)
+                    nodeList.Add(node);
+                nodeList.Sort((a, b) => a.Value.tier.CompareTo(b.Value.tier));
+
+                foreach (var node in nodeList)
+                {
+                    if (!result.TryGetValue(node.Value.tier, out var data)) result.Add(node.Value.tier, data = new Dictionary<string, NodeInfo>());
+                    data.Add(node.Key, node.Value);
+                }
+            }
+            finally
+            {
+                Pool.FreeUnmanaged(ref nodeList);
             }
 
             return result;
@@ -24095,7 +24304,9 @@ namespace Oxide.Plugins
                 if (nodes.min_points > 0)
                 {
                     var minPoints = GetPointRequirement(player, tree, nodes.min_points);
-                    var totalPoints = treeData.trees.Sum(x => x.Value.points_spent);
+                    var totalPoints = 0;
+                    foreach (var treeEntry in treeData.trees)
+                        totalPoints += treeEntry.Value.points_spent;
 
                     container.Add(new CuiElement
                     {

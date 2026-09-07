@@ -9,7 +9,7 @@ using Network;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class ChaosUI
 {
@@ -82,7 +82,7 @@ public class ChaosUI
 			DefaultValueHandling = DefaultValueHandling.Ignore
 		}).Replace("\\n", "\n");
 		stopwatch.Stop();
-		UnityEngine.Debug.Log($"(Oxide) JsonConvert serialization of {baseContainer.Children.Count} containers and {num} UI components took {stopwatch.Elapsed.TotalMilliseconds}ms");
+		UnityEngine.Debug.Log($"(legacy) JsonConvert serialization of {baseContainer.Children.Count} containers and {num} UI components took {stopwatch.Elapsed.TotalMilliseconds}ms");
 		stopwatch.Reset();
 		stopwatch.Start();
 		ToJson(baseContainer);

@@ -1,5 +1,5 @@
 // SkillTreeMod.cs  --  Harmony entry point for SkillTree 1.7.x
-// Hosts Oxide.Plugins.SkillTree, drives Init/Loaded/OnServerInitialized/Unload
+// Hosts Harmony.Plugins.SkillTree, drives Init/Loaded/OnServerInitialized/Unload
 // lifecycle, registers chat + console commands, routes /st chat, etc.
 // Pattern follows KitsHarmonyMod and ArmoredTrainMod.
 
@@ -10,9 +10,10 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.SkillTree;
+using HarmonyPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony
 {
@@ -62,7 +63,7 @@ namespace SkillTreeHarmony
         public static SkillTreeMod Instance { get; private set; }
 
         // The live plugin instance (accessed via the partial-class helper to avoid private access).
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         /// <summary>True after Init/Loaded/OnServerInitialized. /st is registered earlier and used to open a blank overlay.</summary>
@@ -92,15 +93,17 @@ namespace SkillTreeHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             IsReady = false;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -138,7 +141,7 @@ namespace SkillTreeHarmony
             _movementSpeedReadyCallback = OnMovementSpeedReady;
             RegisterMovementSpeedReadyCallback(_movementSpeedReadyCallback);
 
-            _betterChatModifier = dict => OxidePlugin.GetModInstance()?.HarmonyOnBetterChat(dict);
+            _betterChatModifier = dict => HarmonyPlugin.GetModInstance()?.HarmonyOnBetterChat(dict);
             _betterChatReadyCallback = BindBetterChat;
             RegisterBetterChatReadyCallback(_betterChatReadyCallback);
 
@@ -152,9 +155,9 @@ namespace SkillTreeHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
-                var mi = typeof(OxidePlugin).GetMethod("HandlePermissions", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                var mi = typeof(HarmonyPlugin).GetMethod("HandlePermissions", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 mi?.Invoke(plugin, null);
             }
             catch (Exception ex)
@@ -236,7 +239,7 @@ namespace SkillTreeHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.ResolvePluginReferences();
                 // SetupSkills may have run before MovementSpeed existed — re-apply for online players.
@@ -245,7 +248,7 @@ namespace SkillTreeHarmony
                     if (player == null || player.IsNpc) continue;
                     try
                     {
-                        var mi = typeof(OxidePlugin).GetMethod("UpdateInstancedData",
+                        var mi = typeof(HarmonyPlugin).GetMethod("UpdateInstancedData",
                             BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                         mi?.Invoke(plugin, new object[] { player });
                     }
@@ -318,8 +321,8 @@ namespace SkillTreeHarmony
                 _initCoroutine = null;
             }
 
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
 
             UnregisterConsoleCommands();
 
@@ -327,8 +330,9 @@ namespace SkillTreeHarmony
             catch { }
 
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             IsReady = false;
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
             Debug.Log("[SkillTree] Harmony mod unloaded.");
         }
@@ -432,13 +436,13 @@ namespace SkillTreeHarmony
             return false;
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args)
         {
             if (string.IsNullOrEmpty(methodName) || plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
 
                 // Try (BasePlayer, string, string[]) — standard Oxide signature.
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
@@ -485,11 +489,11 @@ namespace SkillTreeHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
@@ -812,7 +816,7 @@ namespace SkillTreeHarmony
             if (plugin == null || arg == null) return;
             try
             {
-                var mi = typeof(OxidePlugin).GetMethod(methodName,
+                var mi = typeof(HarmonyPlugin).GetMethod(methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 mi?.Invoke(plugin, new object[] { arg });
             }

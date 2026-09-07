@@ -38,6 +38,84 @@ namespace CustomMapGen.Patches
             return null;
         }
 
+        /// <summary>"Swamp C.map" and swamp_c.prefab share this key.</summary>
+        internal static string NormalizeSwapKey(string shortname)
+        {
+            if (string.IsNullOrEmpty(shortname))
+                return "";
+            var chars = shortname.Trim().ToLowerInvariant().ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (chars[i] == ' ' || chars[i] == '-' || chars[i] == '.')
+                    chars[i] = '_';
+            }
+            return new string(chars);
+        }
+
+        internal static bool IsRoadFixSwapMap(string shortname)
+        {
+            string key = NormalizeSwapKey(shortname);
+            return key == "bridge" || key == "bridgerail";
+        }
+
+        internal static bool PrefabPathMatchesSwapKey(string prefabPath, string swapKey)
+        {
+            if (string.IsNullOrEmpty(prefabPath) || string.IsNullOrEmpty(swapKey))
+                return false;
+            string file = prefabPath.Replace('\\', '/');
+            int slash = file.LastIndexOf('/');
+            if (slash >= 0)
+                file = file.Substring(slash + 1);
+            if (file.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                file = file.Substring(0, file.Length - 7);
+            return string.Equals(NormalizeSwapKey(file), NormalizeSwapKey(swapKey), StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string CustomMapShortnameFromPath(string file)
+        {
+            string prefabShortname = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(file));
+            if (string.IsNullOrEmpty(prefabShortname))
+                return "";
+            if (prefabShortname.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                prefabShortname = prefabShortname.Substring(0, prefabShortname.Length - 7);
+            return prefabShortname;
+        }
+
+        internal static bool TryFindCustomMapForPrefab(string folder, string prefabPath, out string mapPath, out string swapKey)
+        {
+            mapPath = null;
+            swapKey = "";
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder) || string.IsNullOrEmpty(prefabPath))
+                return false;
+
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(folder, "*.map");
+            }
+            catch
+            {
+                return false;
+            }
+            if (files == null || files.Length == 0)
+                return false;
+
+            foreach (string file in files)
+            {
+                string shortname = CustomMapShortnameFromPath(file);
+                if (string.IsNullOrEmpty(shortname) || IsRoadFixSwapMap(shortname))
+                    continue;
+                if (string.Equals(NormalizeSwapKey(shortname), "outpost", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!PrefabPathMatchesSwapKey(prefabPath, shortname))
+                    continue;
+                mapPath = file;
+                swapKey = NormalizeSwapKey(shortname);
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>Get prefabs list from world object; game may use "prefabs" or "Prefabs" (ProtoBuf).</summary>
         internal static IList GetPrefabsListFromWorld(object worldObj)
         {
@@ -379,8 +457,17 @@ namespace CustomMapGen.Patches
                     continue;
                 }
 
-                // Other custom .map files: match by name, then replace
-                var otherMatchNames = new List<string> { prefabShortname };
+                // Other custom .map files: match by filename key (Swamp C.map → swamp_c.prefab), then replace
+                if (IsRoadFixSwapMap(prefabShortname))
+                    continue;
+                string otherKey = NormalizeSwapKey(prefabShortname);
+                if (World_AddPrefab_Patch.WasLiveMonumentSwapApplied(otherKey))
+                {
+                    if (config?.DebugLogging == true)
+                        UnityEngine.Debug.Log($"[CustomMapGen] [DEBUG] {prefabShortname} swap: live procgen swap already applied; skipping save-prefix replacement.");
+                    continue;
+                }
+
                 var otherMatchPrefabs = new List<object>();
                 foreach (var p in prefabsList)
                 {
@@ -388,14 +475,8 @@ namespace CustomMapGen.Patches
                     if (!TryGetPrefabId(p, out uint id)) continue;
                     string name = id != 0 ? StringPool.Get(id) : null;
                     if (string.IsNullOrEmpty(name)) continue;
-                    foreach (var matchName in otherMatchNames)
-                    {
-                        if (name.IndexOf(matchName, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            otherMatchPrefabs.Add(p);
-                            break;
-                        }
-                    }
+                    if (PrefabPathMatchesSwapKey(name, prefabShortname))
+                        otherMatchPrefabs.Add(p);
                 }
                 if (otherMatchPrefabs.Count == 0) continue;
 
@@ -412,7 +493,8 @@ namespace CustomMapGen.Patches
                     if (posObj == null || rotObj == null) continue;
 
                     prefabsList.Remove(firstPrefab);
-                    var created = MapHandlerReflection.CreatePrefabFromMap(posObj, rotObj, swapPrefabs);
+                    bool useOrigin = config?.SwapMonuments?.UseMapOriginAsPlacementReference ?? true;
+                    var created = MapHandlerReflection.CreatePrefabFromMap(posObj, rotObj, swapPrefabs, useOrigin);
                     if (created != null)
                     {
                         foreach (var p in created)
@@ -420,6 +502,8 @@ namespace CustomMapGen.Patches
                             if (p != null) prefabsList.Add(p);
                         }
                         swapped++;
+                        if (config?.DebugLogging == true)
+                            UnityEngine.Debug.Log($"[CustomMapGen] [DEBUG] Replaced {prefabShortname} with {created.Count} prefab(s) from {Path.GetFileName(file)}.");
                     }
                 }
             }
@@ -494,12 +578,12 @@ namespace CustomMapGen.Patches
                         continue;
                     if (prefabShortname.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
                         prefabShortname = prefabShortname.Substring(0, prefabShortname.Length - 7);
+                    if (IsRoadFixSwapMap(prefabShortname))
+                        continue;
+                    if (World_AddPrefab_Patch.WasLiveMonumentSwapApplied(prefabShortname))
+                        continue;
 
                     // Center safe zone is "compound.prefab" not "outpost" — when replacing outpost.prefab.map, also match compound
-                    var matchNames = new List<string> { prefabShortname };
-                    if (string.Equals(prefabShortname, "outpost", StringComparison.OrdinalIgnoreCase))
-                        matchNames.Add("compound");
-
                     var matchPrefabs = new List<object>();
                     foreach (var p in prefabsList)
                     {
@@ -507,14 +591,15 @@ namespace CustomMapGen.Patches
                         if (!TryGetPrefabId(p, out uint id)) continue;
                         string name = id != 0 ? StringPool.Get(id) : null;
                         if (string.IsNullOrEmpty(name)) continue;
-                        foreach (var matchName in matchNames)
+                        if (string.Equals(prefabShortname, "outpost", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (name.IndexOf(matchName, StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
+                            if (name.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0
+                                || name.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0)
                                 matchPrefabs.Add(p);
-                                break;
-                            }
+                            continue;
                         }
+                        if (PrefabPathMatchesSwapKey(name, prefabShortname))
+                            matchPrefabs.Add(p);
                     }
                     if (matchPrefabs.Count == 0)
                         continue;
@@ -669,6 +754,10 @@ namespace CustomMapGen.Patches
                 if (name.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     name.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
+                // River sources/sounds and other autospawn decor are not monuments. Relocating them
+                // leaves the old river indent and dumps a floating source in the bandit slot.
+                if (!IsRelocatableCenterMonument(name))
+                    continue;
 
                 Vector3 newPos;
                 bool usedSwapThis = false;
@@ -699,6 +788,23 @@ namespace CustomMapGen.Patches
                     UnityEngine.Debug.Log($"[CustomMapGen] Moved monument at center to new position: {name} from ({px:F0},{py:F0},{pz:F0}) to ({newPos.x:F0},{newPos.y:F0},{newPos.z:F0}) (swap to outpost slot={usedSwapThis}).");
             }
             return slotFilled;
+        }
+
+        /// <summary>
+        /// Only real monuments should be ejected from the center outpost slot.
+        /// River source/sound emitters and other autospawn decor must stay on the clipped river.
+        /// </summary>
+        internal static bool IsRelocatableCenterMonument(string prefabPath)
+        {
+            if (string.IsNullOrEmpty(prefabPath))
+                return false;
+            string n = prefabPath.Replace('\\', '/').ToLowerInvariant();
+            if (n.IndexOf("riversource", StringComparison.Ordinal) >= 0
+                || n.IndexOf("riversound", StringComparison.Ordinal) >= 0
+                || n.IndexOf("river-sound", StringComparison.Ordinal) >= 0)
+                return false;
+            return n.IndexOf("/monument/", StringComparison.Ordinal) >= 0
+                || n.IndexOf("autospawn/monument", StringComparison.Ordinal) >= 0;
         }
 
         private static Vector3? FindValidMonumentPosition(Vector3 centerPos, IList prefabsList, object excludePrefab, float minDist, Vector3 mapCenter, float halfSize)

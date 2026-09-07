@@ -19,7 +19,7 @@ namespace KaruzaVehicles
         public static KaruzaVehiclesMod Instance { get; private set; }
 
         public const int VersionMajor = 1;
-        public const int VersionMinor = 10;
+        public const int VersionMinor = 11;
         public const int VersionPatch = 0;
 
         public const string AppDomainApiKey = "KaruzaVehicles_ApiType";

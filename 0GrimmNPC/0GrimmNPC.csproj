@@ -10,7 +10,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Description>Harmony port of Oxide NpcSpawn 3.3.04 — CustomScientistNpc / CustomScientistBrain</Description>
+    <Description>Harmony port of original NpcSpawn 3.3.04 — CustomScientistNpc / CustomScientistBrain</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
@@ -23,6 +23,7 @@
   <ItemGroup>
     <Compile Remove="_convert_npcspawn.py" />
     <Compile Remove="_strip_hooks.py" />
+    <Compile Remove="OxideCompat.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
@@ -73,5 +74,8 @@
     <Reference Include="UnityEngine.TerrainModule">
       <HintPath>$(RustManaged)\UnityEngine.TerrainModule.dll</HintPath>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
   </ItemGroup>
 </Project>

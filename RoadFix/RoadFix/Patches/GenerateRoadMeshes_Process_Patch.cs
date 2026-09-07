@@ -23,8 +23,11 @@ public static class GenerateRoadMeshes_Process_Patch
                 return true;
 
             var cfg = RoadFixConfig.Config;
+            bool cached = World.Cached;
+            if (cached)
+                BridgeService.NoteCachedIdle();
 
-            if (cfg.SpawnCustomBridges)
+            if (cfg.SpawnCustomBridges && !cached)
             {
                 if (BridgeService.RoadCrossingCount == 0)
                     BridgeService.PrepareRoadCrossings();
@@ -65,8 +68,9 @@ public static class GenerateRoadMeshes_Process_Patch
                     meshCollider.sharedMaterial = __instance.RoadPhysicMaterial;
                     meshCollider.sharedMesh = item.Meshes[0];
                     TagComponentEx.SetCustomTag(obj, GameObjectTag.Road, apply: true);
-                    // Skip AddToHeightMap on bridge spans so meshes don't refill the river bed.
-                    if (!BridgeService.IsNearRoadCrossing(item.Position))
+                    // Fresh wipe: don't stamp bridge spans back into the river.
+                    // Cached load: heightmap is already baked — don't stamp at all.
+                    if (!cached && !BridgeService.IsNearRoadCrossing(item.Position))
                         obj.AddComponent<AddToHeightMap>();
                     obj.SetActive(value: true);
                     meshCount++;
@@ -77,7 +81,7 @@ public static class GenerateRoadMeshes_Process_Patch
             {
                 Debug.Log(
                     $"[RoadFix] GenerateRoadMeshes: {meshCount} segments, snapToTerrain=false, " +
-                    $"roadCrossings={BridgeService.RoadCrossingCount}");
+                    $"cached={cached} roadCrossings={BridgeService.RoadCrossingCount}");
             }
 
             return false;

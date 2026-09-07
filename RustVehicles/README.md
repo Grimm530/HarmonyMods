@@ -1,6 +1,6 @@
 # RustVehicles (Harmony port of Oxide RustVehicles 2.0.5)
 
-Harmony-first, Oxide-free port of the Oxide plugin **RustVehicles** (Arainrr / Grimm530).
+Harmony-first, Harmony port of the Harmony mod **RustVehicles** (Arainrr / Grimm530).
 Players buy vehicle licenses, then spawn / recall / kill / pickup licensed vehicles.
 
 ## Load order
@@ -44,7 +44,7 @@ harmony.load RustVehicles
 ## Build
 
 ```powershell
-.\convert-from-oxide.ps1   # regenerate RustVehicles.cs from Oxide source
+.\convert-from-legacy.ps1   # regenerate RustVehicles.cs from Oxide source
 .\build.ps1
 ```
 

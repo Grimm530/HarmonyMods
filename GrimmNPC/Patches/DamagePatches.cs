@@ -30,7 +30,7 @@ namespace GrimmNPC.Patches
     {
         static void Postfix(BaseCombatEntity __instance, HitInfo info)
         {
-            if (__instance == null || info == null) return;
+            if (info == null) return;
             if (!GrimmNPC.IsCustomNpc(__instance)) return;
 
             ProcessCustomDamage(__instance, info);

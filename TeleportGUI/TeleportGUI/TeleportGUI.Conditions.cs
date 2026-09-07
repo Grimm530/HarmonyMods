@@ -489,7 +489,7 @@ namespace TeleportGUI
             try
             {
                 Type type = TeleportGUIIntegrations.ResolveType(
-                    "NoEscape", "RaidBlock", "RaidBlockHarmony.RaidBlockMod", "Oxide.Plugins.NoEscape");
+                    "NoEscape", "RaidBlock", "RaidBlockHarmony.RaidBlockMod", "Harmony.Plugins.NoEscape");
                 if (type == null)
                     return false;
 
@@ -526,7 +526,7 @@ namespace TeleportGUI
         private bool CheckParentedSelf<T>(TeleportGUIConfig.TargetTeleportCondition cond, BasePlayer player, string selfMessage)
             where T : BaseEntity
         {
-            // CanTeleport default false => block when parented, matching Oxide defaults.
+            // CanTeleport default false => block when parented, matching original plugin defaults.
             bool canTeleport = cond == null || cond.CanTeleport;
             if (!canTeleport && player.GetParentEntity() is T)
             {

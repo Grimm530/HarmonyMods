@@ -86,8 +86,8 @@ namespace ServerQoL
                 }
                 else
                 {
-                    _config = BuildFromOxideConfigs();
-                    Debug.Log("[ServerQoL] Creating HarmonyConfig/ServerQoL.json from Oxide configs (or defaults).");
+                    _config = BuildFromLegacyConfigs();
+                    Debug.Log("[ServerQoL] Creating HarmonyConfig/ServerQoL.json from legacy configs (or defaults).");
                 }
 
                 if (_config == null)
@@ -107,7 +107,7 @@ namespace ServerQoL
             TryCopyCastleVendingSetup();
         }
 
-        private Configuration BuildFromOxideConfigs()
+        private Configuration BuildFromLegacyConfigs()
         {
             var cfg = new Configuration();
             try
@@ -123,7 +123,7 @@ namespace ServerQoL
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[ServerQoL] Oxide ElectricGeneratorTweaker.json: " + ex.Message);
+                Debug.LogWarning("[ServerQoL] legacy ElectricGeneratorTweaker.json: " + ex.Message);
             }
             return cfg;
         }
@@ -154,7 +154,7 @@ namespace ServerQoL
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
                 File.Copy(oxide, _castleVendingPath, false);
-                Debug.Log("[ServerQoL] Copied oxide/config/CastleVendingSetup.json -> HarmonyConfig/CastleVendingSetup.json");
+                Debug.Log("[ServerQoL] Copied legacy/config/CastleVendingSetup.json -> HarmonyConfig/CastleVendingSetup.json");
             }
             catch (Exception ex)
             {

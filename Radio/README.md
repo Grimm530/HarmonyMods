@@ -1,6 +1,6 @@
 # Radio (Harmony)
 
-Combined port of Oxide **Radio 1.2.0** (Karuza voice/phone) and **VehicleRadio 1.0.5** (boombox on minicopter / attack heli / tugboat).
+Combined port of Legacy **Radio 1.2.0** (Karuza voice/phone) and **VehicleRadio 1.0.5** (boombox on minicopter / attack heli / tugboat).
 
 ## Features
 

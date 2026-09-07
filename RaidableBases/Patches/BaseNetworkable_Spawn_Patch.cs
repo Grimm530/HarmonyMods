@@ -12,9 +12,7 @@ namespace RaidableBases
         [HarmonyPostfix]
         static void Postfix(BaseNetworkable __instance)
         {
-            if (__instance == null)
-                return;
-            Interface.CallHook("OnEntitySpawned", __instance);
+            HarmonyModInterface.CallHook("OnEntitySpawned", __instance);
         }
     }
 }

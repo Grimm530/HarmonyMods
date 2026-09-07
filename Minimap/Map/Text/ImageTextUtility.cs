@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using Oxide.Ext.Chaos.TextMeshPro;
+using Grimm.Chaos.TextMeshPro;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.Map;
+namespace Grimm.Chaos.Map;
 
 public static class ImageTextUtility
 {

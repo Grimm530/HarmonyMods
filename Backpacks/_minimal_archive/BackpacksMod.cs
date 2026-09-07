@@ -1,14 +1,25 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.Collections.Generic;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using System.Linq;
+using GrimmCuiHarmony;
 using Newtonsoft.Json;
+using GrimmCuiHarmony;
 using Newtonsoft.Json.Linq;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 using Rust;
+using GrimmCuiHarmony;
 using Facepunch;
+using GrimmCuiHarmony;
 using Network;
+using GrimmCuiHarmony;
 
 namespace Backpacks
 {
@@ -38,6 +49,7 @@ namespace Backpacks
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             BackpacksConfig.LoadConfig();
             RegisterBackpackCommand();

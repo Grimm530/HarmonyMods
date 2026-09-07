@@ -8,7 +8,7 @@ namespace PlatformSync
 {
     /// <summary>
     /// Config for PlatformSync. Primary path: HarmonyConfig/PlatformSync.json
-    /// (migrates from oxide/config/PlatformSync.json if present).
+    /// (migrates from legacy/config/PlatformSync.json if present).
     /// </summary>
     public static class PlatformSyncConfig
     {
@@ -33,13 +33,13 @@ namespace PlatformSync
             public string LocalVerifyDiscordRole { get; set; } = "Verified";
 
             [JsonProperty("LocalVerifyOxideGroup")]
-            public string LocalVerifyOxideGroup { get; set; } = "verified";
+            public string LocalVerifyGroup { get; set; } = "verified";
         }
 
         public static ConfigData Config { get; private set; }
         public static string ConfigPath { get; private set; }
 
-        /// <summary>Dictionary-style access matching Oxide Config[key] usage in the original plugin.</summary>
+        /// <summary>Dictionary-style access matching original plugin Config[key] usage in the original plugin.</summary>
         public static object Get(string key)
         {
             var c = Config;
@@ -52,7 +52,8 @@ namespace PlatformSync
                 case "EnableDiscordLink": return c.EnableDiscordLink;
                 case "LogLinks": return c.LogLinks;
                 case "LocalVerifyDiscordRole": return c.LocalVerifyDiscordRole;
-                case "LocalVerifyOxideGroup": return c.LocalVerifyOxideGroup;
+                case "LocalVerifyGroup":
+                case "LocalVerifyOxideGroup": return c.LocalVerifyGroup;
                 default: return null;
             }
         }
@@ -68,7 +69,8 @@ namespace PlatformSync
                 case "EnableDiscordLink": Config.EnableDiscordLink = value is bool b2 ? b2 : Convert.ToBoolean(value); break;
                 case "LogLinks": Config.LogLinks = value is bool b3 ? b3 : Convert.ToBoolean(value); break;
                 case "LocalVerifyDiscordRole": Config.LocalVerifyDiscordRole = value?.ToString() ?? ""; break;
-                case "LocalVerifyOxideGroup": Config.LocalVerifyOxideGroup = value?.ToString() ?? ""; break;
+                case "LocalVerifyGroup":
+                case "LocalVerifyOxideGroup": Config.LocalVerifyGroup = value?.ToString() ?? ""; break;
             }
         }
 
@@ -96,7 +98,7 @@ namespace PlatformSync
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(harmonyPath) ?? serverRoot);
                             SaveConfig();
-                            Debug.Log("[PlatformSync] Migrated config from oxide/config/PlatformSync.json");
+                            Debug.Log("[PlatformSync] Migrated config from legacy/config/PlatformSync.json");
                         }
                         else
                         {

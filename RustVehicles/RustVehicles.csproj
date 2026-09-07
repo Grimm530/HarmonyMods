@@ -5,7 +5,7 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12</LangVersion>
     <RootNamespace>RustVehiclesHarmony</RootNamespace>
-    <Description>Harmony mod: RustVehicles 2.0.5 (Oxide-free). Config: HarmonyConfig/RustVehicles.json</Description>
+    <Description>Harmony mod: RustVehicles 2.0.5 (Harmony). Config: HarmonyConfig/RustVehicles.json</Description>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
@@ -100,5 +100,8 @@
       <HintPath>$(RustManaged)\System.Net.Http.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public static class ChaosPrefab
 {

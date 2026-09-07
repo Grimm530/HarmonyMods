@@ -1,6 +1,6 @@
-using Oxide.Ext.Chaos.TextMeshPro;
+using Grimm.Chaos.TextMeshPro;
 
-namespace Oxide.Ext.Chaos.TextMeshPro.Fonts;
+namespace Grimm.Chaos.TextMeshPro.Fonts;
 
 internal static class PermanentMarkerGlyphs
 {

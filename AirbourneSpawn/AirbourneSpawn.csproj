@@ -11,7 +11,7 @@
     <RootNamespace>AirbourneSpawnHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: AirbourneSpawn 1.0.191 Oxide-free port. Plane/heli spawn with parachute jump.</Description>
+    <Description>Harmony mod: AirbourneSpawn 1.0.191 Harmony port. Plane/heli spawn with parachute jump.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
   </PropertyGroup>
@@ -78,7 +78,11 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="Patches\Cui_Endtest_Patch.cs" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

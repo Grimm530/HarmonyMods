@@ -1,6 +1,7 @@
+using GrimmCuiHarmony;
 /*
  * Harmony-only bridge for RaidableBases.
- * Replaces Oxide APIs so the mod runs as a standalone Harmony mod with CopyPaste Harmony mod.
+ * Replaces legacy APIs so the mod runs as a standalone Harmony mod with CopyPaste Harmony mod.
  */
 using System;
 using System.Collections;
@@ -14,7 +15,7 @@ using Rust;
 
 namespace RaidableBases
 {
-    /// <summary>Minimal player/console interface for Harmony (replaces Oxide IPlayer).</summary>
+    /// <summary>Minimal player/console interface for Harmony (replaces legacy IPlayer).</summary>
     public interface IPlayer
     {
         string Id { get; }
@@ -59,10 +60,20 @@ namespace RaidableBases
         }
         public static bool operator >=(VersionNumber a, VersionNumber b) => a.CompareTo(b) >= 0;
         public static bool operator <=(VersionNumber a, VersionNumber b) => a.CompareTo(b) <= 0;
+        public static bool operator <(VersionNumber a, VersionNumber b) => a.CompareTo(b) < 0;
+        public static bool operator >(VersionNumber a, VersionNumber b) => a.CompareTo(b) > 0;
         public override string ToString() => $"{Major}.{Minor}.{Patch}";
     }
 
-    /// <summary>Replaces Oxide DynamicConfigFile for paste/data files. Indexable like data["entities"].</summary>
+    /// <summary>compat DynamicConfigFile compatibility alias.</summary>
+    public class DynamicConfigFile : HarmonyDataFile
+    {
+        public DynamicConfigFile() : base() { }
+        public DynamicConfigFile(Newtonsoft.Json.Linq.JObject data) : base(data) { }
+        public DynamicConfigFile(string relativePath, Newtonsoft.Json.Linq.JObject data) : base(relativePath, data) { }
+    }
+
+    /// <summary>Replaces compat DynamicConfigFile for paste/data files. Indexable like data["entities"].</summary>
     public class HarmonyDataFile
     {
         private readonly Newtonsoft.Json.Linq.JObject _data;
@@ -73,7 +84,7 @@ namespace RaidableBases
         public void Save() { if (!string.IsNullOrEmpty(_relativePath)) HarmonyDataLayer.WriteObject(_relativePath, _data); }
 
         /// <summary>
-        /// Oxide DynamicConfigFile returns nested Dictionary/List graphs.
+        /// Harmony DynamicConfigFile returns nested Dictionary/List graphs.
         /// JArray.ToObject&lt;List&lt;object&gt;&gt;() leaves elements as JObject, which breaks
         /// RaidableBases checks like <c>obj is Dictionary&lt;string, object&gt;</c>.
         /// </summary>
@@ -107,7 +118,7 @@ namespace RaidableBases
         }
     }
 
-    /// <summary>File I/O under HarmonyData/RaidableBases/ and HarmonyData/copypaste/. Replaces Interface.Oxide.DataFileSystem.</summary>
+    /// <summary>File I/O under HarmonyData/RaidableBases/ and HarmonyData/copypaste/. Replaces HarmonyModInterface.Mods.DataFileSystem.</summary>
     public static class HarmonyDataLayer
     {
         private static string _serverRoot;
@@ -125,6 +136,15 @@ namespace RaidableBases
         {
             var root = Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, ".."));
             return Path.Combine(root, "HarmonyConfig", "RaidableBases.json");
+        }
+        /// <summary>Harmony data root (replaces legacy HarmonyModInterface.Mods.DataDirectory).</summary>
+        public static string DataDirectory
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_modDir)) Init();
+                return Path.Combine(_serverRoot, "HarmonyData");
+            }
         }
         public static void Init()
         {
@@ -203,7 +223,7 @@ namespace RaidableBases
             }
             return list.ToArray();
         }
-        /// <summary>Oxide-style paths omit .json; prefer existing path, else path.json.</summary>
+        /// <summary>compat-style paths omit .json; prefer existing path, else path.json.</summary>
         private static string ResolveExistingFile(string p)
         {
             if (string.IsNullOrEmpty(p)) return null;
@@ -216,17 +236,17 @@ namespace RaidableBases
             return null;
         }
 
-        public static HarmonyDataFile GetDatafile(string relativePath)
+        public static DynamicConfigFile GetDatafile(string relativePath)
         {
             var p = ResolveExistingFile(ResolvePath(relativePath));
-            if (p == null) return new HarmonyDataFile(relativePath, new Newtonsoft.Json.Linq.JObject());
+            if (p == null) return new DynamicConfigFile(relativePath, new Newtonsoft.Json.Linq.JObject());
             try
             {
                 var json = File.ReadAllText(p);
                 var jobj = Newtonsoft.Json.Linq.JObject.Parse(json);
-                return new HarmonyDataFile(relativePath, jobj);
+                return new DynamicConfigFile(relativePath, jobj);
             }
-            catch { return new HarmonyDataFile(relativePath, new Newtonsoft.Json.Linq.JObject()); }
+            catch { return new DynamicConfigFile(relativePath, new Newtonsoft.Json.Linq.JObject()); }
         }
         /// <summary>Read and deserialize from a full file path (use for profile files to avoid path resolution issues).</summary>
         public static T ReadObjectFromFullPath<T>(string fullPath) where T : class, new()
@@ -519,7 +539,7 @@ namespace RaidableBases
                 case "Paste":
                     if (_paste != null && args != null)
                     {
-                        // Oxide Call("Paste", new object[]{...}) arrives as a single nested array via params.
+                        // legacy Call("Paste", new object[]{...}) arrives as a single nested array via params.
                         var pasteArgs = args.Length == 1 && args[0] is object[] o ? o : args;
                         if (pasteArgs.Length >= 14)
                             return _paste.Invoke(null, PadInvokeArgs(_paste, pasteArgs));
@@ -531,7 +551,7 @@ namespace RaidableBases
     }
 
     /// <summary>
-    /// Oxide-style permission helper backed by the Permissions Harmony mod
+    /// compat-style permission helper backed by the Permissions Harmony mod
     /// (<c>PermissionsHarmony.PermissionsMod</c> / AppDomain key <c>Permissions_ApiType</c>).
     /// </summary>
     public class HarmonyPermissionHelper
@@ -878,7 +898,7 @@ namespace RaidableBases
     }
 
     /// <summary>
-    /// Oxide lang replacement: RegisterMessages + HarmonyLanguage/RaidableBases.json overrides.
+    /// compat lang replacement: RegisterMessages + HarmonyLanguage/RaidableBases.json overrides.
     /// </summary>
     public class LangStub
     {
@@ -961,7 +981,7 @@ namespace RaidableBases
         public string GetLanguage(string userId) => "en";
     }
 
-    /// <summary>Timer runner using ServerMgr coroutines. Replaces Oxide timer.Once / timer.Repeat. Tracks timers so DestroyAll() stops them on unload.</summary>
+    /// <summary>Timer runner using ServerMgr coroutines. Replaces legacy timer.Once / timer.Repeat. Tracks timers so DestroyAll() stops them on unload.</summary>
     public class HarmonyTimerRunner
     {
         private readonly List<Timer> _timers = new List<Timer>();
@@ -1132,7 +1152,7 @@ namespace RaidableBases
         }
     }
 
-    /// <summary>Host that provides all Oxide-like APIs for RaidableBases when running as Harmony mod.</summary>
+    /// <summary>Host that provides all Harmony-like APIs for RaidableBases when running as Harmony mod.</summary>
     public class RaidableBasesHost
     {
         public static RaidableBasesHost Instance { get; private set; }
@@ -1143,6 +1163,7 @@ namespace RaidableBases
         public RaidableBases ModInstance { get; set; }
 
         private readonly ConcurrentDictionary<string, bool> _subscribedHooks = new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, MethodInfo> _hookMethodCache = new ConcurrentDictionary<string, MethodInfo>(StringComparer.OrdinalIgnoreCase);
 
         public void Subscribe(string hook)
         {
@@ -1153,7 +1174,10 @@ namespace RaidableBases
         public void Unsubscribe(string hook)
         {
             if (!string.IsNullOrEmpty(hook))
+            {
                 _subscribedHooks.TryRemove(hook, out _);
+                _hookMethodCache.TryRemove(hook, out _);
+            }
         }
 
         public bool IsSubscribed(string hook)
@@ -1161,54 +1185,81 @@ namespace RaidableBases
             return !string.IsNullOrEmpty(hook) && _subscribedHooks.ContainsKey(hook);
         }
 
+        /// <summary>Hot-path hook invoke: cached MethodInfo per hook name (no GetMethods scan).</summary>
+        public object InvokeHookCached(string name, BaseCombatEntity entity, HitInfo info)
+        {
+            var mod = ModInstance;
+            if (mod == null || entity == null || info == null || !IsSubscribed(name))
+                return null;
+            try
+            {
+                var method = _hookMethodCache.GetOrAdd(name, n => ResolveHookMethod(mod.GetType(), n, entity, info));
+                if (method == null)
+                    return null;
+                return method.Invoke(mod, new object[] { entity, info });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[RaidableBases] InvokeHookCached " + name + ": " + ex.Message);
+                return null;
+            }
+        }
+
         /// <summary>Invoke a hook on the mod instance if subscribed. Returns hook return value or null.</summary>
         public object InvokeHook(string name, object[] args)
         {
+            if (args != null && args.Length == 2 && args[0] is BaseCombatEntity entity && args[1] is HitInfo info
+                && (name == "CanEntityTakeDamage" || name == "OnEntityTakeDamage"))
+                return InvokeHookCached(name, entity, info);
+
             var mod = ModInstance;
             if (mod == null || !IsSubscribed(name))
                 return null;
             try
             {
-                var type = mod.GetType();
-                var allMethods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                var methods = new List<MethodInfo>();
-                for (int i = 0; i < allMethods.Length; i++)
-                {
-                    if (allMethods[i].Name == name)
-                        methods.Add(allMethods[i]);
-                }
-                if (methods.Count == 0)
+                var method = ResolveHookMethod(mod.GetType(), name, args);
+                if (method == null)
                     return null;
-                var argCount = args?.Length ?? 0;
-                foreach (var method in methods.ToArray())
-                {
-                    var parameters = method.GetParameters();
-                    if (parameters.Length != argCount)
-                        continue;
-                    bool match = true;
-                    for (int i = 0; i < parameters.Length && match; i++)
-                    {
-                        var p = parameters[i];
-                        var arg = i < args.Length ? args[i] : null;
-                        var paramType = p.ParameterType.IsByRef ? p.ParameterType.GetElementType() : p.ParameterType;
-                        if (paramType == null) { match = false; break; }
-                        if (arg == null)
-                            match = !paramType.IsValueType || Nullable.GetUnderlyingType(paramType) != null;
-                        else
-                            match = paramType.IsAssignableFrom(arg.GetType());
-                    }
-                    if (!match)
-                        continue;
-                    var result = method.Invoke(mod, args);
-                    return result;
-                }
-                return null;
+                return method.Invoke(mod, args);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[RaidableBases] InvokeHook " + name + ": " + ex.Message);
                 return null;
             }
+        }
+
+        private static MethodInfo ResolveHookMethod(Type type, string name, params object[] args)
+        {
+            if (type == null || string.IsNullOrEmpty(name))
+                return null;
+            var argCount = args?.Length ?? 0;
+            var allMethods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            for (int i = 0; i < allMethods.Length; i++)
+            {
+                var method = allMethods[i];
+                if (!string.Equals(method.Name, name, StringComparison.Ordinal))
+                    continue;
+                var parameters = method.GetParameters();
+                if (parameters.Length != argCount)
+                    continue;
+                bool match = true;
+                for (int p = 0; p < parameters.Length && match; p++)
+                {
+                    var paramType = parameters[p].ParameterType.IsByRef
+                        ? parameters[p].ParameterType.GetElementType()
+                        : parameters[p].ParameterType;
+                    var arg = p < argCount ? args[p] : null;
+                    if (paramType == null) { match = false; break; }
+                    if (arg == null)
+                        match = !paramType.IsValueType || Nullable.GetUnderlyingType(paramType) != null;
+                    else
+                        match = paramType.IsAssignableFrom(arg.GetType());
+                }
+                if (match)
+                    return method;
+            }
+            return null;
         }
 
         public void Init()
@@ -1225,17 +1276,18 @@ namespace RaidableBases
             ModInstance = null;
             Instance = null;
             _subscribedHooks.Clear();
+            _hookMethodCache.Clear();
         }
 
         public void Puts(string message) => Debug.Log("[RaidableBases] " + message);
         public void PrintError(string message) => Debug.LogError("[RaidableBases] " + message);
     }
 
-    /// <summary>Base class that replaces RustPlugin so RaidableBases can run without Oxide.</summary>
+    /// <summary>Base class that replaces RustPlugin so RaidableBases can run without legacy plugin host.</summary>
     public abstract class RaidableBasesBase
     {
         public const string Name = "RaidableBases";
-        /// <summary>Oxide Plugin.Manager stand-in (non-null while Harmony host is loaded).</summary>
+        /// <summary>Harmony Mod.Manager stand-in (non-null while Harmony host is loaded).</summary>
         public object Manager => Host;
         protected RaidableBasesHost Host => RaidableBasesHost.Instance;
         protected void Puts(string msg) => Host?.Puts(msg);
@@ -1246,19 +1298,19 @@ namespace RaidableBases
         protected KitsPluginStub KitsPlugin => Host?.Kits;
         private PluginsStub _plugins;
         protected PluginsStub plugins => _plugins ??= new PluginsStub();
-        /// <summary>Run action next frame (replaces Interface.Oxide.NextTick).</summary>
+        /// <summary>Run action next frame (replaces HarmonyModInterface.Mods.NextTick).</summary>
         internal void NextTick(Action action) { try { ServerMgr.Instance?.StartCoroutine(NextTickCoroutine(action)); } catch { } }
         private static IEnumerator NextTickCoroutine(Action action) { yield return null; try { action?.Invoke(); } catch (Exception ex) { Debug.LogWarning("[RaidableBases] NextTick: " + ex.Message); } }
         private LangStub _lang;
         protected LangStub lang => _lang ??= new LangStub();
-        /// <summary>Register chat + console command (Oxide AddCovalenceCommand replacement).</summary>
+        /// <summary>Register chat + console command (compat AddCovalenceCommand replacement).</summary>
         protected void AddCovalenceCommand(string cmd, string methodName, string permission = null)
         {
             CommandRegistry.RegisterCovalence(cmd, methodName, permission, this);
         }
-        /// <summary>Oxide hook subscribe (Harmony: registers with host for InvokeHook from patches).</summary>
+        /// <summary>Harmony hook subscribe (Harmony: registers with host for InvokeHook from patches).</summary>
         protected void Subscribe(string hook) { Host?.Subscribe(hook); }
-        /// <summary>Oxide hook unsubscribe (Harmony: unregisters from host).</summary>
+        /// <summary>Harmony hook unsubscribe (Harmony: unregisters from host).</summary>
         protected void Unsubscribe(string hook) { Host?.Unsubscribe(hook); }
         /// <summary>Write to log file or Puts (Harmony: Puts when no file).</summary>
         protected void LogToFile(string name, string text, object plugin, bool timestamp = false, bool append = false)
@@ -1286,7 +1338,7 @@ namespace RaidableBases
         }
     }
 
-    /// <summary>Stub for Oxide CUI. DestroyUi/AddUi use CommunityEntity RPCs.</summary>
+    /// <summary>Stub for compat CUI. DestroyUi/AddUi use CommunityEntity RPCs.</summary>
     public static class CuiHelper
     {
         public static void DestroyUi(BasePlayer player, string name)
@@ -1299,20 +1351,21 @@ namespace RaidableBases
             catch { }
         }
 
-        public static void AddUi(BasePlayer player, CuiElementContainer container)
+        public static bool AddUi(BasePlayer player, CuiElementContainer container)
         {
             try
             {
                 if (player == null || !player.IsConnected || container == null || player.net?.connection == null)
-                    return;
-                string json = RewriteHarmonyButtonCommands(container.ToJson());
+                    return false;
+                string json = GrimmCuiHarmony.GrimmCui.ApplyRewrites(container.ToJson());
                 CommunityEntity.ServerInstance?.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json);
+                return true;
             }
-            catch { }
+            catch { return false; }
         }
 
         /// <summary>
-        /// Clients only forward ConsoleGen commands. Oxide-style ui_buyraid / rb_ui_move never leave
+        /// Clients only forward ConsoleGen commands. compat-style ui_buyraid / rb_ui_move never leave
         /// the client under Harmony — bridge through cui.endtest RBUI (see Cui_Endtest_Patch).
         /// </summary>
         private static string RewriteHarmonyButtonCommands(string json)
@@ -1330,8 +1383,8 @@ namespace RaidableBases
         }
     }
 
-    /// <summary>Oxide Interface replacement. CallHook invokes RaidableBases hook when subscribed (from Harmony patches).</summary>
-    public static class Interface
+    /// <summary>Harmony Interface replacement. CallHook invokes RaidableBases hook when subscribed (from Harmony patches).</summary>
+    public static class HarmonyModInterface
     {
         public static object CallHook(string name, params object[] args)
         {
@@ -1340,16 +1393,16 @@ namespace RaidableBases
                 return host.InvokeHook(name, args ?? Array.Empty<object>());
             return null;
         }
-        public static OxideStub Oxide => OxideStub.Instance;
-        public class OxideStub
+        public static ModRuntimeStub Mods => ModRuntimeStub.Instance;
+        public class ModRuntimeStub
         {
-            public static OxideStub Instance { get; } = new OxideStub();
+            public static ModRuntimeStub Instance { get; } = new ModRuntimeStub();
             public void NextTick(Action action) { try { RaidableBasesHost.Instance?.ModInstance?.NextTick(action); } catch { } }
-            public object CallHook(string name, params object[] args) => Interface.CallHook(name, args);
+            public object CallHook(string name, params object[] args) => HarmonyModInterface.CallHook(name, args);
         }
     }
 
-    /// <summary>Stub for Oxide RustCore. FindPlayerById/FindPlayerByName/FindPlayer.</summary>
+    /// <summary>Stub for compat RustCore. FindPlayerById/FindPlayerByName/FindPlayer.</summary>
     public static class RustCore
     {
         public static BasePlayer FindPlayerById(ulong id) => BasePlayer.FindByID(id);
@@ -1362,7 +1415,7 @@ namespace RaidableBases
         }
     }
 
-    /// <summary>Stub for Oxide covalence. Players.FindPlayerById, Players.All.</summary>
+    /// <summary>Stub for compat covalence. Players.FindPlayerById, Players.All.</summary>
     public static class covalence
     {
         public static CovalenceStub Players => CovalenceStub.Instance;
@@ -1403,7 +1456,7 @@ namespace RaidableBases
         public void Teleport(float x, float y, float z) { _p?.Teleport(new Vector3(x, y, z)); }
     }
 
-    /// <summary>Stub for Oxide Player (static Message). Prefer ChatMessage — chat.add arg layouts vary by build.</summary>
+    /// <summary>Stub for compat Player (static Message). Prefer ChatMessage — chat.add arg layouts vary by build.</summary>
     public static class Player
     {
         public static void Message(BasePlayer player, string message, string chatId = null)
@@ -1419,7 +1472,7 @@ namespace RaidableBases
         }
     }
 
-    /// <summary>Stub for Oxide Core.Random (UnityEngine.Random).</summary>
+    /// <summary>Stub for compat Core.Random (UnityEngine.Random).</summary>
     public static class Core
     {
         public static CoreRandom Random => CoreRandom.Instance;
@@ -1432,7 +1485,7 @@ namespace RaidableBases
         public int Range(int min, int max) => UnityEngine.Random.Range(min, max);
     }
 
-    /// <summary>Stub for Oxide Utility (e.g. FormatTime).</summary>
+    /// <summary>Stub for compat Utility (e.g. FormatTime).</summary>
     public static class Utility
     {
         public static string FormatTime(double seconds) => seconds <= 0 ? "0s" : TimeSpan.FromSeconds(seconds).ToString(@"d\.hh\:mm\:ss");
@@ -1507,7 +1560,9 @@ namespace RaidableBases
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             // AppDomain-shared so a prior DLL's UnloadAsync cannot tear down this load after harmony.load reload.
             _generation = ReadLoadGeneration() + 1;
             WriteLoadGeneration(_generation);
@@ -1532,7 +1587,7 @@ namespace RaidableBases
             // Heavy init (InitRest + grid, etc.) runs in deferred soft-start coroutine so load/unload don't freeze the server.
             // Startup: ItemManager ready + ServerMgr_Update after world load. Late-load: same path next frames.
             DeferredServerInitPending = true;
-            Debug.Log("[RaidableBases] Harmony mod loaded. Config: " + HarmonyDataLayer.GetPreferredConfigPath() + ". Data: HarmonyData/RaidableBases/. Paste: HarmonyData/copypaste/");
+            Debug.Log("[RaidableBases] Harmony mod loaded (v3.2.634). Config: " + HarmonyDataLayer.GetPreferredConfigPath() + ". Data: HarmonyData/RaidableBases/. Paste: HarmonyData/copypaste/ (built-in PasteEngine).");
         }
 
         /// <summary>Called by ServerMgr_Update_Patch. Uses soft-start coroutine so server stays responsive.</summary>
@@ -1550,6 +1605,7 @@ namespace RaidableBases
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreHurtRegistration.Unregister();
             RaidableBasesDamageApi.Unpublish();
             var mod = _mod;
             var hostToShutdown = RaidableBasesHost.Instance;

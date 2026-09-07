@@ -8,10 +8,10 @@ namespace ItemRetrieverHarmony
     /// Those call FindItemByItemName after the hook; we also patch FindItemByItemID path is separate.
     /// Patch the call sites by Prefix on FindItemByItemName when used for fuel — fragile.
     /// Better: patch Chainsaw/FlameThrower methods if they exist, OR expose via FindItemByItemID already covered
-    /// when itemid is known. Oxide hooks specifically on fuelType ItemDefinition.
+    /// when itemid is known. Harmony hooks specifically on fuelType ItemDefinition.
     ///
     /// Patch PlayerInventory with a helper invoked from known callers via Harmony on:
-    /// - methods that Oxide hooked: Chainsaw GetFuel / FlameThrower equivalent
+    /// - methods that Harmony hooked: Chainsaw GetFuel / FlameThrower equivalent
     /// </summary>
     internal static class InventoryAmmoItemFind_ByDefinition
     {

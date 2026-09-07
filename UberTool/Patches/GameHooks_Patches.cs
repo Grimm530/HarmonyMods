@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using P = Oxide.Plugins.UberTool;
+using P = Harmony.Plugins.UberTool;
 
 namespace UberToolHarmony.Patches
 {

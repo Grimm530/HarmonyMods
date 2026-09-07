@@ -1,6 +1,6 @@
 # Economics Harmony Mod (Extended 3.10.4)
 
-Oxide-free Harmony port of **Economics Extended 3.10.4** (SQLite balances, RP tracking, Discord webhooks).
+Harmony Harmony port of **Economics Extended 3.10.4** (SQLite balances, RP tracking, Discord webhooks).
 
 ## Paths
 

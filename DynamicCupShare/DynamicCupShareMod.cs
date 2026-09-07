@@ -1,9 +1,15 @@
 using System;
+using GrimmCuiHarmony;
 using System.Collections;
+using GrimmCuiHarmony;
 using System.IO;
+using GrimmCuiHarmony;
 using HarmonyChat;
-using Oxide.Ext.Chaos.UIFramework;
+using GrimmCuiHarmony;
+using Ext.Chaos.UIFramework;
+using GrimmCuiHarmony;
 using UnityEngine;
+using GrimmCuiHarmony;
 
 namespace DynamicCupShareHarmony
 {
@@ -31,6 +37,7 @@ namespace DynamicCupShareHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 

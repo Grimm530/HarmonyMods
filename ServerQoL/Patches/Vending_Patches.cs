@@ -10,7 +10,7 @@ namespace ServerQoL.Patches
         private static void Postfix(VendingMachine __instance)
         {
             ServerQoLService service = ServerQoLMod.Service;
-            if (service == null || __instance == null) return;
+            if (service == null) return;
             if (!(__instance is NPCVendingMachine)) return;
 
             try
@@ -33,7 +33,7 @@ namespace ServerQoL.Patches
         private static void Postfix(VendingMachine __instance)
         {
             ServerQoLService service = ServerQoLMod.Service;
-            if (service == null || __instance == null) return;
+            if (service == null) return;
             if (!(__instance is NPCVendingMachine npc)) return;
 
             try

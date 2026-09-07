@@ -36,6 +36,7 @@ namespace RustVehiclesHarmony
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreHurtRegistration.Register();
             string root = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, ".."));
             RustVehiclesHost.Init(root);
             _plugin = new RustVehicles();
@@ -61,6 +62,7 @@ namespace RustVehiclesHarmony
             RustVehiclesHost.Shutdown();
             _plugin = null;
             _chatMethods.Clear();
+            GrimmCoreHurtRegistration.Unregister();
             Instance = null;
         }
 
@@ -161,7 +163,7 @@ namespace RustVehiclesHarmony
             catch { }
         }
 
-        /// <summary>Oxide-style Call / HookMethod dispatcher for other mods.</summary>
+        /// <summary>compat-style Call / HookMethod dispatcher for other mods.</summary>
         public object Call(string method, params object[] args)
         {
             if (_plugin == null || string.IsNullOrEmpty(method)) return null;

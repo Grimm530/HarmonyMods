@@ -37,7 +37,7 @@ namespace CopyPasteHarmony
             RegisterApiType();
             _plugin.HarmonyInit();
             RegisterCommands();
-            // StringPool / ItemManager are not ready during early Harmony boot — defer like Oxide OnServerInitialized.
+            // StringPool / ItemManager are not ready during early Harmony boot — defer like Harmony OnServerInitialized.
             ScheduleServerInitialized();
             Debug.Log($"[CopyPaste Harmony] Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch} (waiting for game filesystem if needed)");
         }

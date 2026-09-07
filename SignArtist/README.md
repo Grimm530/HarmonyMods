@@ -1,6 +1,6 @@
 # SignArtist (Harmony)
 
-Oxide **SignArtist 1.4.52** port. Players with permission can download images from URLs (or the server filesystem) onto signs, frames, neon signs, and pumpkins.
+Legacy **SignArtist 1.4.52** port. Players with permission can download images from URLs (or the server filesystem) onto signs, frames, neon signs, and pumpkins.
 
 ## Commands
 
@@ -15,7 +15,7 @@ Also: `signartist.file`, `signartist.raw`, `signartist.ignorecd`, `signartist.ig
 
 ## Config
 
-`HarmonyConfig/SignArtist.json` — cooldown, max size, JPEG quality, Discord webhook logging (UnityWebRequest, no Oxide).
+`HarmonyConfig/SignArtist.json` — cooldown, max size, JPEG quality, Discord webhook logging (UnityWebRequest, Harmony-only).
 
 ## Harmony patches
 
@@ -23,6 +23,6 @@ Also: `signartist.file`, `signartist.raw`, `signartist.ignorecd`, `signartist.ig
 |--------|------|
 | `Chat.say` | prefix for `/sil` `/silt` `/sili` `/silrestore` |
 
-HTTP downloads use `UnityWebRequest` as in the Oxide plugin. Image resize uses `System.Drawing`. No ImageLibrary.
+HTTP downloads use `UnityWebRequest` as in the Harmony mod. Image resize uses `System.Drawing`. No ImageLibrary.
 
 Load order: **0Permissions → SignArtist**.

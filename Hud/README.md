@@ -1,4 +1,4 @@
-# Hud (Harmony OxideCompat port)
+# Hud (Harmony HarmonyCompat port)
 
 Port of Oxide `Hud` 3.4.0. Server HUD: players, time, grid, events, economy, extra menu.
 
@@ -24,14 +24,14 @@ Copies **only** `Hud.dll` to root `HarmonyMods/`.
 ## Load
 
 - Auto-loads with other Harmony mods. Requires **Permissions** for `hud.streamer` and extra-menu perms.
-- Do **not** run the Oxide plugin at the same time — leave `oxide/plugins/Hud.cs` in place but unloaded.
+- Do **not** run the Harmony mod at the same time — leave `oxide/plugins/Hud.cs` in place but unloaded.
 - Chat: `/h` (`open`, `events`, `hide`, `close`, `setup`).
 - CUI: `cui.endtest HUD UI_H …`.
 - AppDomain: `Hud_ApiType` → `HudHarmony.HudMod` (`Call`, including `API_PlayerHudState`).
 
 ## Economy
 
-Resolves Harmony mods via AppDomain (no Oxide PluginReference):
+Resolves Harmony mods via AppDomain (no Harmony ModReference):
 
 - **Economics** → `Economics_ApiType` / `Economics_Plugin` (`Balance`)
 - **ServerRewards** config → `RustRewards_ApiType` / `RustRewards_Plugin` (`CheckPoints`)

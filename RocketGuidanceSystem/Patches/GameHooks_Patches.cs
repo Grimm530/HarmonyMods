@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
-using P = Oxide.Plugins.RocketGuidanceSystem;
+using P = Harmony.Plugins.RocketGuidanceSystem;
 
 namespace RocketGuidanceSystemHarmony.Patches
 {

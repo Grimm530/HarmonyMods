@@ -11,7 +11,9 @@ namespace ZombieHorde
     /// </summary>
     public static class GrimmNpcBridge
     {
-        public const ulong CustomNpcSkinId = 11162132011012UL;
+        public const ulong CustomNpcSkinId = GrimmCoreBridge.CustomEntitySkinId;
+        /// <summary>Legacy horde NPC skin — still recognized by GrimmCore markers.</summary>
+        public const ulong LegacyCustomNpcSkinId = GrimmCoreBridge.LegacyGrimmNpcSkinId;
         private const string DataTypeKey = "GrimmNPC.Type";
         private const string DataInstanceKey = "GrimmNPC.Instance";
 
@@ -200,8 +202,13 @@ namespace ZombieHorde
 
         private static bool TryGetInstance()
         {
-            if (!_available)
+            object live = null;
+            try { live = AppDomain.CurrentDomain.GetData(DataInstanceKey); } catch { }
+            if (!_available || _grimmType == null || live == null || !_grimmType.IsInstanceOfType(live))
+            {
+                _bound = false;
                 Bind();
+            }
             if (!_available || _grimmType == null) return false;
             return TryResolveInstance() && _spawnNpc != null;
         }
@@ -421,8 +428,7 @@ namespace ZombieHorde
 
             try
             {
-                if (npc.skinID != CustomNpcSkinId)
-                    npc.skinID = CustomNpcSkinId;
+                GrimmCoreBridge.TagCustomEntity(npc);
             }
             catch { }
 

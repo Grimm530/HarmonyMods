@@ -85,7 +85,7 @@ namespace PveModeHarmony
 
         public sealed class FriendsBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "Friends", "FriendsHarmony.FriendsMod", "Oxide.Plugins.Friends" };
+            protected override string[] TypeNames => new[] { "Friends", "FriendsHarmony.FriendsMod", "Harmony.Plugins.Friends" };
 
             public bool AreFriends(ulong a, ulong b)
             {
@@ -98,7 +98,7 @@ namespace PveModeHarmony
 
         public sealed class ClansBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "Clans", "ClansHarmony.ClansMod", "Oxide.Plugins.Clans" };
+            protected override string[] TypeNames => new[] { "Clans", "ClansHarmony.ClansMod", "Harmony.Plugins.Clans" };
 
             public bool IsClanMember(ulong a, ulong b)
             {

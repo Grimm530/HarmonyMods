@@ -626,7 +626,7 @@ namespace RustLeagueHarmony
             if (parented)
                 entity.SetParent(_arenaRoot);
             entity.Spawn();
-            if (entity == null || entity.IsDestroyed) return;
+            if (entity.IsDestroyed) return;
             StripWorldOnlyComponents(entity.gameObject);
             if (entity is DecayEntity decay2)
                 decay2.decay = null;
@@ -956,7 +956,7 @@ namespace RustLeagueHarmony
                 entity.SetParent(_arenaRoot);
             entity.transform.localScale = scale;
             entity.Spawn();
-            if (entity == null || entity.IsDestroyed)
+            if (entity.IsDestroyed)
                 return null;
 
             StripWorldOnlyComponents(entity.gameObject);

@@ -11,7 +11,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
 {
     public static CopyPasteHarmonyMod Instance { get; private set; }
 
-    private Oxide.Plugins.CopyPaste _plugin;
+    private Harmony.Plugins.CopyPaste _plugin;
     private readonly Dictionary<string, MethodInfo> _commandMethods = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ConsoleSystem.Command> _registeredCommands = new();
 
@@ -19,9 +19,9 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
     {
         Instance = this;
 
-        OxideCoreCompat.OxideCompatBootstrap.Initialize("CopyPaste");
+        HarmonyCoreCompat.HarmonyCompatBootstrap.Initialize("CopyPaste");
 
-        _plugin = new Oxide.Plugins.CopyPaste();
+        _plugin = new Harmony.Plugins.CopyPaste();
 
         // Ensure config exists (CopyPaste's LoadDefaultConfig writes the default schema).
         _plugin.EnsureConfigLoaded();
@@ -51,7 +51,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
         var methods = type.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         foreach (var m in methods)
         {
-            var attr = m.GetCustomAttribute<Oxide.Core.Libraries.Covalence.CommandAttribute>();
+            var attr = m.GetCustomAttribute<Harmony.Core.Libraries.Covalence.CommandAttribute>();
             if (attr == null) continue;
             if (string.IsNullOrWhiteSpace(attr.Name)) continue;
             _commandMethods[attr.Name.Trim()] = m;
@@ -90,7 +90,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
                             return;
                         }
 
-                        var iPlayer = new OxideCompatPlayer(bp);
+                        var iPlayer = new HarmonyCompatPlayer(bp);
                         var argsArr = arg?.Args ?? Array.Empty<string>();
                         method.Invoke(_plugin, new object[] { iPlayer, cmdName, argsArr });
                     }
@@ -153,7 +153,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
         if (!_commandMethods.TryGetValue(cmd, out var method)) return false;
 
         var cmdArgs = parts.Skip(1).ToArray();
-        var iPlayer = new OxideCompatPlayer(player);
+        var iPlayer = new HarmonyCompatPlayer(player);
         try
         {
             method.Invoke(_plugin, new object[] { iPlayer, cmd, cmdArgs });
@@ -169,11 +169,11 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
     internal string GetServerRootStatic()
         => Path.GetFullPath(Path.Combine(Application.dataPath ?? ".", ".."));
 
-    private class OxideCompatPlayer : Oxide.Core.Libraries.Covalence.IPlayer
+    private class HarmonyCompatPlayer : Harmony.Core.Libraries.Covalence.IPlayer
     {
         private readonly BasePlayer _bp;
 
-        public OxideCompatPlayer(BasePlayer bp) => _bp = bp;
+        public HarmonyCompatPlayer(BasePlayer bp) => _bp = bp;
 
         public object Object => _bp;
         public string Id => _bp.userID.ToString();
@@ -181,7 +181,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
         public bool IsAdmin => _bp.IsAdmin;
 
         public bool HasPermission(string permName)
-            => OxideCoreCompat.PermissionStore.IsAllowed(Id);
+            => HarmonyCoreCompat.PermissionStore.IsAllowed(Id);
 
         public void Reply(string message)
         {

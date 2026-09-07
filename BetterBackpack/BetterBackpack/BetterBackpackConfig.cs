@@ -28,17 +28,6 @@ public static class BetterBackpackConfig
             set => _debug = value;
         }
 
-        /// <summary>Logs loot MoveItem/GiveItem/Existing. Empty Steam IDs = all players. Auto-off after Duration Minutes (0 = until reload with flag false).</summary>
-        [JsonProperty("Loot Debug")]
-        public bool LootDebug = false;
-
-        [JsonProperty("Loot Debug Steam IDs")]
-        public List<string> LootDebugSteamIds = new List<string>();
-
-        /// <summary>0 = stay on until this flag is set false and the mod is reloaded.</summary>
-        [JsonProperty("Loot Debug Duration Minutes")]
-        public float LootDebugDurationMinutes = 15f;
-
         /// <summary>When false, Existing (auto-stack on loot) does nothing. Use to work around bugs.</summary>
         [JsonProperty("Existing (auto-stack into backpack when looting; false = disabled)")]
         public bool ExistingEnabled { get => _existingEnabled; set => _existingEnabled = value; }
@@ -89,6 +78,15 @@ public static class BetterBackpackConfig
 
         [JsonProperty("Reminder Message")]
         public string ReminderMessage = "To turn off backpack existing item grabs and crafting retrieval from inventory use /existing or /retrieval";
+
+        [JsonProperty("Loot Debug (verbose loot tracing; grep [BetterBackpack:Loot] in console)")]
+        public bool LootDebug = false;
+
+        [JsonProperty("Loot Debug Steam IDs (comma/space separated; empty = all players when Loot Debug true)")]
+        public List<string> LootDebugSteamIds = new();
+
+        [JsonProperty("Loot Debug Duration Minutes (0 = until manually disabled in config)")]
+        public float LootDebugDurationMinutes = 30f;
     }
 
     public static ConfigData Config;

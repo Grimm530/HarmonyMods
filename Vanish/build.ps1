@@ -1,5 +1,5 @@
 # Build script for Vanish Harmony Mod
-# Output: <server root>\HarmonyMods\Vanish.dll
+# Output: D:\!RustServer\HarmonyMods\Vanish.dll
 # Config: HarmonyConfig/Vanish.json
 
 Write-Host "Building Vanish Harmony mod..." -ForegroundColor Cyan
@@ -8,20 +8,14 @@ $projectPath = Join-Path $PSScriptRoot "Vanish.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
 
-    # csproj OutputPath is bin\Release\ (AppendTargetFrameworkToOutputPath=false)
-    $dllPath = Join-Path $PSScriptRoot "bin\Release\Vanish.dll"
+    $dllPath = Join-Path $PSScriptRoot "bin\Release\net48\Vanish.dll"
     if (-not (Test-Path $dllPath)) {
-        $dllPath = Join-Path $PSScriptRoot "bin\Release\net48\Vanish.dll"
-    }
-    if (-not (Test-Path $dllPath)) {
-        Write-Host "Build output not found under bin\Release\Vanish.dll" -ForegroundColor Red
-        exit 1
+        $dllPath = Join-Path $PSScriptRoot "bin\Release\Vanish.dll"
     }
     $destPath = Join-Path $harmonyModsPath "Vanish.dll"
 

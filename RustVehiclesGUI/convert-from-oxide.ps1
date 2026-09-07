@@ -1,23 +1,23 @@
 $ErrorActionPreference = "Stop"
-$src = Join-Path $PSScriptRoot "..\..\Oxide.Plugins.Cant-Use\RustVehiclesGUI.cs"
+$src = Join-Path $PSScriptRoot "..\..\Harmony.Plugins.Cant-Use\RustVehiclesGUI.cs"
 $dst = Join-Path $PSScriptRoot "RustVehiclesGUI.cs"
 if (-not (Test-Path $src)) { throw "Source not found: $src" }
 $text = [System.IO.File]::ReadAllText($src)
 
-# Strip Oxide runtime usings. Oxide.Game.Rust.Cui stays: RustCui.cs re-implements that namespace.
+# Strip Oxide runtime usings. Game.Rust.Cui stays: RustCui.cs re-implements that namespace.
 foreach ($using in @(
-        "using Oxide.Core;",
-        "using Oxide.Core.Libraries.Covalence;",
-        "using Oxide.Core.Plugins;"
+        "using Harmony.Core;",
+        "using Harmony.Core.Libraries.Covalence;",
+        "using Harmony.Core.Plugins;"
     )) {
     $text = [regex]::Replace($text, "(?m)^" + [regex]::Escape($using) + "\r?\n", "")
 }
 
-$text = $text.Replace("namespace Oxide.Plugins", "namespace RustVehiclesGUIHarmony")
+$text = $text.Replace("namespace Harmony.Plugins", "namespace RustVehiclesGUIHarmony")
 
 $newClass = @"
     /// <summary>
-    /// RustVehiclesGUI 1.0.5 ported for Harmony (no Oxide). Logic matches the Oxide plugin; hosting differs.
+    /// RustVehiclesGUI 1.0.5 ported for Harmony (Harmony-only). Logic matches the Harmony mod; hosting differs.
     /// Vehicle purchases and spawns are delegated to the RustVehicles Harmony mod.
     /// </summary>
     [Info("Rust Vehicles GUI", "Grimm530", "1.0.5")]
@@ -71,7 +71,7 @@ $text = $text.Replace('var vl = $"{dataDir}/VehicleLicence.json";', 'var vl = $"
 # Oxide read of "config/RustVehicles" resolved under oxide/data and never matched the
 # Dictionary<string, object> cast. Read the real core config instead.
 $maxVehiclesOld = @'
-                var config = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, object>>("config/RustVehicles");
+                var config = HarmonyModInterface.Mods.DataFileSystem.ReadObject<Dictionary<string, object>>("config/RustVehicles");
                 if (config?.ContainsKey("Global Settings") == true && config["Global Settings"] is Dictionary<string, object> globalSettings)
                 {
                     if (globalSettings.ContainsKey("Limit Vehicles") && int.TryParse(globalSettings["Limit Vehicles"].ToString(), out int limit))
@@ -101,10 +101,11 @@ $text = $text.Replace($maxVehiclesOld, $maxVehiclesNew)
 # ulong/string parameter match on the receiving mod. Unwrap it at every bridge call site.
 $text = [regex]::Replace($text, '\.Call\((\"[A-Za-z_]+\"), player\.userID(?=[,)])', '.Call($1, player.userID.Get()')
 
-# The client never forwards UI_ServerPanel, so redraw the panel server-side instead.
+# The client never forwards UI_ServerPanel, and Harmony does not put that command in
+# ConsoleSystem.Index. Redraw the currently opened plugin page through ServerPanel's API.
 $text = $text.Replace(
     'player.SendConsoleCommand("UI_ServerPanel", "menu", "page", "0");',
-    'RustVehiclesGUIHost.RunPlayerConsoleCommand(player, "UI_ServerPanel", "menu", "page", "0");')
+    'ServerPanel.Call("API_OnServerPanelRefreshContent", player);')
 
 # Harmony lifecycle + ServerPanel consumer hooks, inserted at the end of the Hooks region.
 $lifecycle = @'
@@ -180,9 +181,9 @@ $text = ([regex]::new([regex]::Escape($hooksEnd))).Replace($text, ($lifecycle + 
 Write-Host "Wrote $dst ($((($text -split "`n").Count)) lines)"
 
 $checks = @(
-    @{ Name = "Oxide.Core using"; Pattern = "using Oxide\.Core" },
+    @{ Name = "Harmony.Core using"; Pattern = "using Oxide\.Core" },
     @{ Name = "RustPlugin"; Pattern = "\bRustPlugin\b" },
-    @{ Name = "namespace Oxide.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
+    @{ Name = "namespace Harmony.Plugins"; Pattern = "namespace Oxide\.Plugins\b" },
     @{ Name = "[PluginReference]"; Pattern = "\[PluginReference\]" },
     @{ Name = "[ConsoleCommand]"; Pattern = "\[ConsoleCommand" },
     @{ Name = "RustVehiclesGUIPluginBase"; Pattern = "RustVehiclesGUIPluginBase" },

@@ -3,7 +3,7 @@
 // LootContainer.PlayerOpenLoot fails with "Undefined target method". Use PlayerLoot like ArmoredTrain.
 using HarmonyLib;
 using UnityEngine;
-using STPlugin = Oxide.Plugins.SkillTree;
+using STPlugin = Harmony.Plugins.SkillTree;
 
 namespace SkillTreeHarmony.Patches
 {
@@ -16,7 +16,7 @@ namespace SkillTreeHarmony.Patches
         [HarmonyPostfix]
         public static void Postfix(PlayerLoot __instance, BaseEntity targetEntity, bool __result)
         {
-            if (!__result || __instance == null || targetEntity == null) return;
+            if (!__result || targetEntity == null) return;
             BasePlayer player = __instance.baseEntity;
             if (player == null) return;
 

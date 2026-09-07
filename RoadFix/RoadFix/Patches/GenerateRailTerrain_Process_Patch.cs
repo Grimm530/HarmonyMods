@@ -19,6 +19,8 @@ public static class GenerateRailTerrain_Process_Patch
         {
             if (!RoadFixConfig.IsEnabled())
                 return;
+            if (World.Cached)
+                return;
             if (RoadFixConfig.Config?.SpawnCustomBridges != true)
                 return;
 

@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"network","columns":["fieldKey","fieldType"],"values":[["bytes_received","integer"],["bytes_sent","integer"],["packet_loss","integer"]]}]}]}

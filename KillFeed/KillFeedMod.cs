@@ -1,13 +1,13 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using System.Text;
+using GrimmCuiHarmony;
 using HarmonyChat;
-using Oxide.Core.Libraries.Covalence;
+using Harmony.Core.Libraries.Covalence;
 using UnityEngine;
-using OxidePlugin = Oxide.Plugins.KillFeed;
+using HarmonyPlugin = Harmony.Plugins.KillFeed;
 
 namespace KillFeedHarmony
 {
@@ -53,7 +53,7 @@ namespace KillFeedHarmony
     public class KillFeedMod : IHarmonyModHooks
     {
         public static KillFeedMod Instance { get; private set; }
-        public static OxidePlugin Plugin => OxidePlugin.GetModInstance();
+        public static HarmonyPlugin Plugin => HarmonyPlugin.GetModInstance();
 
         private Coroutine _initCoroutine;
         private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
@@ -69,14 +69,15 @@ namespace KillFeedHarmony
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
+            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
             ModRunner.Ensure();
 
-            OxidePlugin plugin;
+            HarmonyPlugin plugin;
             try
             {
-                plugin = new OxidePlugin();
-                OxidePlugin.SetInstance(plugin);
+                plugin = new HarmonyPlugin();
+                HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
             }
             catch (Exception ex)
@@ -103,7 +104,7 @@ namespace KillFeedHarmony
         {
             try
             {
-                var plugin = OxidePlugin.GetModInstance();
+                var plugin = HarmonyPlugin.GetModInstance();
                 if (plugin == null) return;
                 plugin.HarmonyResolvePluginReferences();
             }
@@ -126,13 +127,13 @@ namespace KillFeedHarmony
                 ModRunner.Instance.StopCoroutine(_initCoroutine);
                 _initCoroutine = null;
             }
-            OxidePlugin.GetModInstance()?.timer?.DestroyAll();
-            OxidePlugin.GetModInstance()?.CallUnload();
+            HarmonyPlugin.GetModInstance()?.timer?.DestroyAll();
+            HarmonyPlugin.GetModInstance()?.CallUnload();
             UnregisterConsoleCommands();
             try { AppDomain.CurrentDomain.SetData(AppDomainApiKey, null); }
             catch { }
             ModRunner.Destroy();
-            OxidePlugin.ClearInstance();
+            HarmonyPlugin.ClearInstance();
             Instance = null;
             Debug.Log("[KillFeed] Harmony mod unloaded.");
         }
@@ -175,7 +176,7 @@ namespace KillFeedHarmony
             if (parts.Length == 0) return false;
             string commandName = parts[0].ToLowerInvariant();
             if (!_chatCommandNames.Contains(commandName)) return false;
-            string[] args = parts.Skip(1).ToArray();
+            string[] args = SliceArgs(parts, 1);
             var plugin = Plugin;
             if (plugin == null) return false;
             foreach (var reg in plugin.cmd.RegisteredChatCommands)
@@ -191,11 +192,11 @@ namespace KillFeedHarmony
         private void RegisterAttributedChatCommands()
         {
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), inherit: false);
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), inherit: false);
                 if (attrs == null || attrs.Length == 0) continue;
-                foreach (Oxide.Plugins.ChatCommandAttribute attr in attrs)
+                foreach (Harmony.Plugins.ChatCommandAttribute attr in attrs)
                 {
                     if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                     var cmdName = attr.Command.Trim().ToLowerInvariant();
@@ -206,19 +207,19 @@ namespace KillFeedHarmony
             }
         }
 
-        private static void InvokeChatMethod(OxidePlugin plugin, string methodName, BasePlayer player, string command, string[] args, bool attributedOnly = false)
+        private static void InvokeChatMethod(HarmonyPlugin plugin, string methodName, BasePlayer player, string command, string[] args, bool attributedOnly = false)
         {
             if (plugin == null || player == null) return;
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 if (string.IsNullOrEmpty(methodName) && attributedOnly)
                 {
                     foreach (var miScan in type.GetMethods(bf))
                     {
-                        var attrs = miScan.GetCustomAttributes(typeof(Oxide.Plugins.ChatCommandAttribute), false);
-                        foreach (Oxide.Plugins.ChatCommandAttribute a in attrs)
+                        var attrs = miScan.GetCustomAttributes(typeof(Harmony.Plugins.ChatCommandAttribute), false);
+                        foreach (Harmony.Plugins.ChatCommandAttribute a in attrs)
                         {
                             if (string.Equals(a.Command, command, StringComparison.OrdinalIgnoreCase))
                             { methodName = miScan.Name; break; }
@@ -264,18 +265,16 @@ namespace KillFeedHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+                foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
                 {
-                    var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), inherit: false);
+                    var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), inherit: false);
                     if (attrs == null || attrs.Length == 0) continue;
-                    foreach (Oxide.Plugins.ConsoleCommandAttribute attr in attrs)
+                    foreach (Harmony.Plugins.ConsoleCommandAttribute attr in attrs)
                     {
                         if (string.IsNullOrWhiteSpace(attr.Command)) continue;
                         var cmdName = attr.Command.Trim();
                         TrackUiConsoleCommand(cmdName);
-                        if (_registeredCommands.Any(c =>
-                                string.Equals(c.Name, cmdName, StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(c.FullName, "global." + cmdName, StringComparison.OrdinalIgnoreCase)))
+                        if (HasRegisteredCommand(cmdName))
                             continue;
                         var methodName = mi.Name;
                         RegisterConsole(cmdName, arg => InvokeConsoleMethod(methodName, arg), serverAdmin: false);
@@ -321,10 +320,7 @@ namespace KillFeedHarmony
                     if (string.IsNullOrEmpty(reg.name)) continue;
                     var name = reg.name.Trim();
                     TrackUiConsoleCommand(name);
-                    if (_registeredCommands.Any(c =>
-                            string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(c.FullName, name, StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
+                    if (HasRegisteredCommand(name))
                         continue;
                     var captured = reg;
                     RegisterConsole(name, arg => InvokeConsoleMethod(captured.method, arg), serverAdmin: false);
@@ -342,13 +338,7 @@ namespace KillFeedHarmony
             if (string.IsNullOrWhiteSpace(name)) return;
             name = name.Trim();
             if (name.IndexOf('.') >= 0) return;
-            if (_chatAliasCommands.Any(c =>
-                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase)))
-                return;
-            if (_registeredCommands.Any(c =>
-                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase)))
+            if (HasChatAliasCommand(name) || HasRegisteredCommand(name))
                 return;
             string localName = name;
             if (ConsoleSystem.Index.Server.Dict != null &&
@@ -454,10 +444,10 @@ namespace KillFeedHarmony
             var plugin = Plugin;
             if (plugin == null) return;
             const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            foreach (var mi in typeof(OxidePlugin).GetMethods(bf))
+            foreach (var mi in typeof(HarmonyPlugin).GetMethods(bf))
             {
-                var attrs = mi.GetCustomAttributes(typeof(Oxide.Plugins.ConsoleCommandAttribute), false);
-                foreach (Oxide.Plugins.ConsoleCommandAttribute a in attrs)
+                var attrs = mi.GetCustomAttributes(typeof(Harmony.Plugins.ConsoleCommandAttribute), false);
+                foreach (Harmony.Plugins.ConsoleCommandAttribute a in attrs)
                 {
                     if (string.Equals(a.Command, cmdName, StringComparison.OrdinalIgnoreCase))
                     {
@@ -483,12 +473,12 @@ namespace KillFeedHarmony
             try
             {
                 const BindingFlags bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                var type = typeof(OxidePlugin);
+                var type = typeof(HarmonyPlugin);
                 var mi = type.GetMethod(methodName, bf, null, new[] { typeof(ConsoleSystem.Arg) }, null);
                 if (mi != null) { mi.Invoke(plugin, new object[] { arg }); return; }
 
                 var player = arg.Player();
-                string[] args = arg.Args != null ? arg.Args.Select(x => x.ToString()).ToArray() : Array.Empty<string>();
+                string[] args = ToStringArgs(arg.Args);
                 string cmd = arg.cmd?.Name ?? methodName;
 
                 mi = type.GetMethod(methodName, bf, null, new[] { typeof(BasePlayer), typeof(string), typeof(string[]) }, null);
@@ -539,6 +529,60 @@ namespace KillFeedHarmony
             if (!hasDot && ConsoleSystem.Index.Server.GlobalDict != null)
                 ConsoleSystem.Index.Server.GlobalDict[cmdName] = cmd;
             _registeredCommands.Add(cmd);
+        }
+
+        private bool HasRegisteredCommand(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (var i = 0; i < _registeredCommands.Count; i++)
+            {
+                var c = _registeredCommands[i];
+                if (string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.FullName, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private bool HasChatAliasCommand(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (var i = 0; i < _chatAliasCommands.Count; i++)
+            {
+                var c = _chatAliasCommands[i];
+                if (string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.FullName, "global." + name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private static string[] SliceArgs(string[] parts, int startIndex)
+        {
+            if (parts == null || startIndex >= parts.Length)
+                return Array.Empty<string>();
+            var n = parts.Length - startIndex;
+            var args = new string[n];
+            Array.Copy(parts, startIndex, args, 0, n);
+            return args;
+        }
+
+        private static string[] ToStringArgs(string[] args)
+        {
+            if (args == null || args.Length == 0)
+                return Array.Empty<string>();
+            return args;
+        }
+
+        private static string[] ToStringArgs(Facepunch.StringView[] args)
+        {
+            if (args == null || args.Length == 0)
+                return Array.Empty<string>();
+            var result = new string[args.Length];
+            for (var i = 0; i < args.Length; i++)
+                result[i] = args[i].ToString();
+            return result;
         }
 
         private void UnregisterConsoleCommands()

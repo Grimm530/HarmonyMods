@@ -58,7 +58,7 @@ namespace Trade.Patches
         private static void Prefix(ShopFront __instance)
         {
             var plugin = TradeMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnShopCompleteTrade(__instance); }
             catch (Exception ex) { Debug.LogWarning("[Trade] OnShopCompleteTrade: " + ex.Message); }
         }
@@ -71,7 +71,7 @@ namespace Trade.Patches
         private static void Prefix(PlayerLoot __instance)
         {
             var plugin = TradeMod.Instance?.Plugin;
-            if (plugin == null || __instance == null) return;
+            if (plugin == null) return;
             try { plugin.OnPlayerLootEnd(__instance); }
             catch (Exception ex) { Debug.LogWarning("[Trade] OnPlayerLootEnd: " + ex.Message); }
         }

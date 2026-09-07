@@ -1,0 +1,1 @@
+{"results":[{"statement_id":0,"series":[{"name":"runtime_profiler","columns":["fieldKey","fieldType"],"values":[["baseplayer_cycle_ms","float"],["companion_tick_ms","float"],["frames","integer"],["net_cycle_ms","float"],["physics_sync_ms","float"],["servermgr_update_ms","float"]]}]}]}

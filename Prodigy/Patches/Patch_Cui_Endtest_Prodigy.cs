@@ -22,8 +22,8 @@ public static class Patch_Cui_Endtest_Prodigy
         var player = args.Connection?.player as BasePlayer;
         if (player == null) return true;
 
-        string direction = a[1].ToString();
-        string encodedArg = a.Length >= 3 ? a[2].ToString() : null;
+        string direction = a[1];
+        string encodedArg = a.Length >= 3 ? a[2] : null;
         mod.RunProdigyUiMove(player, direction, encodedArg);
         return false;
     }

@@ -1,6 +1,6 @@
 # InventoryViewer (Harmony)
 
-Oxide **Inventory Viewer 4.1.3** port. Admins with permission can inspect another player's inventory via a hidden corpse loot panel.
+Legacy **Inventory Viewer 4.1.3** port. Admins with permission can inspect another player's inventory via a hidden corpse loot panel.
 
 ## Load order
 

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class TextComponent : BaseCuiComponent, ICuiFontComponent, ICuiColorComponent, ICuiGraphicComponent, IStyleComponent
 {

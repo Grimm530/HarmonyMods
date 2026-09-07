@@ -1,11 +1,11 @@
-// CombatClassesDispatch.cs — partial class Oxide.Plugins.CombatClasses
+// CombatClassesDispatch.cs — partial class Harmony.Plugins.CombatClasses
 // Instance management, lifecycle wrappers, Dispatch_* for Harmony patches.
 
 using System;
 using UnityEngine;
 using ChatChannel = ConVar.Chat.ChatChannel;
 
-namespace Oxide.Plugins
+namespace Harmony.Plugins
 {
     public partial class CombatClasses
     {

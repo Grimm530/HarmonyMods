@@ -1,6 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
-using CookingPlugin = Oxide.Plugins.Cooking;
+using CookingPlugin = Harmony.Plugins.Cooking;
 
 namespace CookingHarmony.Patches
 {

@@ -12,7 +12,7 @@ namespace CustomMapGen.Patches
     {
         static void Prefix(GenerateRailRing __instance)
         {
-            if (!CustomMapGen.IsCustomMapGenEnabled() || World.Config == null || __instance == null)
+            if (!CustomMapGen.IsCustomMapGenEnabled() || World.Config == null)
                 return;
             var config = CustomMapGen.Instance.GetConfig();
             if (config.GenerateAboveGroundTrainTracks == "NotWanted")

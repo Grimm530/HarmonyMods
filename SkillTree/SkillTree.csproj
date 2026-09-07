@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: SkillTree 1.7.x (Oxide port). Config: HarmonyConfig/SkillTree.json. Data: HarmonyData/ (default SkillTree subfolder) or CustomSkillTreeDataDirectory in config (currently C:\!DataPersistence\oxide\data\SkillTree). Requires Permissions mod.</Description>
+    <Description>Harmony mod: SkillTree 1.7.x (Harmony port). Config: HarmonyConfig/SkillTree.json. Data: HarmonyData/ (default SkillTree subfolder) or CustomSkillTreeDataDirectory in config (currently C:\!DataPersistence\oxide\data\SkillTree). Requires Permissions mod.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <!-- Krafs.Publicizer makes all Rust types accessible without reflection -->
@@ -115,4 +115,12 @@
     </Reference>
   </ItemGroup>
   <!-- SDK auto-includes all *.cs files; no explicit Compile items needed. -->
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /></ItemGroup>
 </Project>

@@ -1,5 +1,6 @@
 using System.Reflection;
 using HarmonyLib;
+using NexusSelfHost;
 using UnityEngine;
 
 namespace NexusSelfHost.Patches
@@ -15,7 +16,7 @@ namespace NexusSelfHost.Patches
         private const string FacepunchDefault = "https://api.facepunch.com/api/nexus/";
         private static bool _logged;
 
-        internal static bool DebugEnabled => !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("NEXUS_DEBUG"));
+        internal static bool DebugEnabled => NexusSelfHostOptions.VerboseHttp;
 
         static MethodBase TargetMethod()
         {

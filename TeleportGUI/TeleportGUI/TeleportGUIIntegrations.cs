@@ -6,10 +6,10 @@ namespace TeleportGUI
 {
     /// <summary>
     /// Best-effort reflective bridges to optional third-party systems, resolved purely through the
-    /// current AppDomain (no Oxide references, no hard assembly dependencies). Each bridge degrades to
+    /// current AppDomain (Harmony-only references, no hard assembly dependencies). Each bridge degrades to
     /// a no-op / "not loaded" state when the target type is absent so the mod stays functional.
     ///
-    /// Mirrors the optional integrations the Oxide TeleportGUI relies on:
+    /// Mirrors the optional integrations the original TeleportGUI relies on:
     /// Economics, ServerRewards, Clans, Friends, RaidBlock and ZoneManager.
     /// </summary>
     public static class TeleportGUIIntegrations
@@ -115,7 +115,7 @@ namespace TeleportGUI
                 "EconomicsHarmony.EconomicsHarmonyMod",
                 "Economics",
                 "EconomicsHarmony.EconomicsMod",
-                "Oxide.Plugins.Economics"
+                "Harmony.Plugins.Economics"
             };
 
             public double Balance(ulong userId)
@@ -144,7 +144,7 @@ namespace TeleportGUI
 
         public sealed class ServerRewardsBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "ServerRewards", "ServerRewardsHarmony.ServerRewardsMod", "Oxide.Plugins.ServerRewards" };
+            protected override string[] TypeNames => new[] { "ServerRewards", "ServerRewardsHarmony.ServerRewardsMod", "Harmony.Plugins.ServerRewards" };
 
             public int CheckPoints(ulong userId)
             {
@@ -168,7 +168,7 @@ namespace TeleportGUI
 
         public sealed class ClansBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "Clans", "ClansHarmony.ClansMod", "Oxide.Plugins.Clans" };
+            protected override string[] TypeNames => new[] { "Clans", "ClansHarmony.ClansMod", "Harmony.Plugins.Clans" };
 
             public bool IsClanMember(ulong a, ulong b)
             {
@@ -181,7 +181,7 @@ namespace TeleportGUI
 
         public sealed class FriendsBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "Friends", "FriendsHarmony.FriendsMod", "Oxide.Plugins.Friends" };
+            protected override string[] TypeNames => new[] { "Friends", "FriendsHarmony.FriendsMod", "Harmony.Plugins.Friends" };
 
             public bool AreFriends(ulong a, ulong b)
             {
@@ -194,7 +194,7 @@ namespace TeleportGUI
 
         public sealed class RaidBlockBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "NoEscape", "RaidBlock", "RaidBlockHarmony.RaidBlockMod", "Oxide.Plugins.NoEscape" };
+            protected override string[] TypeNames => new[] { "NoEscape", "RaidBlock", "RaidBlockHarmony.RaidBlockMod", "Harmony.Plugins.NoEscape" };
 
             public bool IsRaidBlocked(BasePlayer player)
             {
@@ -206,7 +206,7 @@ namespace TeleportGUI
 
         public sealed class ZoneManagerBridge : Bridge
         {
-            protected override string[] TypeNames => new[] { "ZoneManager", "ZoneManagerHarmony.ZoneManagerMod", "Oxide.Plugins.ZoneManager" };
+            protected override string[] TypeNames => new[] { "ZoneManager", "ZoneManagerHarmony.ZoneManagerMod", "Harmony.Plugins.ZoneManager" };
 
             public bool PlayerHasFlag(BasePlayer player, string flag)
             {

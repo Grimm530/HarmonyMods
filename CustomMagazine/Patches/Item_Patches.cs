@@ -10,7 +10,7 @@ namespace CustomMagazineHarmony.Patches
         private static bool Prefix(Item __instance, Item item, ref bool __result)
         {
             var plugin = CustomMagazineMod.Plugin;
-            if (plugin == null || __instance == null || item == null) return true;
+            if (plugin == null || item == null) return true;
             if (__instance.info == null || item.info == null) return true;
             if (__instance.info.itemid == item.info.itemid && __instance.skin != item.skin)
             {
@@ -28,7 +28,7 @@ namespace CustomMagazineHarmony.Patches
         private static bool Prefix(Item __instance, int split_Amount, ref Item __result)
         {
             var plugin = CustomMagazineMod.Plugin;
-            if (plugin == null || __instance == null) return true;
+            if (plugin == null) return true;
             try
             {
                 if (plugin.TryCustomSplit(__instance, split_Amount, out Item created) && created != null)

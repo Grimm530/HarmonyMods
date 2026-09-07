@@ -12,7 +12,7 @@ using Random = UnityEngine.Random;
 namespace LoadingMessages
 {
     /// <summary>
-    /// Harmony port of Oxide LoadingMessages 1.1.3 (CosaNostra/Def/klauz24).
+    /// Harmony port of original LoadingMessages 1.1.3 (CosaNostra/Def/klauz24).
     /// Shows custom texts on the loading screen. Config: HarmonyConfig/LoadingMessages.json
     /// </summary>
     public class LoadingMessagesMod : IHarmonyModHooks
@@ -65,7 +65,7 @@ namespace LoadingMessages
             public void SelectFirst() => CurrentMessage = MessagesList.First();
         }
 
-        /// <summary>Stand-in for Oxide Timer from timer.Every.</summary>
+        /// <summary>Stand-in for compat Timer from timer.Every.</summary>
         private sealed class TimerHandle
         {
             private readonly ModRunner _runner;
@@ -165,12 +165,12 @@ namespace LoadingMessages
                         if (_config != null)
                         {
                             SaveConfig();
-                            Debug.Log("[LoadingMessages] Migrated config from oxide/config/LoadingMessages.json");
+                            Debug.Log("[LoadingMessages] Migrated config from legacy/config/LoadingMessages.json");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogWarning("[LoadingMessages] Oxide config migrate failed: " + ex.Message);
+                        Debug.LogWarning("[LoadingMessages] legacy config migrate failed: " + ex.Message);
                     }
                 }
             }
@@ -453,7 +453,7 @@ namespace LoadingMessages
             GetQueueMessagesCollection()?.AdvanceMessage();
         }
 
-        // Kept for parity with the Oxide plugin (unused by original logic).
+        // Kept for parity with the Harmony mod (unused by original logic).
         private int GetQueuePosition(Connection con) => _queueConnections != null ? _queueConnections.IndexOf(con) : -1;
 
         private static void SuppressDefaultQueueMessage() => SetNextMessageTime(float.MaxValue);

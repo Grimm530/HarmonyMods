@@ -1,5 +1,5 @@
 # Build script for SmeltingSpeed Harmony Mod
-# Output: <server root>\HarmonyMods\SmeltingSpeed.dll
+# Output: D:\!RustServer\HarmonyMods\SmeltingSpeed.dll
 
 Write-Host "Building SmeltingSpeed..." -ForegroundColor Cyan
 
@@ -7,8 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "SmeltingSpeed\SmeltingSpeed.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
+    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

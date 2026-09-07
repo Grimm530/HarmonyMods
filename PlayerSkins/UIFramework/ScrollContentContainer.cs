@@ -1,6 +1,6 @@
-using Oxide.Ext.Chaos.UIFramework;
+using Ext.Chaos.UIFramework;
 
-namespace Oxide.Ext.Chaos.UIFramework;
+namespace Ext.Chaos.UIFramework;
 
 public class ScrollContentContainer : BaseContainer
 {
