@@ -52,7 +52,6 @@
   <ItemGroup>
     <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
-  <ItemGroup><Compile Remove="Patches\Patch_Cui_Endtest_Prodigy.cs" /></ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\StringViewCompat.cs" Link="StringViewCompat.cs" />
     <Compile Include="..\Shared\NavVector3Compat.cs" Link="NavVector3Compat.cs" />

@@ -18,22 +18,24 @@ public static class ProdigyUI
         try { ce.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), PanelName); } catch { }
     }
 
-    public static void Show(BasePlayer player, string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, bool isSmallUi, string offsetMin, string offsetMax, bool isTimed)
+    public static void Show(BasePlayer player, string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, string lastOnline, bool isSmallUi, string offsetMin, string offsetMax, bool isTimed)
     {
         if (player?.net?.connection == null) return;
         Destroy(player);
         if (string.IsNullOrEmpty(info)) info = "NetID: 0 : Actual owner: Server (0)";
         if (string.IsNullOrEmpty(code)) code = "N/A";
+        if (string.IsNullOrEmpty(entityOwner)) entityOwner = "Server";
+        if (string.IsNullOrEmpty(lastOnline)) lastOnline = "N/A";
         position = position.Replace("(", "").Replace(")", "").Replace(",", "");
         collider = collider.Replace(".prefab", "");
 
         var list = new JArray();
-        string arg = string.Join("|", new[] { entityName, entityOwner, position, prefabId, getType, health, size, buildingID, collider, skin, last, code, info }).Replace(" ", "_");
+        string arg = string.Join("|", new[] { entityName, entityOwner, position, prefabId, getType, health, size, buildingID, collider, skin, last, code, info, lastOnline }).Replace(" ", "_");
 
         if (isSmallUi)
-            BuildSmallPanel(list, entityName, entityOwner, position, prefabId, getType, health, size, buildingID, collider, skin, last, code, info, arg, offsetMin, offsetMax);
+            BuildSmallPanel(list, entityName, entityOwner, position, prefabId, getType, health, size, buildingID, collider, skin, last, code, info, lastOnline, arg, offsetMin, offsetMax);
         else
-            BuildLargePanel(list, entityName, entityOwner, position, prefabId, getType, health, size, buildingID, collider, skin, last, code, info, arg, offsetMin, offsetMax);
+            BuildLargePanel(list, entityName, entityOwner, position, prefabId, getType, health, size, buildingID, collider, skin, last, code, info, lastOnline, arg, offsetMin, offsetMax);
 
         var ce = CommunityEntity.ServerInstance;
         if (ce == null || ce.IsDestroyed) return;
@@ -92,12 +94,12 @@ public static class ProdigyUI
         });
     }
 
-    private static string BuildFullCopyText(string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info)
+    private static string BuildFullCopyText(string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, string lastOnline)
     {
-        return $"Entity: {entityName}\nOwner: {entityOwner}\nPosition: {position}\nPrefabId: {prefabId}\nType: {getType}\nHealth: {health}\nSize: {size}\nBuilding ID: {buildingID}\nCollider: {collider}\nSkin: {skin}\nLast: {last}\nCode: {code}\nDetails: {info}";
+        return $"Entity: {entityName}\nOwner: {entityOwner}\nPosition: {position}\nPrefabId: {prefabId}\nType: {getType}\nHealth: {health}\nSize: {size}\nBuilding ID: {buildingID}\nCollider: {collider}\nSkin: {skin}\nLast: {last}\nCode: {code}\nLast Online: {lastOnline}\nDetails: {info}";
     }
 
-    private static void BuildLargePanel(JArray list, string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, string arg, string offsetMin, string offsetMax)
+    private static void BuildLargePanel(JArray list, string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, string lastOnline, string arg, string offsetMin, string offsetMax)
     {
         AddPanel(list, "0.145098 0.1294118 0.1294118 1", "0.5 0", "0.5 0", offsetMin, offsetMax, Parent, PanelName, PanelName, needsCursor: false);
         AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-204.334 61.289", "203.534 82.512", PanelName, PanelName + "_ENTITY");
@@ -154,12 +156,22 @@ public static class ProdigyUI
         AddText(list, "CODE:", 14, "MiddleLeft", "0.7058824 0.5137255 0.1490196 1", "0.5 0.5", "0.5 0.5", "-99.011 -10.929", "-21.469 10.929", "CODE_EMBED_PANEL", "CODE_DESC_LABEL");
         AddText(list, code, 12, "MiddleRight", "0.2431373 0.9411765 0.003921569 1", "0.5 0.5", "0.5 0.5", "-62.885 -10.929", "98.48 10.929", "CODE_EMBED_PANEL", "CODE_INFO_LABEL");
 
-        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-204.334 -82.311", "203.534 -61.088", PanelName, PanelName + "_DETAILS");
+        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-230.602 -79.311", "-16.598 -58.088", PanelName, PanelName + "_OWNER");
+        AddPanel(list, "0.1415094 0.1263795 0.1263795 1", "0.5 0.5", "0.5 0.5", "-101.933 -8.12", "101.933 8.12", PanelName + "_OWNER", "OWNER_EMBED_PANEL");
+        AddText(list, "OWNER:", 14, "MiddleLeft", "0.7058824 0.5137255 0.1490196 1", "0.5 0.5", "0.5 0.5", "-100.093 -10.929", "-43.507 10.929", "OWNER_EMBED_PANEL", "OWNER_DESC_LABEL");
+        AddText(list, entityOwner, 12, "MiddleRight", "0.2431373 0.9411765 0.003921569 1", "0.5 0.5", "0.5 0.5", "-40.73 -10.929", "99.464 10.929", "OWNER_EMBED_PANEL", "OWNER_INFO_LABEL");
+
+        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "16.598 -79.311", "230.602 -58.088", PanelName, PanelName + "_LASTONLINE");
+        AddPanel(list, "0.1415094 0.1263795 0.1263795 1", "0.5 0.5", "0.5 0.5", "-101.933 -8.12", "101.933 8.12", PanelName + "_LASTONLINE", "LASTONLINE_EMBED_PANEL");
+        AddText(list, "LAST ONLINE:", 14, "MiddleLeft", "0.7058824 0.5137255 0.1490196 1", "0.5 0.5", "0.5 0.5", "-100.07 -10.929", "-8.12 10.929", "LASTONLINE_EMBED_PANEL", "LASTONLINE_DESC_LABEL");
+        AddText(list, lastOnline, 12, "MiddleRight", "0.2431373 0.9411765 0.003921569 1", "0.5 0.5", "0.5 0.5", "-6.12 -10.929", "98.48 10.929", "LASTONLINE_EMBED_PANEL", "LASTONLINE_INFO_LABEL");
+
+        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-204.334 -105.211", "203.534 -83.988", PanelName, PanelName + "_DETAILS");
         AddPanel(list, "0.1415094 0.1263795 0.1263795 1", "0.5 0.5", "0.5 0.5", "-199.644 -8.12", "200.154 8.12", PanelName + "_DETAILS", "DETAILS_EMBED_PANEL");
         // NetID / Actual owner text: same row as before, shifted right with gap (MiddleRight, right edge -8px)
         AddText(list, info, 12, "MiddleRight", "0.2509804 0.9960785 0 1", "0.5 0.5", "0.5 0.5", "0 -10.929", "195.06 10.929", "DETAILS_EMBED_PANEL", "DETAILS_INFO_LABEL");
 
-        AddButton(list, "cui.endtest PRODIGY paste " + arg, "Click to copy to F1 Console", 10, "MiddleCenter", "0 0 0 0", "1 1 1 1", "-204 -79", "-80 -64", PanelName, PanelName + "_COPY");
+        AddButton(list, "cui.endtest PRODIGY paste " + arg, "Click to copy to F1 Console", 10, "MiddleCenter", "0 0 0 0", "1 1 1 1", "-204 -102", "-80 -87", PanelName, PanelName + "_COPY");
         AddButton(list, "cui.endtest PRODIGY up " + arg, "↑", 10, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-9.271 7.549", "8.471 22.645", PanelName, PanelName + "_BUTTON_T");
         AddButton(list, "cui.endtest PRODIGY right " + arg, "→", 10, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-1.145 -7.448", "16.598 7.648", PanelName, PanelName + "_BUTTON_R");
         AddButton(list, "cui.endtest PRODIGY down " + arg, "↓", 10, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-8.871 -22.645", "8.871 -7.549", PanelName, PanelName + "_BUTTON_B");
@@ -167,7 +179,7 @@ public static class ProdigyUI
         AddButton(list, "cui.endtest PRODIGY close", "X", 10, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-8.976 26.356", "8.767 41.452", PanelName, PanelName + "_BUTTON_X");
     }
 
-    private static void BuildSmallPanel(JArray list, string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, string arg, string offsetMin, string offsetMax)
+    private static void BuildSmallPanel(JArray list, string entityName, string entityOwner, string position, string prefabId, string getType, string health, string size, string buildingID, string collider, string skin, string last, string code, string info, string lastOnline, string arg, string offsetMin, string offsetMax)
     {
         AddPanel(list, "0.145098 0.1294118 0.1294118 1", "0 0", "0 0", offsetMin, offsetMax, Parent, PanelName, PanelName, needsCursor: false);
         AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-105.519 44.005", "105.311 58.644", PanelName, PanelName + "_ENTITY");
@@ -224,11 +236,21 @@ public static class ProdigyUI
         AddText(list, "CODE:", 6, "MiddleLeft", "0.7058824 0.5137255 0.1490196 1", "0.5 0.5", "0.5 0.5", "-37.588 -5.157", "-17.541 5.157", "CODE_EMBED_PANEL", "CODE_DESC_LABEL");
         AddText(list, code, 6, "MiddleRight", "0.2431373 0.9411765 0.003921569 1", "0.5 0.5", "0.5 0.5", "-17.541 -5.157", "37.451 5.157", "CODE_EMBED_PANEL", "CODE_INFO_LABEL");
 
-        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-105.414 -57.486", "105.406 -42.847", PanelName, PanelName + "_DETAILS");
+        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-105.519 -55.687", "-18.085 -41.048", PanelName, PanelName + "_OWNER");
+        AddPanel(list, "0.1415094 0.1263795 0.1263795 1", "0.5 0.5", "0.5 0.5", "-40 -5.157", "40 5.157", PanelName + "_OWNER", "OWNER_EMBED_PANEL");
+        AddText(list, "OWNER:", 6, "MiddleLeft", "0.7058824 0.5137255 0.1490196 1", "0.5 0.5", "0.5 0.5", "-37.982 -5.157", "-19.692 5.157", "OWNER_EMBED_PANEL", "OWNER_DESC_LABEL");
+        AddText(list, entityOwner, 6, "MiddleRight", "0.2431373 0.9411765 0.003921569 1", "0.5 0.5", "0.5 0.5", "-19.691 -5.157", "37.473 5.157", "OWNER_EMBED_PANEL", "OWNER_INFO_LABEL");
+
+        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "17.881 -55.687", "105.315 -41.048", PanelName, PanelName + "_LASTONLINE");
+        AddPanel(list, "0.1415094 0.1263795 0.1263795 1", "0.5 0.5", "0.5 0.5", "-40 -5.157", "40 5.157", PanelName + "_LASTONLINE", "LASTONLINE_EMBED_PANEL");
+        AddText(list, "LAST ONLINE:", 6, "MiddleLeft", "0.7058824 0.5137255 0.1490196 1", "0.5 0.5", "0.5 0.5", "-38.3 -5.157", "-4.2 5.157", "LASTONLINE_EMBED_PANEL", "LASTONLINE_DESC_LABEL");
+        AddText(list, lastOnline, 6, "MiddleRight", "0.2431373 0.9411765 0.003921569 1", "0.5 0.5", "0.5 0.5", "-4.2 -5.157", "37.451 5.157", "LASTONLINE_EMBED_PANEL", "LASTONLINE_INFO_LABEL");
+
+        AddPanel(list, "0 0 0 1", "0.5 0.5", "0.5 0.5", "-105.414 -73.986", "105.406 -59.347", PanelName, PanelName + "_DETAILS");
         AddPanel(list, "0.1415094 0.1263795 0.1263795 1", "0.5 0.5", "0.5 0.5", "-100.4 -5.157", "101.37 5.157", PanelName + "_DETAILS", "DETAILS_EMBED_PANEL");
         AddText(list, info, 6, "MiddleRight", "0.2509804 0.9960785 0 1", "0.5 0.5", "0.5 0.5", "0 -5.157", "98.339 5.157", "DETAILS_EMBED_PANEL", "DETAILS_INFO_LABEL");
 
-        AddButton(list, "cui.endtest PRODIGY paste " + arg, "Click to copy to F1 Console", 6, "MiddleCenter", "0 0 0 0", "1 1 1 1", "-105.414 -56", "-42 -44", PanelName, PanelName + "_COPY");
+        AddButton(list, "cui.endtest PRODIGY paste " + arg, "Click to copy to F1 Console", 6, "MiddleCenter", "0 0 0 0", "1 1 1 1", "-105.414 -72.5", "-42 -60.5", PanelName, PanelName + "_COPY");
         AddButton(list, "cui.endtest PRODIGY up " + arg, "↑", 6, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-9.347 8.981", "8.396 24.078", PanelName, PanelName + "_BUTTON_T");
         AddButton(list, "cui.endtest PRODIGY right " + arg, "→", 6, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-1.22 -6.015", "16.523 9.081", PanelName, PanelName + "_BUTTON_R");
         AddButton(list, "cui.endtest PRODIGY down " + arg, "↓", 6, "MiddleCenter", "0.145098 0.1294118 0.1294118 1", "0.682353 0.4980392 0.145098 1", "-8.947 -21.213", "8.796 -6.116", PanelName, PanelName + "_BUTTON_B");

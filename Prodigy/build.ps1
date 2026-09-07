@@ -1,5 +1,5 @@
 # Build script for Prodigy Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\Prodigy.dll
+# Output: <server root>\HarmonyMods\Prodigy.dll
 
 Write-Host "Building Prodigy..." -ForegroundColor Cyan
 
@@ -7,7 +7,8 @@ $projectPath = Join-Path $PSScriptRoot "Prodigy.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
@@ -15,6 +16,10 @@ if ($LASTEXITCODE -eq 0) {
     $dllPath = Join-Path $PSScriptRoot "bin\Release\net48\Prodigy.dll"
     if (-not (Test-Path $dllPath)) {
         $dllPath = Join-Path $PSScriptRoot "bin\Release\Prodigy.dll"
+    }
+    if (-not (Test-Path $dllPath)) {
+        Write-Host "Build output not found under bin\Release\Prodigy.dll" -ForegroundColor Red
+        exit 1
     }
     $destPath = Join-Path $harmonyModsPath "Prodigy.dll"
 
