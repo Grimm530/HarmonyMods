@@ -5,8 +5,7 @@ namespace BetterBackpack;
 
 /// <summary>
 /// When backpack contents change and Retrieval is on, mark containerMain dirty
-/// so the client receives an updated Main inventory (with backpack injection).
-/// Fixes: crafting UI not detecting items in backpack until backpack is opened / items moved.
+/// so ItemRetriever re-sends Main with supplier items (craft UI / reload).
 /// </summary>
 [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.MarkDirty))]
 internal class ItemContainer_MarkDirty_Patch

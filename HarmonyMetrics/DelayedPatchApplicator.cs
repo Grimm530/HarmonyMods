@@ -16,8 +16,17 @@ internal static class DelayedPatchApplicator
 
         yield return ApplyClass(harmony, typeof(ConsoleSystem_Internal_Patch));
         yield return null;
-        yield return ApplyClass(harmony, typeof(InvokeHandlerBase_DoTick_Patch));
-        yield return null;
+
+        if (config != null && config.GatherInvokeTiming)
+        {
+            Debug.Log("[HarmonyMetrics]: Applying invoke-timing DoTick wrapper (expensive)...");
+            yield return ApplyClass(harmony, typeof(InvokeHandlerBase_DoTick_Patch));
+            yield return null;
+        }
+        else
+        {
+            Debug.Log("[HarmonyMetrics]: Skipping invoke-timing DoTick wrapper (Gather Invoke Timing = false)");
+        }
 
         Debug.Log("[HarmonyMetrics]: Applying server_update timing patches...");
         yield return ApplyMethodsSpread(harmony, ServerMgr_Metrics_Patches.CollectTargets(), ServerMgr_Metrics_Patches.Prefix, ServerMgr_Metrics_Patches.Postfix, 4);

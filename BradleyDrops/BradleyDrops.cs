@@ -1859,8 +1859,12 @@ namespace Harmony.Plugins
                     if (_apcProfile.Gibs.ProtectGibs && _apcProfile.Gibs.UnlockGibs > 0)
                         RemoveBradleyOwner(debris, _apcProfile.Gibs.UnlockGibs);
                 }
-                else if (entity is FireBall fireball)
+                else if (entity is FireBall)
                 {
+                    FireBall fireball = entity as FireBall;
+                    if (fireball == null)
+                    	return;
+
                     fireball.tickRate = _apcProfile.Fireball.DamageRate;
                     fireball.lifeTimeMin = _apcProfile.Fireball.MinimumLifeTime;
                     fireball.lifeTimeMax = _apcProfile.Fireball.MaximumLifeTime;

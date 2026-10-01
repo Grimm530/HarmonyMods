@@ -106,17 +106,7 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Entity spawn -----------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
-    public static class BaseNetworkable_Spawn_Patch
-    {
-        [HarmonyPostfix]
-        public static void Postfix(BaseNetworkable __instance)
-        {
-            if (__instance is BasePlayer) return;
-            try { STPlugin.Dispatch_OnEntitySpawned(__instance); }
-            catch (Exception ex) { Debug.LogWarning("[SkillTree] OnEntitySpawned: " + ex.Message); }
-        }
-    }
+    // OnEntitySpawned is registered with GrimmCoreSpawnDispatcher.
 
     // ---- Revive (medical tool on wounded teammate) ------------------------
 
@@ -316,7 +306,7 @@ namespace SkillTreeHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(ItemContainer), "Insert", new[] { typeof(Item) })]
+    [HarmonyPatch(typeof(ItemContainer), "Insert", new[] { typeof(Item), typeof(BasePlayer) })]
     public static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]
@@ -330,10 +320,8 @@ namespace SkillTreeHarmony.Patches
 
     // ---- Entity kill ----------------------------------------------------
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) })]
     public static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
             try

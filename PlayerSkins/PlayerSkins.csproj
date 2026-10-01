@@ -11,7 +11,7 @@
     <RootNamespace>PlayerSkinsHarmony</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Description>Harmony mod: PlayerSkins 3.0.142 Chaos UI port (Harmony).</Description>
+    <Description>Harmony mod: PlayerSkins 3.0.143 Chaos UI port (Harmony).</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
@@ -127,4 +127,6 @@
   <ItemGroup>
     <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
-</Project>
+  <ItemGroup>
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup></Project>

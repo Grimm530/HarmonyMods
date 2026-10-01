@@ -5,7 +5,7 @@
 using Facepunch;
 using Facepunch.Extend;
 using Network;
-using Oxide.Core;
+using Harmony.Core;
 using Rust;
 using System;
 using System.Collections;
@@ -22,7 +22,7 @@ using static SeekerTarget;
 
 namespace KaruzaVehicles
 {
-    [Info("RustCar", "Karuza", "1.25.0")]
+    [Info("RustCar", "Karuza", "1.261")]
     public class RustCar : RustPlugin, IKaruzaEntityPlugin
     {
         public static RustCar Instance;
@@ -1554,7 +1554,7 @@ namespace KaruzaVehicles
             // that would not exist in the translations
             public override void DoRepair(BasePlayer player)
             {
-                if (Interface.CallHook("OnStructureRepair", this, player) != null)
+                if (HarmonyModInterface.CallHook("OnStructureRepair", this, player) != null)
                 {
                     return;
                 }
@@ -3791,12 +3791,22 @@ namespace KaruzaVehicles
 
             public override Vector3 GetNetworkPosition()
             {
-                return cachedTransform.position;
+                if (UseParallelSaves)
+                {
+                    return Facepunch.Extend.TransformEx.Unsafe.GetPosMT(TransformHandle);
+                }
+
+                return TransformHandle.position;
             }
 
             public override Quaternion GetNetworkRotation()
             {
-                return cachedTransform.rotation;
+                if (UseParallelSaves)
+                {
+                    return Facepunch.Extend.TransformEx.Unsafe.GetRotMT(TransformHandle);
+                }
+
+                return TransformHandle.rotation;
             }
 
             #endregion
@@ -4097,7 +4107,7 @@ namespace KaruzaVehicles
 
                 SeekerTarget.SetSeekerTarget(this, SeekerStrength.OFF);
 
-                Interface.CallHook("OnVehicleDestroyed", vehicleNetId);
+                HarmonyModInterface.CallHook("OnVehicleDestroyed", vehicleNetId);
 
                 foreach (BasePlayer driver in driverCache.Values)
                 {
@@ -4346,13 +4356,13 @@ namespace KaruzaVehicles
                 //throw new NotImplementedException();
             }
 
-            public bool DefaultInventoryItemFilter(Item item, int targetSlot)
+            public bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot)
             {
                 //throw new NotImplementedException();
                 return true;
             }
 
-            public void OnItemAddedOrRemoved(Item item, bool added)
+            public void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
                 //throw new NotImplementedException();
             }
@@ -5217,7 +5227,7 @@ namespace KaruzaVehicles
             Amphibious = 1 << 4
         }
 
-        public string DirectoryPath { get { return $"{Interface.Oxide.ConfigDirectory}/{Name}/"; } }
+        public string DirectoryPath { get { return $"{HarmonyModInterface.Mods.ConfigDirectory}/{Name}/"; } }
 
         protected override void LoadConfig()
         {
@@ -5243,7 +5253,7 @@ namespace KaruzaVehicles
             }
             catch (Exception ex)
             {
-                Config.WriteObject(configuration, false, $"{Interface.Oxide.ConfigDirectory}/{Name}.jsonError");
+                Config.WriteObject(configuration, false, $"{HarmonyModInterface.Mods.ConfigDirectory}/{Name}.jsonError");
                 PrintError($"The configuration file contains an error. {ex}");
             }
         }

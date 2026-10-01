@@ -569,7 +569,7 @@ namespace PlayerSkinsHarmony
     {
         public string Title => "PlayerSkins";
         public string Name => "PlayerSkins";
-        public VersionNumber Version { get; protected set; } = new VersionNumber(3, 0, 142);
+        public VersionNumber Version { get; protected set; } = new VersionNumber(3, 0, 143);
         public bool IsLoaded { get; set; } = true;
 
         protected PlayerSkinsHost Host => PlayerSkinsHost.Instance;

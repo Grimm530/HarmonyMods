@@ -807,11 +807,14 @@ namespace CustomMapGen.Patches
                 || n.IndexOf("autospawn/monument", StringComparison.Ordinal) >= 0;
         }
 
-        private static Vector3? FindValidMonumentPosition(Vector3 centerPos, IList prefabsList, object excludePrefab, float minDist, Vector3 mapCenter, float halfSize)
+        internal static Vector3? FindValidMonumentPosition(Vector3 centerPos, IList prefabsList, object excludePrefab, float minDist, Vector3 mapCenter, float halfSize, float minDistFromCenter = 0f)
         {
+            if (minDistFromCenter <= 0f)
+                minDistFromCenter = minDist;
             const float stepRadius = 60f;
             const float angleStep = 80f;
-            for (float radius = minDist; radius <= halfSize - 100f; radius += stepRadius)
+            float startRadius = Math.Max(minDist, minDistFromCenter);
+            for (float radius = startRadius; radius <= halfSize - 100f; radius += stepRadius)
             {
                 int steps = Math.Max(8, (int)(2.0 * Math.PI * radius / angleStep));
                 for (int i = 0; i < steps; i++)
@@ -821,7 +824,7 @@ namespace CustomMapGen.Patches
                     cand.y = TerrainMeta.HeightMap.GetHeight(cand);
                     if (TerrainMeta.WaterMap != null && cand.y < TerrainMeta.WaterMap.GetHeight(cand) - 0.1f)
                         continue;
-                    if ((cand - centerPos).magnitude < minDist)
+                    if ((cand - centerPos).magnitude < minDistFromCenter)
                         continue;
                     bool ok = true;
                     foreach (var other in prefabsList)
@@ -857,6 +860,11 @@ namespace CustomMapGen.Patches
             return n.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("bandit_town", StringComparison.OrdinalIgnoreCase) >= 0
+                // Unique lakes and oases stamp terrain far past their prefab radius.
+                || n.IndexOf("ue_lake", StringComparison.OrdinalIgnoreCase) >= 0
+                || n.IndexOf("oasis", StringComparison.OrdinalIgnoreCase) >= 0
+                || (n.IndexOf("unique_environment", StringComparison.OrdinalIgnoreCase) >= 0
+                    && n.IndexOf("lake", StringComparison.OrdinalIgnoreCase) >= 0)
                 || n.IndexOf("airfield", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("junkyard", StringComparison.OrdinalIgnoreCase) >= 0
                 || n.IndexOf("launch_site", StringComparison.OrdinalIgnoreCase) >= 0
@@ -883,6 +891,12 @@ namespace CustomMapGen.Patches
             // Caves are not large monuments; do not apply Sewer Branch / large radii to cave_large_sewers_*.
             if (n.IndexOf("cave", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 0f;
+            // Terrain/water modifiers reach ~220m from the prefab origin, past the mesh radius.
+            if (n.IndexOf("ue_lake", StringComparison.OrdinalIgnoreCase) >= 0
+                || n.IndexOf("oasis", StringComparison.OrdinalIgnoreCase) >= 0
+                || (n.IndexOf("unique_environment", StringComparison.OrdinalIgnoreCase) >= 0
+                    && n.IndexOf("lake", StringComparison.OrdinalIgnoreCase) >= 0))
+                return 220f;
             if (n.IndexOf("compound", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("outpost", StringComparison.OrdinalIgnoreCase) >= 0)
                 return 120f;
             // Airfield footprint is much larger than water treatment (runway + hangars).
@@ -964,6 +978,8 @@ namespace CustomMapGen.Patches
         static void Prefix(WorldSerialization __instance, string fileName)
         {
             if (string.IsNullOrEmpty(fileName) || !CustomMapGen.IsCustomMapGenEnabled())
+                return;
+            if (CustomMapGen.IsLoadingExistingMap)
                 return;
             if (!World.Procedural)
                 return;

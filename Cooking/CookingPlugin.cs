@@ -8936,7 +8936,7 @@ namespace Harmony.Plugins
                 else
                 {
                     var split = soldItem.SplitItem(1);
-                    split.RemoveFromContainer();
+                    split.RemoveFromContainer(null);
                     split.Remove();
                 }
                 ItemManager.DoRemoves();
@@ -8955,7 +8955,7 @@ namespace Harmony.Plugins
                         else
                         {
                             var split = item.SplitItem(amount - found);
-                            split.RemoveFromContainer();
+                            split.RemoveFromContainer(null);
                             split.Remove();
                         }
                         //item.UseItem(amount - found);
@@ -9656,7 +9656,7 @@ namespace Harmony.Plugins
                 }
 
                 removed += item.amount;
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 item.Remove();
 
                 container.inventory.MarkDirty();

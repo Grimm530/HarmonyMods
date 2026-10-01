@@ -52,9 +52,9 @@ public class MapVoterConfig
     [JsonProperty("Map image JPEG quality (0-100, default 75)")]
     public int MapImageJpegQuality { get; set; } = 75;
 
-    /// <summary>Max dimension for images sent to Discord (smaller = smaller payload). Default 512.</summary>
-    [JsonProperty("Discord image max dimension (smaller = smaller payload - default 512)")]
-    public int DiscordImageMaxDimension { get; set; } = 512;
+    /// <summary>Max dimension for images sent to Discord. Default 2048 so lightbox enlarge stays sharp.</summary>
+    [JsonProperty("Discord image max dimension (default 2048)")]
+    public int DiscordImageMaxDimension { get; set; } = 2048;
 
     [JsonProperty("Map options (manual list - used when Map size is 0)")]
     public List<MapOption> Maps { get; set; } = new();

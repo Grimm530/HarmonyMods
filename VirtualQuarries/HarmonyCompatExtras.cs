@@ -253,12 +253,12 @@ namespace Harmony.Plugins
     public partial class PermissionLib
     {
         public int GetGroupRank(string group) =>
-            VirtualQuarriesHarmony.PermissionsBridge.GetGroupData(group)?.Rank ?? 0;
+            PermissionsBridge.GetGroupData(group)?.Rank ?? 0;
 
         public bool UserExists(string userId)
         {
             if (string.IsNullOrEmpty(userId)) return false;
-            if (VirtualQuarriesHarmony.PermissionsBridge.GetUserData(userId) != null) return true;
+            if (PermissionsBridge.GetUserData(userId) != null) return true;
             return ulong.TryParse(userId, out _);
         }
     }

@@ -409,7 +409,6 @@ namespace WipeScheduleHarmony
                 if (!_loggedLink)
                 {
                     _loggedLink = true;
-                    Debug.Log("[WipeSchedule] Linked to Permissions Harmony mod for access checks.");
                 }
                 else
                     Debug.Log($"[WipeSchedule] Re-linked to Permissions Harmony mod (gen={gen}).");
@@ -496,15 +495,7 @@ namespace WipeScheduleHarmony
             // Local grants (tests / fallback)
             if (_granted.Contains(userId + ":" + perm)) return true;
 
-            EnsureBound();
-            try
-            {
-                if (_userHas != null && _userHas.Invoke(null, new object[] { userId, perm }) is bool ok)
-                    return ok;
-            }
-            catch { }
-
-            return false;
+            return PermissionsBridge.UserHasPermission(userId, perm);
         }
 
         public void GrantUserPermission(string userId, string perm)
@@ -512,7 +503,7 @@ namespace WipeScheduleHarmony
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(perm)) return;
             _granted.Add(userId + ":" + perm);
             EnsureBound();
-            try { _grantUser?.Invoke(null, new object[] { userId, perm }); } catch { }
+            PermissionsBridge.GrantUserPermission(userId, perm);
         }
     }
 

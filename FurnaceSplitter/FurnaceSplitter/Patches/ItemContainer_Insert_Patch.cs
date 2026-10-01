@@ -7,7 +7,7 @@ namespace FurnaceSplitter.Patches
     /// When a cookable/compostable is added to an oven via default game logic (not our split),
     /// auto-add fuel from the player who has the oven open.
     /// </summary>
-    [HarmonyPatch(typeof(ItemContainer), "Insert", typeof(Item))]
+    [HarmonyPatch(typeof(ItemContainer), "Insert", typeof(Item), typeof(BasePlayer))]
     internal static class ItemContainer_Insert_Patch
     {
         internal static BasePlayer PendingOvenMovePlayer;

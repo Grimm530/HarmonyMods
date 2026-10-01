@@ -15,7 +15,7 @@ This tree under `.cursor/HarmonyMods/Rust-Server-Metrics-master` is a **fork** l
 4. Create a database in InfluxDb with an appropriate retention policy
 > **NOTE**: A good starting point for a retention policy is a total duration of 12 weeks and a shard group duration of 24 hours
 5. Create a user with `write` permissions on the newly create database
-6. Import the [Dashboard](https://github.com/Pinkstink-Rust/Rust-Server-Metrics/releases/latest/download/Grafana-Dashboard.json) into Grafana and Configure the DataSource variable
+6. Import **this repo’s** dashboard JSON (`Ps1&Batch/Grafana-Dashboard.json` or `res/grafana-Dashboard.json`), not only the GitHub release copy. On the Grafana import form, set **InfluxDB (Rust Server Metrics)** to your `influxdb` data source before clicking Import. After import, confirm the dashboard URL does not contain `var-DS_INFLUXDB=` with an empty value.
 7. Stop your Rust server, **see warning below**
 8. Download the latest version of [RustServerMetrics.dll](https://github.com/Pinkstink-Rust/Rust-Server-Metrics/releases/latest/download/RustServerMetrics.dll) from this projects [latest release](https://github.com/Pinkstink-Rust/Rust-Server-Metrics/releases/latest) and copy it to the `HarmonyMods` folder in your rust server directory
 9. Start your Rust Server, **see warning below**
@@ -83,12 +83,12 @@ This command will output whether the Mod is ready to collect metrics, whether th
 # Metrics Collected
 
 ## Plugin Metrics
-The mod automatically tracks both **Harmony mods** and **HarmonyMod plugins** in the same data structure (`oxide_plugins` measurement). Both types appear together using the exact same format:
+The mod automatically tracks both **Oxide plugins** and **HarmonyMod plugins** in the same data structure (`oxide_plugins` measurement). Both types appear together using the exact same format:
 
-- **Harmony Mods**: Tracked with `hookTime` metrics showing hook execution times
+- **Oxide Plugins**: Tracked with `hookTime` metrics showing hook execution times
 - **HarmonyMod Plugins**: Tracked with `hookTime=1` to indicate loaded status, reported every 5 seconds
 
-All plugins are stored in the same `oxide_plugins` measurement using identical format (`plugin="name" hookTime=value`), making them appear seamlessly together in Grafana dashboards. HarmonyMod plugins are indistinguishable from Harmony mods in the metrics, appearing as regular plugins.
+All plugins are stored in the same `oxide_plugins` measurement using identical format (`plugin="name" hookTime=value`), making them appear seamlessly together in Grafana dashboards. HarmonyMod plugins are indistinguishable from Oxide plugins in the metrics, appearing as regular plugins.
 
 # Remarks
 ### Report Buffer Size

@@ -91,7 +91,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
                         }
 
                         var iPlayer = new HarmonyCompatPlayer(bp);
-                        var argsArr = arg?.Args ?? Array.Empty<string>();
+                        var argsArr = ToStringArray(arg.Args);
                         method.Invoke(_plugin, new object[] { iPlayer, cmdName, argsArr });
                     }
                     catch (Exception ex)
@@ -110,7 +110,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
 
         // Required so the server console resolves the commands.
         if (dict != null)
-            ConsoleSystem.Index.All = dict.Values.ToArray();
+            ConsoleIndexCompat.RebuildAllFromServerDict();
     }
 
     private void UnregisterConsoleCommands()
@@ -124,7 +124,7 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
                 dict.Remove("global." + cmd.Name);
                 ConsoleSystem.Index.Server.GlobalDict?.Remove(cmd.Name);
             }
-            ConsoleSystem.Index.All = dict.Values.ToArray();
+            ConsoleIndexCompat.RebuildAllFromServerDict();
         }
 
         _registeredCommands.Clear();
@@ -135,6 +135,16 @@ public class CopyPasteHarmonyMod : IHarmonyModHooks
         if (target == null) return;
         var mi = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
         mi?.Invoke(target, Array.Empty<object>());
+    }
+
+    private static string[] ToStringArray(Facepunch.StringView[] args)
+    {
+        if (args == null || args.Length == 0)
+            return Array.Empty<string>();
+        var result = new string[args.Length];
+        for (int i = 0; i < args.Length; i++)
+            result[i] = args[i].ToString();
+        return result;
     }
 
     internal bool TryHandleChatCommand(BasePlayer player, string message)

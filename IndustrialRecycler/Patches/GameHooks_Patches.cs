@@ -6,7 +6,7 @@ using P = Harmony.Plugins.IndustrialRecycler;
 
 namespace IndustrialRecyclerHarmony.Patches
 {
-    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), new[] { typeof(Item) })]
+    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), new[] { typeof(Item), typeof(BasePlayer) })]
     public static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]

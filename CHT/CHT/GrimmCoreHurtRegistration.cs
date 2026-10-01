@@ -4,8 +4,22 @@ namespace CHT.Patches
     {
         private const string ModId = "CHT";
 
-        internal static void Register() => GrimmCoreBridge.RegisterHurtSideEffect(ModId, 132, SideEffect);
-        internal static void Unregister() => GrimmCoreBridge.UnregisterHurtMod(ModId);
+        internal static void Register()
+        {
+            GrimmCoreBridge.RegisterHurtSideEffect(ModId, 132, SideEffect);
+            GrimmCoreBridge.RegisterSpawnPostfix(ModId, 132, Spawn);
+        }
+        internal static void Unregister()
+        {
+            GrimmCoreBridge.UnregisterHurtMod(ModId);
+            GrimmCoreBridge.UnregisterSpawnMod(ModId);
+        }
+
+        private static void Spawn(BaseNetworkable entity)
+        {
+            if (entity is TimedExplosive explosive)
+                CHTMod.Plugin?.OnEntitySpawned(explosive);
+        }
 
         private static void SideEffect(BaseCombatEntity entity, HitInfo info)
         {

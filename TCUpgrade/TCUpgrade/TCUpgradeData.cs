@@ -8,7 +8,7 @@ namespace TCUpgrade;
 
 public class TCUpgradeData
 {
-	public string Version = "1.6.0";
+	public string Version = "1.6.5";
 
 	public Dictionary<string, HashSet<ulong>> CustomWallpapers = new Dictionary<string, HashSet<ulong>>(StringComparer.OrdinalIgnoreCase);
 
@@ -30,6 +30,11 @@ public class TCUpgradeData
 				if (tCUpgradeData == null)
 				{
 					tCUpgradeData = new TCUpgradeData();
+				}
+				if (tCUpgradeData.Version != "1.6.5")
+				{
+					tCUpgradeData.Version = "1.6.5";
+					tCUpgradeData.Save();
 				}
 				TCUpgradeData tCUpgradeData2 = tCUpgradeData;
 				if (tCUpgradeData2.CustomWallpapers == null)

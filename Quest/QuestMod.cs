@@ -84,6 +84,7 @@ namespace QuestHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterKillObserver("Quest", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             ModRunner.Ensure();
 
             HarmonyPlugin plugin;
@@ -205,6 +206,7 @@ namespace QuestHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterGameHookMod("Quest");
             ChatSayBridge.Unregister("Quest");
             UnbindBetterChat();
 

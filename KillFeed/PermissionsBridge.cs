@@ -6,19 +6,20 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
 namespace KillFeedHarmony
 {
-    /// <summary>Harmony-compatible user permission data (local mirror).</summary>
+    /// <summary>Oxide-compatible user permission data (local mirror).</summary>
     public class UserData
     {
         public HashSet<string> Perms  { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> Groups { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Harmony-compatible group permission data (local mirror).</summary>
+    /// <summary>Oxide-compatible group permission data (local mirror).</summary>
     public class GroupData
     {
         public HashSet<string> Perms  { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -27,7 +28,7 @@ namespace KillFeedHarmony
         public int    Rank        { get; set; }
     }
 
-    /// <summary>Harmony permission.* parity via Permissions Harmony mod (lazy reflection binding).</summary>
+    /// <summary>Oxide permission.* parity via Permissions Harmony mod (lazy reflection binding).</summary>
     public static class PermissionsBridge
     {
         private static Type   _permType;
@@ -291,16 +292,7 @@ namespace KillFeedHarmony
             if (result == null) return Array.Empty<string>();
             if (result is string[] arr) return arr;
             if (result is IEnumerable e)
-            {
-                var list = new List<string>();
-                foreach (var o in e)
-                {
-                    var s = o?.ToString();
-                    if (!string.IsNullOrEmpty(s))
-                        list.Add(s);
-                }
-                return list.Count == 0 ? Array.Empty<string>() : list.ToArray();
-            }
+                return e.Cast<object>().Select(o => o?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToArray();
             return Array.Empty<string>();
         }
 

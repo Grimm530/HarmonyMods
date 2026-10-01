@@ -439,7 +439,7 @@ namespace ServerPanelHarmony
                     }
 
                     foreach (var itemToTake in itemsToTake)
-                        itemToTake.RemoveFromContainer();
+                        itemToTake.RemoveFromContainer(null);
 
                     Pool.FreeUnmanaged(ref itemsToTake);
                 }

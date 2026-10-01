@@ -27,12 +27,14 @@ namespace CustomMapGen.Patches
             if (TerrainTexturing.Instance == null)
             {
                 UnityEngine.Debug.LogWarning("[CustomMapGen] Map image skipped: TerrainTexturing.Instance is null at DONE.");
+                MaybeUnloadAfterExistingMapImage();
                 return;
             }
 
             var config = CustomMapGen.Instance?.GetConfig();
             if (config?.MapImage == null || !config.MapImage.Enabled)
             {
+                MaybeUnloadAfterExistingMapImage();
                 MaybeQuit(config);
                 return;
             }
@@ -40,7 +42,22 @@ namespace CustomMapGen.Patches
             RanThisGen = true;
             UnityEngine.Debug.Log($"[CustomMapGen] SIZE: {World.Size} | SEED: {World.Seed} | Cached={World.Cached}");
             GenerateMapImageSync(config);
+            MaybeUnloadAfterExistingMapImage();
             MaybeQuit(config);
+        }
+
+        static void MaybeUnloadAfterExistingMapImage()
+        {
+            if (!CustomMapGen.IsLoadingExistingMap)
+                return;
+            if (CustomMapGen.ShouldKeepLoadedForDiagnostics())
+                return;
+
+            SwapSpawnTracking.Cancel();
+            UnityEngine.Debug.Log("[CustomMapGen] Map image written on existing map — unloading mod so swap/recovery do not run for the rest of this boot.");
+            var host = new GameObject("CustomMapGen_UnloadAfterMapImage");
+            UnityEngine.Object.DontDestroyOnLoad(host);
+            host.AddComponent<UnloadAfterDelay>().Begin(0.1f);
         }
 
         internal static string GetPngPath(MapGenConfig config)
@@ -117,6 +134,24 @@ namespace CustomMapGen.Patches
             {
                 yield return new WaitForSecondsRealtime(seconds);
                 Application.Quit();
+            }
+        }
+
+        private sealed class UnloadAfterDelay : MonoBehaviour
+        {
+            public void Begin(float seconds)
+            {
+                StartCoroutine(Run(seconds));
+            }
+
+            IEnumerator Run(float seconds)
+            {
+                if (seconds > 0f)
+                    yield return new WaitForSecondsRealtime(seconds);
+                else
+                    yield return null;
+                CustomMapGen.TryUnloadThisMod("map image written; existing map boot");
+                UnityEngine.Object.Destroy(gameObject);
             }
         }
     }

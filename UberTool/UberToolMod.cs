@@ -89,6 +89,7 @@ namespace UberToolHarmony
                 plugin = new HarmonyPlugin();
                 HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
+                GrimmCorePluginHooks.Bind("UberTool", plugin);
             }
             catch (Exception ex)
             {
@@ -126,6 +127,7 @@ namespace UberToolHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCorePluginHooks.Unbind("UberTool");
             ChatSayBridge.Unregister("UberTool");
             if (_permissionsReadyCallback != null)
             {

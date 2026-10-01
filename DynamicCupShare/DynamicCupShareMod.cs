@@ -39,6 +39,8 @@ namespace DynamicCupShareHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("DynamicCupShare", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("DynamicCupShare", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
             try
@@ -105,6 +107,8 @@ namespace DynamicCupShareHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("DynamicCupShare");
+            GrimmCoreBridge.UnregisterGameHookMod("DynamicCupShare");
             try { ChatSayBridge.Unregister("DynamicCupShare"); } catch { }
 
             try

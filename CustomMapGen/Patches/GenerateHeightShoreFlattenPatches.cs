@@ -106,7 +106,7 @@ namespace CustomMapGen.Patches
                                     {
                                         int nx = gx + dx, nz = gz + dz;
                                         if (nx >= 0 && nx < res && nz >= 0 && nz < res)
-                                            skipFlatten[nx * res + nz] = true;
+                                            skipFlatten[nz * res + nx] = true;
                                     }
                             }
                         }
@@ -126,7 +126,7 @@ namespace CustomMapGen.Patches
                                 {
                                     int nx = gx + dx, nz = gz + dz;
                                     if (nx >= 0 && nx < res && nz >= 0 && nz < res)
-                                        skipFlatten[nx * res + nz] = true;
+                                        skipFlatten[nz * res + nx] = true;
                                 }
                         }
                     }
@@ -138,7 +138,7 @@ namespace CustomMapGen.Patches
                 {
                     for (int z = 1; z < res - 1; z++)
                     {
-                        if (skipFlatten[x * res + z])
+                        if (skipFlatten[z * res + x])
                             continue;
                         float normX = heightMap.Coordinate(x);
                         float normZ = heightMap.Coordinate(z);
@@ -173,7 +173,9 @@ namespace CustomMapGen.Patches
                             {
                                 avgHeight /= count;
                                 float smoothed = Mathf.Lerp(terrainHeight, avgHeight, flattenStrength);
-                                smoothedHeights[x * res + z] = (short)Mathf.Clamp(smoothed, short.MinValue, short.MaxValue);
+                                // dst stores normalized 0-1 via Float2Short. GetHeight returns world meters.
+                                float normalized = Mathf.Clamp01(TerrainMeta.NormalizeY(smoothed));
+                                smoothedHeights[z * res + x] = BitUtility.Float2Short(normalized);
                                 cellsFlattened++;
                             }
                         }
@@ -188,8 +190,7 @@ namespace CustomMapGen.Patches
                 
                 smoothedHeights.Dispose();
 
-                if (config.DebugLogging)
-                    UnityEngine.Debug.Log($"[CustomMapGen] [DEBUG] Shore flatten: applied to {cellsFlattened} cells (res={res})");
+                UnityEngine.Debug.Log($"[CustomMapGen] Shore flatten: smoothed {cellsFlattened} ocean-shore cells within {flattenRadius:0}m of the water line.");
 
                 // DEBUG: Log mainland cells that have ocean topology (0x80). Use with DisableShoreFlattenPatch/DisablePowerlineLayoutPatch/DisableRailPatch/DisableRiverLayoutPatch to isolate which patch (if any) affects topology.
                 TerrainTopologyMap topoMap = TerrainMeta.TopologyMap;

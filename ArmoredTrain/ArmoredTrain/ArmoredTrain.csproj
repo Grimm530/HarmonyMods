@@ -93,5 +93,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+    <Compile Include="..\..\_Shared\RecastNav.cs" Link="RecastNav.cs" />
   </ItemGroup>
 </Project>

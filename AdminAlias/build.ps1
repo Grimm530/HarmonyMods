@@ -7,7 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "AdminAlias.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $serverRoot = if ($env:OXIDE_SERVER_ROOT) { $env:OXIDE_SERVER_ROOT } else { "D:\!RustServer" }
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
     $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null

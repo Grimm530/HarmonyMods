@@ -3673,9 +3673,9 @@ namespace Harmony.Plugins
             public const string ADMIN = "customhelicoptertiers2.admin";
             private static readonly List<string> _permissions = new List<string> { ADMIN };
             public static IEnumerable<string> Permissions => _permissions;
-            public static void RegisterPermissions() { foreach (var p in _permissions) global::CHT.PermissionsBridge.RegisterPermission(p); }
-            public static bool HasPermission(BasePlayer player, string permissionName) => global::CHT.PermissionsBridge.UserHasPermission(player, permissionName);
-            public static void AddPermission(string permission, bool register = true) { if (!_permissions.Contains(permission)) { _permissions.Add(permission); if (register) global::CHT.PermissionsBridge.RegisterPermission(permission); } }
+            public static void RegisterPermissions() { foreach (var p in _permissions) global::PermissionsBridge.RegisterPermission(p); }
+            public static bool HasPermission(BasePlayer player, string permissionName) => global::PermissionsBridge.UserHasPermission(player, permissionName);
+            public static void AddPermission(string permission, bool register = true) { if (!_permissions.Contains(permission)) { _permissions.Add(permission); if (register) global::PermissionsBridge.RegisterPermission(permission); } }
         }
         #endregion Permissions
 

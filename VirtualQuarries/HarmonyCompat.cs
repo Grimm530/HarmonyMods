@@ -457,7 +457,7 @@ namespace Harmony.Core.Libraries.Covalence
         public bool HasPermission(string perm)
         {
             if (_p == null) return false;
-            return VirtualQuarriesHarmony.PermissionsBridge.UserHasPermission(_p.UserIDString, perm);
+            return PermissionsBridge.UserHasPermission(_p.UserIDString, perm);
         }
     }
 
@@ -758,64 +758,64 @@ namespace Harmony.Plugins
     // ---- PermissionLib ----------------------------------------------------
 
     /// <summary>
-    /// Harmony permission.* surface backed by VirtualQuarriesHarmony.PermissionsBridge
+    /// Harmony permission.* surface backed by PermissionsBridge
     /// (reflection bridge to PermissionsHarmony.PermissionsMod).
     /// </summary>
     public partial class PermissionLib
     {
         public void RegisterPermission(string perm, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.RegisterPermission(perm);
+            => PermissionsBridge.RegisterPermission(perm);
 
         public bool PermissionExists(string perm)
-            => VirtualQuarriesHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
         // Overload with plugin owner (legacy host passes the plugin; we ignore it).
         public bool PermissionExists(string perm, object plugin)
-            => VirtualQuarriesHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
 
         public bool UserHasPermission(string userId, string perm)
-            => VirtualQuarriesHarmony.PermissionsBridge.UserHasPermission(userId, perm);
+            => PermissionsBridge.UserHasPermission(userId, perm);
 
         public void GrantUserPermission(string userId, string perm, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.GrantUserPermission(userId, perm);
+            => PermissionsBridge.GrantUserPermission(userId, perm);
 
         public void RevokeUserPermission(string userId, string perm, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.RevokeUserPermission(userId, perm);
+            => PermissionsBridge.RevokeUserPermission(userId, perm);
 
         public string[] GetGroupPermissions(string group)
-            => VirtualQuarriesHarmony.PermissionsBridge.GetGroupPermissions(group);
+            => PermissionsBridge.GetGroupPermissions(group);
 
         public string[] GetUsersInGroup(string group)
-            => VirtualQuarriesHarmony.PermissionsBridge.GetUsersInGroup(group);
+            => PermissionsBridge.GetUsersInGroup(group);
 
         public string[] GetGroups()
-            => VirtualQuarriesHarmony.PermissionsBridge.GetGroups();
+            => PermissionsBridge.GetGroups();
 
         public bool GroupExists(string group)
-            => VirtualQuarriesHarmony.PermissionsBridge.GroupExists(group);
+            => PermissionsBridge.GroupExists(group);
 
         public bool CreateGroup(string name, string title, int rank)
-            => VirtualQuarriesHarmony.PermissionsBridge.CreateGroup(name, title, rank);
+            => PermissionsBridge.CreateGroup(name, title, rank);
 
         public bool GroupHasPermission(string group, string perm)
-            => VirtualQuarriesHarmony.PermissionsBridge.GroupHasPermission(group, perm);
+            => PermissionsBridge.GroupHasPermission(group, perm);
 
         public bool GrantGroupPermission(string group, string perm, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.GrantGroupPermission(group, perm);
+            => PermissionsBridge.GrantGroupPermission(group, perm);
 
         public bool RevokeGroupPermission(string group, string perm, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.RevokeGroupPermission(group, perm);
+            => PermissionsBridge.RevokeGroupPermission(group, perm);
 
         public bool UserHasGroup(string userId, string group)
-            => VirtualQuarriesHarmony.PermissionsBridge.UserHasGroup(userId, group);
+            => PermissionsBridge.UserHasGroup(userId, group);
 
         public void AddUserGroup(string userId, string group, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.AddUserGroup(userId, group);
+            => PermissionsBridge.AddUserGroup(userId, group);
 
         public void RemoveUserGroup(string userId, string group, object plugin = null)
-            => VirtualQuarriesHarmony.PermissionsBridge.RemoveUserGroup(userId, group);
+            => PermissionsBridge.RemoveUserGroup(userId, group);
 
         public string[] GetUserGroups(string userId)
-            => VirtualQuarriesHarmony.PermissionsBridge.GetUserGroups(userId);
+            => PermissionsBridge.GetUserGroups(userId);
     }
 
     // ---- TimerLib ---------------------------------------------------------
@@ -865,7 +865,7 @@ namespace Harmony.Plugins
         {
             if (secs > 0f) yield return new WaitForSeconds(secs); else yield return null;
             if (t.Destroyed) yield break;
-            try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex.Message); }
+            try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex); }
             t.Destroy();
             lock (_active) _active.Remove(t);
         }
@@ -877,7 +877,7 @@ namespace Harmony.Plugins
             {
                 if (secs > 0f) yield return new WaitForSeconds(secs); else yield return null;
                 if (t.Destroyed) break;
-                try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex.Message); }
+                try { cb(); } catch (Exception ex) { Debug.LogWarning("[VirtualQuarries] Timer: " + ex); }
                 count++;
             }
             t.Destroy();

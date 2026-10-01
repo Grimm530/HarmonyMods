@@ -3,11 +3,9 @@ using UnityEngine;
 
 namespace LimitEntities.Patches
 {
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     internal static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
+        public static void Postfix(BaseNetworkable __instance)
         {
             if (__instance is not BaseEntity entity || entity is BasePlayer) return;
             var service = LimitEntitiesMod.Service;
@@ -29,11 +27,9 @@ namespace LimitEntities.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), typeof(BaseNetworkable.DestroyMode), typeof(bool))]
     internal static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             if (__instance is not BaseEntity entity) return;
             var service = LimitEntitiesMod.Service;

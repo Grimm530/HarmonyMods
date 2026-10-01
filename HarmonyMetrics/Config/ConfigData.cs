@@ -48,4 +48,7 @@ public class ConfigData
 
     [JsonProperty(PropertyName = "Gather Work Queue Timing (expensive; patches every ObjectWorkQueue.RunJob)")]
     public bool GatherWorkQueueTiming = false;
+
+    [JsonProperty(PropertyName = "Gather Invoke Timing (expensive; wraps every InvokeHandler.DoTick Action.Invoke)")]
+    public bool GatherInvokeTiming = false;
 }

@@ -1186,7 +1186,7 @@ namespace Oxide.Plugins
             {
                 Item existing = container.itemList[i];
                 if (existing == null) continue;
-                existing.RemoveFromContainer();
+                existing.RemoveFromContainer(null);
                 existing.Remove();
             }
         }

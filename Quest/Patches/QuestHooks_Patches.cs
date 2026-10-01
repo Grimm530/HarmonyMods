@@ -156,10 +156,8 @@ namespace QuestHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill))]
     public static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
             try { QPlugin.Dispatch_OnEntityKill(__instance); }

@@ -47,20 +47,17 @@ namespace RaidableBases
             if (entity is not BaseCombatEntity combat)
                 return null;
 
-            // Prefer CanEntityTakeDamage when subscribed (PVE / TruePVE path).
-            // Fall back to OnEntityTakeDamage on PVP servers.
-            // Hook names are the RaidableBases instance methods (not this API's static methods).
+            // TruePVE CallHook only accepts bool. Always invoke the object-returning
+            // CanEntityTakeDamage method — never void OnEntityTakeDamage (Method.Invoke → null
+            // → RuleSets block OwnerID-0 raid buildings while player bases stay protected).
             var host = RaidableBasesHost.Instance;
             if (host == null || host.ModInstance == null)
                 return null;
 
-            if (host.IsSubscribed("CanEntityTakeDamage"))
-                return host.InvokeHookCached("CanEntityTakeDamage", combat, info);
+            if (!host.IsSubscribed("CanEntityTakeDamage") && !host.IsSubscribed("OnEntityTakeDamage"))
+                return null;
 
-            if (host.IsSubscribed("OnEntityTakeDamage"))
-                return host.InvokeHookCached("OnEntityTakeDamage", combat, info);
-
-            return null;
+            return host.InvokeCanEntityTakeDamage(combat, info);
         }
 
         /// <summary>

@@ -23,6 +23,7 @@ namespace ChestStacks
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterKillObserver("ChestStacks", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             try
             {
@@ -75,6 +76,7 @@ namespace ChestStacks
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterGameHookMod("ChestStacks");
             try
             {
                 if (_permissionsReadyCallback != null)

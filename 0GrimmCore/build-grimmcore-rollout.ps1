@@ -1,4 +1,4 @@
-# Full GrimmCore rollout: rebuild 0GrimmCore + all mods using unified Hurt dispatcher.
+# Full GrimmCore rollout: rebuild 0GrimmCore + Hurt/Spawn dispatcher consumers.
 $ErrorActionPreference = "Continue"
 $base = Split-Path $PSScriptRoot -Parent
 $harmonyMods = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..\HarmonyMods")).Path
@@ -29,7 +29,25 @@ $dirs = @(
     'Convoy',
     'RustRewards',
     'HitMarkers',
-    'Leaderboard'
+    'Leaderboard',
+    'AnimalSpawn',
+    'Shop',
+    'ServerQoL',
+    'RestoreItems',
+    'Radio',
+    'KaruzaVehicles',
+    'Hud',
+    'DynamicCupShare',
+    'AutoCodeLock',
+    'RemoverTool',
+    'LimitEntities',
+    'WaterBases',
+    'VirtualItems',
+    'UberTool',
+    'RocketGuidanceSystem',
+    'JetPack',
+    'BetterNPC',
+    'BagCooldowns'
 )
 
 $failed = @()

@@ -5043,11 +5043,12 @@ namespace RaidableBases
 
             [JsonProperty(PropertyName = "Offset Min")]
             [JsonConverter(typeof(Vector2Converter))]
-            public Vector2 OffsetMin = new(-117.966f, -149.658f);
+            // Anchor is right-center (1 0.5); panel is forced to 224px wide — keep the whole box on-screen.
+            public Vector2 OffsetMin = new(-236f, -149.658f);
 
             [JsonProperty(PropertyName = "Offset Max")]
             [JsonConverter(typeof(Vector2Converter))]
-            public Vector2 OffsetMax = new(-17.834f, -106.342f);
+            public Vector2 OffsetMax = new(-12f, -106.342f);
 
             [JsonProperty(PropertyName = en ? "Panel Alpha" : "Прозрачность панели")]
             public float Alpha = 0.98f;

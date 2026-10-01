@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.AI;
+using GrimmShared;
 using UnityEngine.Networking;
 using Time = UnityEngine.Time;
 using static TrainEngine;
@@ -2793,10 +2794,10 @@ namespace Harmony.Plugins
                 AutoTurret autoTurret = BuildManager.SpawnChildEntity(trainCar, "assets/prefabs/npc/autoturret/autoturret_deployed.prefab", locationConfig, 0, false) as AutoTurret;
                 BuildManager.UpdateEntityMaxHealth(autoTurret, turretConfig.Hp);
 
-                autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameWeapon));
+                autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameWeapon), null);
                 
                 if (turretConfig.CountAmmo > 0)
-                    autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameAmmo, turretConfig.CountAmmo));
+                    autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameAmmo, turretConfig.CountAmmo), null);
 
                 autoTurret.UpdateFromInput(IsAggressive() ? 10 : 0, 0);
                 autoTurret.isLootable = false;
@@ -2824,7 +2825,7 @@ namespace Harmony.Plugins
                 BuildManager.UpdateEntityMaxHealth(samSite, samSiteConfig.Hp);
 
                 if (samSiteConfig.CountAmmo > 0)
-                    samSite.inventory.Insert(ItemManager.CreateByName("ammo.rocket.sam", samSiteConfig.CountAmmo));
+                    samSite.inventory.Insert(ItemManager.CreateByName("ammo.rocket.sam", samSiteConfig.CountAmmo), null);
                 
                 samSite.UpdateFromInput(IsAggressive() ? 100 : 0, 0);
                 samSite.isLootable = false;
@@ -6011,7 +6012,7 @@ namespace Harmony.Plugins
 
             public static bool GetNavmeshInPoint(Vector3 position, float radius, out NavMeshHit navMeshHit)
             {
-                return NavMesh.SamplePosition(position, out navMeshHit, radius, 1);
+                return RecastNav.SamplePosition(position, out navMeshHit, radius, 1);
             }
         }
 

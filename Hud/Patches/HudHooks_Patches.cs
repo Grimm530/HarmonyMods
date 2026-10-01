@@ -54,10 +54,8 @@ namespace HudHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     public static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
         {
             try { HPlugin.Dispatch_OnEntitySpawned(__instance); }
@@ -65,10 +63,8 @@ namespace HudHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill))]
     public static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
             try { HPlugin.Dispatch_OnEntityKill(__instance); }

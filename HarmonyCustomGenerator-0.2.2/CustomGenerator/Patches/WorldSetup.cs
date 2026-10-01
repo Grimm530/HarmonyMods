@@ -29,15 +29,9 @@ namespace CustomGenerator.Patches {
 
     [HarmonyPatch]
     internal static class LoadingScreen_Update {
-        private static MethodBase TargetMethod() {
-            var type = AccessTools.TypeByName("LoadingScreen");
-            return type == null ? null : AccessTools.Method(type, "Update", new Type[] { typeof(string) });
-        }
-        private static bool Prepare() => TargetMethod() != null;
+        private static MethodBase TargetMethod() { return AccessTools.Method(AccessTools.TypeByName("LoadingScreen"), "Update", new Type[] { typeof(string) }); }
         private static void Prefix(ref string strType) {
             if (tempData.terrainTexturing == null || strType != "DONE")  return;
-            if (CustomGenerator.Bootstrap_StartupShared.IsLiveDedicatedServer())
-                return;
             Logging.Info($"SIZE: {tempData.mapsize} | SEED: {tempData.mapseed}");
 
             if (Config.Swap.Enabled) {

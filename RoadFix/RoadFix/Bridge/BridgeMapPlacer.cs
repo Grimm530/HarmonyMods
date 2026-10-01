@@ -61,6 +61,7 @@ internal static class BridgeMapPlacer
 
         // One path direction for yaw + pitch: StartDist → EndDist (avoids flipped spans).
         Vector3 pathDir = GetPathDirection(crossing);
+        ApplyPathSweepCover(ref crossing, pathDir, cfg);
 
         TemplateMetrics metrics = GetMetrics(fullPath, pathCenterLocal, lengthOnX);
 
@@ -178,6 +179,83 @@ internal static class BridgeMapPlacer
             return stored.normalized;
 
         return Vector3.forward;
+    }
+
+    /// <summary>
+    /// Widen (and shift) the deck so a curved path stays inside the walls.
+    /// A straight chord yaw leaves an arc that clips one parapet; cover is the
+    /// lateral envelope of the spline across the span, plus pad.
+    /// </summary>
+    private static void ApplyPathSweepCover(
+        ref BridgeCrossing crossing,
+        Vector3 pathDir,
+        RoadFixConfig.ConfigData cfg)
+    {
+        if (cfg == null || crossing.Path?.Path == null)
+            return;
+
+        Vector3 side = Vector3.Cross(Vector3.up, pathDir);
+        side.y = 0f;
+        if (side.sqrMagnitude < 0.0001f)
+            return;
+        side.Normalize();
+
+        float start = crossing.StartDist;
+        float end = crossing.EndDist;
+        float pathLen = crossing.Path.Path.Length;
+        float extra = 8f;
+        float d0 = Mathf.Max(0f, start - extra);
+        float d1 = Mathf.Min(pathLen, end + extra);
+        float mid = (start + end) * 0.5f;
+        Vector3 origin = BridgeTerrain.SamplePoint(crossing.Path, mid);
+        origin.y = 0f;
+
+        bool road = crossing.Path.Width >= 8f;
+        float half = crossing.Path.Width > 0.5f ? crossing.Path.Width * 0.5f : (road ? 5f : 2f);
+        float pad = road ? Mathf.Max(0f, cfg.RoadBridgeWidthPad) : Mathf.Max(0f, cfg.RailBridgeWidthPad);
+
+        float minL = -half;
+        float maxL = half;
+        int samples = 0;
+        float step = 3f;
+        for (float d = d0; d <= d1 + 0.01f; d += step)
+        {
+            Vector3 pt = BridgeTerrain.SamplePoint(crossing.Path, d);
+            pt.y = 0f;
+            float lat = side.x * (pt.x - origin.x) + side.z * (pt.z - origin.z);
+            if (lat - half < minL) minL = lat - half;
+            if (lat + half > maxL) maxL = lat + half;
+            samples++;
+        }
+
+        if (samples < 2)
+            return;
+
+        float sweep = maxL - minL;
+        float straight = half * 2f;
+        float midL = (minL + maxL) * 0.5f;
+        // Straight spans stay native. Only widen when the spline bows off the chord.
+        if (sweep <= straight + 1.25f && Mathf.Abs(midL) < 0.75f)
+            return;
+
+        float need = sweep + pad * 2f;
+        if (need > crossing.CoverWidth)
+            crossing.CoverWidth = need;
+
+        if (Mathf.Abs(midL) > 0.35f)
+        {
+            crossing.Center = new Vector3(
+                origin.x + side.x * midL,
+                crossing.Center.y,
+                origin.z + side.z * midL);
+        }
+
+        if (cfg.DebugLogging)
+        {
+            Debug.Log(
+                $"[RoadFix] Sweep cover '{crossing.Path.Name}' lateral={minL:F1}..{maxL:F1} " +
+                $"cover={crossing.CoverWidth:F1}m shift={midL:F1}m");
+        }
     }
 
     /// <summary>

@@ -573,7 +573,8 @@ namespace GrimmNPC
 
             if (distance > choice.AttackRange)
             {
-                brain.Navigator.SetDestination(target.transform.position, BaseNavigator.NavigationSpeed.Normal);
+                Vector3 raidDest = GrimmNPC.GetCombatApproachPosition(npc, target.transform.position, Mathf.Max(2f, choice.AttackRange * 0.5f));
+                brain.Navigator.SetDestination(raidDest, BaseNavigator.NavigationSpeed.Normal);
                 return true;
             }
 
@@ -1359,9 +1360,7 @@ namespace GrimmNPC
                 if (brain != null && brain.Navigator != null)
                 {
                     Vector3 targetPos = target.transform.position;
-                    Vector3 direction = (targetPos - npc.transform.position).normalized;
-                    // Target position at 2f distance (minimum distance when we get in range)
-                    Vector3 destination = targetPos - direction * 2f;
+                    Vector3 destination = GrimmNPC.GetCombatApproachPosition(npc, targetPos, 2f);
                     brain.Navigator.SetDestination(destination, BaseNavigator.NavigationSpeed.Fast); // Full speed to close gap
                 }
                 return false; // Not in range yet
@@ -1396,9 +1395,7 @@ namespace GrimmNPC
                 {
                     Vector3 targetPos = target.transform.position;
                     Vector3 npcPos = npc.transform.position;
-                    Vector3 toTarget = (targetPos - npcPos).normalized;
-                    // Push forward toward target (maintain 2f minimum)
-                    Vector3 pushPosition = targetPos - toTarget * 2f;
+                    Vector3 pushPosition = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPos, 2f);
                     brain.Navigator.SetDestination(pushPosition, BaseNavigator.NavigationSpeed.Fast);
                 }
                 
@@ -1462,7 +1459,7 @@ namespace GrimmNPC
                 {
                     // Push forward toward target (full speed) while firing
                     // Target position at minimum distance (2f) from target
-                    Vector3 pushPosition = targetPos - toTarget * minDistance;
+                    Vector3 pushPosition = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPos, minDistance);
                     brain.Navigator.SetDestination(pushPosition, BaseNavigator.NavigationSpeed.Fast);
                 }
             }
@@ -1644,8 +1641,7 @@ namespace GrimmNPC
                             else
                             {
                                 // Fallback: move to optimal range
-                                Vector3 directionToTarget = (targetPos - npcPos).normalized;
-                                movePos = targetPos - directionToTarget * SatchelOptimalRange;
+                                movePos = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPos, SatchelOptimalRange);
                             }
                             brain.Navigator.SetDestination(movePos, BaseNavigator.NavigationSpeed.Fast);
                             return true; // Block other actions while moving
@@ -1695,7 +1691,7 @@ namespace GrimmNPC
                         // Move to melee range and attack
                         if (distance > settings.AttackRangeMelee)
                         {
-                            brain.Navigator.SetDestination(targetPos, BaseNavigator.NavigationSpeed.Fast);
+                            brain.Navigator.SetDestination(GrimmNPC.GetCombatApproachPosition(npc, targetPos, 2f), BaseNavigator.NavigationSpeed.Fast);
                             return true; // Block actions while moving to melee range
                         }
                         else
@@ -1818,11 +1814,11 @@ namespace GrimmNPC
             // Special handling for Chainsaw (like NpcSpawn lines 1332-1337)
             if (weapon is Chainsaw chainsaw)
             {
-                chainsaw.SetAttackStatus(true);
+                chainsaw.SetAttackStatus(true, BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
                 npc.Invoke(() =>
                 {
                     if (chainsaw != null && !chainsaw.IsDestroyed)
-                        chainsaw.SetAttackStatus(false);
+                        chainsaw.SetAttackStatus(false, BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
                 }, chainsaw.attackSpacing + 0.5f);
             }
 
@@ -1971,8 +1967,7 @@ namespace GrimmNPC
                     var brain = npc.Brain;
                     if (brain != null && brain.Navigator != null)
                     {
-                        Vector3 directionToTarget = (targetPos - npcPos).normalized;
-                        Vector3 optimalPos = targetPos - directionToTarget * SatchelOptimalRange;
+                        Vector3 optimalPos = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPos, SatchelOptimalRange);
                         brain.Navigator.SetDestination(optimalPos, BaseNavigator.NavigationSpeed.Fast);
                     }
                     return false; // Don't throw yet, need to move closer
@@ -1983,8 +1978,7 @@ namespace GrimmNPC
                     var brain = npc.Brain;
                     if (brain != null && brain.Navigator != null)
                     {
-                        Vector3 directionToTarget = (targetPos - npcPos).normalized;
-                        Vector3 optimalPos = targetPos - directionToTarget * SatchelOptimalRange;
+                        Vector3 optimalPos = GrimmNPC.GetCombatApproachPosition(npc, npcPos, targetPos, SatchelOptimalRange);
                         brain.Navigator.SetDestination(optimalPos, BaseNavigator.NavigationSpeed.Normal);
                     }
                     // Still try to throw if close enough (allow approach while throwing)

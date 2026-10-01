@@ -30,31 +30,6 @@ namespace TeleportGUI
             return GetMaxHomes();
         }
 
-        private enum TeleportPaymentKind { Teleport, Home, Warp }
-
-        private bool HasReachedDailyLimit(BasePlayer player, TeleportGUIData.UserData userData, TeleportPaymentKind kind)
-        {
-            if (userData == null) return false;
-            int limit;
-            int used;
-            switch (kind)
-            {
-                case TeleportPaymentKind.Home:
-                    limit = GetHomeDailyLimit();
-                    used = userData.HomeUsesToday;
-                    break;
-                case TeleportPaymentKind.Warp:
-                    limit = GetWarpDailyLimit();
-                    used = userData.WarpUsesToday;
-                    break;
-                default:
-                    limit = GetTPDailyLimit();
-                    used = userData.TPUsesToday;
-                    break;
-            }
-            return limit > 0 && used >= limit;
-        }
-
         private void CmdTpr(BasePlayer player, string[] args, bool tphere)
         {
             if (!tphere)
@@ -92,14 +67,6 @@ namespace TeleportGUI
         private bool IsInsideEntity(Vector3 position) => false;
 
         private bool MeetsPositionConditions(BasePlayer player, Vector3 position, bool isWarp) => true;
-
-        private IEnumerable<KeyValuePair<string, TeleportGUIData.WarpPoint>> EnumerateAllWarps()
-        {
-            if (_data?.WarpPoints == null)
-                yield break;
-            foreach (var kvp in _data.WarpPoints)
-                yield return kvp;
-        }
 
         private void RegisterWarpChatCommands() { }
 

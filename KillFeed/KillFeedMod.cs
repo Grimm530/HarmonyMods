@@ -79,6 +79,7 @@ namespace KillFeedHarmony
                 plugin = new HarmonyPlugin();
                 HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
+                GrimmCorePluginHooks.Bind("KillFeed", plugin);
             }
             catch (Exception ex)
             {
@@ -116,6 +117,7 @@ namespace KillFeedHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCorePluginHooks.Unbind("KillFeed");
             ChatSayBridge.Unregister("KillFeed");
             if (_permissionsReadyCallback != null)
             {

@@ -1569,7 +1569,7 @@ namespace Harmony.Plugins
                     {
                         try
                         {
-                            item.RemoveFromContainer();
+                            item.RemoveFromContainer(null);
                             // Try to give it back to the player if possible
                             var player = container.playerOwner;
                             if (player != null)
@@ -8460,7 +8460,7 @@ namespace Harmony.Plugins
             {
                 try
                 {
-                    invalidItem.RemoveFromContainer();
+                    invalidItem.RemoveFromContainer(null);
                     // Try to find the owner to give the item back
                     var container = invalidItem.GetRootContainer();
                     if (container != null && container.playerOwner != null)

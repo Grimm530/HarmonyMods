@@ -417,7 +417,6 @@ namespace RustRewardsHarmony
                 if (!_loggedLink)
                 {
                     _loggedLink = true;
-                    Debug.Log("[GrimmRewards] Linked to Permissions Harmony mod for permission checks.");
                 }
                 else
                     Debug.Log($"[GrimmRewards] Re-linked to Permissions Harmony mod (gen={gen}).");
@@ -502,15 +501,7 @@ namespace RustRewardsHarmony
             // Local grants (tests / fallback)
             if (_granted.Contains(userId + ":" + perm)) return true;
 
-            EnsureBound();
-            try
-            {
-                if (_userHas != null && _userHas.Invoke(null, new object[] { userId, perm }) is bool ok)
-                    return ok;
-            }
-            catch { }
-
-            return false;
+            return PermissionsBridge.UserHasPermission(userId, perm);
         }
 
         public void GrantUserPermission(string userId, string perm)
@@ -518,7 +509,7 @@ namespace RustRewardsHarmony
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(perm)) return;
             _granted.Add(userId + ":" + perm);
             EnsureBound();
-            try { _grantUser?.Invoke(null, new object[] { userId, perm }); } catch { }
+            PermissionsBridge.GrantUserPermission(userId, perm);
         }
 
         private static MethodInfo _userHasGroup;

@@ -22,6 +22,13 @@ namespace RustServerMetrics.HarmonyPatches.Delayed
                 return false;
             }
 
+            var config = MetricsLogger.Instance?.Configuration;
+            if (config != null && !config.gatherWorkQueueTiming)
+            {
+                Debug.Log("[ServerMetrics]: Skipping ObjectWorkQueue_RunJob_Patch (disabled in config)");
+                return false;
+            }
+
             return true;
         }
         
@@ -29,8 +36,8 @@ namespace RustServerMetrics.HarmonyPatches.Delayed
         public static IEnumerable<MethodBase> TargetMethods(Harmony harmonyInstance)
         {
             var assemblyCSharp = typeof(BaseNetworkable).Assembly;
-            Stack<Type> typesToScan = new Stack<Type>(assemblyCSharp.GetTypes());
-            HashSet<string> yielded = new ();
+            Stack<Type> typesToScan = new Stack<Type>(Helpers.GetLoadableTypes(assemblyCSharp));
+            HashSet<string> yielded = new HashSet<string>();
             
             while (typesToScan.TryPop(out Type type))
             {
@@ -38,14 +45,25 @@ namespace RustServerMetrics.HarmonyPatches.Delayed
                 foreach (var t in subTypes)
                     typesToScan.Push(t);
 
+                if (type.ContainsGenericParameters)
+                    continue;
+
                 if (type.BaseType == null || !type.BaseType.Name.Contains("ObjectWorkQueue"))
                     continue;
 
-                if (!yielded.Contains(type.FullName))
-                {
-                    yielded.Add(type.FullName);
-                    yield return AccessTools.Method(type, "RunJob");
-                }
+                if (yielded.Contains(type.FullName))
+                    continue;
+
+                yielded.Add(type.FullName);
+
+                // Newer queues (e.g. PowergridStageChangeWorkQueue) inherit ObjectWorkQueue
+                // but implement RunList instead of RunJob. AccessTools.Method returns null then;
+                // Harmony rejects a TargetMethods list that contains null.
+                MethodInfo runJob = AccessTools.Method(type, "RunJob");
+                if (runJob == null || runJob.IsAbstract)
+                    continue;
+
+                yield return runJob;
             }
         }
 

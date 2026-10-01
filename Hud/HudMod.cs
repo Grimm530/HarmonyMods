@@ -84,6 +84,8 @@ namespace HudHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("Hud", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("Hud", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             ModRunner.Ensure();
 
             HarmonyPlugin plugin;
@@ -205,6 +207,8 @@ namespace HudHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("Hud");
+            GrimmCoreBridge.UnregisterGameHookMod("Hud");
             ChatSayBridge.Unregister("Hud");
             UnbindBetterChat();
 
@@ -297,7 +301,14 @@ namespace HudHarmony
             string commandName = parts[0].ToLowerInvariant();
             if (!_chatCommandNames.Contains(commandName)) return false;
 
-            string[] args = parts.Skip(1).ToArray();
+            string[] args;
+            if (parts.Length <= 1)
+                args = Array.Empty<string>();
+            else
+            {
+                args = new string[parts.Length - 1];
+                Array.Copy(parts, 1, args, 0, args.Length);
+            }
             var plugin = Plugin;
             if (plugin == null) return false;
 

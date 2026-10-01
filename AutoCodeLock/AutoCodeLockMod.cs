@@ -40,6 +40,8 @@ namespace AutoCodeLockHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("AutoCodeLock", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("AutoCodeLock", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
             try
@@ -99,6 +101,8 @@ namespace AutoCodeLockHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("AutoCodeLock");
+            GrimmCoreBridge.UnregisterGameHookMod("AutoCodeLock");
             try { ChatSayBridge.Unregister("AutoCodeLock"); } catch { }
 
             try

@@ -41,7 +41,7 @@ This mod implements **vending machine population** and **IO connection restorati
   Populates NPC vending machines using the vending profiles defined in RustEdit when the map was saved.
 
 - **IO (electrical) connections**  
-  Restores wiring between IO entities (switches, door controllers, lights, timers, RF receivers/broadcasters, power counters, branches, card readers, etc.) from the RustEdit IO map layer. Connections are applied a few seconds after world spawn so all prefabs exist before wiring.
+  Restores wiring between IO entities (switches, door controllers, lights, timers, RF receivers/broadcasters, power counters, branches, card readers, etc.) from RustEdit IO data and from a `customgenerator` extras layer when the map has one. Connections are applied after world spawn so prefabs exist before wiring. The mod stays loaded; it does not unload after the wires are applied.
 
 ## Not Implemented (vs full Oxide.Ext.RustEdit)
 
@@ -68,8 +68,10 @@ RustEdit stores data in the map file as custom map layers. This mod:
 4. Populates machines with up to 7 random items from the profile.
 
 **IO (electrical)**
-1. Reads the IO layer via `World.GetMap("rustedit_io")` or by scanning map layers for ProtoBuf `SerializedIOData`.
-2. After prefabs have spawned, matches each serialized entity by prefab path + position and restores input/output connections and entity settings (timer length, frequency, access level, etc.).
+1. Reads RustEdit IO from `io`, `rustedit_io`, and other custom map layers. Both XML `SerializedIOData` (what RustEdit saves) and protobuf IO data are accepted. The layer with the most valid entities is used.
+2. Also reads the `customgenerator` JSON layer. Its `IO` list (prefab, `float[3]` position, inputs/outputs, and settings) is world-space wiring and is applied together with any RustEdit IO layer. A `customgenerator` entity within 1 meter of the same prefab replaces the RustEdit record so the live-server positions win.
+3. After prefabs have spawned, each entity is matched by prefab and position. Candidates are indexed by prefab, and only the closest entity within 1 meter is used. Output and input slots are bounds-checked. A wire that is already on the right slot is left alone. The log names the prefab, slot, and why a connection was skipped.
+4. Settings copied from the saved entity: card reader access level, door manipulator effect, timer length, RF frequency, unlimited ammo, peacekeeper, turret weapon, branch amount, counter target, RC identifier, counter passthrough, elevator floors, and phone name.
 
 If vending machines remain empty:
 
@@ -79,9 +81,9 @@ If vending machines remain empty:
 
 If custom electrics/IO still don’t work:
 
-- Ensure the map was saved in RustEdit with IO connections defined (wires between entities).
-- The IO layer may use a different key; the mod tries `rustedit_io`, `io`, and scans other map layers for valid ProtoBuf IO data.
-- Processing runs once, 5 seconds after the first prefab is tracked; if the world is still loading, increase the delay in `RustEditIOProcessor.cs` if needed.
+- RustEdit maps need an IO layer (`io`, `rustedit_io`, or another XML/protobuf layer). Maps that only carry monument wiring in the `customgenerator` layer are wired from that JSON list.
+- Matching requires the prefab within 1 meter of the saved position. The server log lists the first missing entities and the first failed slots.
+- Wiring runs about 2 seconds after the loading screen reports done, with a 90 second fallback after the first prefab if IO data was found at startup. `rustedit.io.reset` runs it again from the map.
 
 ## Compatibility
 

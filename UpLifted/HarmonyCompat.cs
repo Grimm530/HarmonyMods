@@ -457,7 +457,7 @@ namespace Harmony.Core.Libraries.Covalence
         public bool HasPermission(string perm)
         {
             if (_p == null) return false;
-            return UpLiftedHarmony.PermissionsBridge.UserHasPermission(_p.UserIDString, perm);
+            return PermissionsBridge.UserHasPermission(_p.UserIDString, perm);
         }
     }
 
@@ -758,64 +758,64 @@ namespace Harmony.Plugins
     // ---- PermissionLib ----------------------------------------------------
 
     /// <summary>
-    /// Harmony permission.* surface backed by UpLiftedHarmony.PermissionsBridge
+    /// Harmony permission.* surface backed by PermissionsBridge
     /// (reflection bridge to PermissionsHarmony.PermissionsMod).
     /// </summary>
     public partial class PermissionLib
     {
         public void RegisterPermission(string perm, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.RegisterPermission(perm);
+            => PermissionsBridge.RegisterPermission(perm);
 
         public bool PermissionExists(string perm)
-            => UpLiftedHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
         // Overload with plugin owner (legacy host passes the plugin; we ignore it).
         public bool PermissionExists(string perm, object plugin)
-            => UpLiftedHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
 
         public bool UserHasPermission(string userId, string perm)
-            => UpLiftedHarmony.PermissionsBridge.UserHasPermission(userId, perm);
+            => PermissionsBridge.UserHasPermission(userId, perm);
 
         public void GrantUserPermission(string userId, string perm, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.GrantUserPermission(userId, perm);
+            => PermissionsBridge.GrantUserPermission(userId, perm);
 
         public void RevokeUserPermission(string userId, string perm, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.RevokeUserPermission(userId, perm);
+            => PermissionsBridge.RevokeUserPermission(userId, perm);
 
         public string[] GetGroupPermissions(string group)
-            => UpLiftedHarmony.PermissionsBridge.GetGroupPermissions(group);
+            => PermissionsBridge.GetGroupPermissions(group);
 
         public string[] GetUsersInGroup(string group)
-            => UpLiftedHarmony.PermissionsBridge.GetUsersInGroup(group);
+            => PermissionsBridge.GetUsersInGroup(group);
 
         public string[] GetGroups()
-            => UpLiftedHarmony.PermissionsBridge.GetGroups();
+            => PermissionsBridge.GetGroups();
 
         public bool GroupExists(string group)
-            => UpLiftedHarmony.PermissionsBridge.GroupExists(group);
+            => PermissionsBridge.GroupExists(group);
 
         public bool CreateGroup(string name, string title, int rank)
-            => UpLiftedHarmony.PermissionsBridge.CreateGroup(name, title, rank);
+            => PermissionsBridge.CreateGroup(name, title, rank);
 
         public bool GroupHasPermission(string group, string perm)
-            => UpLiftedHarmony.PermissionsBridge.GroupHasPermission(group, perm);
+            => PermissionsBridge.GroupHasPermission(group, perm);
 
         public bool GrantGroupPermission(string group, string perm, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.GrantGroupPermission(group, perm);
+            => PermissionsBridge.GrantGroupPermission(group, perm);
 
         public bool RevokeGroupPermission(string group, string perm, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.RevokeGroupPermission(group, perm);
+            => PermissionsBridge.RevokeGroupPermission(group, perm);
 
         public bool UserHasGroup(string userId, string group)
-            => UpLiftedHarmony.PermissionsBridge.UserHasGroup(userId, group);
+            => PermissionsBridge.UserHasGroup(userId, group);
 
         public void AddUserGroup(string userId, string group, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.AddUserGroup(userId, group);
+            => PermissionsBridge.AddUserGroup(userId, group);
 
         public void RemoveUserGroup(string userId, string group, object plugin = null)
-            => UpLiftedHarmony.PermissionsBridge.RemoveUserGroup(userId, group);
+            => PermissionsBridge.RemoveUserGroup(userId, group);
 
         public string[] GetUserGroups(string userId)
-            => UpLiftedHarmony.PermissionsBridge.GetUserGroups(userId);
+            => PermissionsBridge.GetUserGroups(userId);
     }
 
     // ---- TimerLib ---------------------------------------------------------

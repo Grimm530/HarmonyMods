@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 using ConVar;
@@ -14,8 +13,6 @@ namespace CustomMapGen.Patches
     [HarmonyPatch(typeof(Bootstrap), "DedicatedServerStartup")]
     public static class Bootstrap_DedicatedServerStartup_Patch
     {
-        private const string ModName = "CustomMapGen";
-
         static void Prefix()
         {
             if (!CustomMapGen.IsCustomMapGenEnabled())
@@ -37,20 +34,17 @@ namespace CustomMapGen.Patches
             {
                 if (config?.MapImage != null && config.MapImage.Enabled)
                 {
-                    UnityEngine.Debug.Log("[CustomMapGen] Existing map detected — keeping mod loaded to write map image (world.rendermap + cargo).");
+                    UnityEngine.Debug.Log("[CustomMapGen] Existing map detected — keeping mod loaded only to write map image (world.rendermap + cargo), then unload. Swap/recovery will not run.");
                     return;
                 }
-                bool keepLoadedForDiagnostics =
-                    config?.DebugLogging == true &&
-                    (config.DebugLogSkippedWorldPrefabs || config.DebugLogSwapMapPrefabBreakdown);
-                if (keepLoadedForDiagnostics)
+                if (CustomMapGen.ShouldKeepLoadedForDiagnostics())
                 {
-                    UnityEngine.Debug.Log("[CustomMapGen] Existing map detected (Bootstrap) — keeping mod loaded for diagnostics (no procgen changes).");
+                    UnityEngine.Debug.Log("[CustomMapGen] Existing map detected (Bootstrap) — keeping mod loaded for diagnostics (no procgen changes, no late entity recovery).");
                     return;
                 }
 
                 UnityEngine.Debug.Log("[CustomMapGen] Existing map detected (Bootstrap) — unloading mod for this run (not a fresh wipe, diagnostics disabled).");
-                TryUnloadThisMod();
+                CustomMapGen.TryUnloadThisMod("existing map, not a fresh wipe");
                 return;
             }
 
@@ -62,44 +56,6 @@ namespace CustomMapGen.Patches
                 int size = Mathf.Clamp(ms.MapSizeOverride, 3500, 6000);
                 Server.worldsize = size;
                 UnityEngine.Debug.Log($"[CustomMapGen] Map size override: {size}");
-            }
-        }
-
-        /// <summary>Call HarmonyLoader.TryUnloadMod(ModName) via reflection so this mod is fully unloaded when existing map is present.</summary>
-        private static void TryUnloadThisMod()
-        {
-            try
-            {
-                Type loaderType = null;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    try
-                    {
-                        loaderType = asm.GetType("HarmonyLoader");
-                        if (loaderType != null) break;
-                    }
-                    catch { }
-                }
-                if (loaderType == null)
-                {
-                    UnityEngine.Debug.LogWarning("[CustomMapGen] HarmonyLoader type not found; cannot unload mod.");
-                    return;
-                }
-                var method = loaderType.GetMethod("TryUnloadMod", BindingFlags.Public | BindingFlags.Static, null, new Type[] { typeof(string) }, null);
-                if (method == null)
-                {
-                    UnityEngine.Debug.LogWarning("[CustomMapGen] HarmonyLoader.TryUnloadMod not found; cannot unload mod.");
-                    return;
-                }
-                bool result = (bool)method.Invoke(null, new object[] { ModName });
-                if (result)
-                    UnityEngine.Debug.Log("[CustomMapGen] Mod unloaded (harmony.unload " + ModName + ").");
-                else
-                    UnityEngine.Debug.LogWarning("[CustomMapGen] TryUnloadMod returned false (mod may not have been loaded).");
-            }
-            catch (Exception ex)
-            {
-                UnityEngine.Debug.LogWarning("[CustomMapGen] Failed to unload mod: " + ex.Message);
             }
         }
     }

@@ -3378,12 +3378,12 @@ namespace Harmony.Plugins
                 fuelBox.onlyAcceptCategory = ItemCategory.Resources;
                 fuelBox.needsBuildingPrivilegeToUse = false;
                 fuelBox.Spawn();
-                fuelBox.inventory.onItemAddedRemoved = new Action<Item, bool>(OnDropBoxAdded);
+                fuelBox.inventory.onItemAddedRemoved = new Action<Item, bool, BasePlayer>(OnDropBoxAdded);
                 FtCmpnnts(fuelBox);
                 fuelBox.SetFlag(BaseEntity.Flags.Locked, !enableFuel);
             }
 
-            private void OnDropBoxAdded(Item item, bool added)
+            private void OnDropBoxAdded(Item item, bool added, BasePlayer sourcePlayer)
             {
                 if (!added || item == null) return;
                 fuelBox.inventory.itemList.Remove(item);
@@ -3413,7 +3413,7 @@ namespace Harmony.Plugins
                 fuelBox.inventory.onlyAllowedItems = new ItemDefinition[] { ItemManager.FindItemDefinition(-946369541) };
                 fuelBox.onlyAcceptCategory = ItemCategory.Resources;
                 fuelBox.needsBuildingPrivilegeToUse = false;
-                fuelBox.inventory.onItemAddedRemoved = new Action<Item, bool>(OnDropBoxAdded);
+                fuelBox.inventory.onItemAddedRemoved = new Action<Item, bool, BasePlayer>(OnDropBoxAdded);
                 fuelBox.SetFlag(BaseEntity.Flags.Locked, !enableFuel);
                 FtCmpnnts(fuelBox);
             }
@@ -4262,14 +4262,14 @@ namespace Harmony.Plugins
                 storeBox.ServerInitialize(null, fuelBox.inventorySlots);
                 storeBox.GiveUID();
                 storeBox.onlyAllowedItems = new ItemDefinition[] { ItemManager.FindItemDefinition(-148794216) };
-                storeBox.onItemAddedRemoved += new Action<Item, bool>(OnGarageDoorAdded);
+                storeBox.onItemAddedRemoved += new Action<Item, bool, BasePlayer>(OnGarageDoorAdded);
                 storeBox.playerOwner = player;
                 player.inventory.loot.AddContainer(storeBox);
                 player.inventory.loot.SendImmediate();
                 player.ClientRPC(RpcTarget.Player(r("ECP_BcraYbbgCnary"), player), r("znvyobkragel"));
             }
 
-            private void OnGarageDoorAdded(Item item, bool bAdded)
+            private void OnGarageDoorAdded(Item item, bool bAdded, BasePlayer sourcePlayer)
             {
                 ulong oldSkin = skinID;
                 skinID = item.skin == 0uL
@@ -4291,7 +4291,7 @@ namespace Harmony.Plugins
                 tunaBoxes[f].ServerInitialize(null, fuelBox.inventorySlots);
                 tunaBoxes[f].GiveUID();
                 tunaBoxes[f].onlyAllowedItems = new ItemDefinition[] { ItemManager.FindItemDefinition(-946369541) };
-                tunaBoxes[f].onItemAddedRemoved += new Action<Item, bool>(OnTunaFuelAdded);
+                tunaBoxes[f].onItemAddedRemoved += new Action<Item, bool, BasePlayer>(OnTunaFuelAdded);
                 tunaBoxes[f].playerOwner = player;
                 tunaBoxes[f].entityOwner = parent;
                 player.inventory.loot.AddContainer(tunaBoxes[f]);
@@ -4299,7 +4299,7 @@ namespace Harmony.Plugins
                 player.ClientRPC(RpcTarget.Player(r("ECP_BcraYbbgCnary"), player), r("znvyobkragel"));
             }
 
-            private void OnTunaFuelAdded(Item item, bool bAdded)
+            private void OnTunaFuelAdded(Item item, bool bAdded, BasePlayer sourcePlayer)
             {
                 if (!bAdded || item == null) return;
                 ItemContainer parent = item.parent;

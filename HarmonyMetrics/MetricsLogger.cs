@@ -19,6 +19,9 @@ public class MetricsLogger : SingletonComponent<MetricsLogger>
     private readonly Dictionary<ulong, Action> _playerStatsActions = new Dictionary<ulong, Action>();
     private readonly Dictionary<ulong, uint> _perfReportDelayCounter = new Dictionary<ulong, uint>();
     private readonly HashSet<string> _knownHarmonyMods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _harmonyPatchCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _harmonyModsWritten = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private const string HarmonyLoaderIdPrefix = "com.facepunch.rust_dedicated.";
     private readonly List<ConsoleSystem.Command> _registeredCommands = new List<ConsoleSystem.Command>();
     private bool _harmonySnapshotPrimed;
     private bool _delayedPatchesApplied;
@@ -745,18 +748,47 @@ public class MetricsLogger : SingletonComponent<MetricsLogger>
         }
 
         var mods = HarmonyLoader.GetHarmonyMods();
-        var totalMods = 0;
+        FillHarmonyPatchCounts();
 
+        var totalMods = 0;
+        var totalPatches = 0;
+        foreach (var n in _harmonyPatchCounts.Values)
+        {
+            totalPatches += n;
+        }
+
+        _harmonyModsWritten.Clear();
         foreach (var mod in mods)
         {
             totalMods++;
+            _harmonyPatchCounts.TryGetValue(mod.Name ?? "", out var patches);
+            _harmonyModsWritten.Add(mod.Name ?? "");
             UploadPacket("harmony_mods", mod, (builder, info) =>
             {
                 builder.Append(",mod=\"");
                 AppendSanitized(builder, info.Name);
                 builder.Append("\" version=\"");
                 builder.Append(info.Version ?? "unknown");
-                builder.Append("\",patches=0i");
+                builder.Append("\",patches=");
+                builder.Append(patches);
+                builder.Append("i");
+            });
+        }
+
+        foreach (var kv in _harmonyPatchCounts)
+        {
+            if (_harmonyModsWritten.Contains(kv.Key))
+            {
+                continue;
+            }
+
+            UploadPacket("harmony_mods", kv, (builder, pair) =>
+            {
+                builder.Append(",mod=\"");
+                AppendSanitized(builder, pair.Key);
+                builder.Append("\" version=\"extra\",patches=");
+                builder.Append(pair.Value);
+                builder.Append("i");
             });
         }
 
@@ -764,10 +796,49 @@ public class MetricsLogger : SingletonComponent<MetricsLogger>
         {
             builder.Append(" count=");
             builder.Append(count);
-            builder.Append("i,patches=0i");
+            builder.Append("i,patches=");
+            builder.Append(totalPatches);
+            builder.Append("i");
         });
 
         EmitHarmonyModEvents(mods);
+    }
+
+    private void FillHarmonyPatchCounts()
+    {
+        _harmonyPatchCounts.Clear();
+        foreach (var method in Harmony.GetAllPatchedMethods())
+        {
+            var info = Harmony.GetPatchInfo(method);
+            if (info == null) continue;
+            AddPatchOwners(info.Prefixes);
+            AddPatchOwners(info.Postfixes);
+            AddPatchOwners(info.Transpilers);
+            AddPatchOwners(info.Finalizers);
+        }
+    }
+
+    private void AddPatchOwners(IEnumerable<Patch> patches)
+    {
+        if (patches == null) return;
+        foreach (var patch in patches)
+        {
+            var owner = patch.owner;
+            if (string.IsNullOrEmpty(owner)) continue;
+            if (owner.StartsWith(HarmonyLoaderIdPrefix, StringComparison.Ordinal))
+            {
+                owner = owner.Substring(HarmonyLoaderIdPrefix.Length);
+            }
+
+            if (_harmonyPatchCounts.TryGetValue(owner, out var n))
+            {
+                _harmonyPatchCounts[owner] = n + 1;
+            }
+            else
+            {
+                _harmonyPatchCounts[owner] = 1;
+            }
+        }
     }
 
     private void EmitHarmonyModEvents(IEnumerable<HarmonyModInfo> mods)
@@ -997,6 +1068,19 @@ public class MetricsLogger : SingletonComponent<MetricsLogger>
         _stringBuilder.Append("\tHarmony mods: ");
         _stringBuilder.Append(modCount);
         _stringBuilder.AppendLine();
+        if (Configuration != null)
+        {
+            _stringBuilder.Append("\tDebug Logging: ");
+            _stringBuilder.Append(Configuration.DebugLogging);
+            _stringBuilder.AppendLine();
+            _stringBuilder.Append("\tInvoke/RPC/WorkQueue timing: ");
+            _stringBuilder.Append(Configuration.GatherInvokeTiming);
+            _stringBuilder.Append("/");
+            _stringBuilder.Append(Configuration.GatherRpcTiming);
+            _stringBuilder.Append("/");
+            _stringBuilder.Append(Configuration.GatherWorkQueueTiming);
+            _stringBuilder.AppendLine();
+        }
         if (Configuration == null || Configuration.GatherNpcCensus)
         {
             NpcCensus.AppendStatus(_stringBuilder);

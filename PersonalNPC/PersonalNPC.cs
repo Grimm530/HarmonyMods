@@ -7,6 +7,7 @@ using System.Linq;
 using Game.Rust.Cui;
 using UnityEngine.Events;
 using UnityEngine.AI;
+using GrimmShared;
 using PersonalNPCHarmony.PersonalNPCex;
 using Facepunch;
 using Rust.Ai.Gen2;
@@ -4434,7 +4435,7 @@ namespace PersonalNPCHarmony
 
                 for (int i = 0; i < candidates.Length; i++)
                 {
-                    if (!NavMesh.SamplePosition(candidates[i], out NavMeshHit hit, standoff + 2f, areaMask))
+                    if (!RecastNav.SamplePosition(candidates[i], out NavMeshHit hit, standoff + 2f, areaMask))
                         continue;
 
                     float distance = GetHorizontalDistance(bot.transform.position, hit.position);
@@ -4448,7 +4449,7 @@ namespace PersonalNPCHarmony
                 if (!found)
                 {
                     approach = targetCenter + fromBot * standoff;
-                    if (NavMesh.SamplePosition(approach, out NavMeshHit fallbackHit, standoff + 3f, areaMask))
+                    if (RecastNav.SamplePosition(approach, out NavMeshHit fallbackHit, standoff + 3f, areaMask))
                     {
                         approach = fallbackHit.position;
                         return true;
@@ -6099,7 +6100,7 @@ namespace PersonalNPCHarmony
                     return false;
                 }
 
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 if (item.MoveToContainer(target, slot))
                     return true;
 
@@ -8388,14 +8389,14 @@ namespace PersonalNPCHarmony
             {
                 Vector2 offset = UnityEngine.Random.insideUnitCircle * radius;
                 Vector3 candidate = source + new Vector3(offset.x, 0f, offset.y);
-                if (_botNavigator?.Agent != null && NavMesh.SamplePosition(candidate, out NavMeshHit hit, radius + 1f, _botNavigator.Agent.areaMask))
+                if (_botNavigator?.Agent != null && RecastNav.SamplePosition(candidate, out NavMeshHit hit, radius + 1f, _botNavigator.Agent.areaMask))
                     return hit.position;
                 return source;
             }
 
             private void SetCombatDestination(Vector3 destination, BaseNavigator.NavigationSpeed speed)
             {
-                if (_botNavigator?.Agent != null && NavMesh.SamplePosition(destination, out NavMeshHit hit, 3f, _botNavigator.Agent.areaMask))
+                if (_botNavigator?.Agent != null && RecastNav.SamplePosition(destination, out NavMeshHit hit, 3f, _botNavigator.Agent.areaMask))
                     destination = hit.position;
 
                 _currentDestination = destination;
@@ -9095,7 +9096,7 @@ namespace PersonalNPCHarmony
 
             private bool IsAtClosestNavmeshPoint(Vector3 targetPosition, float maxDistance)
             {
-                if (NavMesh.SamplePosition(targetPosition, out NavMeshHit hit, 10f, Navigator.Agent.areaMask))
+                if (RecastNav.SamplePosition(targetPosition, out NavMeshHit hit, 10f, Navigator.Agent.areaMask))
                 {
                     float distanceToClosestPoint = Vector3.Distance(bot.transform.position, hit.position);
                     return distanceToClosestPoint <= maxDistance;
@@ -9105,7 +9106,7 @@ namespace PersonalNPCHarmony
 
             public void SetDestination(Vector3 destination)
             {
-                if (_botNavigator?.Agent != null && NavMesh.SamplePosition(destination, out NavMeshHit hit, 4f, _botNavigator.Agent.areaMask))
+                if (_botNavigator?.Agent != null && RecastNav.SamplePosition(destination, out NavMeshHit hit, 4f, _botNavigator.Agent.areaMask))
                     destination = hit.position;
 
                 _currentDestination = destination;

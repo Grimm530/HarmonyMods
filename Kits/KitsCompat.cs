@@ -367,7 +367,6 @@ namespace KitsHarmony
                 if (!_loggedLink)
                 {
                     _loggedLink = true;
-                    Debug.Log("[Kits] Linked to Permissions Harmony mod for kit access checks.");
                 }
                 else
                     Debug.Log($"[Kits] Re-linked to Permissions Harmony mod (gen={gen}).");
@@ -384,15 +383,8 @@ namespace KitsHarmony
             if (_readyCallback != null) return;
             _readyCallback = ReplayRegistered;
             EnsureBound();
-            try
-            {
-                if (_registerReady != null)
-                {
-                    _registerReady.Invoke(null, new object[] { _readyCallback });
-                    return;
-                }
-            }
-            catch { }
+            PermissionsBridge.RegisterReadyCallback(_readyCallback);
+            return;
 
             try
             {
@@ -416,7 +408,7 @@ namespace KitsHarmony
             EnsureBound();
             foreach (var perm in _registered)
             {
-                try { _register?.Invoke(null, new object[] { perm }); } catch { }
+                PermissionsBridge.RegisterPermission(perm);
             }
         }
 
@@ -426,7 +418,7 @@ namespace KitsHarmony
             _registered.Add(perm);
             EnsureBound();
             EnsureReadyCallback();
-            try { _register?.Invoke(null, new object[] { perm }); } catch { }
+            PermissionsBridge.RegisterPermission(perm);
         }
 
         public bool PermissionExists(string perm)
@@ -434,13 +426,7 @@ namespace KitsHarmony
             if (string.IsNullOrEmpty(perm)) return false;
             if (_registered.Contains(perm)) return true;
             EnsureBound();
-            try
-            {
-                if (_exists != null && _exists.Invoke(null, new object[] { perm }) is bool b)
-                    return b;
-            }
-            catch { }
-            return false;
+            return PermissionsBridge.PermissionExists(perm);
         }
 
         public bool UserHasPermission(string userId, string perm)
@@ -452,15 +438,7 @@ namespace KitsHarmony
             // Local grants (tests / fallback)
             if (_granted.Contains(userId + ":" + perm)) return true;
 
-            EnsureBound();
-            try
-            {
-                if (_userHas != null && _userHas.Invoke(null, new object[] { userId, perm }) is bool ok)
-                    return ok;
-            }
-            catch { }
-
-            return false;
+            return PermissionsBridge.UserHasPermission(userId, perm);
         }
 
         public void GrantUserPermission(string userId, string perm)
@@ -468,7 +446,7 @@ namespace KitsHarmony
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(perm)) return;
             _granted.Add(userId + ":" + perm);
             EnsureBound();
-            try { _grantUser?.Invoke(null, new object[] { userId, perm }); } catch { }
+            PermissionsBridge.GrantUserPermission(userId, perm);
         }
     }
 

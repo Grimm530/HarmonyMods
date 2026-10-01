@@ -6,9 +6,9 @@ using Facepunch.Rust;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Oxide.Core;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using Harmony.Core;
+using Harmony.Core.Plugins;
+using Game.Rust.Cui;
 using ProtoBuf;
 using Rust;
 using Rust.Ai.Gen2;
@@ -46,7 +46,7 @@ using static SeekerTarget;
 
 namespace KaruzaVehicles
 {
-    [Info("KaruzaEntitiesCommon", "Karuza", "1.11.00")]
+    [Info("KaruzaEntitiesCommon", "Karuza", "1.121")]
     public class KaruzaEntitiesCommon : RustPlugin
     {
         internal Plugin BulletProjectile;
@@ -267,7 +267,7 @@ namespace KaruzaVehicles
         const string TOW_AUTO_CONNECT_OFF_TOAST = "TowAutoConnectSwitchOff";
 
         const string TOWTRIGGER_ONTRIGGERENTER = "TowTrigger.OnTriggerEnter";
-        const string SENDNETWORKUPDATE_POSITION = "SendNetworkUpdate_Position";
+        const string SENDNETWORKUPDATE_POSITION = "Custom_SendNetworkUpdate_Position";
         const string BASECOMBATENTITY_ONATTACKED = "BaseCombatEntity.OnAttacked";
         const string SNOWMOBILE_ONRPCMESSAGE = "Snowmobile.OnRpcMessage";
         const string STATICINSTRUMENT_ONRPCMESSAGE = "StaticInstrument.OnRpcMessage";
@@ -1373,7 +1373,7 @@ namespace KaruzaVehicles
                         player = vehicle.CustomGetDriver();
                     }
 
-                    Interface.CallHook("OnGrowableGathered", growableEntity, item, player);
+                    HarmonyModInterface.CallHook("OnGrowableGathered", growableEntity, item, player);
                     container.inventory.GiveItem(item);
                 }
                 else
@@ -1384,7 +1384,7 @@ namespace KaruzaVehicles
 
             public void PickupHarvestable(CollectibleEntity growableEntity)
             {
-                if (growableEntity.itemList == null || Interface.CallHook("OnCollectiblePickup", growableEntity, null) != null)
+                if (growableEntity.itemList == null || HarmonyModInterface.CallHook("OnCollectiblePickup", growableEntity, null) != null)
                 {
                     return;
                 }
@@ -4790,9 +4790,9 @@ namespace KaruzaVehicles
                 }
             }
 
-            public override bool ItemFilter(Item item, int targetSlot)
+            public override bool ItemFilter(BasePlayer player, Item item, int targetSlot)
             {
-                if (!base.ItemFilter(item, targetSlot))
+                if (!base.ItemFilter(player, item, targetSlot))
                 {
                     return false;
                 }
@@ -5040,14 +5040,14 @@ namespace KaruzaVehicles
                 RefreshLoadoutData();
             }
 
-            public override void OnItemAddedOrRemoved(Item item, bool added)
+            public override void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
                 RefreshLoadoutData();
             }
 
-            public override bool ItemFilter(Item item, int targetSlot)
+            public override bool ItemFilter(BasePlayer player, Item item, int targetSlot)
             {
-                if (!base.ItemFilter(item, targetSlot))
+                if (!base.ItemFilter(player, item, targetSlot))
                 {
                     return false;
                 }
@@ -5163,9 +5163,9 @@ namespace KaruzaVehicles
                 }
             }
 
-            public override void OnItemAddedOrRemoved(Item item, bool bAdded)
+            public override void OnItemAddedOrRemoved(Item item, bool bAdded, BasePlayer sourcePlayer)
             {
-                base.OnItemAddedOrRemoved(item, bAdded);
+                base.OnItemAddedOrRemoved(item, bAdded, sourcePlayer);
 
                 if (bAdded)
                 {
@@ -5461,7 +5461,7 @@ namespace KaruzaVehicles
                 }
             }
 
-            public bool CanAcceptItem(Item item, int targetSlot)
+            public bool CanAcceptItem(BasePlayer player, Item item, int targetSlot)
             {
                 if (OnlyAcceptCategory == ItemCategory.All)
                 {
@@ -5543,9 +5543,9 @@ namespace KaruzaVehicles
             }
 
 
-            public override void OnItemAddedOrRemoved(Item item, bool bAdded)
+            public override void OnItemAddedOrRemoved(Item item, bool bAdded, BasePlayer sourcePlayer)
             {
-                base.OnItemAddedOrRemoved(item, bAdded);
+                base.OnItemAddedOrRemoved(item, bAdded, sourcePlayer);
 
                 if (autoToggle && bAdded && HasRecyclable())
                 {
@@ -6643,7 +6643,7 @@ namespace KaruzaVehicles
 
         public class SpecialButton : SpecialIOEntity
         {
-            public virtual float PressDuration => 1.5f;
+            public virtual float PressDuration { get; set; } = 1.5f;
             public Action<BasePlayer> PressAction;
 
             public override bool OnRpcMessage(BasePlayer player, uint rpc, Message msg)
@@ -6696,7 +6696,7 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                if (!IsOn() && Interface.CallHook(ON_BUTTON_PRESS_HOOK, this, msg.player) == null)
+                if (!IsOn() && HarmonyModInterface.CallHook(ON_BUTTON_PRESS_HOOK, this, msg.player) == null)
                 {
                     using (FlagsUpdateScope flagsUpdateScope = StartSetFlags(FlagsUpdateMode.SendNetworkUpdate))
                     {
@@ -6848,7 +6848,14 @@ namespace KaruzaVehicles
                     for (int i = 0; i < Anchors.Count; i++)
                     {
                         var anchor = Anchors[i];
-                        //anchor.ToggleSiren(isOn);
+                        if (isOn)
+                        {
+                            anchor.Lower();
+                        }
+                        else
+                        {
+                            anchor.Raise();
+                        }
                     }
                 }
             }
@@ -6879,7 +6886,7 @@ namespace KaruzaVehicles
 
         public class VehiclePowerButton : SpecialButton
         {
-            public override float PressDuration => 0.1f;
+            public override float PressDuration { get; set; } = 0.1f;
 
             IVehicle vehicle;
 
@@ -7223,7 +7230,14 @@ namespace KaruzaVehicles
                     for (int i = 0; i < Anchors.Count; i++)
                     {
                         var anchor = Anchors[i];
-                        //anchor.ToggleSiren(isOn);
+                        if (state)
+                        {
+                            anchor.Lower();
+                        }
+                        else
+                        {
+                            anchor.Raise();
+                        }
                     }
                 }
             }
@@ -7858,14 +7872,14 @@ namespace KaruzaVehicles
 
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
 
             }
 
-            public virtual void OnItemAddedOrRemoved(Item item, bool added)
+            public virtual void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
 
             }
@@ -8074,15 +8088,25 @@ namespace KaruzaVehicles
             {
                 if (UseGlobalNetworkPosition)
                 {
-                    return CachedTransform.position;
+                    return Facepunch.Extend.TransformEx.Unsafe.GetPosMT(TransformHandle);
                 }
 
-                return CachedTransform.localPosition;
+                if (UseParallelSaves)
+                {
+                    return Facepunch.Extend.TransformEx.Unsafe.GetLocalPosMT(TransformHandle);
+                }
+
+                return TransformHandle.localPosition;
             }
 
             public override Quaternion GetNetworkRotation()
             {
-                return CachedTransform.localRotation;
+                if (UseParallelSaves)
+                {
+                    return Facepunch.Extend.TransformEx.Unsafe.GetLocalRotMT(TransformHandle);
+                }
+
+                return TransformHandle.localRotation;
             }
 
             public override bool ShouldNetworkTo(BasePlayer player)
@@ -8211,6 +8235,7 @@ namespace KaruzaVehicles
                 if (syncPosition && PositionTickRate >= 0f)
                 {
                     CancelInvoke(NetworkPositionTick);
+                    CancelInvoke(NetworkPosTickCallback);
 
                     if (PositionTickFixedTime)
                     {
@@ -8402,9 +8427,12 @@ namespace KaruzaVehicles
                     info.msg.baseEntity.rot = GetNetworkRotation().eulerAngles;
                     info.msg.baseEntity.time = GetNetworkTime();
 
-                    if (CachedTransform.localScale != Vector3.one)
+                    Vector3 scale = BaseNetworkable.UseParallelSaves
+                        ? Facepunch.Extend.TransformEx.Unsafe.GetLocalScaleMT(TransformHandle)
+                        : TransformHandle.localScale;
+                    if (scale != Vector3.one)
                     {
-                        info.msg.baseEntity.scale = CachedTransform.localScale;
+                        info.msg.baseEntity.scale = scale;
                     }
                 }
 
@@ -11825,7 +11853,7 @@ namespace KaruzaVehicles
             public void RPC_WantsPush(RPCMessage msg)
             {
                 BasePlayer player = msg.player;
-                if (!player.isMounted && Vehicle.BaseVehicle.CanPushNow(player) && (!Vehicle.BaseVehicle.OnlyOwnerAccessible() || player == creatorEntity) && Interface.CallHook("OnVehiclePush", Vehicle.BaseVehicle, msg.player) == null)
+                if (!player.isMounted && Vehicle.BaseVehicle.CanPushNow(player) && (!Vehicle.BaseVehicle.OnlyOwnerAccessible() || player == creatorEntity) && HarmonyModInterface.CallHook("OnVehiclePush", Vehicle.BaseVehicle, msg.player) == null)
                 {
                     player.metabolism.calories.Subtract(3f);
                     player.metabolism.SendChanges();
@@ -12068,13 +12096,14 @@ namespace KaruzaVehicles
 
         public class SpecialBaseMountable : BaseVehicleSeat
         {
-            public IKaruzaCustomPrefab KaruzaEntity { get { return Vehicle; } }
+            public IKaruzaCustomPrefab KaruzaEntity { get; private set; }
             public IVehicle Vehicle { get; protected set; }
             public bool DestroyParentOnDestroy = true;
             public bool ForceDriver = true;
             public bool CanSwapTo = true;
 
             protected bool HasVehicle;
+            protected bool HasKaruzaEntity;
 
             public override bool DirectlyMountable()
             {
@@ -12088,7 +12117,7 @@ namespace KaruzaVehicles
                     return new OBB(base.transform.position, base.transform.lossyScale, base.transform.rotation, bounds);
                 }
 
-                return new OBB(Vehicle.BaseVehicle.transform.position, Vehicle.BaseVehicle.transform.lossyScale, Vehicle.BaseVehicle.transform.rotation, Vehicle.BaseVehicle.bounds);
+                return new OBB(KaruzaEntity.BaseEntity.transform.position, KaruzaEntity.BaseEntity.transform.lossyScale, KaruzaEntity.BaseEntity.transform.rotation, KaruzaEntity.BaseEntity.bounds);
             }
 
             public override bool ShouldInheritNetworkGroup()
@@ -12136,7 +12165,10 @@ namespace KaruzaVehicles
 
                 base.ServerInit();
 
-                this.Vehicle = this.GetComponentInParent<IVehicle>();
+                this.KaruzaEntity = this.GetComponentInParent<IKaruzaCustomPrefab>();
+                HasKaruzaEntity = this.KaruzaEntity != null;
+
+                this.Vehicle = this.KaruzaEntity as IVehicle;
                 HasVehicle = this.Vehicle != null;
 
                 if (HasVehicle)
@@ -12159,7 +12191,7 @@ namespace KaruzaVehicles
 
             public override BaseVehicle VehicleParent()
             {
-                if (ignoreVehicleParent)
+                if (!HasVehicle || ignoreVehicleParent)
                 {
                     return null;
                 }
@@ -12169,6 +12201,11 @@ namespace KaruzaVehicles
 
             public override void PlayerServerInput(InputState inputState, BasePlayer player)
             {
+                if (!HasVehicle)
+                {
+                    return;
+                }
+
                 Vehicle.PlayerServerInput(inputState, player);
             }
 
@@ -12178,13 +12215,13 @@ namespace KaruzaVehicles
 
                 if (DestroyParentOnDestroy && Vehicle != null && !Vehicle.IsDestroyed && !Vehicle.IsDead())
                 {
-                    Vehicle.BaseEntity.Kill();
+                    KaruzaEntity.BaseEntity.Kill();
                 }
             }
 
             public override void Hurt(HitInfo info)
             {
-                this.Vehicle.Hurt(info);
+                this.KaruzaEntity.Hurt(info);
                 return;
             }
 
@@ -12192,18 +12229,23 @@ namespace KaruzaVehicles
             {
                 using (TimeWarning.New(BASECOMBATENTITY_ONATTACKED))
                 {
-                    this.Vehicle.OnAttacked(info);
+                    this.KaruzaEntity.OnAttacked(info);
                     return;
                 }
             }
 
             public override void DoRepair(BasePlayer player)
             {
-                this.Vehicle.DoRepair(player);
+                this.KaruzaEntity.DoRepair(player);
             }
 
             public override bool CanSwapToThis(BasePlayer player)
             {
+                if (!HasVehicle)
+                {
+                    return false;
+                }
+
                 if (!CanSwapTo)
                 {
                     return false;
@@ -12222,7 +12264,7 @@ namespace KaruzaVehicles
                     CrosshairUtilities.HideGUI(player);
                 }
 
-                if (Vehicle.VehicleConfig.GForceSettings.Enabled)
+                if (HasVehicle && Vehicle.VehicleConfig.GForceSettings.Enabled)
                 {
                     GForceGUIUtilities.HideBlackoutGUI(player);
                     GForceGUIUtilities.HideRedoutGUI(player);
@@ -12231,6 +12273,12 @@ namespace KaruzaVehicles
 
             public override void AttemptMount(BasePlayer player, bool doMountChecks = true)
             {
+                if (!HasVehicle)
+                {
+                    base.AttemptMount(player, doMountChecks);
+                    return;
+                }
+
                 if (!player.IsNpc && !player.IsBot && ForceDriver)
                 {
                     this.Vehicle.AttemptMount(player, false);
@@ -12285,7 +12333,7 @@ namespace KaruzaVehicles
             public override void OnPlayerMounted()
             {
                 base.OnPlayerMounted();
-                if (_mounted.GetMountedVehicle() == Vehicle.BaseVehicle)
+                if (HasVehicle && _mounted.GetMountedVehicle() == Vehicle.BaseVehicle)
                 {
                     Vehicle.BaseVehicle.PlayerMounted(_mounted, this);
                 }
@@ -12298,6 +12346,11 @@ namespace KaruzaVehicles
 
             public override bool HasValidDismountPosition(BasePlayer player)
             {
+                if (!HasVehicle)
+                {
+                    return base.HasValidDismountPosition(player);
+                }
+
                 return Vehicle.BaseVehicle.HasValidDismountPosition(player);
             }
 
@@ -12320,6 +12373,15 @@ namespace KaruzaVehicles
                         }
 
                         group = Vehicle.BaseVehicle.net.group;
+                    }
+                    else if (HasKaruzaEntity)
+                    {
+                        if (KaruzaEntity.BaseEntity.net == null)
+                        {
+                            return;
+                        }
+
+                        group = KaruzaEntity.BaseEntity.net.group;
                     }
 
                     if (net.SwitchGroup(group))
@@ -12354,9 +12416,9 @@ namespace KaruzaVehicles
                     return false;
                 }
 
-                if (HasVehicle)
+                if (HasKaruzaEntity)
                 {
-                    return Vehicle.BaseVehicle.ShouldNetworkTo(player);
+                    return KaruzaEntity.BaseEntity.ShouldNetworkTo(player);
                 }
 
                 if (net.group == null)
@@ -15546,7 +15608,7 @@ namespace KaruzaVehicles
                 }
 
                 StorageContainer fuelContainer = GetFuelContainer();
-                object obj = Interface.CallHook("CanCheckFuel", this, fuelContainer, player);
+                object obj = HarmonyModInterface.CallHook("CanCheckFuel", this, fuelContainer, player);
                 if (obj is bool b)
                 {
                     return b;
@@ -15580,7 +15642,7 @@ namespace KaruzaVehicles
             Item GetFuelItem()
             {
                 StorageContainer fuelContainer = GetFuelContainer();
-                object obj = Interface.CallHook("OnFuelItemCheck", this, fuelContainer);
+                object obj = HarmonyModInterface.CallHook("OnFuelItemCheck", this, fuelContainer);
                 if (obj is Item item)
                 {
                     return item;
@@ -15611,7 +15673,7 @@ namespace KaruzaVehicles
                 for (int i = 0; i < fuelContainer.inventory.itemList.Count; i++)
                 {
                     var fuelItem = fuelContainer.inventory.itemList[i];
-                    object obj = Interface.CallHook("OnFuelAmountCheck", this, fuelItem);
+                    object obj = HarmonyModInterface.CallHook("OnFuelAmountCheck", this, fuelItem);
                     if (obj is int intConverted)
                     {
                         totalFuel += intConverted;
@@ -15655,7 +15717,7 @@ namespace KaruzaVehicles
 
                 if (fuelSource == FuelSource.Container)
                 {
-                    object obj = Interface.CallHook(ON_FUEL_CHECK_HOOK, this);
+                    object obj = HarmonyModInterface.CallHook(ON_FUEL_CHECK_HOOK, this);
                     if (obj is bool b)
                     {
                         return b;
@@ -15677,7 +15739,7 @@ namespace KaruzaVehicles
                 }
 
                 var fuelContainer = GetFuelContainer();
-                object obj = Interface.CallHook(CAN_USE_FUEL_HOOK, this, fuelContainer, seconds, fuelUsedPerSecond);
+                object obj = HarmonyModInterface.CallHook(CAN_USE_FUEL_HOOK, this, fuelContainer, seconds, fuelUsedPerSecond);
                 if (obj is int i)
                 {
                     return i;
@@ -16019,7 +16081,7 @@ namespace KaruzaVehicles
                     return false;
                 }
 
-                object obj = Interface.CallHook(CAN_USE_LOCKED_ENTITY_HOOK, player, this);
+                object obj = HarmonyModInterface.CallHook(CAN_USE_LOCKED_ENTITY_HOOK, player, this);
                 if (obj is bool b)
                 {
                     return b;
@@ -16040,6 +16102,26 @@ namespace KaruzaVehicles
                 return false;
             }
 
+            bool IsOnOwnerTeam(BasePlayer player)
+            {
+                if (vehicle.BaseVehicle.creatorEntity == null)
+                {
+                    return false;
+                }
+
+                var creatorPlayer = vehicle.BaseVehicle.creatorEntity as BasePlayer;
+                if (creatorPlayer == null || creatorPlayer.Team == null || player.Team == null)
+                {
+                    return false;
+                }
+                else if (!creatorPlayer.Team.members.Contains(player.userID.Get()))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
             [RPC_Server]
             [RPC_Server.MaxDistance(3f, CheckParent = true)]
             private void CustomRPC_ChangeCode(RPCMessage rpc)
@@ -16049,7 +16131,7 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                if (vehicle.BaseVehicle.OnlyOwnerAccessible() && vehicle.BaseVehicle.creatorEntity != null && vehicle.BaseVehicle.creatorEntity.net.ID.Value != rpc.player.net.ID.Value)
+                if (vehicle.BaseVehicle.OnlyOwnerAccessible() && vehicle.BaseVehicle.creatorEntity != null && vehicle.BaseVehicle.creatorEntity.net.ID.Value != rpc.player.net.ID.Value && !IsOnOwnerTeam(rpc.player))
                 {
                     DoEffect(effectDenied.resourcePath);
                     return;
@@ -16057,7 +16139,7 @@ namespace KaruzaVehicles
 
                 string text = rpc.read.String();
                 bool flag = rpc.read.Bit();
-                if (!IsLocked() && text.Length == 4 && text.IsNumeric() && !(!hasCode && flag) && Interface.CallHook("CanChangeCode", rpc.player, this, text, flag) == null)
+                if (!IsLocked() && text.Length == 4 && text.IsNumeric() && !(!hasCode && flag) && HarmonyModInterface.CallHook("CanChangeCode", rpc.player, this, text, flag) == null)
                 {
                     if (!hasCode && !flag)
                     {
@@ -16083,7 +16165,7 @@ namespace KaruzaVehicles
                         guestPlayers.Add(rpc.player.userID);
                     }
 
-                    Interface.CallHook("OnCodeChanged", rpc.player, this, text, flag);
+                    HarmonyModInterface.CallHook("OnCodeChanged", rpc.player, this, text, flag);
                     DoEffect(effectCodeChanged.resourcePath);
                     SendNetworkUpdate();
                 }
@@ -16098,13 +16180,13 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                if (vehicle.BaseVehicle.IsLocked() && vehicle.BaseVehicle.creatorEntity.net.ID.Value != rpc.player.net.ID.Value)
+                if (vehicle.BaseVehicle.IsLocked() && vehicle.BaseVehicle.creatorEntity.net.ID.Value != rpc.player.net.ID.Value && !IsOnOwnerTeam(rpc.player))
                 {
                     DoEffect(effectDenied.resourcePath);
                     return;
                 }
 
-                if (IsLocked() && Interface.CallHook("CanUnlock", rpc.player, this) == null && !IsCodeEntryBlocked() && whitelistPlayers.Contains(rpc.player.userID))
+                if (IsLocked() && HarmonyModInterface.CallHook("CanUnlock", rpc.player, this) == null && !IsCodeEntryBlocked() && whitelistPlayers.Contains(rpc.player.userID))
                 {
                     DoEffect(effectUnlocked.resourcePath);
                     using (FlagsUpdateScope flagsUpdateScope = StartSetFlags(FlagsUpdateMode.SendNetworkUpdate))
@@ -16125,13 +16207,13 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                if (vehicle.BaseVehicle.IsLocked() && vehicle.BaseVehicle.creatorEntity.net.ID.Value != rpc.player.net.ID.Value)
+                if (vehicle.BaseVehicle.IsLocked() && vehicle.BaseVehicle.creatorEntity.net.ID.Value != rpc.player.net.ID.Value && !IsOnOwnerTeam(rpc.player))
                 {
                     DoEffect(effectDenied.resourcePath);
                     return;
                 }
 
-                if (!IsLocked() && code.Length == 4 && Interface.CallHook("CanLock", rpc.player, this) == null && whitelistPlayers.Contains(rpc.player.userID))
+                if (!IsLocked() && code.Length == 4 && HarmonyModInterface.CallHook("CanLock", rpc.player, this) == null && whitelistPlayers.Contains(rpc.player.userID))
                 {
                     DoEffect(effectLocked.resourcePath);
                     using (FlagsUpdateScope flagsUpdateScope = StartSetFlags(FlagsUpdateMode.SendNetworkUpdate))
@@ -16153,7 +16235,7 @@ namespace KaruzaVehicles
                 }
 
                 string text = rpc.read.String();
-                if (Interface.CallHook("OnCodeEntered", this, rpc.player, text) != null)
+                if (HarmonyModInterface.CallHook("OnCodeEntered", this, rpc.player, text) != null)
                 {
                     return;
                 }
@@ -16577,6 +16659,7 @@ namespace KaruzaVehicles
             public List<CustomSwitchConfig> CustomSwitches { get; set; } = new List<CustomSwitchConfig>();
             public List<CustomWheelConfig> CustomWheels { get; set; } = new List<CustomWheelConfig>();
             public List<CustomInputJointConfig> InputJoints { get; set; } = new List<CustomInputJointConfig>();
+            public List<DynamicNavMeshConfig> DynamicNavMeshes { get; set; } = new List<DynamicNavMeshConfig>();
         }
 
         public class DismountPointConfig
@@ -17287,6 +17370,13 @@ namespace KaruzaVehicles
             public BaseSwitchConfig SwitchConfig { get; set; } = new BaseSwitchConfig();
             public JointConfig JointConfig { get; set; } = new JointConfig();
             public DynamicTowingSettings DynamicTowingSettings { get; set; } = new DynamicTowingSettings();
+        }
+
+        public class DynamicNavMeshConfig : IBaseVehicleConfigEnabled
+        {
+            public virtual bool Enabled { get; set; }
+            public ConfigVector Size { get; set; }
+            public ConfigVector Center { get; set; }
         }
 
         public class DriftWheelFrictionCurveConfig : WheelFrictionCurveConfig
@@ -19439,6 +19529,7 @@ namespace KaruzaVehicles
                     InitializeEject(vehicle, vehicle.VehicleConfig.EjectSettings);
                     InitializeBaseCollider(vehicle.BaseVehicle);
                     InitializeNavMeshObstacles(vehicle.BaseVehicle);
+                    InitializeNavMeshModifier(vehicle.BaseVehicle);
                     InitializeWorldCollider(vehicle);
                 }
                 finally
@@ -19469,6 +19560,11 @@ namespace KaruzaVehicles
                 nmo.carvingMoveThreshold = 0.1f;
                 nmo.carvingTimeToStationary = 0.5f;
                 nmo.shape = NavMeshObstacleShape.Box;
+            }
+
+            public static void InitializeNavMeshModifier(BaseEntity baseEntity)
+            {
+                baseEntity.gameObject.AddComponent<RustNavmeshModifierVolume>();
             }
 
             public static void InitializePipes(BaseEntity baseEntity, PipePropSettings pipeProps)
@@ -20330,7 +20426,7 @@ namespace KaruzaVehicles
 
                     if (anchor.AnchorWheel.Enabled)
                     {
-                        var wheel = PropUtilities.CreateCustomEntity<SpecialWheelSwitch>(anchor.AnchorWheel.Location, anchor.AnchorWheel.Rotation, anchor.AnchorWheel.Scale, WHEEL_SWITCH_PREFAB, parent);
+                        var wheel = PropUtilities.CreateCustomEntity<SpecialWheelSwitch>(anchor.AnchorWheel.Location, anchor.AnchorWheel.Rotation, anchor.AnchorWheel.Scale, WHEEL_SWITCH_PREFAB, parent, detectCollisions: true);
                         wheel.MinRotation = anchor.MinRopeLength;
                         wheel.MaxRotation = anchor.MaxRopeLength;
                         wheel.OnRotation += towAdaptor.UpdateWinch;
@@ -20419,7 +20515,13 @@ namespace KaruzaVehicles
                     ICustomSwitch customSwitch = null;
                     if (csw.PrefabPath == BUTTON_PREFAB || csw.PrefabPath == BUTTON_COMPACT_PREFAB || csw.PrefabPath == BUTTON_TRAIN_STAIRS_PREFAB || csw.PrefabPath == BUTTON_INVIS_PREFAB)
                     {
-                        customSwitch = PropUtilities.CreateCustomEntity<CustomButton>(csw.Location, csw.Rotation, csw.Scale, csw.PrefabPath, baseEntity);
+                        var cb = PropUtilities.CreateCustomEntity<CustomButton>(csw.Location, csw.Rotation, csw.Scale, csw.PrefabPath, baseEntity);
+                        if (csw.ToggleAnchors)
+                        {
+                            cb.PressDuration = 3f;
+                        }
+
+                        customSwitch = cb;
                     }
                     else if (csw.PrefabPath == LANTERN_PREFAB)
                     {
@@ -20606,7 +20708,7 @@ namespace KaruzaVehicles
                         var offRotation = Quaternion.Euler(jc.RotationWhenOff);
                         var onRotation = Quaternion.Euler(jc.RotationWhenOn);
                         var angle = Quaternion.Angle(offRotation, onRotation);
-                        var rotationWheel = PropUtilities.CreateCustomEntity<SpecialWheelSwitch>(csw.RotationWheel.Location, csw.RotationWheel.Rotation, csw.RotationWheel.Scale, WHEEL_SWITCH_PREFAB, baseEntity);
+                        var rotationWheel = PropUtilities.CreateCustomEntity<SpecialWheelSwitch>(csw.RotationWheel.Location, csw.RotationWheel.Rotation, csw.RotationWheel.Scale, WHEEL_SWITCH_PREFAB, baseEntity, detectCollisions: true);
                         rotationWheel.MinRotation = 0;
                         rotationWheel.MaxRotation = angle;
                         rotationWheel.OnRotation += joint.UpdateRotation;
@@ -20617,7 +20719,7 @@ namespace KaruzaVehicles
                     if (hasPositionWheel)
                     {
                         var angle = Vector3.Distance(jc.PositionWhenOff, jc.PositionWhenOn);
-                        var positionWheel = PropUtilities.CreateCustomEntity<SpecialWheelSwitch>(csw.PositionWheel.Location, csw.PositionWheel.Rotation, csw.PositionWheel.Scale, WHEEL_SWITCH_PREFAB, baseEntity);
+                        var positionWheel = PropUtilities.CreateCustomEntity<SpecialWheelSwitch>(csw.PositionWheel.Location, csw.PositionWheel.Rotation, csw.PositionWheel.Scale, WHEEL_SWITCH_PREFAB, baseEntity, detectCollisions: true);
                         positionWheel.MinRotation = 0;
                         positionWheel.MaxRotation = angle;
                         positionWheel.OnRotation += joint.UpdatePosition;
@@ -24526,7 +24628,7 @@ namespace KaruzaVehicles
             }
             catch (Exception ex)
             {
-                Config.WriteObject(configuration, false, $"{Interface.Oxide.ConfigDirectory}/{Name}.jsonError");
+                Config.WriteObject(configuration, false, $"{HarmonyModInterface.Mods.ConfigDirectory}/{Name}.jsonError");
                 PrintError($"The configuration file contains an error. {ex}");
             }
         }
@@ -24750,8 +24852,8 @@ namespace KaruzaVehicles
                 var path = $"{Instance.configuration.APIPath}{entityTypeId}";
                 Instance.Puts($"Requesting {path}");
 
-                var headers = APIHelper.GetHeaders(Oxide.Core.Libraries.RequestMethod.GET, path, string.Empty, Instance.configuration.APIId.ToLower(), Instance.configuration.APISecret);
-                Instance.webrequest.Enqueue(path, string.Empty, (code, response) => CallbackHandler(code, response, successCallback, errorCallback), Instance, Oxide.Core.Libraries.RequestMethod.GET, headers, 180, decompressionMethod: DecompressionMethods.GZip);
+                var headers = APIHelper.GetHeaders(Harmony.Core.Libraries.RequestMethod.GET, path, string.Empty, Instance.configuration.APIId.ToLower(), Instance.configuration.APISecret);
+                Instance.webrequest.Enqueue(path, string.Empty, (code, response) => CallbackHandler(code, response, successCallback, errorCallback), Instance, Harmony.Core.Libraries.RequestMethod.GET, headers, 180, decompressionMethod: DecompressionMethods.GZip);
             }
 
             static void CallbackHandler(int code, string response, Action<int, string> successCallback, Action<int, string> errorCallback)
@@ -24784,7 +24886,7 @@ namespace KaruzaVehicles
                 successCallback?.Invoke(code, response);
             }
 
-            static Dictionary<string, string> GetHeaders(Oxide.Core.Libraries.RequestMethod requestMethod, string url, string body, string appId, string apiKey)
+            static Dictionary<string, string> GetHeaders(Harmony.Core.Libraries.RequestMethod requestMethod, string url, string body, string appId, string apiKey)
             {
                 var toReturn = new Dictionary<string, string>()
                 {
@@ -24797,7 +24899,7 @@ namespace KaruzaVehicles
                 // Match System.Web.HttpUtility.UrlEncode: lowercase %xx, space as +.
                 string requestUri = UrlEncodeLower(url.ToLowerInvariant());
                 string requestHttpMethod = "GET";
-                if (requestMethod != Oxide.Core.Libraries.RequestMethod.GET)
+                if (requestMethod != Harmony.Core.Libraries.RequestMethod.GET)
                     requestHttpMethod = $"{requestMethod}";
 
                 DateTime epochStart = new DateTime(1970, 01, 01, 0, 0, 0, 0, DateTimeKind.Utc);

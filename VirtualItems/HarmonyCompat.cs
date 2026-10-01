@@ -584,7 +584,7 @@ namespace Harmony.Core.Libraries.Covalence
         public bool HasPermission(string perm)
         {
             if (_p == null) return false;
-            return VirtualItemsHarmony.PermissionsBridge.UserHasPermission(_p.UserIDString, perm);
+            return PermissionsBridge.UserHasPermission(_p.UserIDString, perm);
         }
     }
 
@@ -1151,64 +1151,64 @@ namespace Harmony.Plugins
     // ---- PermissionLib ----------------------------------------------------
 
     /// <summary>
-    /// Harmony permission.* surface backed by VirtualItemsHarmony.PermissionsBridge
+    /// Harmony permission.* surface backed by PermissionsBridge
     /// (reflection bridge to PermissionsHarmony.PermissionsMod).
     /// </summary>
     public class PermissionLib : Harmony.Core.Libraries.Permission
     {
         public void RegisterPermission(string perm, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.RegisterPermission(perm);
+            => PermissionsBridge.RegisterPermission(perm);
 
         public bool PermissionExists(string perm)
-            => VirtualItemsHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
         // Overload with plugin owner (legacy host passes the plugin; we ignore it).
         public bool PermissionExists(string perm, object plugin)
-            => VirtualItemsHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
 
         public bool UserHasPermission(string userId, string perm)
-            => VirtualItemsHarmony.PermissionsBridge.UserHasPermission(userId, perm);
+            => PermissionsBridge.UserHasPermission(userId, perm);
 
         public void GrantUserPermission(string userId, string perm, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.GrantUserPermission(userId, perm);
+            => PermissionsBridge.GrantUserPermission(userId, perm);
 
         public void RevokeUserPermission(string userId, string perm, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.RevokeUserPermission(userId, perm);
+            => PermissionsBridge.RevokeUserPermission(userId, perm);
 
         public string[] GetGroupPermissions(string group)
-            => VirtualItemsHarmony.PermissionsBridge.GetGroupPermissions(group);
+            => PermissionsBridge.GetGroupPermissions(group);
 
         public string[] GetUsersInGroup(string group)
-            => VirtualItemsHarmony.PermissionsBridge.GetUsersInGroup(group);
+            => PermissionsBridge.GetUsersInGroup(group);
 
         public string[] GetGroups()
-            => VirtualItemsHarmony.PermissionsBridge.GetGroups();
+            => PermissionsBridge.GetGroups();
 
         public bool GroupExists(string group)
-            => VirtualItemsHarmony.PermissionsBridge.GroupExists(group);
+            => PermissionsBridge.GroupExists(group);
 
         public bool CreateGroup(string name, string title, int rank)
-            => VirtualItemsHarmony.PermissionsBridge.CreateGroup(name, title, rank);
+            => PermissionsBridge.CreateGroup(name, title, rank);
 
         public bool GroupHasPermission(string group, string perm)
-            => VirtualItemsHarmony.PermissionsBridge.GroupHasPermission(group, perm);
+            => PermissionsBridge.GroupHasPermission(group, perm);
 
         public bool GrantGroupPermission(string group, string perm, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.GrantGroupPermission(group, perm);
+            => PermissionsBridge.GrantGroupPermission(group, perm);
 
         public bool RevokeGroupPermission(string group, string perm, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.RevokeGroupPermission(group, perm);
+            => PermissionsBridge.RevokeGroupPermission(group, perm);
 
         public bool UserHasGroup(string userId, string group)
-            => VirtualItemsHarmony.PermissionsBridge.UserHasGroup(userId, group);
+            => PermissionsBridge.UserHasGroup(userId, group);
 
         public void AddUserGroup(string userId, string group, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.AddUserGroup(userId, group);
+            => PermissionsBridge.AddUserGroup(userId, group);
 
         public void RemoveUserGroup(string userId, string group, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.RemoveUserGroup(userId, group);
+            => PermissionsBridge.RemoveUserGroup(userId, group);
 
         public string[] GetUserGroups(string userId)
-            => VirtualItemsHarmony.PermissionsBridge.GetUserGroups(userId);
+            => PermissionsBridge.GetUserGroups(userId);
     }
 
     // ---- TimerLib ---------------------------------------------------------
@@ -1636,10 +1636,10 @@ namespace Harmony.Core.Libraries
     public class Permission
     {
         public bool UserHasPermission(string userId, string perm)
-            => VirtualItemsHarmony.PermissionsBridge.UserHasPermission(userId, perm);
+            => PermissionsBridge.UserHasPermission(userId, perm);
         public void RegisterPermission(string perm, object plugin = null)
-            => VirtualItemsHarmony.PermissionsBridge.RegisterPermission(perm);
+            => PermissionsBridge.RegisterPermission(perm);
         public bool PermissionExists(string perm)
-            => VirtualItemsHarmony.PermissionsBridge.PermissionExists(perm);
+            => PermissionsBridge.PermissionExists(perm);
     }
 }

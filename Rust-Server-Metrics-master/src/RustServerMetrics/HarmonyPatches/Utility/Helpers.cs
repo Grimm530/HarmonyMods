@@ -12,6 +12,28 @@ namespace RustServerMetrics.HarmonyPatches.Utility;
 public static class Helpers
 {
 
+    public static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        Type[] types;
+        try
+        {
+            types = assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            types = ex.Types;
+        }
+
+        if (types == null)
+            yield break;
+
+        foreach (var type in types)
+        {
+            if (type != null)
+                yield return type;
+        }
+    }
+
     public static IEnumerable<CodeInstruction> Postfix(IEnumerable<CodeInstruction> originalInstructions, Delegate postfix, params CodeInstruction[] loads)
     {
         var ret = originalInstructions.ToList();

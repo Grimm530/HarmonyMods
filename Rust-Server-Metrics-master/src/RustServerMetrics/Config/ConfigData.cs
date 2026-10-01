@@ -36,5 +36,17 @@ namespace RustServerMetrics.Config
 
         [JsonProperty(PropertyName = "Gather Player Averages (Client FPS, Client Latency, Player FPS, Player Memory, Player Latency, Player Packet Loss)")]
         public bool gatherPlayerMetrics = true;
+
+        [JsonProperty(PropertyName = "Gather Harmony Mod Inventory")]
+        public bool gatherHarmonyModInventory = true;
+
+        [JsonProperty(PropertyName = "Gather NPC Census (vanilla vs mod bots/animals)")]
+        public bool gatherNpcCensus = true;
+
+        [JsonProperty(PropertyName = "Gather RPC Timing (expensive; patches every RPC_Server method)")]
+        public bool gatherRpcTiming = false;
+
+        [JsonProperty(PropertyName = "Gather Work Queue Timing (expensive; patches every ObjectWorkQueue.RunJob)")]
+        public bool gatherWorkQueueTiming = false;
     }
 }

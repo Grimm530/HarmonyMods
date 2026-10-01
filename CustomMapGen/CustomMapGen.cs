@@ -81,8 +81,59 @@ namespace CustomMapGen
         {
             // Don't save config on unload to prevent overwriting user changes
             // Config is only saved when explicitly needed (e.g., creating default)
+            Patches.SwapSpawnTracking.Cancel();
             Instance = null;
             UnityEngine.Debug.Log("[CustomMapGen] Unloaded");
+        }
+
+        /// <summary>
+        /// Keep the mod loaded on an existing-map boot only when spawn/swap diagnostics are requested.
+        /// Map-image rendering is a one-shot at DONE, then the mod should unload.
+        /// </summary>
+        public static bool ShouldKeepLoadedForDiagnostics()
+        {
+            var config = Instance?.GetConfig();
+            return config?.DebugLogging == true &&
+                   (config.DebugLogSkippedWorldPrefabs || config.DebugLogSwapMapPrefabBreakdown);
+        }
+
+        /// <summary>Call HarmonyLoader.TryUnloadMod so this mod is fully unpatched after first-wipe work (or when an existing map is loaded).</summary>
+        public static void TryUnloadThisMod(string reason)
+        {
+            try
+            {
+                Patches.SwapSpawnTracking.Cancel();
+                Type loaderType = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
+                    {
+                        loaderType = asm.GetType("HarmonyLoader");
+                        if (loaderType != null) break;
+                    }
+                    catch { }
+                }
+                if (loaderType == null)
+                {
+                    UnityEngine.Debug.LogWarning("[CustomMapGen] HarmonyLoader type not found; cannot unload mod.");
+                    return;
+                }
+                var method = loaderType.GetMethod("TryUnloadMod", BindingFlags.Public | BindingFlags.Static, null, new Type[] { typeof(string) }, null);
+                if (method == null)
+                {
+                    UnityEngine.Debug.LogWarning("[CustomMapGen] HarmonyLoader.TryUnloadMod not found; cannot unload mod.");
+                    return;
+                }
+                bool result = (bool)method.Invoke(null, new object[] { "CustomMapGen" });
+                if (result)
+                    UnityEngine.Debug.Log("[CustomMapGen] Mod unloaded (harmony.unload CustomMapGen)" + (string.IsNullOrEmpty(reason) ? "." : ": " + reason));
+                else
+                    UnityEngine.Debug.LogWarning("[CustomMapGen] TryUnloadMod returned false (mod may not have been loaded).");
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[CustomMapGen] Failed to unload mod: " + ex.Message);
+            }
         }
         
         private void LoadConfig()
@@ -111,6 +162,10 @@ namespace CustomMapGen
                     _config.NearbyPrefabRules = new List<NearbyPrefabRule>();
                 if (_config.RiverSettings == null)
                     _config.RiverSettings = new RiverSettingsConfig();
+                if (_config.RiverSettings.WidthScale <= 0f)
+                    _config.RiverSettings.WidthScale = 1f;
+                if (_config.MonumentGroups == null)
+                    _config.MonumentGroups = new List<MonumentGroupConfig>();
                 if (_config.MapSettings == null) _config.MapSettings = new MapSettingsConfig();
                 if (_config.MapImage == null) _config.MapImage = new MapImageConfig();
                 if (_config.SwapMonuments == null) _config.SwapMonuments = new SwapMonumentsConfig();
@@ -158,6 +213,62 @@ namespace CustomMapGen
             File.WriteAllText(CONFIG_PATH, json);
         }
         
+        /// <summary>
+        /// Adds monument folders the live PlaceMonuments components reported and splices only those
+        /// objects into the existing config file. ShouldChange stays false, so a Rust update cannot
+        /// change placement until the folder is edited.
+        /// </summary>
+        public void RememberMonumentGroups(List<MonumentGroupConfig> discovered)
+        {
+            if (discovered == null || discovered.Count == 0 || _config == null)
+                return;
+            if (_config.MonumentGroups == null)
+                _config.MonumentGroups = new List<MonumentGroupConfig>();
+
+            var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < _config.MonumentGroups.Count; i++)
+            {
+                string folder = _config.MonumentGroups[i]?.Folder;
+                if (!string.IsNullOrEmpty(folder))
+                    known.Add(folder);
+            }
+
+            var added = new List<MonumentGroupConfig>();
+            for (int i = 0; i < discovered.Count; i++)
+            {
+                MonumentGroupConfig group = discovered[i];
+                if (group == null || string.IsNullOrEmpty(group.Folder) || !known.Add(group.Folder))
+                    continue;
+                group.ShouldChange = false;
+                _config.MonumentGroups.Add(group);
+                added.Add(group);
+            }
+            if (added.Count == 0)
+                return;
+
+            try
+            {
+                if (!File.Exists(CONFIG_PATH))
+                {
+                    SaveConfig();
+                    UnityEngine.Debug.Log($"[CustomMapGen] Monument groups: wrote {added.Count} folders into a new config. ShouldChange is false until you edit them.");
+                    return;
+                }
+
+                var jo = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(CONFIG_PATH));
+                var arr = jo["MonumentGroups"] as Newtonsoft.Json.Linq.JArray ?? new Newtonsoft.Json.Linq.JArray();
+                for (int i = 0; i < added.Count; i++)
+                    arr.Add(Newtonsoft.Json.Linq.JObject.FromObject(added[i]));
+                jo["MonumentGroups"] = arr;
+                File.WriteAllText(CONFIG_PATH, jo.ToString(Formatting.Indented));
+                UnityEngine.Debug.Log($"[CustomMapGen] Monument groups: added {added.Count} folders to HarmonyConfig/CustomMapGen.json. ShouldChange stays false until you edit them.");
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning("[CustomMapGen] Could not save new monument groups: " + ex.Message);
+            }
+        }
+
         public MapGenConfig GetConfig()
         {
             return _config ?? MapGenConfig.Default();
@@ -207,6 +318,8 @@ namespace CustomMapGen
         [Newtonsoft.Json.JsonIgnore]
         public bool SnapCenterOutpostToDungeonGrid => SwapMonuments?.SnapCenterOutpostToDungeonGrid ?? true;
         public bool RemoveUndergroundTunnels = false;
+        /// <summary>Skip the tunnel-entrance monument group without turning off underground rails. RemoveUndergroundTunnels already removes those entrances.</summary>
+        public bool RemoveTunnelEntrances = false;
         /// <summary>When true, add rail segments from the above-ground rail network to each train tunnel entrance so tracks connect visually. Runs after GenerateDungeonGrid.</summary>
         public bool ConnectRailsToTunnelEntrances = true;
         public bool EmbedCargoShipPath = true;
@@ -219,6 +332,8 @@ namespace CustomMapGen
         public int LakeMaxAmount = 2;
         public bool LakesBlocked = false;
         public string LakesGenerate = "Wanted"; // "Wanted", "NotWanted", "NoPreference"
+        /// <summary>When a unique lake would stamp under the center outpost, swap it to a small oasis instead of relocating the whole lake.</summary>
+        public bool SwapOverlappingCenterLakeWithOasis = true;
         
         // Island settings (matching standard.json islandConfig)
         public bool IslandsEnabled = true;
@@ -272,6 +387,8 @@ namespace CustomMapGen
         public List<NearbyPrefabRule> NearbyPrefabRules = new List<NearbyPrefabRule>();
         /// <summary>River count / width / minimum length. -1 = vanilla.</summary>
         public RiverSettingsConfig RiverSettings = new RiverSettingsConfig();
+        /// <summary>Per PlaceMonuments folder. Filled on the first generation. ShouldChange must be true before a row is applied.</summary>
+        public List<MonumentGroupConfig> MonumentGroups = new List<MonumentGroupConfig>();
         
         // --- QoL & Map Settings (HarmonyCustomGenerator parity) ---
         /// <summary>Skip asset warmup on server start to reduce startup time.</summary>
@@ -286,7 +403,7 @@ namespace CustomMapGen
         public string Language = "en";
         
         /// <summary>When true, extra debug logs for outpost redirect, compound prefab skipping, and shore flattening. Set to false once issues are resolved.</summary>
-        public bool DebugLogging = true;
+        public bool DebugLogging = false;
 
         /// <summary>FREEZE DEBUG: When true, skip RunDeferredCompoundSpawn when LoadingScreen.Update("DONE") runs. If server no longer freezes, deferred spawn was the cause. Set back to false after testing.</summary>
         public bool SkipDeferredCompoundSpawnAtDone = false;
@@ -438,6 +555,7 @@ namespace CustomMapGen
                 LakeMaxAmount = 2,
                 LakesBlocked = false,
                 LakesGenerate = "Wanted",
+                SwapOverlappingCenterLakeWithOasis = true,
                 IslandsEnabled = true,
                 IslandIntensity = 7,
                 OasesMinAmount = 2,
@@ -456,6 +574,7 @@ namespace CustomMapGen
                 MinMonumentDistance = 75,
                 MinDistanceSmallToLargeMonument = 50,
                 RemoveUndergroundTunnels = false,
+                RemoveTunnelEntrances = false,
                 ConnectRailsToTunnelEntrances = true,
                 EmbedCargoShipPath = true,
                 TerrainConfiguration = TerrainConfig.Default(),
@@ -477,6 +596,7 @@ namespace CustomMapGen
                 DistanceRules = new List<MonumentDistanceRule>(),
                 NearbyPrefabRules = new List<NearbyPrefabRule>(),
                 RiverSettings = new RiverSettingsConfig(),
+                MonumentGroups = new List<MonumentGroupConfig>(),
                 SkipAssetWarmup = false,
                 MapSettings = new MapSettingsConfig(),
                 MapImage = new MapImageConfig(),
@@ -489,7 +609,7 @@ namespace CustomMapGen
                     SnapCenterOutpostToDungeonGrid = true
                 },
                 Language = "en",
-                DebugLogging = true,
+                DebugLogging = false,
                 SkipDeferredCompoundSpawnAtDone = false,
                 SkipPostSaveSwapAtDone = false,
                 DeferDoneWorkSeconds = 0.2f,
@@ -767,10 +887,59 @@ namespace CustomMapGen
     {
         /// <summary>Max rivers to keep. -1 = vanilla (2 on 4000, 3 on larger).</summary>
         public int Count = -1;
-        /// <summary>River path width. -1 = vanilla 8.</summary>
+        /// <summary>River path width. -1 = vanilla. When &gt; 0, this absolute width wins over WidthScale.</summary>
         public float Width = -1f;
+        /// <summary>Multiply the width vanilla just generated. 1 = unchanged. Ignored when Width &gt; 0.</summary>
+        public float WidthScale = 1f;
         /// <summary>Drop rivers shorter than this many meters. -1 = vanilla (~248m / 62 points).</summary>
         public float MinLength = -1f;
+    }
+
+    /// <summary>
+    /// One PlaceMonuments resource folder. The generator writes a row the first time it sees the folder.
+    /// Nothing in the row is applied until ShouldChange is true.
+    /// </summary>
+    public class MonumentGroupConfig
+    {
+        public bool ShouldChange;
+        public bool Generate = true;
+        public string Description = "";
+        public string Folder = "";
+        public int MinWorldSize;
+        /// <summary>0 means vanilla places every eligible prefab in the folder.</summary>
+        public int TargetCount;
+        public int MinDistanceSameType = 500;
+        public int MinDistanceDifferentType;
+        public string DistanceSame = "Max";
+        public string DistanceDifferent = "Any";
+        public bool IgnoreWorldSizeMultiplier;
+        public string OverrideFolder = "";
+        public List<string> IncludePrefabs = new List<string>();
+        public List<string> ExcludePrefabs = new List<string>();
+        public Dictionary<string, int> PrefabCopies = new Dictionary<string, int>();
+        public MonumentGroupFilterConfig Filter = new MonumentGroupFilterConfig();
+
+        public bool HasPrefabRules
+        {
+            get
+            {
+                if (IncludePrefabs != null && IncludePrefabs.Count > 0)
+                    return true;
+                if (ExcludePrefabs != null && ExcludePrefabs.Count > 0)
+                    return true;
+                return PrefabCopies != null && PrefabCopies.Count > 0;
+            }
+        }
+    }
+
+    public class MonumentGroupFilterConfig
+    {
+        public bool Enabled;
+        public List<string> BiomeType = new List<string>();
+        public List<string> SplatType = new List<string>();
+        public List<string> TopologyAny = new List<string>();
+        public List<string> TopologyAll = new List<string>();
+        public List<string> TopologyNot = new List<string>();
     }
 
     public class WebhookConfig
@@ -844,7 +1013,7 @@ namespace CustomMapGen
         public bool SnapCenterOutpostToDungeonGrid = true;
         /// <summary>RustEdit often tags monument contents as category &quot;Decor&quot;. When true (default), pasted swap-map rows with category Decor are written as &quot;Monument&quot; so world spawn matches vanilla compound children.</summary>
         public bool NormalizeDecorCategoryToMonumentWhenPastingSwapMap = true;
-        /// <summary>When true, after spawn tracking finalizes, attempt a late CreateEntity replay for swapped outpost rows that look like runtime entities (deployables/NPC/casino/etc) so they persist in server.save.</summary>
+        /// <summary>When true, after a *fresh* procgen spawn tracking finalizes, attempt a late CreateEntity replay for swapped outpost rows that are real BaseEntity prefabs. Never runs when loading an existing .map.</summary>
         public bool EnableLateEntityRecovery = true;
         /// <summary>Seconds after spawn tracking finalize before late entity recovery executes.</summary>
         public float LateEntityRecoveryDelaySeconds = 20f;

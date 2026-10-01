@@ -14,10 +14,15 @@ internal static class GrimmCoreHurtRegistration
 
         var attacker = info.InitiatorPlayer;
         if (attacker == null || attacker.IsNpc || attacker == victim) return;
-        if (!SteamIdHelper.IsSteamId(attacker.userID) || !SteamIdHelper.IsSteamId(victim.userID)) return;
+        if (!SteamIdHelper.IsSteamId(attacker.userID)) return;
 
         var mod = LeaderboardMod.Instance;
         if (mod == null) return;
+
+        bool victimIsHuman = SteamIdHelper.IsSteamId(victim.userID);
+        if (!victimIsHuman && mod.GetConfig()?.CountNpcHitsForHitrate != true)
+            return;
+
         if (!info.hasDamage) return;
 
         string key = HitAreaToKey(info.boneArea);

@@ -18,6 +18,8 @@ namespace DefendableHomes
             {
                 AppDomain.CurrentDomain.SetData(AppDomainHandlerKey, (Func<BaseEntity, HitInfo, object>)CanEntityTakeDamage);
                 AppDomain.CurrentDomain.SetData(AppDomainTargetHandlerKey, (Func<BaseEntity, BaseEntity, object>)CanEntityBeTargeted);
+                GrimmCoreBridge.RegisterGameHook("DefendableHomes", "CanEntityTakeDamage", 60, (Func<BaseEntity, HitInfo, object>)CanEntityTakeDamage);
+                GrimmCoreBridge.RegisterGameHook("DefendableHomes", "CanEntityBeTargeted", 60, (Func<BaseEntity, BaseEntity, object>)CanEntityBeTargeted);
             }
             catch (Exception ex)
             {
@@ -31,6 +33,7 @@ namespace DefendableHomes
             {
                 AppDomain.CurrentDomain.SetData(AppDomainHandlerKey, null);
                 AppDomain.CurrentDomain.SetData(AppDomainTargetHandlerKey, null);
+                GrimmCoreBridge.UnregisterGameHookMod("DefendableHomes");
             }
             catch { }
         }

@@ -35,8 +35,6 @@ namespace CustomMapGen.Patches
         /// <summary>Must match <see cref="GenerateDungeonGrid.CellSize"/> / <see cref="DungeonGridInfo.CellSize"/>.</summary>
         internal const int DungeonGridCellSize = 216;
         private const float CenterSlotThreshold = 80f;
-        /// <summary>Train yard / other large monuments placed after the center outpost can overlap its dungeon cell. 150m was too small (trainyard sat 247m away).</summary>
-        private const float LargeMonumentCenterOverlap = 280f;
 
         internal static bool LiveOutpostSwapApplied => _liveOutpostSwapApplied;
 
@@ -59,6 +57,7 @@ namespace CustomMapGen.Patches
             _liveSwappedMonumentKeys.Clear();
             _centerOutpostPosition = null;
             _centerOutpostEntrance = null;
+            _centerOutpostRotation = Quaternion.identity;
         }
 
         /// <summary>Dungeon-grid-snapped center outpost origin (cached after first query).</summary>
@@ -233,31 +232,92 @@ namespace CustomMapGen.Patches
                         UnityEngine.Debug.Log("[CustomMapGen] [DEBUG] Outpost redirect skipped: TerrainMeta.Path or HeightMap is null");
                 }
 
-                // Large monuments (water treatment, airfield, etc.) that spawn at/near center — relocate to blocked outpost slot
-                // (Compound is placed at center when bandit is blocked; large monuments are placed AFTER, so they weren't caught by MoveMonumentsAtCenterToNewPosition.)
-                if (config.TrySpawningOutpostInCenter && config.UseBlockedOutpostSlotForRelocation && _blockedOutpostPosition.HasValue &&
+                // Large monuments (water treatment, airfield, lakes, etc.) that spawn overlapping the center outpost pad —
+                // relocate before they stamp. Fixed 280m box was too small for ue_lake (~220m radius).
+                if (config.TrySpawningOutpostInCenter &&
                     TerrainMeta.Path != null && TerrainMeta.HeightMap != null)
                 {
                     if (PostSaveSwap.IsLargeMonument(nameLower) &&
                         !nameLower.Contains("compound") && !nameLower.Contains("outpost") && !nameLower.Contains("bandit"))
                     {
                         Vector3 centerPos = GetCenterOutpostPositionDry(false);
-                        float dx = Math.Abs(position.x - centerPos.x);
-                        float dz = Math.Abs(position.z - centerPos.z);
-                        if (dx <= LargeMonumentCenterOverlap && dz <= LargeMonumentCenterOverlap)
+                        float selfRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument(prefab.Name);
+                        if (selfRadius < 40f)
+                            selfRadius = 40f;
+                        float clearDist = 120f + selfRadius + Math.Max(1, config.MinMonumentDistance);
+                        float dx = position.x - centerPos.x;
+                        float dz = position.z - centerPos.z;
+                        if (dx * dx + dz * dz <= clearDist * clearDist)
                         {
-                            Vector3 newPos = _blockedOutpostPosition.Value;
-                            newPos.y = TerrainMeta.HeightMap.GetHeight(newPos);
-                            if (config.DebugLogging)
-                                UnityEngine.Debug.Log($"[CustomMapGen] Relocated large monument at center {prefab.Name} from ({position.x:F0},{position.z:F0}) to blocked outpost slot ({newPos.x:F0},{newPos.z:F0}).");
-                            position = newPos;
-                            _blockedOutpostPosition = null;
+                            // Unique lakes bake rocks; prefer a small oasis so a water feature can sit nearer without eating the pad.
+                            bool isLake = nameLower.Contains("ue_lake")
+                                || (nameLower.Contains("unique_environment") && nameLower.Contains("/lake/"));
+                            if (isLake
+                                && config.SwapOverlappingCenterLakeWithOasis
+                                && !config.OasesBlocked
+                                && !string.Equals(config.OasesGenerate, "NotWanted", StringComparison.OrdinalIgnoreCase))
+                            {
+                                Prefab oasisPrefab = TryLoadOasisPrefab(config.DebugLogging);
+                                if (oasisPrefab != null)
+                                {
+                                    if (config.DebugLogging)
+                                        UnityEngine.Debug.Log($"[CustomMapGen] Swapping center-overlapping lake {prefab.Name} → {oasisPrefab.Name} (baked rock footprint).");
+                                    prefab = oasisPrefab;
+                                    nameLower = oasisPrefab.Name.ToLowerInvariant();
+                                    selfRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument(oasisPrefab.Name);
+                                    if (selfRadius < 40f)
+                                        selfRadius = 40f;
+                                    clearDist = 120f + selfRadius + Math.Max(1, config.MinMonumentDistance);
+                                }
+                            }
+
+                            Vector3? newPos = null;
+                            if (config.UseBlockedOutpostSlotForRelocation && _blockedOutpostPosition.HasValue)
+                            {
+                                Vector3 blocked = _blockedOutpostPosition.Value;
+                                float bdx = blocked.x - centerPos.x;
+                                float bdz = blocked.z - centerPos.z;
+                                if (bdx * bdx + bdz * bdz >= clearDist * clearDist)
+                                {
+                                    blocked.y = TerrainMeta.HeightMap.GetHeight(blocked);
+                                    newPos = blocked;
+                                    _blockedOutpostPosition = null;
+                                }
+                            }
+                            if (!newPos.HasValue && World.Serialization != null)
+                            {
+                                object worldObj = PostSaveSwap.GetWorldFromSerialization(World.Serialization);
+                                var prefabsList = worldObj != null ? PostSaveSwap.GetPrefabsListFromWorld(worldObj) : null;
+                                if (prefabsList != null)
+                                {
+                                    Vector3 mapCenter = TerrainMeta.Position + TerrainMeta.Size * 0.5f;
+                                    float halfSize = TerrainMeta.Size.x * 0.5f;
+                                    newPos = PostSaveSwap.FindValidMonumentPosition(
+                                        centerPos, prefabsList, null, Math.Max(1, config.MinMonumentDistance),
+                                        mapCenter, halfSize, clearDist);
+                                }
+                            }
+                            if (newPos.HasValue)
+                            {
+                                bool waterFeature = nameLower.Contains("ue_lake") || nameLower.Contains("oasis")
+                                    || (nameLower.Contains("unique_environment") && nameLower.Contains("lake"));
+                                if (waterFeature || config.DebugLogging)
+                                    UnityEngine.Debug.Log($"[CustomMapGen] Relocated large monument overlapping center {prefab.Name} from ({position.x:F0},{position.z:F0}) to ({newPos.Value.x:F0},{newPos.Value.z:F0}) (clear={clearDist:F0}m).");
+                                position = newPos.Value;
+                            }
+                            else
+                            {
+                                UnityEngine.Debug.Log($"[CustomMapGen] Blocking {prefab.Name} at ({position.x:F0},{position.z:F0}) — would stamp under center outpost and no clear slot found.");
+                                return false;
+                            }
                         }
                     }
                 }
 
-                // Small monuments must not spawn within MinDistanceSmallToLargeMonument of a large monument (e.g. Large Barn not under Outpost corner)
-                if (config.MinDistanceSmallToLargeMonument > 0 && !PostSaveSwap.IsLargeMonument(nameLower) &&
+                // Small monuments must not spawn within MinDistanceSmallToLargeMonument of a large monument (e.g. Large Barn not under Outpost corner).
+                // Fishing villages already passed the boat-path check. Moving them afterward drops the ramp short of the beach.
+                bool keepBoatPlacement = nameLower.Contains("fishing_village");
+                if (!keepBoatPlacement && config.MinDistanceSmallToLargeMonument > 0 && !PostSaveSwap.IsLargeMonument(nameLower) &&
                     World.Serialization != null && TerrainMeta.Path != null && TerrainMeta.HeightMap != null)
                 {
                     object worldObj = PostSaveSwap.GetWorldFromSerialization(World.Serialization);
@@ -347,16 +407,281 @@ namespace CustomMapGen.Patches
                 && TerrainMeta.Path != null && TerrainMeta.HeightMap != null
                 && IsAtCenterOutpostSlot(position, GetCenterOutpostPositionDry(false), CenterSlotThreshold))
             {
-                TrySpawnLiveOutpostSwap(position, rotation, config);
+                // Vanilla compound stays until GenerateDungeonGrid finishes PathLink.
+                // Cache the AS-PLACED pose (terrain already stamped here). Do NOT SnapPosition
+                // after spawn — that Ceil's door Y +1.5m and leaves stilts / floating walls.
+                CacheLiveCenterCompoundPose(position, config.DebugLogging);
                 return;
             }
 
             TrySpawnLiveCustomMonumentSwap(prefab, position, rotation, scale, config);
         }
 
-        private static bool TrySpawnLiveOutpostSwap(Vector3 centerPos, Quaternion centerRotation, MapGenConfig config)
+        private static Quaternion _centerOutpostRotation = Quaternion.identity;
+
+        /// <summary>
+        /// After vanilla compound spawns at the center slot, remember its stamped pose for the
+        /// post-PathLink outpost.map replace. Tunnel XZ/Y were already chosen before AddPrefab
+        /// (same idea as PlaceMonuments: snap first, then place+stamp). Moving after stamp floats.
+        /// </summary>
+        internal static bool CacheLiveCenterCompoundPose(Vector3 approxPos, bool debugLogging)
         {
-            if (_liveOutpostSwapApplied || config?.SwapMonuments == null || !config.SwapMonuments.Enabled)
+            var monuments = TerrainPathAccess.GetMonuments(TerrainMeta.Path);
+            if (monuments == null || monuments.Count == 0)
+                return false;
+
+            MonumentInfo best = null;
+            float bestDistSq = float.MaxValue;
+            foreach (var m in monuments)
+            {
+                if (m == null || m.transform == null)
+                    continue;
+                string n = (m.name ?? "").ToLowerInvariant();
+                if (n.IndexOf("compound", StringComparison.Ordinal) < 0
+                    && n.IndexOf("outpost", StringComparison.Ordinal) < 0)
+                    continue;
+                float dx = m.transform.position.x - approxPos.x;
+                float dz = m.transform.position.z - approxPos.z;
+                float d2 = dx * dx + dz * dz;
+                if (d2 >= bestDistSq)
+                    continue;
+                bestDistSq = d2;
+                best = m;
+            }
+            if (best == null)
+            {
+                if (debugLogging)
+                    UnityEngine.Debug.LogWarning("[CustomMapGen] CacheLiveCenterCompoundPose: no compound/outpost MonumentInfo near center.");
+                return false;
+            }
+
+            DungeonGridInfo entrance = best.DungeonEntrance ?? best.GetComponentInChildren<DungeonGridInfo>(true);
+            Vector3 door = entrance != null ? GetTunnelDoorWorldPosition(entrance) : best.transform.position;
+
+            // Keep stamped height. Only report whether the live door is already PathLink-valid.
+            _centerOutpostPosition = best.transform.position;
+            _centerOutpostRotation = best.transform.rotation;
+            _centerOutpostEntrance = door;
+
+            Vector3 station = ClosestDungeonGridStation(door, TerrainMeta.Size.x);
+            float dxDoor = door.x - station.x;
+            float dzDoor = door.z - station.z;
+            bool valid = entrance != null && entrance.IsValidSpawnPosition(door);
+            Vector3 wouldSnap = entrance != null ? entrance.SnapPosition(door) : door;
+            float stiltsIfSnapped = wouldSnap.y - door.y;
+            UnityEngine.Debug.Log(
+                $"[CustomMapGen] Center compound as-placed (no post-stamp SnapPosition): origin=({best.transform.position.x:F1},{best.transform.position.y:F1},{best.transform.position.z:F1}) " +
+                $"door=({door.x:F1},{door.y:F1},{door.z:F1}) station=({station.x:F1},{station.z:F1}) leftover=({dxDoor:F1},{dzDoor:F1}) " +
+                $"valid={valid} SnapPositionWouldAddY={stiltsIfSnapped:F2}m (skipped).");
+            return true;
+        }
+
+        // Kept for call sites / clarity; live SnapPosition after stamp caused floating.
+        internal static bool SnapLiveCenterCompoundDoor(Vector3 approxPos, bool debugLogging) =>
+            CacheLiveCenterCompoundPose(approxPos, debugLogging);
+
+        private static Vector3 GetTunnelDoorWorldPosition(DungeonGridInfo entrance)
+        {
+            TerrainPathConnect[] connects = entrance.GetComponentsInChildren<TerrainPathConnect>(true);
+            if (connects != null)
+            {
+                foreach (var c in connects)
+                {
+                    if (c != null && c.Type == InfrastructureType.Tunnel)
+                        return c.transform.position;
+                }
+            }
+            return entrance.transform.position;
+        }
+
+        private static void UpdateSerializedPrefabPositionNear(Vector3 oldPos, Vector3 newPos, params string[] nameHints)
+        {
+            if (World.Serialization == null)
+                return;
+            object worldObj = PostSaveSwap.GetWorldFromSerialization(World.Serialization);
+            var list = worldObj != null ? PostSaveSwap.GetPrefabsListFromWorld(worldObj) : null;
+            if (list == null)
+                return;
+            foreach (object row in list)
+            {
+                if (row == null || !PostSaveSwap.TryGetPrefabId(row, out uint id) || id == 0)
+                    continue;
+                string name = StringPool.Get(id) ?? "";
+                bool match = false;
+                foreach (string hint in nameHints)
+                {
+                    if (name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        match = true;
+                        break;
+                    }
+                }
+                if (!match)
+                    continue;
+                float px = PostSaveSwap.GetPrefabPositionComponent(row, "x");
+                float pz = PostSaveSwap.GetPrefabPositionComponent(row, "z");
+                float dx = px - oldPos.x;
+                float dz = pz - oldPos.z;
+                if (dx * dx + dz * dz > 40f * 40f)
+                    continue;
+                object posObj = PostSaveSwap.GetPrefabMember(row, "position");
+                if (posObj == null)
+                    continue;
+                PostSaveSwap.SetVectorComponent(posObj, "x", newPos.x);
+                PostSaveSwap.SetVectorComponent(posObj, "y", newPos.y);
+                PostSaveSwap.SetVectorComponent(posObj, "z", newPos.z);
+                return;
+            }
+        }
+
+        /// <summary>
+        /// After GenerateDungeonGrid PathLink has used the vanilla compound door, delete the vanilla
+        /// monument and paste outpost.map at the same stamped pose (full replace, terrain stamps skipped).
+        /// </summary>
+        internal static void ReplaceCenterOutpostAfterDungeonGen()
+        {
+            if (_liveOutpostSwapApplied)
+                return;
+            if (!CustomMapGen.IsCustomMapGenEnabled() || CustomMapGen.IsLoadingExistingMap)
+                return;
+            var config = CustomMapGen.Instance?.GetConfig();
+            if (config?.SwapMonuments == null || !config.SwapMonuments.Enabled || !config.TrySpawningOutpostInCenter)
+                return;
+
+            Vector3 centerPos = _centerOutpostPosition
+                ?? GetCenterOutpostPositionDry(false);
+            Quaternion centerRot = _centerOutpostRotation;
+
+            // Destroy vanilla compound / outpost at the center slot (PathLink pieces are separate Dungeon prefabs).
+            var monuments = TerrainPathAccess.GetMonuments(TerrainMeta.Path);
+            MonumentInfo vanilla = null;
+            if (monuments != null)
+            {
+                float best = float.MaxValue;
+                foreach (var m in monuments)
+                {
+                    if (m == null || m.transform == null)
+                        continue;
+                    string n = (m.name ?? "").ToLowerInvariant();
+                    if (n.IndexOf("compound", StringComparison.Ordinal) < 0
+                        && n.IndexOf("outpost", StringComparison.Ordinal) < 0)
+                        continue;
+                    float dx = m.transform.position.x - centerPos.x;
+                    float dz = m.transform.position.z - centerPos.z;
+                    float d2 = dx * dx + dz * dz;
+                    if (d2 > CenterSlotThreshold * CenterSlotThreshold || d2 >= best)
+                        continue;
+                    best = d2;
+                    vanilla = m;
+                }
+            }
+            if (vanilla != null)
+            {
+                centerPos = vanilla.transform.position;
+                centerRot = vanilla.transform.rotation;
+                monuments.Remove(vanilla);
+                // PlaceMonuments.GetDistanceInfo walks DungeonGridEntrances and calls SqrDistance
+                // with no null check — a destroyed compound entrance freezes world setup (NRE).
+                UnregisterDungeonEntrancesUnder(vanilla.gameObject);
+                ScrubDestroyedDungeonEntrances();
+                // PowerlineNode.Awake registers into TerrainPath.wires; CreateWires NREs on dead nodes.
+                int scrubbedWires = TerrainPathAccess.ScrubWires(TerrainMeta.Path, vanilla.gameObject);
+                int scrubbedLandmarks = TerrainPathAccess.ScrubLandmarksOwnedBy(TerrainMeta.Path, vanilla.gameObject);
+                RemoveSerializedMonumentNear(centerPos, "compound", "outpost");
+                UnityEngine.Object.DestroyImmediate(vanilla.gameObject);
+                TerrainPathAccess.ScrubWires(TerrainMeta.Path); // drop any leftover destroyed nodes
+                UnityEngine.Debug.Log($"[CustomMapGen] Removed vanilla center compound after PathLink; replacing with outpost.map at ({centerPos.x:F1},{centerPos.y:F1},{centerPos.z:F1}) (scrubbedWires={scrubbedWires} scrubbedLandmarks={scrubbedLandmarks}).");
+            }
+
+            if (!TryPasteOutpostMapAt(centerPos, centerRot, config, fullReplace: true))
+                UnityEngine.Debug.LogWarning("[CustomMapGen] Failed to paste outpost.map after dungeon gen — center may be empty.");
+        }
+
+        private static void UnregisterDungeonEntrancesUnder(GameObject root)
+        {
+            if (root == null || TerrainMeta.Path == null)
+                return;
+            var entrances = TerrainPathAccess.GetDungeonGridEntrances(TerrainMeta.Path);
+            if (entrances == null || entrances.Count == 0)
+                return;
+
+            var owned = root.GetComponentsInChildren<DungeonGridInfo>(true);
+            if (owned == null || owned.Length == 0)
+                return;
+
+            for (int i = entrances.Count - 1; i >= 0; i--)
+            {
+                DungeonGridInfo e = entrances[i];
+                if (e == null)
+                {
+                    entrances.RemoveAt(i);
+                    continue;
+                }
+                for (int j = 0; j < owned.Length; j++)
+                {
+                    if (owned[j] == e)
+                    {
+                        entrances.RemoveAt(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static void ScrubDestroyedDungeonEntrances()
+        {
+            if (TerrainMeta.Path == null)
+                return;
+            var entrances = TerrainPathAccess.GetDungeonGridEntrances(TerrainMeta.Path);
+            if (entrances == null)
+                return;
+            for (int i = entrances.Count - 1; i >= 0; i--)
+            {
+                DungeonGridInfo e = entrances[i];
+                // Unity fake-null for destroyed components.
+                if (e == null)
+                    entrances.RemoveAt(i);
+            }
+        }
+
+        private static void RemoveSerializedMonumentNear(Vector3 pos, params string[] nameHints)
+        {
+            if (World.Serialization == null)
+                return;
+            object worldObj = PostSaveSwap.GetWorldFromSerialization(World.Serialization);
+            var list = worldObj != null ? PostSaveSwap.GetPrefabsListFromWorld(worldObj) : null;
+            if (list == null)
+                return;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                object row = list[i];
+                if (row == null || !PostSaveSwap.TryGetPrefabId(row, out uint id) || id == 0)
+                    continue;
+                string name = StringPool.Get(id) ?? "";
+                bool match = false;
+                foreach (string hint in nameHints)
+                {
+                    if (name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        match = true;
+                        break;
+                    }
+                }
+                if (!match)
+                    continue;
+                float px = PostSaveSwap.GetPrefabPositionComponent(row, "x");
+                float pz = PostSaveSwap.GetPrefabPositionComponent(row, "z");
+                float dx = px - pos.x;
+                float dz = pz - pos.z;
+                if (dx * dx + dz * dz > 80f * 80f)
+                    continue;
+                list.RemoveAt(i);
+            }
+        }
+
+        private static bool TryPasteOutpostMapAt(Vector3 centerPos, Quaternion centerRotation, MapGenConfig config, bool fullReplace)
+        {
+            if (config?.SwapMonuments == null || !config.SwapMonuments.Enabled)
                 return false;
 
             string folder = !string.IsNullOrEmpty(config.SwapMonuments.CustomPrefabsFolder)
@@ -366,8 +691,7 @@ namespace CustomMapGen.Patches
                 return false;
 
             string mapPath = null;
-            string[] files = Directory.GetFiles(folder, "*.map");
-            foreach (string file in files)
+            foreach (string file in Directory.GetFiles(folder, "*.map"))
             {
                 string shortName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(file));
                 if (shortName.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
@@ -402,19 +726,13 @@ namespace CustomMapGen.Patches
                     if (string.IsNullOrEmpty(checkPath))
                     {
                         skippedUnknown++;
-                        if (config.DebugLogging)
-                            UnityEngine.Debug.LogWarning($"[CustomMapGen] Live outpost swap: skipping unknown prefab id={checkId} (not in server StringPool). Remove it from outpost.map.");
                         continue;
                     }
                     knownRows.Add(row);
                 }
 
-                // Snap To Tunnel Grid already Ceil's Y onto the 1.5m link grid. PlacementHeightOffset
-                // would pull the door back off that grid and undo the lift that makes the 18m station link work.
                 bool snapToGrid = config.SwapMonuments.SnapCenterOutpostToDungeonGrid;
                 float heightOffset = snapToGrid ? 0f : config.SwapMonuments.PlacementHeightOffset;
-                if (snapToGrid && config.DebugLogging && Mathf.Abs(config.SwapMonuments.PlacementHeightOffset) > 0.001f)
-                    UnityEngine.Debug.Log("[CustomMapGen] Skipping PlacementHeightOffset because Snap To Tunnel Grid is on.");
                 object startPos = MapHandlerReflection.NewVector3(centerPos.x, centerPos.y + heightOffset, centerPos.z);
                 Vector3 euler = centerRotation.eulerAngles;
                 object startRot = MapHandlerReflection.NewVector3(euler.x, euler.y, euler.z);
@@ -440,7 +758,8 @@ namespace CustomMapGen.Patches
                         if (string.IsNullOrEmpty(rowCategory))
                             rowCategory = "Monument";
                         string rowPath = StringPool.Get(id) ?? "";
-                        if (IsOutpostMonumentRootRow(rowPath, rowCategory))
+                        // Full replace: paste everything. Overlay mode skipped monument roots.
+                        if (!fullReplace && IsOutpostMonumentRootRow(rowPath, rowCategory))
                         {
                             skippedRoots++;
                             continue;
@@ -452,7 +771,6 @@ namespace CustomMapGen.Patches
                         Prefab rowPrefab = Prefab.Load(id);
                         if (rowPrefab?.Object == null)
                         {
-                            // Serialize into the .map now; spawn GameObject LAST at DONE (after AssetScene-props loads).
                             World.Serialization?.AddPrefab(rowCategory, id, rowPos, rowRot, rowScale);
                             DeferredOutpostSpawn.Enqueue(rowCategory, id, rowPath, rowPos, rowRot, rowScale);
                             serializedOnly++;
@@ -467,7 +785,7 @@ namespace CustomMapGen.Patches
                 {
                     SkipTerrainStampsOnSpawn = false;
                     _spawningSwapRows = false;
-                    SwapSpawnTracking.EndTrackingAndLog("LiveProcgenSwap");
+                    SwapSpawnTracking.EndTrackingAndLog(fullReplace ? "PostDungeonReplace" : "LiveProcgenSwap");
                 }
 
                 bool applied = spawned > 0 || serializedOnly > 0;
@@ -475,16 +793,22 @@ namespace CustomMapGen.Patches
                     return false;
 
                 _liveOutpostSwapApplied = true;
-                UnityEngine.Debug.Log($"[CustomMapGen] Overlaid outpost.map extras onto vanilla compound at ({centerPos.x:F0},{centerPos.y:F0},{centerPos.z:F0}) spawned={spawned} deferredUntilDone={serializedOnly} skippedRoots={skippedRoots} skippedUnknown={skippedUnknown}.");
+                UnityEngine.Debug.Log($"[CustomMapGen] {(fullReplace ? "Replaced" : "Overlaid")} outpost.map at ({centerPos.x:F0},{centerPos.y:F0},{centerPos.z:F0}) spawned={spawned} deferredUntilDone={serializedOnly} skippedRoots={skippedRoots} skippedUnknown={skippedUnknown}.");
                 return true;
             }
             catch (Exception ex)
             {
                 SkipTerrainStampsOnSpawn = false;
                 _spawningSwapRows = false;
-                UnityEngine.Debug.LogWarning("[CustomMapGen] Live outpost swap failed; keeping vanilla compound. " + ex.Message);
+                UnityEngine.Debug.LogWarning("[CustomMapGen] outpost.map paste failed: " + ex.Message);
                 return false;
             }
+        }
+
+        private static bool TrySpawnLiveOutpostSwap(Vector3 centerPos, Quaternion centerRotation, MapGenConfig config)
+        {
+            // Legacy overlay path — center outpost now waits for GenerateDungeonGrid then full-replaces.
+            return TryPasteOutpostMapAt(centerPos, centerRotation, config, fullReplace: false);
         }
 
         /// <summary>
@@ -1064,7 +1388,7 @@ namespace CustomMapGen.Patches
         private static Vector3[] BuildDungeonEntranceOffsets()
         {
             var list = new List<Vector3>(32);
-            float[] majors = { 36f, 48f };
+            float[] majors = { 36f, 30f, 48f };
             float[] minors = { 9f, 12f };
             foreach (float major in majors)
             {
@@ -1084,9 +1408,9 @@ namespace CustomMapGen.Patches
         }
 
         /// <summary>
-        /// Place the center outpost before GenerateDungeonGrid. Stay near geographic center, but shift
-        /// a little so the dungeon door sits on a 3m leftover next to a 216m station cell — that is
-        /// what lets vanilla tunnel linking close. Exact (0,0) leaves a leftover PathLink cannot finish.
+        /// Place the center outpost as close to map center as possible while keeping the dungeon
+        /// door on the tunnel link grid (same rules as PlaceMonuments SnapPosition / valid leftover).
+        /// Never fall back to raw geographic (0,0) — that leaves the door off-grid and PathLink breaks.
         /// </summary>
         private static Vector3 GetCenterOutpostPositionDry(bool debugLogging)
         {
@@ -1099,10 +1423,14 @@ namespace CustomMapGen.Patches
 
             var config = CustomMapGen.Instance?.GetConfig();
             bool snap = config?.SwapMonuments?.SnapCenterOutpostToDungeonGrid ?? true;
-            if (snap && TerrainMeta.Size.x > 0f && TrySnapCenterOutpostToTunnelStation(geographic, debugLogging, out Vector3 snapped))
+            if (snap && TerrainMeta.Size.x > 0f)
             {
-                _centerOutpostPosition = snapped;
-                return snapped;
+                if (TrySnapCenterOutpostToTunnelStation(geographic, debugLogging, out Vector3 snapped))
+                {
+                    _centerOutpostPosition = snapped;
+                    return snapped;
+                }
+                UnityEngine.Debug.LogWarning("[CustomMapGen] Tunnel-grid snap found no slot near center — refusing geographic (0,0) fallback.");
             }
 
             Vector3 dry = FindDryNear(geographic, debugLogging);
@@ -1111,14 +1439,21 @@ namespace CustomMapGen.Patches
         }
 
         /// <summary>
-        /// Search dungeon cells around map center. Prefer lower, flatter land (so we don't sit on a
-        /// peak 40m+ above a nearby airfield) while keeping the dungeon door on a station leftover.
-        /// Door Y is snapped onto the 1.5m link grid without Ceil-lifting onto stilts.
+        /// Pick the tunnel leftover nearest map center. Door is SnapPosition'd (3m XZ / 1.5m Y) like
+        /// PlaceMonuments; station leftover must clear the 28×28 entrance volume and keep both axes
+        /// usable by PathLink (≥6m on the minor).
         /// </summary>
         private static bool TrySnapCenterOutpostToTunnelStation(Vector3 geographic, bool debugLogging, out Vector3 origin)
         {
             origin = geographic;
             Vector3 connectLocal = GetDungeonConnectLocalOffset(debugLogging);
+            if (connectLocal.x * connectLocal.x + connectLocal.z * connectLocal.z < 400f)
+            {
+                if (debugLogging)
+                    UnityEngine.Debug.LogWarning("[CustomMapGen] Dungeon connect local offset missing — cannot aim door at a station leftover.");
+                return false;
+            }
+
             int cellCount = DungeonGridCellCount(TerrainMeta.Size.x);
             WorldToDungeonGrid(geographic, cellCount, out int originCx, out int originCz);
 
@@ -1130,7 +1465,7 @@ namespace CustomMapGen.Patches
             Vector3 bestStation = Vector3.zero;
             float bestScore = float.MaxValue;
             bool found = false;
-            const int searchRadius = 2;
+            const int searchRadius = 3;
             const float maxOriginMove = 400f;
 
             for (int cx = originCx - searchRadius; cx <= originCx + searchRadius; cx++)
@@ -1145,6 +1480,7 @@ namespace CustomMapGen.Patches
                     Vector3 station = DungeonGridStationWorld(cx, cz, cellCount);
                     foreach (Vector3 offset in DungeonEntranceOffsets)
                     {
+                        // Door target on the link grid next to this station (PlaceMonuments SnapPosition XZ).
                         Vector3 entrance = station + offset;
                         entrance.x = Mathf.Round(entrance.x / 3f) * 3f;
                         entrance.z = Mathf.Round(entrance.z / 3f) * 3f;
@@ -1159,20 +1495,24 @@ namespace CustomMapGen.Patches
                         SampleOutpostPad(cand, 90f, out float padY, out float spread, out float slope);
                         if (!IsDryOutpostPosition(new Vector3(cand.x, padY, cand.z), 0.1f))
                             continue;
-                        if (slope > 28f)
-                            continue;
-                        if (spread > 32f)
+                        if (slope > 28f || spread > 32f)
                             continue;
 
                         float doorNatural = padY + connectLocal.y;
                         float doorY = SnapDoorHeightToLinkGrid(doorNatural);
                         cand.y = doorY - connectLocal.y;
+                        entrance.y = doorY;
 
-                        float score = padY + move * 0.06f + spread * 0.25f;
-                        // Prefer shorter leftovers (36+9 over 48+12). PathLink only gets 8
-                        // segments/side; long leftovers leave a cardinal stub hole at the station.
-                        float leftoverLen = Mathf.Abs(offset.x) + Mathf.Abs(offset.z);
-                        score += (leftoverLen - 45f) * 0.35f;
+                        // IsValidSpawnPosition equivalent: not on the station cell.
+                        float dx = Mathf.Abs(entrance.x - station.x);
+                        float dz = Mathf.Abs(entrance.z - station.z);
+                        if (dx <= 3f && dz <= 3f)
+                            continue;
+
+                        float leftoverLen = dx + dz;
+                        float yLift = Mathf.Max(0f, doorY - doorNatural);
+                        // Closest to center first — this is the whole point of "near 0,0 on the tunnel grid".
+                        float score = move * 1.0f + yLift * 8f + slope * 0.25f + (leftoverLen - 45f) * 0.25f;
                         if (padY > contextMin + 12f)
                             score += (padY - contextMin - 12f) * 2.5f;
                         if (nearbyMonumentY < 800f && padY > nearbyMonumentY + 10f)
@@ -1180,10 +1520,9 @@ namespace CustomMapGen.Patches
 
                         if (score >= bestScore)
                             continue;
-
                         bestScore = score;
                         bestOrigin = cand;
-                        bestEntrance = new Vector3(entrance.x, doorY, entrance.z);
+                        bestEntrance = entrance;
                         bestStation = station;
                         found = true;
                     }
@@ -1192,38 +1531,30 @@ namespace CustomMapGen.Patches
 
             if (!found)
             {
-                if (debugLogging)
-                    UnityEngine.Debug.LogWarning("[CustomMapGen] No dry tunnel-aligned slot within 400m of map center; using geographic/dry fallback.");
+                UnityEngine.Debug.LogWarning("[CustomMapGen] No dry tunnel-aligned slot within 400m of map center.");
                 return false;
             }
 
             origin = bestOrigin;
             _centerOutpostEntrance = bestEntrance;
-            if (debugLogging)
-            {
-                float dx = bestEntrance.x - bestStation.x;
-                float dz = bestEntrance.z - bestStation.z;
-                UnityEngine.Debug.Log(
-                    $"[CustomMapGen] Center outpost origin snapped ({origin.x:F1},{origin.y:F1},{origin.z:F1}) " +
-                    $"from geographic ({geographic.x:F0},{geographic.y:F0},{geographic.z:F0}) score={bestScore:F1}. " +
-                    $"Dungeon door=({bestEntrance.x:F1},{bestEntrance.y:F1},{bestEntrance.z:F1}) station=({bestStation.x:F1},{bestStation.z:F1}) leftover=({dx:F1},{dz:F1}) " +
-                    $"nearbyMonumentY={(nearbyMonumentY < 800f ? nearbyMonumentY.ToString("F0") : "none")} contextMin={contextMin:F0}.");
-            }
+            UnityEngine.Debug.Log(
+                $"[CustomMapGen] Center outpost tunnel-grid snap ({origin.x:F1},{origin.y:F1},{origin.z:F1}) " +
+                $"from geographic ({geographic.x:F0},{geographic.y:F0},{geographic.z:F0}) score={bestScore:F1}. " +
+                $"Dungeon door=({bestEntrance.x:F1},{bestEntrance.y:F1},{bestEntrance.z:F1}) station=({bestStation.x:F1},{bestStation.z:F1}) " +
+                $"leftover=({bestEntrance.x - bestStation.x:F1},{bestEntrance.z - bestStation.z:F1}).");
             return true;
         }
 
         /// <summary>
-        /// Put the dungeon door on the 1.5m link grid. Never Ceil above natural terrain — that is the
-        /// stilt lift. Round when it stays at/below ground; Floor when Round would raise.
-        /// 0.71m miss this gen: door 81.7 → 81.0.
+        /// Put the dungeon door on the 1.5m link grid. Prefer Round when already close (no stilts).
         /// </summary>
         private static float SnapDoorHeightToLinkGrid(float naturalDoorY)
         {
             const float linkHeight = 1.5f;
             float rounded = Mathf.Round(naturalDoorY / linkHeight) * linkHeight;
-            if (rounded > naturalDoorY + 0.05f)
-                return Mathf.Floor(naturalDoorY / linkHeight) * linkHeight;
-            return rounded;
+            if (Mathf.Abs(rounded - naturalDoorY) <= linkHeight * 0.5f + 0.01f)
+                return rounded;
+            return (float)Mathf.CeilToInt(naturalDoorY / linkHeight) * linkHeight;
         }
 
         private static void SampleOutpostPad(Vector3 xz, float radius, out float padY, out float spread, out float slope)
@@ -1357,20 +1688,64 @@ namespace CustomMapGen.Patches
             return pos;
         }
 
-        /// <summary>Remove any monument at map center (e.g. oasis) so the center outpost doesn't spawn inside it. Staging/newer Rust can place oases at center.</summary>
+        private static readonly string[] OasisPrefabPaths =
+        {
+            "assets/bundled/prefabs/autospawn/unique_environment/oasis/ue_oasis_a.prefab",
+            "assets/bundled/prefabs/autospawn/unique_environment/oasis/ue_oasis_b.prefab",
+            "assets/bundled/prefabs/autospawn/unique_environment/oasis/ue_oasis_c.prefab",
+        };
+
+        /// <summary>Load a small round oasis to replace a center-overlapping unique lake.</summary>
+        private static Prefab TryLoadOasisPrefab(bool debugLogging)
+        {
+            // Prefer folder load so letter variants stay available if Facepunch renames one file.
+            Prefab[] folder = Prefab.Load("assets/bundled/prefabs/autospawn/unique_environment/oasis", null, null, useProbabilities: false, useWorldConfig: false);
+            if (folder != null)
+            {
+                var matches = new List<Prefab>();
+                foreach (var p in folder)
+                {
+                    if (p?.Name == null || p.Object == null) continue;
+                    string n = p.Name.ToLowerInvariant();
+                    if (n.Contains("ue_oasis") || n.Contains("oasis"))
+                        matches.Add(p);
+                }
+                if (matches.Count > 0)
+                    return matches[UnityEngine.Random.Range(0, matches.Count)];
+            }
+            foreach (string path in OasisPrefabPaths)
+            {
+                Prefab[] direct = Prefab.Load(path, null, null, useProbabilities: false, useWorldConfig: false);
+                if (direct != null && direct.Length > 0 && direct[0]?.Object != null)
+                    return direct[0];
+            }
+            if (debugLogging)
+                UnityEngine.Debug.Log("[CustomMapGen] Could not load ue_oasis_a/b/c for lake→oasis swap.");
+            return null;
+        }
+
+        /// <summary>Remove any monument at map center (e.g. oasis/lake) so the center outpost doesn't spawn inside it. Staging/newer Rust can place oases/lakes at center.</summary>
         private static void RemoveMonumentsAtCenter(Vector3 centerPos, bool debugLogging)
         {
             var monumentsAtCenter = TerrainPathAccess.GetMonuments(TerrainMeta.Path);
             if (monumentsAtCenter == null || monumentsAtCenter.Count == 0)
                 return;
-            const float centerRadius = 180f; // Oases can be large; clear enough radius for outpost
+            const float outpostRadius = 120f;
+            const float minBuffer = 75f;
             var toRemove = new List<MonumentInfo>();
             foreach (var m in monumentsAtCenter)
             {
                 if (m == null || m.gameObject == null) continue;
                 float dx = m.transform.position.x - centerPos.x;
                 float dz = m.transform.position.z - centerPos.z;
-                if (dx * dx + dz * dz <= centerRadius * centerRadius)
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                string n = m.name ?? "";
+                float otherRadius = PostSaveSwap.GetEffectiveRadiusForLargeMonument(n);
+                if (otherRadius < 40f)
+                    otherRadius = 40f;
+                // Lakes: destroy the GO if it overlaps the outpost pad (terrain may already be stamped —
+                // AddPrefab redirect below tries to move lakes before they stamp).
+                if (dist <= outpostRadius + otherRadius + minBuffer)
                     toRemove.Add(m);
             }
             foreach (var m in toRemove)

@@ -52,11 +52,14 @@ namespace TeleportGUI
             SetupUIComponents();
             RegisterCommands();
             RegisterCuiCommand();
+            StartMonumentWarpInit();
             UnityEngine.Debug.Log("[TeleportGUI] Harmony mod loaded. Commands: /tp, /home, /warp, /tpback, /death. Use /tp with no args to open GUI.");
         }
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            StopMonumentWarpInit();
+            ShutdownMonumentWarps();
             UnregisterCuiCommand();
             UnregisterCommands();
             TeardownUIComponents();
@@ -93,7 +96,6 @@ namespace TeleportGUI
                         _config = JsonConvert.DeserializeObject<TeleportGUIConfig>(json);
                         if (_config == null) _config = new TeleportGUIConfig();
                         EnsureConfigDefaults();
-                        EnsureDefaultWarpsInConfig();
                         return;
                     }
                     catch (Exception ex)
@@ -105,7 +107,6 @@ namespace TeleportGUI
             }
             _config = new TeleportGUIConfig();
             EnsureConfigDefaults();
-            EnsureDefaultWarpsInConfig();
             try
             {
                 var dir = Path.GetDirectoryName(Path.Combine(serverRoot, "HarmonyConfig", "TeleportGUI.json"));
@@ -127,16 +128,40 @@ namespace TeleportGUI
             _config.Admin = _config.Admin ?? new TeleportGUIConfig.AdminOptions();
             _config.UI = _config.UI ?? new TeleportGUIConfig.UIOptions();
             _config.UI.Colors = _config.UI.Colors ?? new TeleportGUIConfig.UIOptions.UIColors();
+            if (_config.Warp.MonumentWarps == null)
+                _config.Warp.MonumentWarps = new Dictionary<string, TeleportGUIConfig.WarpOptions.MonumentWarp>(StringComparer.OrdinalIgnoreCase);
+            else if (!ReferenceEquals(_config.Warp.MonumentWarps.Comparer, StringComparer.OrdinalIgnoreCase))
+                _config.Warp.MonumentWarps = new Dictionary<string, TeleportGUIConfig.WarpOptions.MonumentWarp>(_config.Warp.MonumentWarps, StringComparer.OrdinalIgnoreCase);
+            if (_config.WarpPoints == null)
+                _config.WarpPoints = new Dictionary<string, TeleportGUIConfig.WarpPointConfig>();
         }
 
-        /// <summary>Ensures Outpost and Bandit exist in config warps (for existing configs that don't have them).</summary>
-        private void EnsureDefaultWarpsInConfig()
+        /// <summary>Drop leftover 0,0,0 Outpost/Bandit placeholders so monument-generated warps can take over.</summary>
+        private void StripUnsetPlaceholderWarps()
         {
-            if (_config?.WarpPoints == null) return;
-            if (!_config.WarpPoints.ContainsKey("Outpost"))
-                _config.WarpPoints["Outpost"] = new TeleportGUIConfig.WarpPointConfig { X = 0, Y = 0, Z = 0 };
-            if (!_config.WarpPoints.ContainsKey("Bandit"))
-                _config.WarpPoints["Bandit"] = new TeleportGUIConfig.WarpPointConfig { X = 0, Y = 0, Z = 0 };
+            if (_data?.WarpPoints == null) return;
+            var remove = new List<string>();
+            foreach (var kv in _data.WarpPoints)
+            {
+                if (kv.Value == null) { remove.Add(kv.Key); continue; }
+                if (kv.Value.Position.sqrMagnitude >= 1f) continue;
+                if (IsBuiltInMonumentWarpName(kv.Key))
+                    remove.Add(kv.Key);
+            }
+            if (remove.Count == 0) return;
+            for (int i = 0; i < remove.Count; i++)
+                _data.WarpPoints.Remove(remove[i]);
+            _warpData = _data.WarpPoints;
+            SaveData();
+        }
+
+        internal static bool IsBuiltInMonumentWarpName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.Equals("Outpost", StringComparison.OrdinalIgnoreCase)
+                   || name.Equals("Bandit", StringComparison.OrdinalIgnoreCase)
+                   || name.Equals("Bandit Camp", StringComparison.OrdinalIgnoreCase)
+                   || name.Equals("Bandit Town", StringComparison.OrdinalIgnoreCase);
         }
 
         private string GetDataFolder()
@@ -174,6 +199,7 @@ namespace TeleportGUI
             if (_data.Users == null) _data.Users = new Dictionary<ulong, TeleportGUIData.UserData>();
             if (_data.WarpPoints == null) _data.WarpPoints = new Dictionary<string, TeleportGUIData.WarpPoint>();
             _warpData = _data.WarpPoints;
+            StripUnsetPlaceholderWarps();
 
             if (_data.ShouldResetDailyUses())
             {
@@ -188,6 +214,9 @@ namespace TeleportGUI
             if (_config?.WarpPoints == null) return;
             foreach (var kv in _config.WarpPoints)
             {
+                if (kv.Value == null) continue;
+                if (kv.Value.X * kv.Value.X + kv.Value.Y * kv.Value.Y + kv.Value.Z * kv.Value.Z < 1f)
+                    continue;
                 if (_data.WarpPoints.ContainsKey(kv.Key)) continue;
                 _data.WarpPoints[kv.Key] = new TeleportGUIData.WarpPoint
                 {
@@ -232,7 +261,13 @@ namespace TeleportGUI
 
         private List<string> GetTPAliases() => _config.Teleport?.CommandAliases ?? new List<string> { "tp", "tpr" };
         private List<string> GetHomeAliases() => _config.Home?.CommandAliases ?? new List<string> { "home", "sethome", "deletehome" };
-        private List<string> GetWarpAliases() => _config.Warp?.CommandAliases ?? new List<string> { "warp" };
+        private List<string> GetWarpAliases()
+        {
+            var list = _config.Warp?.CommandAliases;
+            if (list == null || list.Count == 0)
+                return new List<string> { "warp" };
+            return list;
+        }
 
         private int GetTPDelay() => _config.Teleport?.Delay?.Default ?? 5;
         private int GetTPCooldown() => _config.Teleport?.Cooldown?.Default ?? 300;
@@ -762,6 +797,17 @@ namespace TeleportGUI
                 CmdWarp(player, args);
                 return true;
             }
+            if (_warpChatCommandTargets != null && _warpChatCommandTargets.TryGetValue(cmd, out var warpTarget) &&
+                !string.IsNullOrEmpty(warpTarget))
+            {
+                CmdWarp(player, new[] { warpTarget });
+                return true;
+            }
+            if (IsBuiltInMonumentWarpName(cmd))
+            {
+                CmdWarp(player, new[] { cmd });
+                return true;
+            }
             if (IsAlias(cmd, _config.TpBackCommandAliases))
             {
                 CmdTpBack(player, args);
@@ -946,26 +992,25 @@ namespace TeleportGUI
 
         private void CmdWarp(BasePlayer player, string[] args)
         {
-            if (_data.WarpPoints == null || _data.WarpPoints.Count == 0)
-            {
-                SendMessage(player, "No warp points configured.");
-                return;
-            }
             if (args == null || args.Length == 0)
             {
-                SendMessage(player, "Warps: " + string.Join(", ", _data.WarpPoints.Keys));
+                var names = new List<string>();
+                foreach (var kvp in EnumerateAllWarps())
+                    names.Add(kvp.Key);
+                if (names.Count == 0)
+                {
+                    SendMessage(player, "No warp points configured.");
+                    return;
+                }
+                SendMessage(player, "Warps: " + string.Join(", ", names));
                 return;
             }
 
             var name = string.Join(" ", args).Trim();
-            if (!_data.WarpPoints.TryGetValue(name, out var wp))
+            if (!TryGetAnyWarp(name, out var wp) || wp == null)
             {
-                var key = _data.WarpPoints.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
-                if (key == null || !_data.WarpPoints.TryGetValue(key, out wp))
-                {
-                    SendMessage(player, "Warp '" + name + "' not found.");
-                    return;
-                }
+                SendMessage(player, "Warp '" + name + "' not found.");
+                return;
             }
 
             var user = GetOrCreateUser(player);
@@ -984,10 +1029,10 @@ namespace TeleportGUI
                 }
             }
 
-            var dest = wp.Position;
+            var dest = ResolveWarpPosition(wp);
             if (dest.sqrMagnitude < 1f)
             {
-                SendMessage(player, "Warp '" + name + "' has no position set. Admin: set X,Y,Z in TeleportGUI config (e.g. Outpost, Bandit).");
+                SendMessage(player, "Warp '" + name + "' is not ready yet. Monument spawn points have not been generated — try again in a moment.");
                 return;
             }
             int delaySec = (_config.Admin?.Instant == true && player.IsAdmin) ? 0 : Math.Max(0, GetWarpDelay());

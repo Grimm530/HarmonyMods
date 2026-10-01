@@ -60,7 +60,9 @@ namespace CustomMapGen.Patches
 
             // Run monument swap BEFORE spawn so the list has custom outpost when the game spawns prefabs.
             // (Save Prefix still runs before Save() so the file on disk also has the swap.)
-            if (CustomMapGen.IsCustomMapGenEnabled())
+            // Existing-map boots already have the swapped .map on disk — do not re-paste outpost.map or
+            // late-recover entities; MapImage may keep this mod loaded until DONE.
+            if (CustomMapGen.IsCustomMapGenEnabled() && !CustomMapGen.IsLoadingExistingMap)
             {
                 if (config?.SwapMonuments != null && config.SwapMonuments.Enabled)
                 {
@@ -132,10 +134,15 @@ namespace CustomMapGen.Patches
         [HarmonyPostfix]
         static void Postfix(MethodBase __originalMethod)
         {
-            var config = CustomMapGen.Instance?.GetConfig();
-            if (config?.DebugLogging != true)
+            if (CustomMapGen.IsLoadingExistingMap)
+            {
+                SwapSpawnTracking.Cancel();
                 return;
+            }
 
+            // Always finalize swap tracking (delayed log + late entity recovery).
+            // If this is skipped when DebugLogging is off, _active stays true and
+            // PumpMainThread takes a lock on every ServerMgr.Update for the rest of the wipe.
             string source = __originalMethod?.Name ?? "Spawn";
             SwapSpawnTracking.EndTrackingAndLog(source);
         }
@@ -154,6 +161,8 @@ namespace CustomMapGen.Patches
         {
             if (!CustomMapGen.IsCustomMapGenEnabled())
                 return;
+            if (CustomMapGen.Instance?.GetConfig()?.DebugLogging != true)
+                return;
 
             int call = Interlocked.Increment(ref _prefixCalls);
             if (call <= InitialDetailedLogs)
@@ -170,6 +179,8 @@ namespace CustomMapGen.Patches
         static void Postfix()
         {
             if (!CustomMapGen.IsCustomMapGenEnabled())
+                return;
+            if (CustomMapGen.Instance?.GetConfig()?.DebugLogging != true)
                 return;
 
             int call = Interlocked.Increment(ref _postfixCalls);

@@ -28,27 +28,36 @@ internal static class ServerMgr_Metrics_Patches
     [HarmonyTargetMethods]
     public static IEnumerable<MethodBase> TargetMethods(Harmony harmonyInstance)
     {
-        yield return AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.Update));
-        yield return AccessTools.Method(typeof(ServerBuildingManager), nameof(ServerBuildingManager.Cycle));
-        yield return AccessTools.Method(typeof(ServerBuildingManager), nameof(ServerBuildingManager.Merge));
-        yield return AccessTools.Method(typeof(ServerBuildingManager), nameof(ServerBuildingManager.Split));
-        
-        yield return AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.ServerCycle));
-        yield return AccessTools.Method(typeof(ConnectionQueue), nameof(ConnectionQueue.Cycle));
-        
-        yield return AccessTools.Method(typeof(AIThinkManager), nameof(AIThinkManager.ProcessQueue));
-        yield return AccessTools.Method(typeof(IOEntity), nameof(IOEntity.ProcessQueue));
-        
-        yield return AccessTools.Method(typeof(BasePet), nameof(BasePet.ProcessMovementQueue));
-        yield return AccessTools.Method(typeof(BaseMountable), nameof(BaseMountable.FixedUpdateCycle));
-        yield return AccessTools.Method(typeof(Buoyancy), nameof(Buoyancy.Cycle));
+        MethodBase[] candidates =
+        {
+            AccessTools.Method(typeof(ServerMgr), nameof(ServerMgr.Update)),
+            AccessTools.Method(typeof(ServerBuildingManager), nameof(ServerBuildingManager.Cycle)),
+            AccessTools.Method(typeof(ServerBuildingManager), nameof(ServerBuildingManager.Merge)),
+            AccessTools.Method(typeof(ServerBuildingManager), nameof(ServerBuildingManager.Split)),
+            AccessTools.Method(typeof(BasePlayer), nameof(BasePlayer.ServerCycle)),
+            AccessTools.Method(typeof(ConnectionQueue), nameof(ConnectionQueue.Cycle)),
+            AccessTools.Method(typeof(AIThinkManager), nameof(AIThinkManager.ProcessQueue)),
+            AccessTools.Method(typeof(IOEntity), nameof(IOEntity.ProcessQueue)),
+            AccessTools.Method(typeof(BasePet), nameof(BasePet.ProcessMovementQueue)),
+            AccessTools.Method(typeof(BaseMountable), nameof(BaseMountable.FixedUpdateCycle)),
+            AccessTools.Method(typeof(Buoyancy), nameof(Buoyancy.Cycle)),
+            AccessTools.Method(typeof(BaseEntity), nameof(BaseEntity.Kill)),
+            AccessTools.Method(typeof(BaseEntity), nameof(BaseEntity.Spawn))
+        };
 
-        yield return AccessTools.Method(typeof(BaseEntity), nameof(BaseEntity.Kill));
-        yield return AccessTools.Method(typeof(BaseEntity), nameof(BaseEntity.Spawn));
+        foreach (var method in candidates)
+        {
+            if (method != null)
+                yield return method;
+        }
 
         var raknetServerType = AccessTools.TypeByName("Facepunch.Network.Raknet.Server");
         if (raknetServerType != null)
-            yield return AccessTools.Method(raknetServerType, "Cycle");
+        {
+            var cycle = AccessTools.Method(raknetServerType, "Cycle");
+            if (cycle != null)
+                yield return cycle;
+        }
     }
     
     [HarmonyTranspiler]

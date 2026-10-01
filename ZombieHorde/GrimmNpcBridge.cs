@@ -374,7 +374,9 @@ namespace ZombieHorde
             SetProp(npcCfg, _npcConfigType, "CanSleep", false);
             SetProp(npcCfg, _npcConfigType, "SleepDistance", 0f);
             SetProp(npcCfg, _npcConfigType, "Speed", speed);
-            SetProp(npcCfg, _npcConfigType, "AreaMask", 25);
+            // Human scientist agent + Walkable mask (BotReSpawn / RaidableBases). AreaMask 25 + human
+            // agentType never samples correctly → permanent off-mesh + Resume spam.
+            SetProp(npcCfg, _npcConfigType, "AreaMask", 1);
             SetProp(npcCfg, _npcConfigType, "AgentTypeID", -1372625422);
             SetProp(npcCfg, _npcConfigType, "HomePosition", homePos);
             SetProp(npcCfg, _npcConfigType, "MemoryDuration", ConfigData.Configuration?.Horde?.ForgetTime > 0 ? ConfigData.Configuration.Horde.ForgetTime : 10f);

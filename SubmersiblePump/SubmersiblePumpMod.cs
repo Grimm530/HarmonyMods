@@ -28,6 +28,7 @@ namespace SubmersiblePump
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterKillObserver("SubmersiblePump", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             try
             {
@@ -76,6 +77,7 @@ namespace SubmersiblePump
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterGameHookMod("SubmersiblePump");
             try { ChatSayBridge.Unregister("SubmersiblePump"); } catch { }
             try
             {

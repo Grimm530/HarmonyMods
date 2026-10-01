@@ -18,17 +18,13 @@ namespace RaidableBases
             var host = RaidableBasesHost.Instance;
             if (host == null || host.ModInstance == null) return null;
 
-            if (host.IsSubscribed("CanEntityTakeDamage"))
-            {
-                var can = host.InvokeHookCached("CanEntityTakeDamage", entity, info);
-                if (can is bool allowCan && !allowCan) return true;
-            }
+            if (!host.IsSubscribed("CanEntityTakeDamage") && !host.IsSubscribed("OnEntityTakeDamage"))
+                return null;
 
-            if (host.IsSubscribed("OnEntityTakeDamage"))
-            {
-                var on = host.InvokeHookCached("OnEntityTakeDamage", entity, info);
-                if (on is bool allowOn && !allowOn) return true;
-            }
+            // Always use CanEntityTakeDamage (returns bool). TruePVE may already have allowed
+            // OwnerID-0 raid hits via AppDomain; we only block when RB says false.
+            var can = host.InvokeCanEntityTakeDamage(entity, info);
+            if (can is bool allow && !allow) return true;
 
             return null;
         }

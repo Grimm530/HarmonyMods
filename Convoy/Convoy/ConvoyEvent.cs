@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.AI;
+using GrimmShared;
 
 namespace Convoy
 {
@@ -1091,7 +1092,7 @@ namespace Convoy
         {
             ground = origin;
             NavMeshHit hit;
-            if (NavMesh.SamplePosition(origin, out hit, 8f, NavMesh.AllAreas))
+            if (RecastNav.SamplePosition(origin, out hit, 8f, NavMesh.AllAreas))
             {
                 ground = hit.position;
                 return true;
@@ -1102,7 +1103,7 @@ namespace Convoy
             {
                 float ang = i * 45f * Mathf.Deg2Rad;
                 Vector3 probe = origin + new Vector3(Mathf.Cos(ang) * 3f, 2f, Mathf.Sin(ang) * 3f);
-                if (NavMesh.SamplePosition(probe, out hit, 6f, NavMesh.AllAreas))
+                if (RecastNav.SamplePosition(probe, out hit, 6f, NavMesh.AllAreas))
                 {
                     ground = hit.position;
                     return true;

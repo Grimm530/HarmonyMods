@@ -149,10 +149,8 @@ namespace UpLiftedHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), typeof(BaseNetworkable.DestroyMode), typeof(bool))]
     public static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
             try { UL.Dispatch_OnEntityKill(__instance); }

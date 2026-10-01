@@ -1,4 +1,4 @@
-# PlayerSkins Harmony Mod (3.0.142)
+# PlayerSkins Harmony Mod (3.0.143)
 
 Harmony Harmony port of **PlayerSkins 3.0.141** (Chaos UI). Uses **0Permissions** for access checks. Chaos UI framework is vendored (same approach as AutoCodeLock).
 
@@ -26,7 +26,7 @@ After `harmony.reload 0Permissions`, PlayerSkins auto-rebinds permissions (gener
 | Kind | Path |
 |------|------|
 | Config | `HarmonyConfig/PlayerSkins.json` |
-| Data | `HarmonyData/PlayerSkins/userdata.json`, `skinlist.json`, `excludedskins.json` |
+| Data | `HarmonyData/PlayerSkins/userdata.json`, `skinlist.json`, `excludedskins.json`, `scrapestate.json` |
 | Lang | `HarmonyLanguage/PlayerSkins.json` (optional file overrides embedded defaults) |
 
 ## Permissions
@@ -60,11 +60,12 @@ Command names come from `HarmonyConfig/PlayerSkins.json`.
 
 ## Workshop scrape
 
-When **Enable workshop skins** is true, PlayerSkins queries Steam Workshop (`IPublishedFileService/QueryFiles`) after approved skins load. It pulls the most-voted **community** skins per item, up to **Maximum community skins to scrape per item** (default 50, max 100).
+When **Enable workshop skins** is true, PlayerSkins queries Steam Workshop (`IPublishedFileService/QueryFiles`) after approved skins load. It pulls the most-voted **community** skins per item, up to **Maximum community skins to scrape per item** (default 50, max 100). Community skins are stored in `HarmonyData/PlayerSkins/skinlist.json` and reused on later boots.
 
 - Paid/DLC skins are skipped (`PlayerDLCAPI`). `ApprovedIfOwned` stays **true**: Facepunch/approved skins only appear if the player owns them on Steam. Community workshop skins are sold in-game at the category price.
 - The shop opens as soon as approved skins are ready; scrape continues in the background (about one request per item).
-- Later loads skip items already at the cap. Run `playerskins.skins scrape` to fill remaining slots, or raise the cap and scrape again.
+- **Skip startup scrape when community skins already exist** (default true): after the first successful fill, later boots skip the Steam round-trip. Run `playerskins.skins scrape` to refresh.
+- **Hours between automatic scrapes** (`0` = never auto-refresh after the first scrape). Set e.g. `168` for a weekly Steam refresh.
 - Set the cap to `0` to keep workshop import commands without auto-scrape.
 
 ## CUI

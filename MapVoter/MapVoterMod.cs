@@ -36,6 +36,7 @@ public class MapVoterMod : IHarmonyModHooks
     private ConsoleSystem.Command _mapvoteStartCommand;
     private ConsoleSystem.Command _mvotepostCommand;
     private ConsoleSystem.Command _mvoteDiscordCommand;
+    private ConsoleSystem.Command _discordEditCommand;
     /// <summary>RCON / bot: <c>global.discordvote &lt;steam64&gt; &lt;mapIndex&gt;</c></summary>
     private ConsoleSystem.Command _discordBotVoteCommand;
     private ConsoleSystem.Command _mvoteWipeCommand;
@@ -321,6 +322,19 @@ public class MapVoterMod : IHarmonyModHooks
             if (ConsoleSystem.Index.Server.GlobalDict != null)
                 ConsoleSystem.Index.Server.GlobalDict["mvotediscord"] = _mvoteDiscordCommand;
 
+            _discordEditCommand = new ConsoleSystem.Command
+            {
+                Name = "discordedit",
+                FullName = "global.discordedit",
+                Variable = true,
+                ServerAdmin = true,
+                AllowRunFromServer = true,
+                Call = arg => EditExistingDiscordVote()
+            };
+            ConsoleSystem.Index.Server.Dict["global.discordedit"] = _discordEditCommand;
+            if (ConsoleSystem.Index.Server.GlobalDict != null)
+                ConsoleSystem.Index.Server.GlobalDict["discordedit"] = _discordEditCommand;
+
             // Discord bot: RCON global.discordvote <steam64> <mapIndex> (same registration path as mvote: Dict + GlobalDict + Index.All)
             _discordBotVoteCommand = new ConsoleSystem.Command
             {
@@ -403,6 +417,12 @@ public class MapVoterMod : IHarmonyModHooks
                 ConsoleSystem.Index.Server.Dict?.Remove("global.mvotediscord");
                 ConsoleSystem.Index.Server.GlobalDict?.Remove("mvotediscord");
                 _mvoteDiscordCommand = null;
+            }
+            if (_discordEditCommand != null)
+            {
+                ConsoleSystem.Index.Server.Dict?.Remove("global.discordedit");
+                ConsoleSystem.Index.Server.GlobalDict?.Remove("discordedit");
+                _discordEditCommand = null;
             }
             if (_discordBotVoteCommand != null)
             {
@@ -566,6 +586,7 @@ public class MapVoterMod : IHarmonyModHooks
         // Required: server console / WebRCON use Find(); Dict alone is not enough (see HARMONY_MODS_GUIDE.md).
         if (n == "global.discordvote" || n == "discordvote") return _discordBotVoteCommand;
         if (n == "global.mvotediscord" || n == "mvotediscord") return _mvoteDiscordCommand;
+        if (n == "global.discordedit" || n == "discordedit") return _discordEditCommand;
         return null;
     }
 
@@ -758,6 +779,12 @@ public class MapVoterMod : IHarmonyModHooks
         if (norm == "mvotediscord")
         {
             ResendVoteToDiscord();
+            reply = "OK";
+            return true;
+        }
+        if (norm == "discordedit")
+        {
+            EditExistingDiscordVote();
             reply = "OK";
             return true;
         }
@@ -1007,7 +1034,16 @@ public class MapVoterMod : IHarmonyModHooks
 
         private void StopVote()
         {
+        WriteLastVoteOptions();
         string winner = GetWinnerFromTallies();
+        bool randomPick = false;
+        if (string.IsNullOrEmpty(winner))
+        {
+            winner = PickRandomVoteMap();
+            if (string.IsNullOrEmpty(winner))
+                winner = PickRandomSavedVoteOption();
+            randomPick = !string.IsNullOrEmpty(winner);
+        }
         if (!string.IsNullOrEmpty(winner))
             SaveVoteWinner(winner);
         _voteActive = false;
@@ -1017,9 +1053,11 @@ public class MapVoterMod : IHarmonyModHooks
         StopModCoroutine(ref _loadMapsCoroutine);
         DeleteVoteSeedsFile();
         DeleteVoteStateFile();
-        string msg = winner != null ? $"Vote ended. Winner: {winner}" : "Vote ended.";
+        string msg = winner != null
+            ? (randomPick ? $"Vote ended. No votes — random winner: {winner}" : $"Vote ended. Winner: {winner}")
+            : "Vote ended.";
         Info(msg);
-        SendToDiscordVoteEnded(winner);
+        SendToDiscordVoteEnded(winner, randomPick);
         }
 
     private string GetWinnerFromTallies()
@@ -1033,11 +1071,35 @@ public class MapVoterMod : IHarmonyModHooks
         return best;
     }
 
+    /// <summary>When nobody voted, pick one of the current vote options so wipe still uses a pool map.</summary>
+    private string PickRandomVoteMap()
+    {
+        var maps = GetVoteMaps();
+        if (maps == null || maps.Count == 0) return null;
+        var ids = new List<string>();
+        for (int i = 0; i < maps.Count; i++)
+        {
+            string id = maps[i]?.Id?.Trim();
+            if (!string.IsNullOrEmpty(id))
+                ids.Add(id);
+        }
+        if (ids.Count == 0) return null;
+        int pick = new System.Random(Guid.NewGuid().GetHashCode()).Next(ids.Count);
+        return ids[pick];
+    }
+
     private string GetWinner()
     {
         string live = GetWinnerFromTallies();
         if (!string.IsNullOrEmpty(live)) return live;
-        return LoadVoteWinner();
+        string saved = LoadVoteWinner();
+        if (!string.IsNullOrEmpty(saved)) return saved;
+        string picked = PickRandomVoteMap();
+        if (string.IsNullOrEmpty(picked))
+            picked = PickRandomSavedVoteOption();
+        if (!string.IsNullOrEmpty(picked))
+            SaveVoteWinner(picked);
+        return picked;
     }
 
     private void OpenUI(BasePlayer player)
@@ -1080,11 +1142,13 @@ public class MapVoterMod : IHarmonyModHooks
 
         private const string VOTE_SEEDS_FILENAME = "current_vote_seeds.txt";
         private const string VOTE_STATE_FILENAME = "current_vote_state.json";
+        private const string LAST_VOTE_OPTIONS_FILENAME = "last_vote_options.txt";
 
         private string GetVoteSeedsDirectory() => Path.Combine(GetServerRoot(), "HarmonyData", "MapVoter");
         private string GetVoteSeedsFilePath() => Path.Combine(GetVoteSeedsDirectory(), VOTE_SEEDS_FILENAME);
         private string GetVoteStateFilePath() => Path.Combine(GetVoteSeedsDirectory(), VOTE_STATE_FILENAME);
         private string GetVoteWinnerFilePath() => Path.Combine(GetVoteSeedsDirectory(), "vote_winner.txt");
+        private string GetLastVoteOptionsFilePath() => Path.Combine(GetVoteSeedsDirectory(), LAST_VOTE_OPTIONS_FILENAME);
         private string GetAutoVoteCycleFilePath() => Path.Combine(GetVoteSeedsDirectory(), "auto_vote_cycle.txt");
 
     private void SaveVoteWinner(string winner)
@@ -1119,6 +1183,106 @@ public class MapVoterMod : IHarmonyModHooks
             if (File.Exists(path)) File.Delete(path);
         }
         catch { }
+    }
+
+    private void WriteLastVoteOptions()
+    {
+        try
+        {
+            var seeds = new List<int>();
+            var maps = GetVoteMaps();
+            if (maps != null)
+            {
+                for (int i = 0; i < maps.Count; i++)
+                {
+                    if (int.TryParse(maps[i]?.Id?.Trim(), out int seed) && seed > 0 && !seeds.Contains(seed))
+                        seeds.Add(seed);
+                }
+            }
+            if (seeds.Count == 0 && TryReadVoteSeedsFromFile(out _, out var fromFile) && fromFile != null)
+            {
+                for (int i = 0; i < fromFile.Count; i++)
+                {
+                    if (fromFile[i] > 0 && !seeds.Contains(fromFile[i]))
+                        seeds.Add(fromFile[i]);
+                }
+            }
+            if (seeds.Count == 0) return;
+            int mapSize = _config?.MapSize ?? 4000;
+            var dir = GetVoteSeedsDirectory();
+            Directory.CreateDirectory(dir);
+            var lines = new List<string> { mapSize.ToString() };
+            for (int i = 0; i < seeds.Count; i++)
+                lines.Add(seeds[i].ToString());
+            File.WriteAllLines(GetLastVoteOptionsFilePath(), lines);
+        }
+        catch (Exception ex) { Log($"MapVoter: Could not save last vote options: {ex.Message}"); }
+    }
+
+    private string PickRandomSavedVoteOption()
+    {
+        if (!TryReadLastVoteOptions(out _, out var seeds) || seeds == null || seeds.Count == 0)
+            return null;
+        int pick = new System.Random(Guid.NewGuid().GetHashCode()).Next(seeds.Count);
+        return seeds[pick].ToString();
+    }
+
+    private bool TryReadLastVoteOptions(out int mapSize, out List<int> seeds)
+    {
+        mapSize = 0;
+        seeds = new List<int>();
+        try
+        {
+            var path = GetLastVoteOptionsFilePath();
+            if (!File.Exists(path)) return false;
+            var lines = File.ReadAllLines(path);
+            if (lines == null || lines.Length < 2) return false;
+            if (!int.TryParse(lines[0]?.Trim(), out mapSize) || mapSize <= 0) return false;
+            for (int i = 1; i < lines.Length; i++)
+            {
+                if (int.TryParse(lines[i]?.Trim(), out int seed) && seed > 0)
+                    seeds.Add(seed);
+            }
+            return seeds.Count > 0;
+        }
+        catch { return false; }
+    }
+
+    private void DeleteLastVoteOptionsFile()
+    {
+        try
+        {
+            var path = GetLastVoteOptionsFilePath();
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { }
+    }
+
+    private bool TryPickRandomPoolSeed(out int seed)
+    {
+        seed = 0;
+        int mapSize = _config?.MapSize ?? 4000;
+        if (mapSize <= 0) return false;
+        var pool = ScanImagePool(mapSize);
+        if (pool == null || pool.Count == 0) return false;
+        int pick = new System.Random(Guid.NewGuid().GetHashCode()).Next(pool.Count);
+        seed = pool[pick].Seed;
+        return seed > 0;
+    }
+
+    private bool TryResolveWipeSeed(out int seed)
+    {
+        seed = 0;
+        string winner = GetWinner();
+        if (!string.IsNullOrEmpty(winner) && int.TryParse(winner, out seed) && seed > 0)
+            return true;
+        if (TryPickRandomPoolSeed(out seed))
+        {
+            SaveVoteWinner(seed.ToString());
+            Info("MapVoter: No vote winner on file; picked random image-pool seed " + seed);
+            return true;
+        }
+        return false;
     }
 
     private int GetCloseVotingHoursBeforeWipe()
@@ -1474,6 +1638,7 @@ public class MapVoterMod : IHarmonyModHooks
         DeleteVoteSeedsFile();
         DeleteVoteStateFile();
         ClearVoteWinnerFile();
+        DeleteLastVoteOptionsFile();
         WipeSignal.MarkWiped(statePath);
         Log("MapVoter: Cleared leftover vote after wipe signal.");
 
@@ -1731,7 +1896,6 @@ public class MapVoterMod : IHarmonyModHooks
                 int restartSeconds = (int)Math.Ceiling(timeUntilWipe.TotalSeconds);
                 if (restartSeconds < 60) restartSeconds = 60;
 
-                string winner = GetWinner();
                 int mapSize = _config?.MapSize ?? 4000;
                 int seed;
                 bool isCustomMap = _config?.AutoWipe?.CustomMap?.EnableCustomMap == true
@@ -1741,13 +1905,10 @@ public class MapVoterMod : IHarmonyModHooks
                 {
                     seed = 0;
                 }
-                else if (!string.IsNullOrEmpty(winner) && int.TryParse(winner, out seed))
-                {
-                    // Use vote winner
-                }
-                else
+                else if (!TryResolveWipeSeed(out seed))
                 {
                     seed = new System.Random(Guid.NewGuid().GetHashCode()).Next(100000, 2100000000);
+                    Info("MapVoter: No vote winner or image pool; using generated seed " + seed);
                 }
 
                 var wipeData = new AutoWipeData
@@ -1834,7 +1995,6 @@ public class MapVoterMod : IHarmonyModHooks
     {
         try
         {
-            string winner = GetWinner();
             int mapSize = _config?.MapSize ?? 4000;
             int seed;
             bool isCustomMap = _config?.AutoWipe?.CustomMap?.EnableCustomMap == true
@@ -1844,13 +2004,10 @@ public class MapVoterMod : IHarmonyModHooks
             {
                 seed = 0;
             }
-            else if (!string.IsNullOrEmpty(winner) && int.TryParse(winner, out seed))
-            {
-                // Use vote winner as wipe seed.
-            }
-            else
+            else if (!TryResolveWipeSeed(out seed))
             {
                 seed = new System.Random(Guid.NewGuid().GetHashCode()).Next(100000, 2100000000);
+                Info("MapVoter: No vote winner or image pool; using generated seed " + seed);
             }
 
             var wipeData = new AutoWipeData
@@ -2089,11 +2246,11 @@ public class MapVoterMod : IHarmonyModHooks
     /// <summary>Resize image for Discord payload (JPEG to keep POST size down).</summary>
     private byte[] ResizeForDiscord(byte[] originalBytes, int maxDimension)
     {
-        int maxDim = Mathf.Clamp(maxDimension, 256, 1024);
-        return ResizeWithGdi(originalBytes, maxDim, true);
+        int maxDim = Mathf.Clamp(maxDimension, 256, 2048);
+        return ResizeWithGdi(originalBytes, maxDim, true, 85);
     }
 
-    private byte[] ResizeWithGdi(byte[] originalBytes, int maxDim, bool jpeg)
+    private byte[] ResizeWithGdi(byte[] originalBytes, int maxDim, bool jpeg, int jpegQuality = 0)
     {
         if (originalBytes == null || originalBytes.Length == 0) return null;
         try
@@ -2124,7 +2281,9 @@ public class MapVoterMod : IHarmonyModHooks
                             if (codec != null)
                             {
                                 var eps = new System.Drawing.Imaging.EncoderParameters(1);
-                                long q = Math.Max(50, Math.Min(95, _config?.MapImageJpegQuality ?? 75));
+                                long q = jpegQuality > 0
+                                    ? Math.Max(50, Math.Min(95, jpegQuality))
+                                    : Math.Max(50, Math.Min(95, _config?.MapImageJpegQuality ?? 75));
                                 eps.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, q);
                                 bmp.Save(output, codec, eps);
                             }
@@ -2598,7 +2757,7 @@ public class MapVoterMod : IHarmonyModHooks
                             pngId = crc.ToString();
                         }
                         catch (Exception ex) { Info($"MapVoter: FileStorage store failed for seed {seed}: {ex.Message}"); }
-                        var discordBytes = ResizeForDiscord(bytes, _config?.DiscordImageMaxDimension ?? 512);
+                        var discordBytes = ResizeForDiscord(bytes, _config?.DiscordImageMaxDimension ?? 2048);
                         imageDataBase64 = (discordBytes != null && discordBytes.Length > 0)
                             ? Convert.ToBase64String(discordBytes)
                             : Convert.ToBase64String(toStore);
@@ -2645,7 +2804,7 @@ public class MapVoterMod : IHarmonyModHooks
         }
         else
         {
-            Info("MapVoter: Vote restored (Discord not posted on reload). Run mvotediscord to send maps to Discord.");
+            Info("MapVoter: Vote restored (Discord not posted on reload). Run discordedit to add images to the existing cards, or mvotediscord to post a new thread.");
         }
 
         StopModCoroutine(ref _voteEndAtWipeCoroutine);
@@ -2987,13 +3146,40 @@ public class MapVoterMod : IHarmonyModHooks
         else
         {
             string winner = GetWinner();
-            string desc = winner != null ? $"Winner: **{winner}** (manual resend)" : "No votes were cast. (manual resend)";
+            string desc = winner != null ? $"Winner: **{winner}** (manual resend)" : "No vote maps available. (manual resend)";
             UnityEngine.Debug.Log("[MapVoter] mvotediscord: Sending vote_ended to Discord bridge...");
             SendToDiscord("vote_ended", "Map vote ended (manual resend)", desc, winner);
         }
     }
 
-    private void SendToDiscordVoteStarted()
+    private void EditExistingDiscordVote()
+    {
+        if (_config?.Discord?.LogToDiscord != true)
+        {
+            UnityEngine.Debug.Log("[MapVoter] discordedit: Discord logging is disabled. Set 'Log to Discord (true/false)': true and channel IDs in HarmonyConfig/MapVoter.json");
+            return;
+        }
+        string url = _config.Discord.BridgeUrl?.Trim().TrimEnd('/');
+        if (string.IsNullOrEmpty(url))
+        {
+            UnityEngine.Debug.Log("[MapVoter] discordedit: Bridge URL is empty. Set 'Discord bridge URL' in config.");
+            return;
+        }
+        if (string.IsNullOrEmpty(_config.Discord.VoteChannelId))
+        {
+            UnityEngine.Debug.Log("[MapVoter] discordedit: Vote Channel id is empty. Set it in config.");
+            return;
+        }
+        if (!_voteActive)
+        {
+            UnityEngine.Debug.Log("[MapVoter] discordedit: No active vote to edit.");
+            return;
+        }
+        UnityEngine.Debug.Log("[MapVoter] discordedit: Sending vote_edit to Discord bridge (existing cards)...");
+        SendToDiscordVoteStarted("vote_edit");
+    }
+
+    private void SendToDiscordVoteStarted(string eventType = "vote_started")
     {
         if (_config?.Discord?.LogToDiscord != true) return;
         string url = _config.Discord.BridgeUrl?.Trim().TrimEnd('/');
@@ -3026,13 +3212,17 @@ public class MapVoterMod : IHarmonyModHooks
                 ["index"] = i++,
                 ["votes"] = voteCount
             };
-            // Bot on this machine reads C:\svr1\maps\images via mapsImagePath — skip huge base64.
+            // Send the already-resized JPEG (512px). Raw pool PNGs are ~11MB; Discord's per-file cap
+            // depends on boost tier, but stuffing eight full images in one request is still a bad idea.
+            if (!string.IsNullOrEmpty(m.ImageDataBase64))
+                mapEntry["imageDataBase64"] = m.ImageDataBase64;
             mapsPayload.Add(mapEntry);
         }
 
+        if (string.IsNullOrEmpty(eventType)) eventType = "vote_started";
         var payload = new Dictionary<string, object>
         {
-            ["event"] = "vote_started",
+            ["event"] = eventType,
             ["channelId"] = _config.Discord.VoteChannelId,
             ["title"] = hostname,
             ["description"] = $"Map vote has started • Next wipe: {nextWipe}",
@@ -3041,6 +3231,14 @@ public class MapVoterMod : IHarmonyModHooks
             ["nextWipe"] = nextWipe,
             ["maps"] = mapsPayload
         };
+
+        int withImages = 0;
+        for (int mi = 0; mi < mapsPayload.Count; mi++)
+        {
+            if (mapsPayload[mi].ContainsKey("imageDataBase64"))
+                withImages++;
+        }
+        Info($"MapVoter: Discord {eventType} payload: {mapsPayload.Count} maps, {withImages} with resized images.");
 
         string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
         StartModCoroutine(SendToDiscordCoroutine(GetBridgePostUrls(), json));
@@ -3121,9 +3319,15 @@ public class MapVoterMod : IHarmonyModHooks
     }
 
     /// <summary>POST vote_ended with winner seed so Discord can announce and close the vote thread.</summary>
-    private void SendToDiscordVoteEnded(string winner)
+    private void SendToDiscordVoteEnded(string winner, bool randomPick = false)
     {
-        string desc = !string.IsNullOrEmpty(winner) ? $"Winner: **{winner}**" : "No votes were cast.";
+        string desc;
+        if (string.IsNullOrEmpty(winner))
+            desc = "No vote maps available.";
+        else if (randomPick)
+            desc = $"Winner: **{winner}**\nNo votes were cast — a map was chosen at random.";
+        else
+            desc = $"Winner: **{winner}**";
         SendToDiscord("vote_ended", "Map vote ended!", desc, winner);
     }
 

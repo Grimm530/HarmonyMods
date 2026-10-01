@@ -27,11 +27,9 @@ namespace RustVehiclesHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), typeof(BaseNetworkable.DestroyMode), typeof(bool))]
     internal static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             var plugin = Hooks.Plugin;
             if (plugin == null) return;
@@ -284,29 +282,6 @@ namespace RustVehiclesHarmony.Patches
             }
             catch (Exception ex) { Hooks.Warn("CanLootEntity", ex); }
             return true;
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
-    internal static class BaseNetworkable_Spawn_Patch
-    {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
-        {
-            var plugin = Hooks.Plugin;
-            if (plugin == null || !plugin.IsSubscribed("OnEntitySpawned")) return;
-            try
-            {
-                switch (__instance)
-                {
-                    case Tugboat tug: plugin.OnEntitySpawned(tug); break;
-                    case BaseSubmarine sub: plugin.OnEntitySpawned(sub); break;
-                    case MotorRowboat row: plugin.OnEntitySpawned(row); break;
-                    case Minicopter mini: plugin.OnEntitySpawned(mini); break;
-                    case AttackHelicopter atk: plugin.OnEntitySpawned(atk); break;
-                }
-            }
-            catch (Exception ex) { Hooks.Warn("OnEntitySpawned", ex); }
         }
     }
 

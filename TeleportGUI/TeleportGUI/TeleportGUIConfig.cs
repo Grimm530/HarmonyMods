@@ -37,12 +37,8 @@ namespace TeleportGUI
         [JsonProperty("UI options")]
         public UIOptions UI { get; set; } = new UIOptions();
 
-        [JsonProperty("Warp points (name -> position). Include Outpost, Bandit, or custom. Set X,Y,Z in config or via admin.)")]
-        public Dictionary<string, WarpPointConfig> WarpPoints { get; set; } = new Dictionary<string, WarpPointConfig>
-        {
-            ["Outpost"] = new WarpPointConfig { X = 0, Y = 0, Z = 0 },
-            ["Bandit"] = new WarpPointConfig { X = 0, Y = 0, Z = 0 }
-        };
+        [JsonProperty("Warp points (name -> position). Custom warps only; Outpost/Bandit are generated from the map.")]
+        public Dictionary<string, WarpPointConfig> WarpPoints { get; set; } = new Dictionary<string, WarpPointConfig>();
 
         [JsonProperty("Data folder path (empty = serverRoot/HarmonyData/TeleportGUI)")]
         public string DataFolderPath { get; set; } = "";
@@ -221,20 +217,68 @@ namespace TeleportGUI
             [JsonProperty("Purchase")]
             public PurchaseOptions Purchase { get; set; } = new PurchaseOptions();
 
+            [JsonProperty("Monument warp points")]
+            public Dictionary<string, MonumentWarp> MonumentWarps { get; set; } = new Dictionary<string, MonumentWarp>(StringComparer.OrdinalIgnoreCase);
+
             [JsonProperty("Monument warps")]
-            public Dictionary<string, MonumentWarp> MonumentWarps { get; set; } = new Dictionary<string, MonumentWarp>();
+            private Dictionary<string, MonumentWarp> MonumentWarpsLegacy
+            {
+                get => MonumentWarps;
+                set
+                {
+                    if (value == null) return;
+                    MonumentWarps = new Dictionary<string, MonumentWarp>(value, StringComparer.OrdinalIgnoreCase);
+                }
+            }
+
+            private bool ShouldSerializeMonumentWarpsLegacy() => false;
 
             [JsonProperty("Command aliases")]
             public List<string> CommandAliases { get; set; } = new List<string> { "warp" };
 
             public class MonumentWarp
             {
-                [JsonProperty("Enabled")]
+                [JsonProperty("Generate warp for this monument")]
                 public bool Enabled { get; set; }
-                [JsonProperty("Safe zone only")]
+
+                [JsonProperty("Enabled")]
+                private bool EnabledLegacy
+                {
+                    get => Enabled;
+                    set => Enabled = value;
+                }
+
+                private bool ShouldSerializeEnabledLegacy() => false;
+
+                [JsonProperty("Only generate warp points in the monuments safe zone (if applicable)")]
                 public bool SafeZoneOnly { get; set; }
-                [JsonProperty("Command")]
+
+                [JsonProperty("Safe zone only")]
+                private bool SafeZoneOnlyLegacy
+                {
+                    get => SafeZoneOnly;
+                    set => SafeZoneOnly = value;
+                }
+
+                private bool ShouldSerializeSafeZoneOnlyLegacy() => false;
+
+                [JsonProperty("Custom chat command")]
                 public string Command { get; set; } = string.Empty;
+
+                [JsonProperty("Command")]
+                private string CommandLegacy
+                {
+                    get => Command;
+                    set { if (value != null) Command = value; }
+                }
+
+                private bool ShouldSerializeCommandLegacy() => false;
+
+                [JsonProperty("Required permission (prefix with teleportgui.)")]
+                public string Permission { get; set; } = string.Empty;
+
+                [JsonProperty("Maximum radius for generated warp points")]
+                public float MaxRadius { get; set; }
             }
         }
 

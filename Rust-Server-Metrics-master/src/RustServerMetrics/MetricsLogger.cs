@@ -16,7 +16,7 @@ namespace RustServerMetrics
 {
     public class MetricsLogger : SingletonComponent<MetricsLogger>
     {
-        const string CONFIGURATION_PATH = "HarmonyData/ServerMetrics/Configuration.json";
+        const string CONFIGURATION_PATH = "HarmonyMods_Data/ServerMetrics/Configuration.json";
         readonly static Regex PLUGIN_NAME_REGEX = new Regex(@"_|[^\w\d]");
         readonly StringBuilder _stringBuilder = new();
         readonly Dictionary<ulong, Action> _playerStatsActions = new();
@@ -110,7 +110,14 @@ namespace RustServerMetrics
 
         internal static void Initialize()
         {
-            new GameObject().AddComponent<MetricsLogger>();
+            try
+            {
+                new GameObject().AddComponent<MetricsLogger>();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[ServerMetrics]: Initialize failed: " + ex);
+            }
         }
 
         internal void OnServerStarted()
@@ -166,9 +173,16 @@ namespace RustServerMetrics
             foreach (var nestedType in nestedTypes)
             {
                 if (nestedType.GetCustomAttribute<DelayedHarmonyPatchAttribute>(false) == null) continue;
-                
-                var patchProcessor = new PatchClassProcessor((Harmony)harmonyInstance, nestedType);
-                Debug.Log(patchProcessor.Patch() == null ? $"[ServerMetrics]: Failed to apply patch: {nestedType.Name}" : $"[ServerMetrics]: Applied Startup Patch: {nestedType.Name}");
+
+                try
+                {
+                    var patchProcessor = new PatchClassProcessor((Harmony)harmonyInstance, nestedType);
+                    Debug.Log(patchProcessor.Patch() == null ? $"[ServerMetrics]: Failed to apply patch: {nestedType.Name}" : $"[ServerMetrics]: Applied Startup Patch: {nestedType.Name}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[ServerMetrics]: Exception applying startup patch {nestedType.Name}: {ex}");
+                }
             }
         }
 
@@ -203,7 +217,7 @@ namespace RustServerMetrics
             InvokeRepeating(ServerUpdate.SerializeToStringBuilder, UnityEngine.Random.Range(0f, 1f), 1f);
             InvokeRepeating(TimeWarnings.SerializeToStringBuilder, UnityEngine.Random.Range(0f, 1f), 1f);
             
-            // Collect HarmonyMod metrics every 5 seconds (less frequent than Harmony mods)
+            // Collect HarmonyMod metrics every 5 seconds (less frequent than Oxide plugins)
             InvokeRepeating(OnHarmonyModMetrics, UnityEngine.Random.Range(1f, 2f), 5f);
         }
 
@@ -261,7 +275,7 @@ namespace RustServerMetrics
             }
         }
 
-        internal void OnHarmonyPluginMetrics(Dictionary<string, double> metrics)
+        internal void OnOxidePluginMetrics(Dictionary<string, double> metrics)
         {
             if (!Ready) return;
             if (metrics.Count < 1) return;
@@ -378,6 +392,7 @@ namespace RustServerMetrics
         internal void OnHarmonyModMetrics()
         {
             if (!Ready) return;
+            if (Configuration == null || !Configuration.gatherHarmonyModInventory) return;
             
             try
             {
@@ -505,7 +520,7 @@ namespace RustServerMetrics
                     }
 
                     // Upload HarmonyMod metric (using hookTime=1 to indicate loaded status)
-                    // Format matches Harmony mods exactly - no type tag, appears as regular plugin
+                    // Format matches Oxide plugins exactly - no type tag, appears as regular plugin
                     UploadPacket("oxide_plugins", modName, (builder, pluginName) =>
                     {
                         builder.Append(",plugin=\"");
@@ -557,7 +572,7 @@ namespace RustServerMetrics
                 else
                 {
                     _perfReportDelayCounter[player.userID] = 0;
-                    player.ClientRPCPlayer(null, player, "GetPerformanceReport", "legacy", _performanceReport_RequestId);
+                    player.ClientRPC(RpcTarget.Player("GetPerformanceReport", player), "legacy", _performanceReport_RequestId);
                 }
             }
 
@@ -794,33 +809,50 @@ namespace RustServerMetrics
 
         void RegisterCommands()
         {
-            const string commandPrefix = "servermetrics";
-            ConsoleSystem.Command reloadCfgCommand = new ConsoleSystem.Command()
+            try
             {
-                Name = "reloadcfg",
-                Parent = commandPrefix,
-                FullName = commandPrefix + "." + "reloadcfg",
-                ServerAdmin = true,
-                Variable = false,
-                Call = new Action<ConsoleSystem.Arg>(ReloadCfgCommand)
-            };
+                const string commandPrefix = "servermetrics";
+                ConsoleSystem.Command reloadCfgCommand = new ConsoleSystem.Command()
+                {
+                    Name = "reloadcfg",
+                    Parent = commandPrefix,
+                    FullName = commandPrefix + "." + "reloadcfg",
+                    ServerAdmin = true,
+                    Variable = false,
+                    Call = new Action<ConsoleSystem.Arg>(ReloadCfgCommand)
+                };
 
-            ConsoleSystem.Command statusCommand = new ConsoleSystem.Command()
+                ConsoleSystem.Command statusCommand = new ConsoleSystem.Command()
+                {
+                    Name = "status",
+                    Parent = commandPrefix,
+                    FullName = commandPrefix + "." + "status",
+                    ServerAdmin = true,
+                    Variable = false,
+                    Call = new Action<ConsoleSystem.Arg>(StatusCommand)
+                };
+
+                // Current Facepunch.Console keys Dict/GlobalDict with Facepunch.StringView, not string.
+                // string still works here via implicit conversion when compiled against this game build.
+                var dict = ConsoleSystem.Index.Server.Dict;
+                if (dict == null)
+                {
+                    Debug.LogWarning("[ServerMetrics]: ConsoleSystem.Index.Server.Dict is unavailable; commands not registered");
+                    return;
+                }
+
+                dict[reloadCfgCommand.FullName] = reloadCfgCommand;
+                dict[statusCommand.FullName] = statusCommand;
+
+                var all = ConsoleSystem.Index.All;
+                ConsoleSystem.Index.All = all == null
+                    ? new[] { reloadCfgCommand, statusCommand }
+                    : all.Concat(new[] { reloadCfgCommand, statusCommand }).ToArray();
+            }
+            catch (Exception ex)
             {
-                Name = "status",
-                Parent = commandPrefix,
-                FullName = commandPrefix + "." + "status",
-                ServerAdmin = true,
-                Variable = false,
-                Call = new Action<ConsoleSystem.Arg>(StatusCommand)
-            };
-
-            ConsoleSystem.Index.Server.Dict[commandPrefix + "." + "reloadcfg"] = reloadCfgCommand;
-            ConsoleSystem.Index.Server.Dict[commandPrefix + "." + "status"] = statusCommand;
-
-            // Would be nice if this had a public setter, or better yet, a register command helper
-            // update: now it does
-            ConsoleSystem.Index.All = ConsoleSystem.Index.All.Concat(new[] { reloadCfgCommand, statusCommand }).ToArray();
+                Debug.LogError("[ServerMetrics]: Failed to register console commands: " + ex);
+            }
         }
 
         void StatusCommand(ConsoleSystem.Arg arg)

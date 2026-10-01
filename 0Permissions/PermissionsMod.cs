@@ -343,6 +343,7 @@ namespace PermissionsHarmony
             Register("revoke", HandleRevoke, parent: "perm");
             Register("group", HandleGroup, parent: "perm");
             Register("show", HandleShow, parent: "perm");
+            Register("nick", HandleNick, parent: "perm");
             // Harmony-compatible aliases (common Tebex package templates)
             Register("usergroup", HandleUserGroup, parent: "oxide");
             Register("grant", HandleGrant, parent: "oxide");
@@ -430,6 +431,7 @@ namespace PermissionsHarmony
                     "  perm revoke user|group <target> <permission>\n" +
                     "  perm group add|remove|set|parent ...\n" +
                     "  perm show user|group|perm|groups|perms ...\n" +
+                    "  perm nick <steamid> <nickname>\n" +
                     "Also: perm.usergroup / perm.grant / usergroup / grant");
                 return;
             }
@@ -458,8 +460,12 @@ namespace PermissionsHarmony
                 case "s":
                     HandleShowArgs(arg, rest);
                     break;
+                case "nick":
+                case "rename":
+                    HandleNickArgs(arg, rest);
+                    break;
                 default:
-                    arg.ReplyWith($"Unknown subcommand '{sub}'. Try: usergroup, grant, revoke, group, show");
+                    arg.ReplyWith($"Unknown subcommand '{sub}'. Try: usergroup, grant, revoke, group, show, nick");
                     break;
             }
         }
@@ -468,7 +474,7 @@ namespace PermissionsHarmony
         {
             string[] keys =
             {
-                "global.perm", "perm.usergroup", "perm.grant", "perm.revoke", "perm.group", "perm.show",
+                "global.perm", "perm.usergroup", "perm.grant", "perm.revoke", "perm.group", "perm.show", "perm.nick",
                 "oxide.usergroup", "oxide.grant", "oxide.revoke", "oxide.group", "oxide.show",
                 "global.grant", "global.revoke", "global.usergroup", "p.show"
             };
@@ -495,6 +501,35 @@ namespace PermissionsHarmony
         private void HandleUserGroup(ConsoleSystem.Arg arg) => HandleUserGroupArgs(arg, Args(arg));
         private void HandleGroup(ConsoleSystem.Arg arg) => HandleGroupArgs(arg, Args(arg));
         private void HandleShow(ConsoleSystem.Arg arg) => HandleShowArgs(arg, Args(arg));
+        private void HandleNick(ConsoleSystem.Arg arg) => HandleNickArgs(arg, Args(arg));
+
+        private void HandleNickArgs(ConsoleSystem.Arg arg, string[] a)
+        {
+            if (a.Length < 2)
+            {
+                arg.ReplyWith("Usage: perm nick <steamid|name> <nickname>");
+                return;
+            }
+            var id = _service.ResolvePlayerId(a[0]);
+            if (id == null)
+            {
+                if (ulong.TryParse(a[0], out _))
+                    id = a[0];
+                else
+                {
+                    arg.ReplyWith($"Player '{a[0]}' not found. Use full SteamID64.");
+                    return;
+                }
+            }
+            var nick = string.Join(" ", a, 1, a.Length - 1).Trim();
+            if (string.IsNullOrEmpty(nick))
+            {
+                arg.ReplyWith("Usage: perm nick <steamid|name> <nickname>");
+                return;
+            }
+            bool ok = _service.SetUserNickname(id, nick);
+            arg.ReplyWith(ok ? $"Set nickname for {id} to '{nick}'" : $"No change (invalid or already '{nick}').");
+        }
 
         private void HandleGrantArgs(ConsoleSystem.Arg arg, string[] a)
         {
@@ -584,7 +619,6 @@ namespace PermissionsHarmony
             {
                 var player = BasePlayer.FindByID(uid) ?? BasePlayer.FindSleeping(uid);
                 if (player != null) _service.TouchUser(id, player.displayName);
-                else _service.TouchUser(id, id);
             }
 
             if (action == "add")
@@ -688,8 +722,12 @@ namespace PermissionsHarmony
             {
                 var id = _service.ResolvePlayerId(a[1]) ?? (ulong.TryParse(a[1], out _) ? a[1] : null);
                 if (id == null) { arg.ReplyWith($"Player '{a[1]}' not found."); return; }
-                _service.TouchUser(id, id);
-                var user = _service.GetUserData(id) ?? new UserData();
+                var user = _service.GetUserData(id);
+                if (user == null)
+                {
+                    arg.ReplyWith($"User {id} is not in permissions yet.");
+                    return;
+                }
                 sb.AppendLine($"User {id} ({user.LastSeenNickname})");
                 sb.AppendLine("Groups: " + (user.Groups.Count == 0 ? "(none)" : string.Join(", ", user.Groups.OrderBy(x => x))));
                 sb.AppendLine("Direct perms: " + (user.Perms.Count == 0 ? "(none)" : string.Join(", ", user.Perms.OrderBy(x => x))));

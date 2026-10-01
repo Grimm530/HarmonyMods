@@ -17,6 +17,7 @@ Harmony port of **ZombieHorde** 0.6.351. Spawns via **GrimmNPC** reflection (`Sp
 
 - **Spawn:** `GrimmNpcBridge` → GrimmNPC `SpawnNpc` → attach `ZombieNPC` MonoBehaviour
 - **AI:** GrimmNPC states (`RoamState` / `ChaseState` / `CombatState` / optional Raid)
+- **Navmesh:** `NavmeshSpawnPoint` uses shared `_Shared/RecastNav.cs` (Hotfix 5 Recast default). Horde spawn orders wait on `IsDefaultNavmeshBuilt()`, not Unity `NavMesh.SamplePosition`.
 - **Horde logic:** Ported `Horde` + leader tick on `ZombieNPC`
 - **RaidingZombies:** Built-in (legacy 3.2.1) — picks raid hordes + TC scan; **raid AI is GrimmNPC** (`RaidState` / `RaidStateMelee`). Does not `AddState(Cooldown)` (avoids duplicate-state spam)
 - **Config:** Identical JsonProperty names to legacy config

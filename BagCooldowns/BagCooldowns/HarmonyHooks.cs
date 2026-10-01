@@ -6,10 +6,12 @@ internal class HarmonyHooks : IHarmonyModHooks
 	{
 		HarmonyConfig.LoadConfig();
 		HarmonyMethods.SetBagTimers();
+		GrimmCoreBridge.RegisterSpawnPostfix("BagCooldowns", 100, BaseNetworkable_Spawn.Postfix);
 	}
 
 	public void OnUnloaded(OnHarmonyModUnloadedArgs args)
 	{
+		GrimmCoreBridge.UnregisterSpawnMod("BagCooldowns");
 		HarmonyMethods.ResetBagTimers();
 	}
 }

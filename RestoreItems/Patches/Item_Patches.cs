@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace RestoreItemsHarmony.Patches
 {
-    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), new[] { typeof(Item) })]
+    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), new[] { typeof(Item), typeof(BasePlayer) })]
     internal static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]

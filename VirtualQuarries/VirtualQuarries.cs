@@ -29,9 +29,7 @@ namespace Harmony.Plugins
 
         [PluginReference]
         private readonly Plugin
-            PopUpAPI, //POPUPS - REQUIRED
-            ServerRewards, Economics, IQEconomic, BankSystem, ShoppyStock, //CURRENCY PLUGINS - REQUIRED IF PURCHASES FOR CURRENCY ENABLED
-            RedeemStorageAPI; //QUARRY REFUND - REQUIRED IF REFUNDING ENABLED
+            ServerRewards, Economics, IQEconomic, BankSystem, ShoppyStock;
 
         private static VirtualQuarries _plugin;
 
@@ -138,6 +136,7 @@ namespace Harmony.Plugins
         private void OnServerInitialized()
         {
             TryWipeFromMapVoterSignal();
+            ApplyMapWipeIfNeeded();
             if (config.economyPlugin == 1 && Economics == null)
                 PrintWarning("Economics plugin not found! You will not be able to upgrade your quarries with server currency!");
             else if (config.economyPlugin == 2 && ServerRewards == null)
@@ -148,12 +147,6 @@ namespace Harmony.Plugins
                 PrintWarning("BankSystem plugin not found! You will not be able to upgrade your quarries with server currency!");
             else if (config.economyPlugin == 5 && ShoppyStock == null)
                 PrintWarning("ShoppyStock plugin not found! You will not be able to upgrade your quarries with server currency!");
-            if (PopUpAPI == null)
-                PrintWarning("PopUpAPI plugin not found! The Pop-Up messages will not display!");
-            else
-                GeneratePopUpConfig();
-            if (RedeemStorageAPI == null)
-                PrintWarning("RedeemStorageAPI plugin not found! Refunded items from removed quarries will go to inventories instead of redeem inventory!");
             if (config.surveyThrow)
                 Unsubscribe(nameof(OnExplosiveThrown));
             if (config.dispenserProfiles.Count == 0)
@@ -192,16 +185,23 @@ namespace Harmony.Plugins
                     permission.RegisterPermission(permissionKey.permission, this);
             foreach (var permissionKey in config.quarryProfiles.Values)
             {
+                if (permissionKey == null) continue;
                 if (permissionKey.permission != string.Empty)
                     permission.RegisterPermission(permissionKey.permission, this);
                 if (permissionKey.allowQuickPerm != string.Empty)
                     permission.RegisterPermission(permissionKey.allowQuickPerm, this);
-                foreach (var resourceKey in permissionKey.resources.Values)
-                    if (resourceKey.permission != string.Empty)
-                        permission.RegisterPermission(resourceKey.permission, this);
-                foreach (var upgradeKey in permissionKey.upgrades)
-                    if (upgradeKey.requiredPerm != string.Empty)
-                        permission.RegisterPermission(upgradeKey.requiredPerm, this);
+                if (permissionKey.resources != null)
+                {
+                    foreach (var resourceKey in permissionKey.resources.Values)
+                        if (resourceKey != null && resourceKey.permission != string.Empty)
+                            permission.RegisterPermission(resourceKey.permission, this);
+                }
+                if (permissionKey.upgrades != null)
+                {
+                    foreach (var upgradeKey in permissionKey.upgrades)
+                        if (upgradeKey != null && upgradeKey.requiredPerm != string.Empty)
+                            permission.RegisterPermission(upgradeKey.requiredPerm, this);
+                }
             }
             if (config.storeContainers)
                 timer.Every(config.containerSaveInterval, SaveContainers);
@@ -227,11 +227,15 @@ namespace Harmony.Plugins
                 timer.Every(1f, CheckExcavatorSignalLookPopups);
             if (config.excavatorQuarry)
             {
-                foreach (var monument in TerrainMeta.Path.Landmarks)
+                var landmarks = TerrainMeta.Path?.Landmarks;
+                if (landmarks != null)
                 {
-                    if (!monument.displayPhrase.IsValid()) continue;
-                    if (monument.displayPhrase.english == "Giant Excavator Pit")
-                        giantExcPositions.Add(monument.transform.position);
+                    foreach (var monument in landmarks)
+                    {
+                        if (monument == null || monument.transform == null || !monument.displayPhrase.IsValid()) continue;
+                        if (monument.displayPhrase.english == "Giant Excavator Pit")
+                            giantExcPositions.Add(monument.transform.position);
+                    }
                 }
 
                 foreach (var computer in BaseNetworkable.serverEntities.OfType<ExcavatorSignalComputer>())
@@ -263,39 +267,10 @@ namespace Harmony.Plugins
             }
         }
 
-        private void GeneratePopUpConfig()
+        private static void ShowPopUp(BasePlayer player, string message, int unusedDuration = 0)
         {
-            JObject popUpConfig = new JObject()
-            {
-                { "key", "UpperCenter" },
-                { "anchor", "0.5 1" },
-                { "name", "Legacy" },
-                { "parent", "Overall" },
-                { "background_enabled", true },
-                { "background_color", "0.153 0.141 0.114 1" },
-                { "background_fadeIn", 0.5f },
-                { "background_fadeOut", 0.5f },
-                { "background_offsetMax", "180 0" },
-                { "background_offsetMin", "-180 -70" },
-                { "background_smooth", false },
-                { "background_url", "" },
-                { "background_additionalObjectCount", 1 },
-                { "background_detail_0_color", "0.196 0.18 0.153 1" },
-                { "background_detail_0_offsetMax", "354 70" },
-                { "background_detail_0_offsetMin","6 6" },
-                { "background_detail_0_smooth", false },
-                { "background_detail_0_url", "" },
-                { "text_anchor", "MiddleCenter" },
-                { "text_color", ColDb.LightGray },
-                { "text_fadeIn", 0.5f },
-                { "text_fadeOut", 0.5f },
-                { "text_font", "RobotoCondensed-Bold.ttf" },
-                { "text_offsetMax", "170 0" },
-                { "text_offsetMin", "-170 -64" },
-                { "text_outlineColor", "0 0 0 0" },
-                { "text_outlineSize", "0 0" }
-            };
-            PopUpAPI?.Call("AddNewPopUpSchema", Name, popUpConfig);
+            if (player == null || string.IsNullOrEmpty(message)) return;
+            player.ChatMessage(message);
         }
 
         private void SetupQuarries()
@@ -304,10 +279,12 @@ namespace Harmony.Plugins
             {
                 foreach (var quarry in BaseNetworkable.serverEntities.OfType<MiningQuarry>())
                 {
+                    if (!quarry || quarry.IsDestroyed) continue;
                     if (quarry.staticType == MiningQuarry.QuarryType.None && quarry.OwnerID != 0) continue;
                     quarry.SetOn(false);
                     quarry.CancelInvoke();
-                    quarry.engineSwitchPrefab.instance.SetFlag(BaseEntity.Flags.On, true);
+                    if (quarry.engineSwitchPrefab?.instance != null)
+                        quarry.engineSwitchPrefab.instance.SetFlag(BaseEntity.Flags.On, true);
                     quarry.SetFlag(BaseEntity.Flags.On, true);
                     quarry.SendNetworkUpdate();
                 }
@@ -317,6 +294,7 @@ namespace Harmony.Plugins
                 LinkExcavatorWorldEntities();
                 foreach (var arm in excavatorArms)
                 {
+                    if (!arm || arm.IsDestroyed || arm.transform == null) continue;
                     foreach (var pos in giantExcPositions)
                     {
                         if (Vector3.Distance(arm.transform.position, pos) > 400) continue;
@@ -329,6 +307,7 @@ namespace Harmony.Plugins
                 }
                 foreach (var engin in BaseNetworkable.serverEntities.OfType<DieselEngine>())
                 {
+                    if (!engin || engin.IsDestroyed || engin.transform == null) continue;
                     foreach (var pos in giantExcPositions)
                     {
                         if (Vector3.Distance(engin.transform.position, pos) > 250) continue;
@@ -338,66 +317,81 @@ namespace Harmony.Plugins
                     }
                 }
             }
+            if (data?.quarries == null) return;
+            PurgeOrphanWorldQuarries();
             foreach (var quarry in data.quarries)
             {
-                bool isVirtual = quarry.Value.quarryType == QuarryType.Virtual;
-                QuarryProfile qp = isVirtual ? config.quarryProfiles[quarry.Value.profile] : null;
-                BoxStorage storage = GetQuarryBox(quarry.Key, BoxType.Core);
-                GameObject.Destroy(storage.GetComponent<GroundWatch>());
-                GameObject.Destroy(storage.GetComponent<DestroyOnGroundMissing>());
-                VirtualQuarry vQuarry = storage.GetOrAddComponent<VirtualQuarry>();
-                vQuarry.SetupQuarry(quarry.Key);
-                BoxStorage fuelStorage = GetQuarryBox(quarry.Key, BoxType.Fuel);
-                if (isVirtual && qp.enableInputLink)
-                    if (fuelStorage && fuelStorage.transform.position.y < -300)
-                        quarry.Value.fuelNetId = 0;
-                if (quarry.Value.redirectNetId != 0 && !anyLinkedQuarryOutputs.Contains(quarry.Value.redirectNetId))
-                    anyLinkedQuarryOutputs.Add(quarry.Value.redirectNetId);
-                if (!isVirtual || !qp.enableInputLink)
+                try
                 {
-                    List<UpgradeConfig> upgrades;
-                    if (isVirtual)
-                        upgrades = qp.upgrades;
-                    else if (quarry.Value.quarryType == QuarryType.Static)
-                        upgrades = config.staticQuarryUpgrades;
-                    else
-                        upgrades = config.excavatorUpgrades;
-                    if (quarry.Value.level < upgrades.Count)
+                    if (quarry.Value == null) continue;
+                    bool isVirtual = quarry.Value.quarryType == QuarryType.Virtual;
+                    QuarryProfile qp = null;
+                    if (isVirtual && (string.IsNullOrEmpty(quarry.Value.profile) || !config.quarryProfiles.TryGetValue(quarry.Value.profile, out qp) || qp == null))
+                        continue;
+                    BoxStorage storage = GetQuarryBox(quarry.Key, BoxType.Core);
+                    if (!storage) continue;
+                    GameObject.Destroy(storage.GetComponent<GroundWatch>());
+                    GameObject.Destroy(storage.GetComponent<DestroyOnGroundMissing>());
+                    VirtualQuarry vQuarry = storage.GetOrAddComponent<VirtualQuarry>();
+                    vQuarry.SetupQuarry(quarry.Key);
+                    BoxStorage fuelStorage = GetQuarryBox(quarry.Key, BoxType.Fuel);
+                    if (isVirtual && qp.enableInputLink)
+                        if (fuelStorage && fuelStorage.transform.position.y < -300)
+                            quarry.Value.fuelNetId = 0;
+                    if (quarry.Value.redirectNetId != 0 && !anyLinkedQuarryOutputs.Contains(quarry.Value.redirectNetId))
+                        anyLinkedQuarryOutputs.Add(quarry.Value.redirectNetId);
+                    if (!isVirtual || !qp.enableInputLink)
                     {
-                        UpgradeConfig uc = upgrades[quarry.Value.level];
-                        storage.inventory.capacity = uc.capacity;
+                        List<UpgradeConfig> upgrades;
+                        if (isVirtual)
+                            upgrades = qp.upgrades;
+                        else if (quarry.Value.quarryType == QuarryType.Static)
+                            upgrades = config.staticQuarryUpgrades;
+                        else
+                            upgrades = config.excavatorUpgrades;
+                        if (upgrades != null && quarry.Value.level < upgrades.Count && storage.inventory != null)
+                        {
+                            UpgradeConfig uc = upgrades[quarry.Value.level];
+                            if (uc != null)
+                                storage.inventory.capacity = uc.capacity;
+                        }
+                    }
+                    if ((!isVirtual || !qp.enableInputLink) && fuelStorage)
+                    {
+                        GameObject.Destroy(fuelStorage.GetComponent<GroundWatch>());
+                        GameObject.Destroy(fuelStorage.GetComponent<DestroyOnGroundMissing>());
+                        List<UpgradeConfig> upgrades;
+                        if (isVirtual)
+                            upgrades = qp.upgrades;
+                        else if (quarry.Value.quarryType == QuarryType.Static)
+                            upgrades = config.staticQuarryUpgrades;
+                        else
+                            upgrades = config.excavatorUpgrades;
+                        if (upgrades != null && quarry.Value.level < upgrades.Count && fuelStorage.inventory != null)
+                        {
+                            UpgradeConfig uc = upgrades[quarry.Value.level];
+                            if (uc != null)
+                                fuelStorage.inventory.capacity = uc.fuelCapacity;
+                        }
+                        else if (upgrades == null || quarry.Value.level >= upgrades.Count)
+                            PrintWarning($"Quarry with ID {quarry.Key} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
+                    }
+                    if (quarry.Value.quarryType == QuarryType.Excavator)
+                    {
+                        BoxStorage output2 = GetQuarryBox(quarry.Key, BoxType.Output2);
+                        if (output2 && output2.inventory != null)
+                        {
+                            GameObject.Destroy(output2.GetComponent<GroundWatch>());
+                            GameObject.Destroy(output2.GetComponent<DestroyOnGroundMissing>());
+                            if (config.excavatorUpgrades != null && quarry.Value.level < config.excavatorUpgrades.Count)
+                                output2.inventory.capacity = config.excavatorUpgrades[quarry.Value.level].capacity;
+                            output2.inventory.canAcceptItem = (_, _, _) => false;
+                        }
                     }
                 }
-                if (!isVirtual || !qp.enableInputLink)
+                catch (Exception ex)
                 {
-                    GameObject.Destroy(fuelStorage.GetComponent<GroundWatch>());
-                    GameObject.Destroy(fuelStorage.GetComponent<DestroyOnGroundMissing>());
-                    List<UpgradeConfig> upgrades;
-                    if (isVirtual)
-                        upgrades = qp.upgrades;
-                    else if (quarry.Value.quarryType == QuarryType.Static)
-                        upgrades = config.staticQuarryUpgrades;
-                    else
-                        upgrades = config.excavatorUpgrades;
-                    if (quarry.Value.level < upgrades.Count)
-                    {
-                        UpgradeConfig uc = upgrades[quarry.Value.level];
-                        fuelStorage.inventory.capacity = uc.fuelCapacity;
-                    }
-                    else
-                        PrintWarning($"Quarry with ID {quarry.Key} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
-                }
-                if (quarry.Value.quarryType == QuarryType.Excavator)
-                {
-                    BoxStorage output2 = GetQuarryBox(quarry.Key, BoxType.Output2);
-                    if (output2)
-                    {
-                        GameObject.Destroy(output2.GetComponent<GroundWatch>());
-                        GameObject.Destroy(output2.GetComponent<DestroyOnGroundMissing>());
-                        if (quarry.Value.level < config.excavatorUpgrades.Count)
-                            output2.inventory.capacity = config.excavatorUpgrades[quarry.Value.level].capacity;
-                        output2.inventory.canAcceptItem = (_, _, _) => false;
-                    }
+                    PrintError($"SetupQuarries quarry {quarry.Key}: {ex}");
                 }
             }
         }
@@ -466,27 +460,133 @@ namespace Harmony.Plugins
 
         private void OnNewSave()
         {
-            if (config.wipeData)
+            if (!config.wipeData) return;
+            if (config.wipeDataForceOnly)
+            {
+                DateTime now = DateTime.Now;
+                if (!(now.Day < 8 && now.DayOfWeek == DayOfWeek.Thursday))
+                    return;
+            }
+            string wipeId = data?.LastWipeId ?? "";
+            try { if (string.IsNullOrEmpty(wipeId)) wipeId = SaveRestore.WipeId ?? ""; } catch { }
+            WipePluginData(config.wipeDataForceOnly ? "Force wipe found!" : "Regular wipe found!", wipeId);
+        }
+
+        private void ApplyMapWipeIfNeeded()
+        {
+            string wipeId = "";
+            try { wipeId = SaveRestore.WipeId ?? ""; } catch { }
+            if (data == null) data = new PluginData();
+            string prev = data.LastWipeId ?? "";
+            if (!string.IsNullOrEmpty(wipeId) && string.Equals(prev, wipeId, StringComparison.Ordinal))
+                return;
+
+            if (!string.IsNullOrEmpty(wipeId))
+                data.LastWipeId = wipeId;
+
+            bool wipeIdChanged = !string.IsNullOrEmpty(prev) && !string.Equals(prev, wipeId, StringComparison.Ordinal);
+            bool missedWipe = string.IsNullOrEmpty(prev) && config.wipeData && HasOrphanWorldQuarries();
+
+            if (config.wipeData && (wipeIdChanged || missedWipe))
             {
                 if (config.wipeDataForceOnly)
                 {
                     DateTime now = DateTime.Now;
-                    if (now.Day < 8 && now.DayOfWeek == DayOfWeek.Thursday)
+                    if (!(now.Day < 8 && now.DayOfWeek == DayOfWeek.Thursday))
                     {
-                        previousGatheredDispensers = new(data.gatheredDispensers);
-                        data = new PluginData();
                         SaveData();
-                        SavePrevDispensers();
-                        Puts("Force wipe found! Plugin data has been wiped successfully!");
+                        return;
                     }
-                    return;
                 }
-                previousGatheredDispensers = new(data.gatheredDispensers);
-                data = new PluginData();
-                SaveData();
-                SavePrevDispensers();
-                Puts("Regular wipe found! Plugin data has been wiped successfully!");
+                WipePluginData(wipeIdChanged
+                    ? "Map wipe detected (WipeId changed)."
+                    : "Leftover quarry data from a previous wipe.", wipeId);
+                return;
             }
+            SaveData();
+        }
+
+        private void WipePluginData(string reason, string wipeId)
+        {
+            if (data?.quarries != null)
+            {
+                foreach (var qd in data.quarries.Values)
+                {
+                    if (qd == null) continue;
+                    TryKillStoredBox(qd.netId);
+                    TryKillStoredBox(qd.fuelNetId);
+                    TryKillStoredBox(qd.outputNetId2);
+                }
+            }
+            previousGatheredDispensers = data?.gatheredDispensers != null
+                ? new Dictionary<ulong, Dictionary<string, int>>(data.gatheredDispensers)
+                : new Dictionary<ulong, Dictionary<string, int>>();
+            data = new PluginData { LastWipeId = wipeId ?? "" };
+            storageCache = new Dictionary<int, StorageData>();
+            SaveData();
+            SavePrevDispensers();
+            Puts(reason + " Plugin data has been wiped successfully!");
+        }
+
+        private static void TryKillStoredBox(ulong netId)
+        {
+            if (netId == 0) return;
+            BaseEntity ent = BaseNetworkable.serverEntities.Find(new NetworkableId(netId)) as BaseEntity;
+            if (ent && !ent.IsDestroyed)
+                ent.Kill();
+        }
+
+        private bool WorldQuarryExists(QuarryData qd)
+        {
+            if (qd == null || qd.staticNetId == 0) return false;
+            BaseNetworkable ent = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.staticNetId));
+            if (!ent || ent.IsDestroyed) return false;
+            if (qd.quarryType == QuarryType.Static) return ent is MiningQuarry;
+            if (qd.quarryType == QuarryType.Excavator) return ent is ExcavatorArm;
+            return true;
+        }
+
+        private bool HasOrphanWorldQuarries()
+        {
+            if (data?.quarries == null) return false;
+            foreach (var qd in data.quarries.Values)
+            {
+                if (qd == null) continue;
+                if (qd.quarryType != QuarryType.Static && qd.quarryType != QuarryType.Excavator) continue;
+                if (!WorldQuarryExists(qd)) return true;
+            }
+            return false;
+        }
+
+        private void DeleteQuarryRecord(int quarryId, string reason)
+        {
+            if (data?.quarries == null || !data.quarries.TryGetValue(quarryId, out QuarryData qd) || qd == null)
+                return;
+            TryKillStoredBox(qd.netId);
+            TryKillStoredBox(qd.fuelNetId);
+            TryKillStoredBox(qd.outputNetId2);
+            data.quarries.Remove(quarryId);
+            storageCache.Remove(quarryId);
+            Puts($"Removed leftover quarry {quarryId} ({qd.quarryType}): {reason}");
+        }
+
+        private int PurgeOrphanWorldQuarries()
+        {
+            if (data?.quarries == null) return 0;
+            List<int> remove = new List<int>();
+            foreach (var kv in data.quarries)
+            {
+                if (kv.Value == null) { remove.Add(kv.Key); continue; }
+                if (kv.Value.quarryType != QuarryType.Static && kv.Value.quarryType != QuarryType.Excavator)
+                    continue;
+                if (!WorldQuarryExists(kv.Value))
+                    remove.Add(kv.Key);
+            }
+            for (int i = 0; i < remove.Count; i++)
+                DeleteQuarryRecord(remove[i], "world entity missing after wipe");
+            if (remove.Count > 0)
+                SaveData();
+            return remove.Count;
         }
 
         private void TryWipeFromMapVoterSignal()
@@ -556,7 +656,7 @@ namespace Harmony.Plugins
                 entity.Kill();
                 Item survey = ItemManager.CreateByName("surveycharge");
                 NextTick(() => player.GiveItem(survey));
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoSurveyThrow", player.UserIDString, config.commandList[0]));
+                ShowPopUp(player, Lang("NoSurveyThrow", player.UserIDString, config.commandList[0]));
             }
         }
 
@@ -587,7 +687,7 @@ namespace Harmony.Plugins
             if (!valid) return null;
             if (config.excavatorPerm && !permission.UserHasPermission(player.UserIDString, "virtualquarries.static.excavator"))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermissionQuarry", player.UserIDString));
+                ShowPopUp(player, Lang("NoPermissionQuarry", player.UserIDString));
                 return false;
             }
             int quarryId = -1;
@@ -604,13 +704,13 @@ namespace Harmony.Plugins
             BoxStorage storage = GetQuarryBox(quarryId, BoxType.Core);
             if (!storage)
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("ErrorOccured", player.UserIDString));
+                ShowPopUp(player, Lang("ErrorOccured", player.UserIDString));
                 return false;
             }
             VirtualQuarry vq = storage.GetComponent<VirtualQuarry>();
             vq.SwitchExcavatorType(type);
             vq.SwitchEngine(false);
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("SwitchedResource", player.UserIDString, type));
+            ShowPopUp(player, Lang("SwitchedResource", player.UserIDString, type));
             if (!arm.HasFlag(BaseEntity.Flags.On) && !config.disableExcavatorRunningEffect)
             {
                 arm.SetFlag(BaseEntity.Flags.On, true);
@@ -906,7 +1006,7 @@ namespace Harmony.Plugins
         private void NotifyExcavatorPlayer(BasePlayer player, string popupMessage, string cuiMessage = null, float pinSeconds = 12f)
         {
             if (!player) return;
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, popupMessage);
+            ShowPopUp(player, popupMessage);
             ShowExcavatorSignalGameTip(player, cuiMessage ?? popupMessage);
             excavatorPinnedTipUntil[player.userID] = Time.realtimeSinceStartup + pinSeconds;
             string toast = ClearColorAndSize(popupMessage);
@@ -953,7 +1053,7 @@ namespace Harmony.Plugins
                 float now = Time.realtimeSinceStartup;
                 if (excavatorPinnedTipUntil.TryGetValue(player.userID, out float pinnedUntil) && now < pinnedUntil)
                     continue;
-                if (!TryGetLookedAtSignalComputer(player, out ExcavatorSignalComputer comp))
+                if (!TryGetLookedAtSignalComputer(player, out ExcavatorSignalComputer comp) || !comp || comp.net == null)
                 {
                     HideExcavatorSignalGameTip(player);
                     continue;
@@ -1028,7 +1128,7 @@ namespace Harmony.Plugins
                 vq.SetupQuarry(quarryId);
                 if (!anyLinkedQuarryOutputs.Contains(storage.net.ID.Value))
                     anyLinkedQuarryOutputs.Add(storage.net.ID.Value);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("QuarryLinkedSuccessfully", player.UserIDString));
+                ShowPopUp(player, Lang("QuarryLinkedSuccessfully", player.UserIDString));
             }
             if (anyLinkedQuarryOutputs.Contains(storage.net.ID.Value))
                 DrawLinkedQuarriesUI(player, storage.net.ID.Value);
@@ -1047,7 +1147,7 @@ namespace Harmony.Plugins
                         return null;
                     if (config.excavatorPerm && !permission.UserHasPermission(player.UserIDString, "virtualquarries.static.excavator"))
                     {
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermissionExcavator", player.UserIDString));
+                        ShowPopUp(player, Lang("NoPermissionExcavator", player.UserIDString));
                         return false;
                     }
                     int quarryId = -1;
@@ -1063,7 +1163,7 @@ namespace Harmony.Plugins
                     {
                         if (TryGetExcavatorComputer(outputArm, out ExcavatorSignalComputer computer) && !IsSignalComputerReadyToClaim(computer))
                         {
-                            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("ExcavatorClaimNotReady", player.UserIDString));
+                            ShowPopUp(player, Lang("ExcavatorClaimNotReady", player.UserIDString));
                             return false;
                         }
                         quarryId = CreateNewExcavatorQuarry(player, outputArm);
@@ -1079,12 +1179,12 @@ namespace Harmony.Plugins
                 if (quarry.staticType == MiningQuarry.QuarryType.None && quarry.OwnerID != 0) return null;
                 if (config.quarryPerm && quarry.ShortPrefabName == "mininquarry_static" && !permission.UserHasPermission(player.UserIDString, "virtualquarries.static.quarry"))
                 {
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermissionQuarry", player.UserIDString));
+                    ShowPopUp(player, Lang("NoPermissionQuarry", player.UserIDString));
                     return false;
                 }
                 if (config.pumpJackPerm && quarry.ShortPrefabName == "pumpjack-static" && !permission.UserHasPermission(player.UserIDString, "virtualquarries.static.pumpjack"))
                 {
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermissionPumpJack", player.UserIDString));
+                    ShowPopUp(player, Lang("NoPermissionPumpJack", player.UserIDString));
                     return false;
                 }
                 int quarryId = -1;
@@ -1119,7 +1219,7 @@ namespace Harmony.Plugins
             }
             if (config.requirePermission && !permission.UserHasPermission(player.UserIDString, "virtualquarries.use"))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermission", player.UserIDString));
+                ShowPopUp(player, Lang("NoPermission", player.UserIDString));
                 return;
             }
             UiCache uc = cache[player.userID];
@@ -1185,7 +1285,7 @@ namespace Harmony.Plugins
                 case "addAll":
                     if (config.sharingRequirePermission && !permission.UserHasPermission(player.UserIDString, "virtualquarries.share"))
                     {
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoAccessToShare", player.UserIDString));
+                        ShowPopUp(player, Lang("NoAccessToShare", player.UserIDString));
                         return;
                     }
                     uc.userManageQuarryId = -1;
@@ -1195,7 +1295,7 @@ namespace Harmony.Plugins
                 case "giveAccess":
                     if (config.sharingRequirePermission && !permission.UserHasPermission(player.UserIDString, "virtualquarries.share"))
                     {
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoAccessToShare", player.UserIDString));
+                        ShowPopUp(player, Lang("NoAccessToShare", player.UserIDString));
                         return;
                     }
                     uc.userManageQuarryId = uc.quarryId;
@@ -1226,7 +1326,7 @@ namespace Harmony.Plugins
                     float minAmount = 0;
                     if (cmdArgs.Length > 2 && !float.TryParse(cmdArgs[2], out minAmount))
                     {
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("InvalidAmountInput", player.UserIDString, cmdArgs[2]));
+                        ShowPopUp(player, Lang("InvalidAmountInput", player.UserIDString, cmdArgs[2]));
                         return;
                     }
                     UpdateAutoSurveyResourceAmount(player, resourceKey, minAmount);
@@ -1235,7 +1335,7 @@ namespace Harmony.Plugins
                     int count = 1;
                     if (cmdArgs.Length > 1 && !int.TryParse(cmdArgs[1], out count))
                     {
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("InvalidAmountInput", player.UserIDString, cmdArgs[1]));
+                        ShowPopUp(player, Lang("InvalidAmountInput", player.UserIDString, cmdArgs[1]));
                         return;
                     }
                     ChangeAutoSurveyResourceCount(player, count);
@@ -1321,7 +1421,7 @@ namespace Harmony.Plugins
             {
                 awaitingConnections[player.userID] = (quarryId, input);
                 CuiHelper.DestroyUi(player, "QuarriesUI");
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("QuarryLinkStarted", player.UserIDString));
+                ShowPopUp(player, Lang("QuarryLinkStarted", player.UserIDString));
                 timer.Once(30f, () =>
                 {
                     if (awaitingConnections.TryGetValue(player.userID, out var connData) && connData.Item1 == quarryId)
@@ -1338,7 +1438,7 @@ namespace Harmony.Plugins
                     qd.redirectNetId = 0;
                 vq.SetupQuarry(quarryId);
                 RedrawQuarryDetails(player, quarryId, quarryId);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("QuarryUnlinked", player.UserIDString));
+                ShowPopUp(player, Lang("QuarryUnlinked", player.UserIDString));
             }
         }
 
@@ -1412,14 +1512,14 @@ namespace Harmony.Plugins
             if (qd.owner != player.userID) return;
             if (qd.authPlayers.Count == 0)
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("AccessListNoAdded", player.UserIDString), 12);
+                ShowPopUp(player, Lang("AccessListNoAdded", player.UserIDString), 12);
                 return;
             }
             StringBuilder sb = Pool.Get<StringBuilder>();
             sb.Clear().Append(Lang("AccessListStart", player.UserIDString));
             foreach (var playerId in qd.authPlayers)
                 sb.Append("\n - <color=#5c81ed>").Append(playerCache[playerId]).Append("</color>");
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, sb.ToString(), 12);
+            ShowPopUp(player, sb.ToString(), 12);
             Pool.FreeUnmanaged(ref sb);
         }
 
@@ -1432,7 +1532,7 @@ namespace Harmony.Plugins
             QuarryProfile qp = null;
             if (isVirtual && !config.quarryProfiles.TryGetValue(qd.profile, out qp))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("InvalidSurveyResult", player.UserIDString));
+                ShowPopUp(player, Lang("InvalidSurveyResult", player.UserIDString));
                 return;
             }
             List<UpgradeConfig> upgrades;
@@ -1446,7 +1546,7 @@ namespace Harmony.Plugins
             UpgradeConfig upgCfg = upgrades[qd.level + 1];
             if (upgCfg.requiredPerm.Length > 0 && !permission.UserHasPermission(player.UserIDString, upgCfg.requiredPerm))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoPermToUpgrade", player.UserIDString));
+                ShowPopUp(player, Lang("NoPermToUpgrade", player.UserIDString));
                 return;
             }
             if (upgradeType == 1)
@@ -1461,7 +1561,7 @@ namespace Harmony.Plugins
                         UpgradeQuarry(player, upgradeType);
                     }
                     else
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughCurrency", player.UserIDString));
+                        ShowPopUp(player, Lang("NotEnoughCurrency", player.UserIDString));
                 }
                 else if (config.economyPlugin == 2)
                 {
@@ -1471,7 +1571,7 @@ namespace Harmony.Plugins
                         UpgradeQuarry(player, upgradeType);
                     }
                     else
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughCurrency", player.UserIDString));
+                        ShowPopUp(player, Lang("NotEnoughCurrency", player.UserIDString));
                 }
                 else if (config.economyPlugin == 3)
                 {
@@ -1481,7 +1581,7 @@ namespace Harmony.Plugins
                         UpgradeQuarry(player, upgradeType);
                     }
                     else
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughCurrency", player.UserIDString));
+                        ShowPopUp(player, Lang("NotEnoughCurrency", player.UserIDString));
                 }
                 else if (config.economyPlugin == 4)
                 {
@@ -1491,7 +1591,7 @@ namespace Harmony.Plugins
                         UpgradeQuarry(player, upgradeType);
                     }
                     else
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughCurrency", player.UserIDString));
+                        ShowPopUp(player, Lang("NotEnoughCurrency", player.UserIDString));
                 }
                 else if (config.economyPlugin == 5)
                 {
@@ -1501,7 +1601,7 @@ namespace Harmony.Plugins
                         UpgradeQuarry(player, upgradeType);
                     }
                     else
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughCurrency", player.UserIDString));
+                        ShowPopUp(player, Lang("NotEnoughCurrency", player.UserIDString));
                 }
             }
             else
@@ -1509,7 +1609,7 @@ namespace Harmony.Plugins
                 DateTime now = DateTime.Now;
                 if ((now - lastOperation).TotalSeconds < 1) return;
                 if (!TakeItems(player, upgCfg.requiredItems))
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotEnoughItems", player.UserIDString));
+                    ShowPopUp(player, Lang("NotEnoughItems", player.UserIDString));
                 else
                     UpgradeQuarry(player, upgradeType);
                 lastOperation = now;
@@ -1596,7 +1696,7 @@ namespace Harmony.Plugins
                 }
             }
             if (anyNewResource)
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NewResourceDug", player.UserIDString));
+                ShowPopUp(player, Lang("NewResourceDug", player.UserIDString));
             storage.GetComponent<VirtualQuarry>().SetupQuarry(uc.quarryId);
             SendEffect(player, "assets/prefabs/deployable/quarry/effects/mining-quarry-deploy.prefab");
             SendEffect(player, "assets/bundled/prefabs/fx/build/promote_toptier.prefab");
@@ -1616,7 +1716,7 @@ namespace Harmony.Plugins
             bool removeUser = uc.userManageRemove;
             if (!removeUser && config.shareClanOnly && (player.Team == null || !player.Team.members.Contains(userId)))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("OnlyTeamShare", player.UserIDString));
+                ShowPopUp(player, Lang("OnlyTeamShare", player.UserIDString));
                 return;
             }
             CuiHelper.DestroyUi(player, "QuarriesUI_UsersUI");
@@ -1633,21 +1733,21 @@ namespace Harmony.Plugins
                     }
                 }
                 if (removeUser)
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("RemovedFromAllQuarries", player.UserIDString, playerCache[userId]));
+                    ShowPopUp(player, Lang("RemovedFromAllQuarries", player.UserIDString, playerCache[userId]));
                 else
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("SharedAllQuarries", player.UserIDString, playerCache[userId]));
+                    ShowPopUp(player, Lang("SharedAllQuarries", player.UserIDString, playerCache[userId]));
                 return;
             }
             QuarryData qd = data.quarries[uc.userManageQuarryId];
             if (removeUser)
             {
                 qd.authPlayers.Remove(userId);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("UserRemoved", player.UserIDString, playerCache[userId]));
+                ShowPopUp(player, Lang("UserRemoved", player.UserIDString, playerCache[userId]));
             }
             else
             {
                 qd.authPlayers.Add(userId);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("UserAdded", player.UserIDString, playerCache[userId]));
+                ShowPopUp(player, Lang("UserAdded", player.UserIDString, playerCache[userId]));
             }
         }
 
@@ -1680,7 +1780,7 @@ namespace Harmony.Plugins
                     }
                 }
             }
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("MovedItemsToYourInventory", player.UserIDString, itemCount));
+            ShowPopUp(player, Lang("MovedItemsToYourInventory", player.UserIDString, itemCount));
         }
 
 
@@ -1696,13 +1796,10 @@ namespace Harmony.Plugins
             QuarryProfile qp = config.quarryProfiles[qd.profile];
             BoxStorage quarry = GetQuarryBox(uc.quarryId, BoxType.Core);
             ulong userId = player.userID.Get();
-            bool isRedeem = RedeemStorageAPI != null;
             if (!qp.enableOutputLink)
                 foreach (var item in quarry.inventory.itemList.ToList())
                 {
-                    if (isRedeem)
-                        RedeemStorageAPI?.Call("AddItem", userId, config.redeemInventoryName, item);
-                    else if (!item.MoveToContainer(player.inventory.containerMain))
+                    if (!item.MoveToContainer(player.inventory.containerMain))
                         if (!item.MoveToContainer(player.inventory.containerBelt))
                             item.Drop(player.GetDropPosition(), player.GetDropVelocity());
                 }
@@ -1710,9 +1807,7 @@ namespace Harmony.Plugins
             if (!qp.enableInputLink)
                 foreach (var item in quarryFuel.inventory.itemList.ToList())
                 {
-                    if (isRedeem)
-                        RedeemStorageAPI?.Call("AddItem", userId, config.redeemInventoryName, item);
-                    else if (!item.MoveToContainer(player.inventory.containerMain))
+                    if (!item.MoveToContainer(player.inventory.containerMain))
                         if (!item.MoveToContainer(player.inventory.containerBelt))
                             item.Drop(player.GetDropPosition(), player.GetDropVelocity());
                 }
@@ -1724,9 +1819,7 @@ namespace Harmony.Plugins
                     if (!string.IsNullOrEmpty(refundItem.displayName))
                         item.name = refundItem.displayName;
                     {
-                        if (isRedeem)
-                            RedeemStorageAPI?.Call("AddItem", userId, config.redeemInventoryName, item);
-                        else if (!item.MoveToContainer(player.inventory.containerMain))
+                        if (!item.MoveToContainer(player.inventory.containerMain))
                             if (!item.MoveToContainer(player.inventory.containerBelt))
                                 item.Drop(player.GetDropPosition(), player.GetDropVelocity());
                     }
@@ -1740,9 +1833,7 @@ namespace Harmony.Plugins
                         if (!string.IsNullOrEmpty(refundItem.displayName))
                             item.name = refundItem.displayName;
                         {
-                            if (isRedeem)
-                                RedeemStorageAPI?.Call("AddItem", userId, config.redeemInventoryName, item);
-                            else if (!item.MoveToContainer(player.inventory.containerMain))
+                            if (!item.MoveToContainer(player.inventory.containerMain))
                                 if (!item.MoveToContainer(player.inventory.containerBelt))
                                     item.Drop(player.GetDropPosition(), player.GetDropVelocity());
                         }
@@ -1774,9 +1865,7 @@ namespace Harmony.Plugins
                                 Item item = ItemManager.CreateByName(refundItem.shortname, refundItem.amount, refundItem.skin);
                                 if (!string.IsNullOrEmpty(refundItem.displayName))
                                     item.name = refundItem.displayName;
-                                if (isRedeem)
-                                    RedeemStorageAPI?.Call("AddItem", userId, config.redeemInventoryName, item);
-                                else if (!item.MoveToContainer(player.inventory.containerMain))
+                                if (!item.MoveToContainer(player.inventory.containerMain))
                                     if (!item.MoveToContainer(player.inventory.containerBelt))
                                         item.Drop(player.GetDropPosition(), player.GetDropVelocity());
                             }
@@ -1799,7 +1888,7 @@ namespace Harmony.Plugins
             data.quarries.Remove(uc.quarryId);
             UpdateNewQuarryRecord(player, -1);
             CuiHelper.DestroyUi(player, "QuarriesUI_RemovePopUp");
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("QuarryRemoved", player.UserIDString));
+            ShowPopUp(player, Lang("QuarryRemoved", player.UserIDString));
         }
 
         // Merges all matching limit-permission entries (max per key) so default + VIP does not leave the lower cap.
@@ -1831,13 +1920,13 @@ namespace Harmony.Plugins
             if (string.IsNullOrEmpty(uc.cachedSurvey.profile) || uc.cachedSurvey.profile == "-" ||
                 !config.quarryProfiles.ContainsKey(uc.cachedSurvey.profile))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("InvalidSurveyResult", player.UserIDString));
+                ShowPopUp(player, Lang("InvalidSurveyResult", player.UserIDString));
                 return;
             }
             Dictionary<string, int> playerPerm = GetMergedMiningLimits(player);
             if (playerPerm == null)
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NotAllowedToPlace", player.UserIDString));
+                ShowPopUp(player, Lang("NotAllowedToPlace", player.UserIDString));
                 return;
             }
             Dictionary<string, int> quarryCount = Pool.Get<Dictionary<string, int>>();
@@ -1854,13 +1943,13 @@ namespace Harmony.Plugins
                 int summedQuarries = quarryCount.Sum(x => x.Value);
                 if (summedQuarries >= value)
                 {
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("TooManyQuarries", player.UserIDString));
+                    ShowPopUp(player, Lang("TooManyQuarries", player.UserIDString));
                     return;
                 }
             }
             if (quarryCount.TryGetValue(uc.cachedSurvey.profile, out int placedCount) && playerPerm.TryGetValue(uc.cachedSurvey.profile, out int profileLimit) && profileLimit <= placedCount)
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("TooManyQuarries", player.UserIDString));
+                ShowPopUp(player, Lang("TooManyQuarries", player.UserIDString));
                 return;
             }
             Pool.FreeUnmanaged(ref quarryCount);
@@ -1872,7 +1961,7 @@ namespace Harmony.Plugins
                 reqItems.AddRange(qp.resources[res.configKey].additionalItems);
             if (!TakeItems(player, reqItems))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoRequiredItems", player.UserIDString));
+                ShowPopUp(player, Lang("NoRequiredItems", player.UserIDString));
                 Pool.FreeUnmanaged(ref reqItems);
                 return;
             }
@@ -1984,8 +2073,11 @@ namespace Harmony.Plugins
 
         private BoxStorage GetQuarryBox(int quarryId, BoxType type)
         {
-            if (!data.quarries.TryGetValue(quarryId, out var qd)) return null;
-            bool isLink = qd.quarryType == QuarryType.Virtual && type == BoxType.Fuel && config.quarryProfiles[qd.profile].enableInputLink;
+            if (!data.quarries.TryGetValue(quarryId, out var qd) || qd == null) return null;
+            bool isLink = false;
+            if (qd.quarryType == QuarryType.Virtual && type == BoxType.Fuel && !string.IsNullOrEmpty(qd.profile)
+                && config.quarryProfiles != null && config.quarryProfiles.TryGetValue(qd.profile, out QuarryProfile linkProfile) && linkProfile != null)
+                isLink = linkProfile.enableInputLink;
             if (type == BoxType.Output2 && qd.quarryType != QuarryType.Excavator) return null;
             ulong netId = GetBoxNetId(qd, type);
             BoxStorage storage = BaseNetworkable.serverEntities.Find(new NetworkableId(netId)) as BoxStorage;
@@ -2404,7 +2496,7 @@ namespace Harmony.Plugins
                 Dictionary<string, int> playerPerm = GetMergedMiningLimits(player);
                 if (playerPerm == null || !playerPerm.TryGetValue(qd.profile, out int limit))
                 {
-                    PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoLongerProfilePerm", player.UserIDString));
+                    ShowPopUp(player, Lang("NoLongerProfilePerm", player.UserIDString));
                     return;
                 }
                 if (config.checkQuarryAmount)
@@ -2417,7 +2509,7 @@ namespace Harmony.Plugins
                     }
                     if (quarryCount > limit)
                     {
-                        PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("TooManyQuarriesPermMissing", player.UserIDString));
+                        ShowPopUp(player, Lang("TooManyQuarriesPermMissing", player.UserIDString));
                         return;
                     }
                 }
@@ -2498,7 +2590,7 @@ namespace Harmony.Plugins
             player.inventory.loot.SendImmediate();
             player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), "generic_resizable");
             HarmonyModInterface.CallHook("OnLootEntity", player, storage);
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("PrivateInventoryInfo", player.UserIDString));
+            ShowPopUp(player, Lang("PrivateInventoryInfo", player.UserIDString));
         }
 
         private VirtualQuarry SpawnQuarryStorage(int quarryId, bool input, bool restore = false, bool setup = false)
@@ -2528,20 +2620,28 @@ namespace Harmony.Plugins
             else
                 qd.netId = storage.net.ID.Value;
             bool isVirtual = qd.quarryType == QuarryType.Virtual;
-            QuarryProfile qp = isVirtual ? config.quarryProfiles[qd.profile] : null;
+            QuarryProfile qp = null;
             List<UpgradeConfig> upgrades;
             if (isVirtual)
+            {
+                if (string.IsNullOrEmpty(qd.profile) || config.quarryProfiles == null || !config.quarryProfiles.TryGetValue(qd.profile, out qp) || qp == null)
+                {
+                    Puts($"Profile {qd.profile} is missing from the configuration, but is found in data. Quarry with ID {quarryId} will not work!");
+                    return null;
+                }
                 upgrades = qp.upgrades;
+            }
             else if (qd.quarryType == QuarryType.Static)
                 upgrades = config.staticQuarryUpgrades;
             else
                 upgrades = config.excavatorUpgrades;
-            if (qd.level < upgrades.Count)
+            if (upgrades != null && qd.level >= 0 && qd.level < upgrades.Count && storage.inventory != null)
             {
                 UpgradeConfig uc = upgrades[qd.level];
-                storage.inventory.capacity = type == BoxType.Fuel ? uc.fuelCapacity : uc.capacity;
+                if (uc != null)
+                    storage.inventory.capacity = type == BoxType.Fuel ? uc.fuelCapacity : uc.capacity;
             }
-            else
+            else if (upgrades == null || qd.level >= (upgrades?.Count ?? 0))
                 PrintWarning($"Quarry with ID {quarryId} have more upgrades than is added to config! You need to add more levels or remove this quarry from data, or plugin will print errors!");
             VirtualQuarry qr = null;
             if (type == BoxType.Core)
@@ -2551,15 +2651,16 @@ namespace Harmony.Plugins
                 if (type == BoxType.Core)
                 {
                     VirtualQuarry vQuarry = storage.GetComponent<VirtualQuarry>();
-                    vQuarry.SetupQuarry(quarryId);
+                    vQuarry?.SetupQuarry(quarryId);
                 }
                 else if (type == BoxType.Fuel)
                 {
-                    VirtualQuarry vq = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId)).GetComponent<VirtualQuarry>();
-                    vq.SetupQuarry(quarryId);
+                    var coreEnt = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.netId));
+                    VirtualQuarry vq = coreEnt ? coreEnt.GetComponent<VirtualQuarry>() : null;
+                    vq?.SetupQuarry(quarryId);
                 }
             }
-            if (config.storeContainers && restore && storageCache.TryGetValue(quarryId, out var sc))
+            if (config.storeContainers && restore && storageCache.TryGetValue(quarryId, out var sc) && storage.inventory != null)
             {
                 List<RequiredItem> restoreList = type == BoxType.Fuel ? sc.fuel : type == BoxType.Output2 ? sc.resource2 : sc.resource;
                 if (restoreList != null)
@@ -2573,7 +2674,7 @@ namespace Harmony.Plugins
                     }
                 }
             }
-            if (type != BoxType.Fuel)
+            if (type != BoxType.Fuel && storage.inventory != null)
                 storage.inventory.canAcceptItem = (_, _, _) => false;
             return qr;
         }
@@ -2713,7 +2814,7 @@ namespace Harmony.Plugins
             BoxStorage quarry = GetQuarryBox(uc.quarryId, BoxType.Core);
             if (!quarry)
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("ErrorOccured", player.UserIDString));
+                ShowPopUp(player, Lang("ErrorOccured", player.UserIDString));
                 return;
             }
             VirtualQuarry virtualQuarry = quarry.GetComponent<VirtualQuarry>();
@@ -3893,7 +3994,7 @@ namespace Harmony.Plugins
             requiredSurvey.Add(sc.surveyItem);
             if (!ignoreItems && !TakeItems(player, requiredSurvey))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoRequiredSurvey", player.UserIDString));
+                ShowPopUp(player, Lang("NoRequiredSurvey", player.UserIDString));
                 Pool.FreeUnmanaged(ref requiredSurvey);
                 return;
             }
@@ -4025,7 +4126,7 @@ namespace Harmony.Plugins
             requiredSurvey.Add(reqItem);
             if (!TakeItems(player, requiredSurvey))
             {
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("NoRequiredSurvey", player.UserIDString));
+                ShowPopUp(player, Lang("NoRequiredSurvey", player.UserIDString));
                 Pool.FreeUnmanaged(ref requiredSurvey);
                 return;
             }
@@ -4033,7 +4134,7 @@ namespace Harmony.Plugins
             if (Core.Random.Range(0f, 100f) > chance)
             {
                 TryQuarrySearch(player, true);
-                PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("SearchFailed", player.UserIDString));
+                ShowPopUp(player, Lang("SearchFailed", player.UserIDString));
                 return;
             }
             float totalProfileWeight = 0f;
@@ -4174,7 +4275,7 @@ namespace Harmony.Plugins
             cui.v2.UpdateText("QuarriesUI_YouHaveCount", surveyCount.ToString());
             cui.v2.SendUi(player);
             Pool.FreeUnmanaged(ref sb);
-            PopUpAPI?.Call("ShowPopUp", player, config.popUpPreset, Lang("SearchSuccessful", player.UserIDString));
+            ShowPopUp(player, Lang("SearchSuccessful", player.UserIDString));
         }
         
         public float GetProfileSelectionWeight(BasePlayer player, string surveyKey, string profileKey, int customTarget)
@@ -5176,14 +5277,25 @@ namespace Harmony.Plugins
             public void SetupQuarry(int quarryId)
             {
                 dataId = quarryId;
-                qd = data.quarries[dataId];
-                bool requireInputLinking = qd.quarryType == QuarryType.Virtual && config.quarryProfiles[qd.profile].enableInputLink;
+                if (data?.quarries == null || !data.quarries.TryGetValue(dataId, out qd) || qd == null)
+                    return;
+                bool requireInputLinking = false;
+                bool requireOutputLinking = false;
+                if (qd.quarryType == QuarryType.Virtual)
+                {
+                    if (string.IsNullOrEmpty(qd.profile) || config.quarryProfiles == null || !config.quarryProfiles.TryGetValue(qd.profile, out QuarryProfile profile) || profile == null)
+                    {
+                        _plugin.Puts($"Profile {qd.profile} is missing from the configuration, but is found in data. Quarry with ID {dataId} will not work!");
+                        return;
+                    }
+                    requireInputLinking = profile.enableInputLink;
+                    requireOutputLinking = profile.enableOutputLink;
+                }
                 if (!fuelStorage)
                     fuelStorage = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.fuelNetId)) as BoxStorage;
-                else if (!requireInputLinking)
+                else if (!requireInputLinking && fuelStorage.net != null)
                     //OLD IMPLEMENTATION NEED TO KEEP TO MAKE OLD QUARRIES WORK
                     qd.fuelNetId = fuelStorage.net.ID.Value;
-                bool requireOutputLinking = qd.quarryType == QuarryType.Virtual && config.quarryProfiles[qd.profile].enableOutputLink;
                 if (requireOutputLinking)
                 {
                     isRedirect = true;
@@ -5201,11 +5313,13 @@ namespace Harmony.Plugins
                 if (quarryType == VqType.Static)
                     staticQuarry = BaseNetworkable.serverEntities.Find(new NetworkableId(qd.staticNetId)) as MiningQuarry;
                 CancelInvoke(MineResources);
-                if (quarryType == VqType.Default && !config.quarryProfiles.ContainsKey(qd.profile))
+                if (quarryType == VqType.Default && (string.IsNullOrEmpty(qd.profile) || config.quarryProfiles == null || !config.quarryProfiles.ContainsKey(qd.profile)))
                 {
                     _plugin.Puts($"Profile {qd.profile} is missing from the configuration, but is found in data. Quarry with ID {dataId} will not work!");
                     return;
                 }
+                if (quarryType == VqType.Static && (!staticQuarry || staticQuarry.IsDestroyed))
+                    return;
                 ConfigureOutput();
                 nonIntOutput.TryAdd("fuel", 0);
                 HookFuelListener();
@@ -5226,6 +5340,7 @@ namespace Harmony.Plugins
             {
                 if (!fuelStorage) return;
                 if (hookedFuelStorage == fuelStorage) return;
+                if (fuelStorage.inventory == null) return;
                 if (hookedFuelStorage && hookedFuelStorage.inventory != null)
                 {
                     hookedFuelStorage.inventory.onItemAddedRemoved -= OnFuelStorageItemChanged;
@@ -5236,13 +5351,13 @@ namespace Harmony.Plugins
                 hookedFuelStorage = fuelStorage;
             }
 
-            private void OnFuelStorageItemChanged(Item item, bool added)
+            private void OnFuelStorageItemChanged(Item item, bool added, BasePlayer sourcePlayer)
             {
                 if (added)
                     OnFuelAdded();
             }
 
-            private void OnFuelStorageItemStacked(Item item, int amount)
+            private void OnFuelStorageItemStacked(Item item, int amount, BasePlayer sourcePlayer)
             {
                 OnFuelAdded();
             }
@@ -5293,23 +5408,32 @@ namespace Harmony.Plugins
             private void ConfigureOutput()
             {
                 output.Clear();
+                if (qd == null) return;
                 if (quarryType == VqType.Default)
                 {
-                    QuarryProfile qp = config.quarryProfiles[qd.profile];
+                    if (string.IsNullOrEmpty(qd.profile) || config.quarryProfiles == null
+                        || !config.quarryProfiles.TryGetValue(qd.profile, out QuarryProfile qp) || qp == null)
+                        return;
                     Dictionary<string, ResourceConfig> configResources = qp.resources;
                     List<UpgradeConfig> levels = qp.upgrades;
+                    if (configResources == null || levels == null || levels.Count == 0) return;
                     if (qd.level > levels.Count - 1)
                         qd.level = levels.Count - 1;
+                    if (qd.level < 0)
+                        qd.level = 0;
+                    UpgradeConfig level = levels[qd.level];
+                    if (level == null || qd.resources == null) return;
                     foreach (var resource in qd.resources)
                     {
-                        if (!configResources.TryGetValue(resource.configKey, out var rc)) continue;
+                        if (resource == null || !configResources.TryGetValue(resource.configKey, out var rc) || rc == null) continue;
                         ItemDefinition def = ItemManager.FindItemDefinition(rc.shortname);
                         if (!def) continue;
-                        output.Add(new() { configKey = resource.configKey, def = def, skin = rc.skin, name = rc.name, amount = resource.work * levels[qd.level].multiplier });
+                        output.Add(new() { configKey = resource.configKey, def = def, skin = rc.skin, name = rc.name, amount = resource.work * level.multiplier });
                     }
                 }
                 else if (quarryType == VqType.Static)
                 {
+                    if (!staticQuarry || staticQuarry.IsDestroyed) return;
                     List<StaticQuarryOutput> quarryOutput = null;
                     if (staticQuarry.ShortPrefabName == "pumpjack-static")
                     {
@@ -5325,18 +5449,25 @@ namespace Harmony.Plugins
                     if (quarryOutput != null)
                         foreach (var resource in quarryOutput)
                         {
+                            if (resource == null) continue;
                             ItemDefinition def = ItemManager.FindItemDefinition(resource.shortname);
                             if (!def) continue;
                             output.Add(new() { configKey = $"{resource.shortname}_{resource.skin}", def = def, skin = resource.skin, name = resource.displayName, amount = resource.amount });
                         }
                 }
-                else if (quarryType == VqType.Excavator && mineType.Length > 0)
-                    foreach (var resource in config.excavatorResources[mineType])
+                else if (quarryType == VqType.Excavator && !string.IsNullOrEmpty(mineType)
+                    && config.excavatorResources != null
+                    && config.excavatorResources.TryGetValue(mineType, out List<StaticQuarryOutput> excavatorOutput)
+                    && excavatorOutput != null)
+                {
+                    foreach (var resource in excavatorOutput)
                     {
+                        if (resource == null) continue;
                         ItemDefinition def = ItemManager.FindItemDefinition(resource.shortname);
                         if (!def) continue;
                         output.Add(new() { configKey = $"{resource.shortname}_{resource.skin}", def = def, skin = resource.skin, name = resource.displayName, amount = resource.amount });
                     }
+                }
             }
 
             private void MineResources()
@@ -5498,13 +5629,13 @@ namespace Harmony.Plugins
                                 {
                                     nonIntOutput["fuel"] += remainingFuel;
                                     item.GetHeldEntity()?.Kill();
-                                    item.RemoveFromContainer();
+                                    item.RemoveFromContainer(null);
                                     item.Remove();
                                     break;
                                 }
                                 itemsToTake -= item.amount;
                                 item.GetHeldEntity()?.Kill();
-                                item.RemoveFromContainer();
+                                item.RemoveFromContainer(null);
                                 item.Remove();
                             }
                         }
@@ -6290,6 +6421,9 @@ namespace Harmony.Plugins
 
             [JsonProperty("Quarries")]
             public Dictionary<int, QuarryData> quarries = new();
+
+            [JsonProperty("Last Wipe Id")]
+            public string LastWipeId = "";
 
             [JsonProperty("Static Quarries")]
             public Dictionary<ulong, Dictionary<ulong, ulong>> _oldStaticQuarries = null;

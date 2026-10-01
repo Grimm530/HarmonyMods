@@ -35,4 +35,7 @@
       <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+  </ItemGroup>
 </Project>

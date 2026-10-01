@@ -10,7 +10,7 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Oxide.Game.Rust.Cui
+namespace Game.Rust.Cui
 {
     // Simplified: no Oxide pooling. JsonTextWriter works without ArrayPool.
 

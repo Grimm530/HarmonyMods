@@ -258,9 +258,9 @@ $sorted = $merged | Sort-Object @{
     Descending = $true
 }
 
-Write-Host "--- Plugin hook cost (higher = more time in Harmony hooks in this window) ---" -ForegroundColor Green
+Write-Host "--- Plugin hook cost (higher = more time in Oxide hooks in this window) ---" -ForegroundColor Green
 Write-Host "mean(avgRunningTime) = rolling avg of per-tick hook deltas after startup init (ms)." -ForegroundColor DarkGray
-Write-Host "peak_ms = max peakRunningTime in window. last_hook = cumulative Harmony hook time (or 1 for Harmony-only 'loaded' ping)." -ForegroundColor DarkGray
+Write-Host "peak_ms = max peakRunningTime in window. last_hook = cumulative Oxide hook time (or 1 for Harmony-only 'loaded' ping)." -ForegroundColor DarkGray
 Write-Host ""
 
 $sorted | Format-Table -AutoSize plugin, mean_avg_ms, peak_ms, last_hook

@@ -13,8 +13,14 @@ namespace RaidableBases
     {
         public bool Destroyed { get; set; }
         public Action Callback { get; set; }
-        public void Destroy() { if (!Destroyed) Destroyed = true; }
-        public void Reset() { Destroyed = false; }
+        /// <summary>Set by Reset(); Once/WaitAndRun restarts the delay when this is true.</summary>
+        public bool NeedsRestart { get; set; }
+        public void Destroy() { if (!Destroyed) { Destroyed = true; NeedsRestart = false; } }
+        public void Reset()
+        {
+            if (Destroyed) return;
+            NeedsRestart = true;
+        }
     }
 
     /// <summary>Stub for [HookMethod] - no-op attribute.</summary>

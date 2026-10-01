@@ -1,5 +1,5 @@
 using HarmonyLib;
-using CCPlugin = Harmony.Plugins.CombatClasses;
+using CCPlugin = Oxide.Plugins.CombatClasses;
 
 namespace CombatClassesHarmony.Patches
 {

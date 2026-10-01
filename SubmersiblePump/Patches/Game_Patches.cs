@@ -71,11 +71,9 @@ namespace SubmersiblePump.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), typeof(BaseNetworkable.DestroyMode), typeof(bool))]
     internal static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             var plugin = SubmersiblePumpMod.Instance?.Plugin;
             if (plugin == null) return;

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using HarmonyLib;
-using Windows;
+using Terminal;
 
 namespace CommandHistory.Patches;
 

@@ -71,4 +71,6 @@
     <Reference Include="0GrimmCUI"><HintPath>..\..\..\HarmonyMods\0GrimmCUI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup><Compile Remove="Patches\Cui_Endtest_Patch.cs" /><Compile Remove="UIFramework\**" /><Compile Remove="Pooling\**" /><Compile Remove="Json\**" /></ItemGroup>
-</Project>
+  <ItemGroup>
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup></Project>

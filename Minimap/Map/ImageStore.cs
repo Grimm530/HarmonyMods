@@ -7,7 +7,13 @@ using UnityEngine;
 
 namespace MinimapHarmony
 {
-    /// <summary>FileStorage-backed image cache replacing Oxide ImageLibrary.</summary>
+    /// <summary>
+    /// Disk cache plus a single FileStorage CRC per name for CUI <c>png</c> IDs.
+    /// Oxide ImageLibrary did the same FileStorage write; CUI cannot load a local path.
+    /// Replacing a name must Remove the previous CRC — FileStorage keys by content CRC,
+    /// so unique frames (heat overlay) otherwise accumulate in sv.files.*.db.
+    /// Durable bytes live in HarmonyData/Minimap/cache.
+    /// </summary>
     public static class ImageStore
     {
         private static readonly Dictionary<string, string> NameToCrc =
@@ -162,7 +168,19 @@ namespace MinimapHarmony
 
             try
             {
+                uint previousCrc = 0;
+                if (NameToCrc.TryGetValue(name, out var previous) &&
+                    uint.TryParse(previous, out var parsed) &&
+                    parsed != 0)
+                    previousCrc = parsed;
+
                 uint crc = FileStorage.server.Store(bytes, FileStorage.Type.png, ce.net.ID);
+                if (previousCrc != 0 && previousCrc != crc)
+                {
+                    try { FileStorage.server.Remove(previousCrc, FileStorage.Type.png, ce.net.ID); }
+                    catch { }
+                }
+
                 string crcStr = crc.ToString();
                 NameToCrc[name] = crcStr;
                 if (persistIndex) SaveIndex();

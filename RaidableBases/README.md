@@ -67,6 +67,7 @@ When nivex releases a new `.cs`:
 **Local Grimm fixes (must re-apply after adapt):**
 - Force paper loot/rewards to skin `2961180853` (`GRIMM_PAPER_SKIN`) and convert any vanilla paper already in raid containers. See `../RaidableBases_3.1.7_legacy/RaidableBases.Main.cs` for the reference.
 - Raid AutoTurrets: building-aware LOS (twig blocks sight) and no damage passthrough through twig onto players.
+- PasteEngine: restore `ChristmasLights.animationStyle` via `ToInt32OrDefault` (boxed JSON int/long cannot unbox onto the enum).
 
 ## Legacy
 

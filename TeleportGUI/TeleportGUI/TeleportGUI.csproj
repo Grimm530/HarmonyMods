@@ -61,10 +61,9 @@
     <Compile Remove="Patches\Cui_Endtest_Patch.cs" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Full Oxide ports not yet wired; Chaos UI uses TeleportGUI.ChaosStubs.cs adapters. -->
+    <!-- Lifecycle/Conditions still use ChaosStubs adapters. Monument warps are live. -->
     <Compile Remove="TeleportGUI.Lifecycle.cs" />
     <Compile Remove="TeleportGUI.Conditions.cs" />
-    <Compile Remove="TeleportGUI.MonumentsPayments.cs" />
     <!-- Hand-rolled UI superseded by Chaos TeleportGUI.UI.cs -->
     <Compile Remove="TeleportGUIUI.cs" />
     <Compile Remove="UIFramework\**" />

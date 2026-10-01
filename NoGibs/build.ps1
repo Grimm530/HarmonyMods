@@ -11,7 +11,8 @@ try {
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nBuild successful! Copying DLL to HarmonyMods..." -ForegroundColor Green
 
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath | Out-Null
     }
@@ -24,7 +25,7 @@ if ($LASTEXITCODE -eq 0) {
 
     Copy-Item -Path $dllPath -Destination $destPath -Force
     Write-Host "`nNoGibs.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "The mod will load automatically on next server start." -ForegroundColor Yellow
+    Write-Host "Load with: harmony.load NoGibs" -ForegroundColor Yellow
 } else {
     Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
     exit 1

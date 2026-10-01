@@ -1,48 +1,53 @@
 ﻿using HarmonyLib;
 using RustServerMetrics.HarmonyPatches.Utility;
-using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
-namespace RustServerMetrics.HarmonyPatches.Delayed
+// ReSharper disable InconsistentNaming
+
+namespace RustServerMetrics.HarmonyPatches.Delayed;
+
+[DelayedHarmonyPatch]
+[HarmonyPatch]
+internal class ConsoleSystem_Internal_Patch
 {
-    [DelayedHarmonyPatch]
-    [HarmonyPatch]
-    internal class ConsoleSystem_Internal_Patch
+    private static readonly double TicksToMs = 1000.0 / Stopwatch.Frequency;
+
+    [HarmonyPrepare]
+    public static bool Prepare()
     {
-        [HarmonyPrepare]
-        public static bool Prepare()
+        if (!RustServerMetricsLoader.__serverStarted)
         {
-            if (!RustServerMetricsLoader.__serverStarted)
-            {
-                Debug.Log("Note: Cannot patch ConsoleSystem_Internal_Patch yet. We will patch it upon server start.");
-                return false;
-            }
-
-            return true;
-        }
-        
-        [HarmonyTargetMethods]
-        public static IEnumerable<MethodBase> TargetMethods(Harmony harmonyInstance)
-        {
-            yield return AccessTools.DeclaredMethod(typeof(ConsoleSystem), nameof(ConsoleSystem.Internal));
+            Debug.Log("Note: Cannot patch ConsoleSystem_Internal_Patch yet. We will patch it upon server start.");
+            return false;
         }
 
-        [HarmonyPrefix]
-        public static void Prefix(ref DateTimeOffset __state)
+        return true;
+    }
+
+    [HarmonyTargetMethods]
+    public static IEnumerable<MethodBase> TargetMethods(Harmony harmonyInstance)
+    {
+        yield return AccessTools.DeclaredMethod(typeof(ConsoleSystem), nameof(ConsoleSystem.Internal));
+    }
+
+    [HarmonyPrefix]
+    public static void Prefix(ref long __state)
+    {
+        __state = Stopwatch.GetTimestamp();
+    }
+
+    [HarmonyPostfix]
+    public static void Postfix(ConsoleSystem.Arg arg, long __state)
+    {
+        if (!MetricsLogger.IsReady)
         {
-            __state = DateTimeOffset.UtcNow;
+            return;
         }
 
-        [HarmonyPostfix]
-        public static void Postfix(ConsoleSystem.Arg arg, DateTimeOffset __state)
-        {
-            if (MetricsLogger.Instance == null)
-                return;
-            
-            var duration = DateTimeOffset.UtcNow - __state;
-            MetricsLogger.Instance.ServerConsoleCommands.LogTime(arg.cmd.FullName, duration.TotalMilliseconds);
-        }
+        var ms = (Stopwatch.GetTimestamp() - __state) * TicksToMs;
+        MetricsLogger.Instance.ServerConsoleCommands.LogTime(arg.cmd.FullName, ms);
     }
 }

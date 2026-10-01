@@ -45,10 +45,8 @@ namespace ShopHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     public static class Horse_BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
         {
             if (__instance is not RidableHorse horse) return;
@@ -63,11 +61,8 @@ namespace ShopHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill),
-        new[] { typeof(BaseNetworkable.DestroyMode), typeof(bool) })]
     public static class Horse_BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
         public static void Prefix(BaseNetworkable __instance)
         {
             if (__instance is not RidableHorse horse) return;

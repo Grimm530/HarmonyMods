@@ -1,9 +1,9 @@
 using Facepunch;
 using Facepunch.Extend;
 using Network;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
+using Harmony.Core;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
 using Rust;
 using System;
 using System.Collections.Generic;
@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace KaruzaVehicles
 {
-    [Info("Custom Entities", "Nikedemos", "1.0.20")]
+    [Info("Custom Entities", "Nikedemos", "1.0.211")]
     [Description("A robust framework for registering, spawning, loading and saving entity prefabs")]
 
     public class CustomEntities : RustPlugin
@@ -1721,7 +1721,7 @@ namespace KaruzaVehicles
                     optionalSuffix = string.Empty;
                 }
 
-                _fullFileDirectory = Path.Combine(Interface.Oxide.DataFileSystem.Directory, Instance.Name);
+                _fullFileDirectory = Path.Combine(HarmonyModInterface.Mods.DataFileSystem.Directory, Instance.Name);
 
                 var filenameWithOrWithoutSuffixBuilder = new StringBuilder();
 
@@ -2332,9 +2332,9 @@ namespace KaruzaVehicles
 
             void OnDefaultInventoryFirstCreated();
 
-            bool DefaultInventoryItemFilter(Item item, int targetSlot);
+            bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot);
 
-            void OnItemAddedOrRemoved(Item item, bool added);
+            void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer);
 
             void OnDefaultInventoryDirty();
 
@@ -2840,12 +2840,12 @@ namespace KaruzaVehicles
             public virtual bool EnableSavingToDiskByDefault => true;
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
             public virtual void OnDefaultInventoryDirty()
             {
 
             }
-            public virtual void OnItemAddedOrRemoved(Item item, bool added)
+            public virtual void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
 
             }
@@ -2962,13 +2962,13 @@ namespace KaruzaVehicles
 
             public virtual bool HasDefaultInventory => false;
             public virtual bool DefaultInventoryHandledByBaseType => false;
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
 
             }
-            public virtual void OnItemAddedOrRemoved(Item item, bool added)
+            public virtual void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
 
             }
@@ -3180,16 +3180,16 @@ namespace KaruzaVehicles
 
             public virtual bool DefaultInventoryHandledByBaseType => true; //this is important!
 
-            public virtual bool DefaultInventoryItemFilter(Item item, int targetSlot) => true;
+            public virtual bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot) => true;
 
             public virtual void OnDefaultInventoryDirty()
             {
                 //not needed as the base invalidates network cache which was already done before calling this
                 //base.OnInventoryDirty();
             }
-            public override void OnItemAddedOrRemoved(Item item, bool added)
+            public override void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
-                base.OnItemAddedOrRemoved(item, added);
+                base.OnItemAddedOrRemoved(item, added, sourcePlayer);
             }
 
             public ItemContainer DefaultInventory

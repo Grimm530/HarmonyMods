@@ -14,6 +14,7 @@ using Rust.Ai.Gen2;
 using UnityEngine;
 using UnityEngine.AI;
 using GrimmNPC.NpcSpawnExtensionMethods;
+using GrimmShared;
 using HarmonyCompat = GrimmNPC.HarmonyCompat;
 
 namespace GrimmNPC
@@ -1172,7 +1173,7 @@ namespace GrimmNPC
                                 else
                                 {
                                     NavMeshHit allHit;
-                                    if (NavMesh.SamplePosition(landHint, out allHit, 280f, NavMesh.AllAreas))
+                                    if (RecastNav.SamplePosition(landHint, out allHit, 280f, NavMesh.AllAreas))
                                     {
                                         float w2 = WaterLevel.GetWaterSurface(allHit.position, waves: false, volumes: true);
                                         if (allHit.position.y >= w2 - 0.25f)
@@ -1203,12 +1204,12 @@ namespace GrimmNPC
                         if (!foundFar)
                         {
                             NavMeshHit rescueHit;
-                            if (NavMesh.SamplePosition(requestedPos, out rescueHit, 150f, tryMask) ||
-                                NavMesh.SamplePosition(requestedPos, out rescueHit, 150f, 25) ||
-                                NavMesh.SamplePosition(requestedPos, out rescueHit, 150f, 1))
+                            if (RecastNav.SamplePosition(requestedPos, out rescueHit, 150f, tryMask) ||
+                                RecastNav.SamplePosition(requestedPos, out rescueHit, 150f, 25) ||
+                                RecastNav.SamplePosition(requestedPos, out rescueHit, 150f, 1))
                                 position = rescueHit.position;
                             // Monuments / DLC tiles sometimes bake walkable mesh on area types outside 1+8+16; AllAreas matches underwater rescue used above.
-                            else if (NavMesh.SamplePosition(requestedPos, out rescueHit, 280f, NavMesh.AllAreas))
+                            else if (RecastNav.SamplePosition(requestedPos, out rescueHit, 280f, NavMesh.AllAreas))
                             {
                                 float wDry = WaterLevel.GetWaterSurface(rescueHit.position, waves: false, volumes: true);
                                 if (rescueHit.position.y >= wDry - 0.25f)
@@ -1238,7 +1239,7 @@ namespace GrimmNPC
                     searchRadius = 120f;
                     if (!EnhancedNavmeshSpawnPoint.Find(position, searchRadius, out position, areaMask))
                     {
-                        if (NavMesh.SamplePosition(position, out NavMeshHit nmFallback, 200f, NavMesh.AllAreas))
+                        if (RecastNav.SamplePosition(position, out NavMeshHit nmFallback, 200f, NavMesh.AllAreas))
                         {
                             float w = WaterLevel.GetWaterSurface(nmFallback.position, waves: false, volumes: true);
                             if (nmFallback.position.y >= w - 0.25f)
@@ -1328,36 +1329,69 @@ namespace GrimmNPC
             // FSMComponent will use CustomScientistNpc as baseEntity via GameObjectEx.ToBaseEntity()
             customScientist.Spawn();
 
-            // TrustPosition: one-tick PlaceOnNavMesh helps monument bakes.
-            // Skip when CustomMapAbsolutePosition (BetterNpc cargo/exact) — warp spam + wrong agent on water/deck.
-            if (config.TrustSpawnPosition && !config.CustomMapAbsolutePosition)
-            {
-                CustomScientistNpc npcDeferred = customScientist;
-                timer.Once(0.08f, () =>
-                {
-                    if (npcDeferred == null || npcDeferred.IsDestroyed) return;
-                    try
-                    {
-                        if (npcDeferred.Brain?.Navigator != null)
-                        {
-                            npcDeferred.Brain.Navigator.SetNavMeshEnabled(true);
-                            npcDeferred.Brain.Navigator.PlaceOnNavMesh(14f);
-                        }
-                    }
-                    catch { }
-                });
-            }
+            // BotReSpawn discipline: do not treat "Spawned" as "on NavMesh".
+            // Place+verify after spawn (and again after BetterNPC cargo SetParent NextTick).
+            ScheduleNavMeshPlacement(customScientist);
 
             try
             {
-                // Minimal post-spawn diagnostics to help trace navmesh issues
-                var agent = customScientist.GetComponent<UnityEngine.AI.NavMeshAgent>();
-                string navInfo = agent != null ? $"agentType={agent.agentTypeID} onNavMesh={agent.isOnNavMesh}" : "no NavMeshAgent";
-                DebugLog($"Spawned '{config?.Name ?? "NPC"}' at {position} ({navInfo}), areaMask={areaMask}");
+                var agent = customScientist.GetComponent<RustNavMeshAgent>();
+                string navInfo = agent != null ? $"agentType={agent.agentTypeID} onNavMesh={agent.isOnNavMesh}" : "no RustNavMeshAgent";
+                DebugLog($"Spawned '{config?.Name ?? "NPC"}' at {position} ({navInfo}), areaMask={areaMask} — placement scheduled");
             }
             catch {}
 
             return customScientist;
+        }
+
+        /// <summary>
+        /// BotReSpawn-style: enable + PlaceOnNavMesh after spawn, verify isOnNavMesh, else force stationary.
+        /// t+0.05 early attempt; t+0.30 after cargo/parent NextTick so parent-locked NPCs skip terrain place.
+        /// Recast (default as of Hotfix 5) can take minutes on first boot — retry until the mesh is ready
+        /// instead of force-stationaring at t+0.30.
+        /// </summary>
+        private void ScheduleNavMeshPlacement(CustomScientistNpc npc)
+        {
+            if (npc == null) return;
+            CustomScientistNpc captured = npc;
+            timer.Once(0.05f, () => TryPlaceOnNavMesh(captured, "t+0.05", 0));
+            timer.Once(0.30f, () => TryPlaceOnNavMesh(captured, "t+0.30", 1));
+        }
+
+        private void TryPlaceOnNavMesh(CustomScientistNpc captured, string phase, int attempt)
+        {
+            if (captured == null || captured.IsDestroyed) return;
+            try { captured.EnsurePlacedOnNavMesh(phase); }
+            catch (Exception ex)
+            {
+                PrintWarning($" EnsurePlacedOnNavMesh {phase}: {ex.Message}");
+                return;
+            }
+            if (captured.IsDestroyed || captured.ForcedStationaryNoNavMesh)
+                return;
+            if (captured.IsStationary)
+                return;
+            if (captured.NavAgent != null && captured.NavAgent.enabled && captured.NavAgent.isOnNavMesh)
+                return;
+            if (captured.HasParentTransform)
+                return;
+
+            bool meshReady = RecastNav.IsMeshReadyAt(captured.transform.position);
+            if (!meshReady)
+            {
+                if (attempt >= 60)
+                {
+                    try { captured.EnsurePlacedOnNavMesh("final"); }
+                    catch (Exception ex) { PrintWarning($" EnsurePlacedOnNavMesh final: {ex.Message}"); }
+                    return;
+                }
+                float delay = attempt < 4 ? 0.5f : 2f;
+                timer.Once(delay, () => TryPlaceOnNavMesh(captured, attempt < 2 ? "t+0.30" : $"wait{attempt}", attempt + 1));
+                return;
+            }
+
+            if (phase != "final" && attempt < 4)
+                timer.Once(0.25f, () => TryPlaceOnNavMesh(captured, "final", attempt + 1));
         }
 
         private static void CopySerializableFields<T>(T src, T dst)
@@ -1512,23 +1546,36 @@ namespace GrimmNPC
                 if (NavAgent == null) NavAgent = GetComponent<RustNavMeshAgent>();
                 if (NavAgent != null)
                 {
-                    // NpcSpawn 3.4.1: apply AreaMask / AgentTypeID literally from config (0 is allowed).
+                    // NpcSpawn 3.4.1: apply AreaMask / AgentTypeID from config.
+                    // RaidableBases always uses human agent (GetSettingsByIndex(1) == -1372625422).
+                    // When AreaMask is human Walkable (1) but AgentTypeID was left 0, force that agent —
+                    // AgentType 0 + AreaMask 1 causes off-mesh Resume spam.
                     NavAgent.areaMask = Config.AreaMask;
-                    NavAgent.agentTypeID = Config.AgentTypeID;
+                    int agentTypeId = Config.AgentTypeID;
+                    if (Config.AreaMask == 1 && agentTypeId == 0)
+                        agentTypeId = NavMesh.GetSettingsByIndex(1).agentTypeID;
+                    NavAgent.agentTypeID = agentTypeId;
                     NavAgent.baseOffset = Config.BaseOffSet;
                     if (NavAgent.obstacleAvoidanceType == ObstacleAvoidanceType.NoObstacleAvoidance)
                         NavAgent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
                     ulong avoidId = net != null ? net.ID.Value : 0;
                     NavAgent.avoidancePriority = (int)(avoidId % 99);
                     
-                    // Ensure BaseNavigator is configured for building navigation
+                    // RaidableBases SetupNavigator: Walkable + full topology; Init only when nav enabled.
                     if (Brain != null && Brain.Navigator != null)
                     {
                         Brain.Navigator.CanUseBaseNav = true;
-                        Brain.Navigator.CanUseNavMesh = true;
-                        Brain.Navigator.DefaultArea = "NavMesh";
+                        Brain.Navigator.CanUseNavMesh = !IsStationary && !AiManager.nav_disable;
+                        Brain.Navigator.DefaultArea = IsStationary ? "Not Walkable" : "Walkable";
+                        Brain.Navigator.topologyPreference = (TerrainTopology.Enum)TerrainTopology.EVERYTHING;
                         Brain.Navigator.MoveTowardsSpeed = BaseNavigator.NavigationSpeed.Fast;
                         Brain.Navigator.FaceMoveTowardsTarget = true;
+                        if (Brain.Navigator.CanUseNavMesh)
+                        {
+                            try { Brain.Navigator.Init(this, Brain.Navigator.Agent); }
+                            catch { }
+                        }
+                        MaybeLogNavDebug($"ServerInit nav setup areaMask={NavAgent.areaMask} agentType={NavAgent.agentTypeID}");
                     }
                 }
 
@@ -1578,10 +1625,7 @@ namespace GrimmNPC
             public void Unfreeze()
             {
                 IsFrozen = false;
-                if (Brain != null && Brain.Navigator != null)
-                {
-                    Brain.Navigator.Resume();
-                }
+                TrySafeResume();
             }
 
 			private void UpdateInventory()
@@ -1860,7 +1904,7 @@ namespace GrimmNPC
                             }
                             if (Brain.Navigator != null)
                             {
-                                Brain.Navigator.Resume(); // Resume navigation
+                                TrySafeResume(); // Resume navigation only if on NavMesh
                             }
                         }
                         // CRITICAL: Ensure NavAgent is enabled (required for movement) — except stationary / parented cargo.
@@ -1900,10 +1944,7 @@ namespace GrimmNPC
                         {
                             sleepable.WakeAI();
                         }
-                        if (Brain.Navigator != null)
-                        {
-                            Brain.Navigator.Resume();
-                        }
+                        TrySafeResume();
                         if (NavAgent != null && !NavAgent.enabled)
                         {
                             NavAgent.enabled = true;
@@ -1954,11 +1995,8 @@ namespace GrimmNPC
                             {
                                 sleepable.WakeAI();
                             }
-                            // Manually ensure Navigator is resumed if it exists
-                            if (Brain.Navigator != null)
-                            {
-                                Brain.Navigator.Resume();
-                            }
+                            // Resume only if agent is already on NavMesh (avoids Unity spam)
+                            TrySafeResume();
                         }
                         // CRITICAL: Ensure NavAgent is enabled (required for movement)
                         // Always check and enable, even if not sleeping, to handle edge cases
@@ -1996,7 +2034,11 @@ namespace GrimmNPC
                 TrySwimColumnKickAndDebug();
                 
                 // Enhanced: Stuck detection and recovery (from BotReSpawn improvements)
-                if (Brain != null && Brain.Navigator != null && Brain.Navigator.StuckOffNavmesh)
+                if (ForcedStationaryNoNavMesh)
+                {
+                    // Intentionally off-mesh (oil/no bake) — do not Warp/Place spam.
+                }
+                else if (Brain != null && Brain.Navigator != null && Brain.Navigator.StuckOffNavmesh)
                 {
                     // Cargo / parented / AStar deck NPCs: PlaceOnNavMesh snaps to ocean floor under the ship.
                     if (IsParentLockedNavigation())
@@ -2010,14 +2052,96 @@ namespace GrimmNPC
                     }
                     else
                     {
-                        if (RoamPoint != Vector3.zero)
-                            transform.position = RoamPoint;
-                        else if (HomePosition != Vector3.zero)
-                            transform.position = HomePosition;
-                        Brain.Navigator.SetNavMeshEnabled(true);
-                        Brain.Navigator.PlaceOnNavMesh(2f);
+                        // RaidableBases: Warp to a roam/home point instead of raw transform + PlaceOnNavMesh spam.
+                        Vector3 recover = RoamPoint != Vector3.zero ? RoamPoint
+                            : HomePosition != Vector3.zero ? HomePosition
+                            : transform.position;
+                        bool warped = RecastNav.Warp(Brain.Navigator, recover);
+                        if (!warped)
+                        {
+                            transform.position = recover;
+                            Brain.Navigator.SetNavMeshEnabled(true);
+                            Brain.Navigator.PlaceOnNavMesh(2f);
+                        }
+                        // Still off mesh after recovery → BotReSpawn fail path
+                        if (NavAgent != null && !NavAgent.isOnNavMesh)
+                            ForceStationaryOffNavMesh("StuckOffNavmesh recovery failed");
+                        else
+                            MaybeLogNavDebug(warped
+                                ? $"StuckOffNavmesh: Warp ok -> {recover}"
+                                : $"StuckOffNavmesh: Warp failed, PlaceOnNavMesh -> {recover}");
                     }
                 }
+                // Soft off-mesh: agent.isOnNavMesh==false but StuckOffNavmesh never flips (common for
+                // ZombieHorde / harbor after successful spawn place). Re-place periodically; force
+                // stationary after repeated failures so Resume/SetDestination stop forever.
+                // Also run when CanUseNavMesh is true even if swim-bypass would otherwise skip —
+                // harbor Divers often sit at waterline with canNav=True and never get StuckOffNavmesh.
+                else if (NavAgent != null && NavAgent.enabled && !NavAgent.isOnNavMesh
+                    && Brain?.Navigator != null && Brain.Navigator.CanUseNavMesh
+                    && !IsParentLockedNavigation()
+                    && !IsMounted())
+                {
+                    TryRecoverSoftOffNavMesh();
+                }
+            }
+
+            private float _nextSoftOffMeshRecoverRealtime;
+            private int _softOffMeshRecoverFails;
+
+            /// <summary>
+            /// Zombies/guards that placed OK at spawn then fell off mesh with stuck=False.
+            /// Throttled EnsurePlaced; 3 consecutive misses → ForceStationaryOffNavMesh.
+            /// Public so TrySafeResume can kick recovery when brain still calls Resume.
+            /// </summary>
+            internal void TryRecoverSoftOffNavMesh()
+            {
+                if (IsDestroyed || ForcedStationaryNoNavMesh || IsStationary)
+                    return;
+                if (IsParentLockedNavigation() || IsMounted())
+                    return;
+                if (Brain?.Navigator == null || !Brain.Navigator.CanUseNavMesh)
+                    return;
+                var agent = Brain.Navigator.Agent ?? NavAgent;
+                if (agent == null || !agent.enabled || agent.isOnNavMesh)
+                {
+                    _softOffMeshRecoverFails = 0;
+                    return;
+                }
+
+                float now = Time.realtimeSinceStartup;
+                if (now < _nextSoftOffMeshRecoverRealtime)
+                    return;
+                _nextSoftOffMeshRecoverRealtime = now + 5f;
+
+                // Deep-ocean swim: don't snap to seabed — disable terrain nav instead of Place spam.
+                if (ShouldBypassDryNavmeshPlanning())
+                {
+                    _softOffMeshRecoverFails++;
+                    MaybeLogNavDebug($"soft off-mesh: swim bypass, skip Place (fail x{_softOffMeshRecoverFails})");
+                    if (_softOffMeshRecoverFails >= 2)
+                        ForceStationaryOffNavMesh("soft off-mesh while swim-bypass (CanUseNavMesh left on)");
+                    return;
+                }
+
+                bool ok = false;
+                try { ok = EnsurePlacedOnNavMesh("recover"); }
+                catch (Exception ex)
+                {
+                    MaybeLogNavDebug($"soft off-mesh recover threw: {ex.Message}");
+                    ok = false;
+                }
+
+                if (ok && NavAgent != null && NavAgent.isOnNavMesh)
+                {
+                    _softOffMeshRecoverFails = 0;
+                    return;
+                }
+
+                _softOffMeshRecoverFails++;
+                MaybeLogNavDebug($"soft off-mesh recover miss x{_softOffMeshRecoverFails}");
+                if (_softOffMeshRecoverFails >= 3)
+                    ForceStationaryOffNavMesh($"soft off-mesh recover failed x{_softOffMeshRecoverFails}");
             }
             
             // Enhanced: Dynamic navigation mode switching (from ChaosNPC improvements)
@@ -2088,6 +2212,105 @@ namespace GrimmNPC
                 if (!Brain.Navigator.CanUseNavMesh && Brain.Navigator.CanUseAStar && Brain.Navigator.AStarGraph != null)
                     return true;
                 return false;
+            }
+
+            /// <summary>
+            /// RaidableBases-style gate: only path on NavMesh when agent is live and not stuck-off.
+            /// </summary>
+            internal bool CanPathOnNavMesh()
+            {
+                if (IsStationary || IsParentLockedNavigation())
+                    return false;
+                if (Brain?.Navigator == null || !Brain.Navigator.CanUseNavMesh)
+                    return false;
+                if (Brain.Navigator.StuckOffNavmesh)
+                    return false;
+                var agent = Brain.Navigator.Agent ?? NavAgent;
+                return agent != null && agent.enabled && agent.isOnNavMesh;
+            }
+
+            /// <summary>
+            /// Call Navigator.Resume only when the agent is already on a NavMesh.
+            /// Unconditional Resume() (e.g. every SetDestination) spams Unity:
+            /// "Resume can only be called on an active agent that has been placed on a NavMesh"
+            /// — common when BetterNPC spawns many GrimmNPC scientists on incomplete/wrong mesh samples.
+            /// Mirrors RaidableBases: never Resume/SetDestination when !isOnNavMesh.
+            /// </summary>
+            internal static bool TrySafeResume(BaseNavigator nav, CustomScientistNpc npc = null)
+            {
+                if (nav == null)
+                    return false;
+                if (npc != null && npc.IsParentLockedNavigation())
+                {
+                    npc.MaybeLogNavDebug("Resume skipped: parent/AStar locked");
+                    return false;
+                }
+                if (!nav.CanUseNavMesh)
+                {
+                    npc?.MaybeLogNavDebug("Resume skipped: CanUseNavMesh=false");
+                    return false;
+                }
+
+                var agent = nav.Agent;
+                if (agent == null)
+                {
+                    npc?.MaybeLogNavDebug("Resume skipped: Agent=null");
+                    return false;
+                }
+
+                if (!agent.enabled)
+                    nav.SetNavMeshEnabled(true);
+
+                // Not placed yet — do not Resume (Unity logs every call). Soft-recover when CanUseNavMesh.
+                if (!agent.isOnNavMesh)
+                {
+                    npc?.MaybeLogNavDebug($"Resume skipped: not on NavMesh (agentType={agent.agentTypeID} areaMask={agent.areaMask} stuck={nav.StuckOffNavmesh})");
+                    npc?.TryRecoverSoftOffNavMesh();
+                    return false;
+                }
+
+                try
+                {
+                    nav.Resume();
+                    if (agent.isStopped)
+                        agent.isStopped = false;
+                    return true;
+                }
+                catch
+                {
+                    npc?.MaybeLogNavDebug("Resume threw");
+                    return false;
+                }
+            }
+
+            internal bool TrySafeResume() => TrySafeResume(Brain?.Navigator, this);
+
+            private float _nextNavDebugRealtime;
+
+            /// <summary>Throttled NavMesh diagnostics when Enable Debug Logging is on.</summary>
+            private void MaybeLogNavDebug(string reason)
+            {
+                if (_ins?._config == null || !_ins._config.EnableDebugLogging)
+                    return;
+                float now = Time.realtimeSinceStartup;
+                if (now < _nextNavDebugRealtime)
+                    return;
+                // Resume-skip floods when many zombies are soft-off-mesh; throttle that harder.
+                float gap = reason != null && reason.StartsWith("Resume skipped", StringComparison.Ordinal)
+                    ? 8f
+                    : 2.5f;
+                _nextNavDebugRealtime = now + gap;
+
+                var agent = Brain?.Navigator?.Agent ?? NavAgent;
+                string name = Config?.Name ?? displayName ?? "?";
+                ulong id = net?.ID.Value ?? 0UL;
+                string agentInfo = agent != null
+                    ? $"enabled={agent.enabled} onMesh={agent.isOnNavMesh} type={agent.agentTypeID} areaMask={agent.areaMask}"
+                    : "agent=null";
+                _ins.DebugLog(
+                    $"[Nav] '{name}' net={id} {reason} | {agentInfo} " +
+                    $"canNav={Brain?.Navigator?.CanUseNavMesh} stuck={Brain?.Navigator?.StuckOffNavmesh} " +
+                    $"parent={HasParentTransform} stationary={IsStationary} pos={transform?.position}");
             }
 
             /// <summary>Pull parented NPC back onto HomePosition if NavMesh/swim logic dropped them under the deck.</summary>
@@ -2391,16 +2614,20 @@ namespace GrimmNPC
                 UpdateActiveItem(weapon.uid);
                 CurrentWeapon = attackEntity;
                 attackEntity.TopUpAmmo();
+                // NpcSpawn 3.4.8: aiOnlyInRange and WeaponsParameters apply to every AttackEntity.
+                // HumanNPC.EngagementRange doubles range when aiOnlyInRange is false; melee traces only effectiveRange.
+                attackEntity.aiOnlyInRange = true;
+                if (_config?.WeaponsParameters != null && weapon.info != null
+                    && _config.WeaponsParameters.TryGetValue(weapon.info.shortname, out DefaultSettings weaponSettings)
+                    && weaponSettings != null)
+                {
+                    attackEntity.effectiveRange = weaponSettings.EffectiveRange;
+                    attackEntity.attackLengthMin = weaponSettings.AttackLengthMin;
+                    attackEntity.attackLengthMax = weaponSettings.AttackLengthMax;
+                }
                 if (attackEntity is Chainsaw) (attackEntity as Chainsaw).ServerNPCStart();
                 if (attackEntity is BaseProjectile)
                 {
-                    if (_config?.WeaponsParameters != null && weapon.info != null && _config.WeaponsParameters.ContainsKey(weapon.info.shortname))
-                    {
-                        attackEntity.effectiveRange = _config.WeaponsParameters[weapon.info.shortname].EffectiveRange;
-                        attackEntity.attackLengthMin = _config.WeaponsParameters[weapon.info.shortname].AttackLengthMin;
-                        attackEntity.attackLengthMax = _config.WeaponsParameters[weapon.info.shortname].AttackLengthMax;
-                    }
-                    attackEntity.aiOnlyInRange = true;
                     BaseProjectile baseProjectile = attackEntity as BaseProjectile;
 						if (baseProjectile.MuzzlePoint == null) baseProjectile.MuzzlePoint = baseProjectile.transform;
 						// Force magazine ammo type and top up to reduce misfires when stationary
@@ -2740,13 +2967,12 @@ namespace GrimmNPC
                         if (main == null) return null;
                     }
 
-                    if (NavMesh.SamplePosition(main.transform.position, out navMeshHit, 30f, NavAgent.areaMask))
+                    if (RecastNav.SamplePosition(main.transform.position, out navMeshHit, 30f, NavAgent.areaMask))
                     {
-                        NavMeshPath path = new NavMeshPath();
-                        if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
+                        if (RecastNav.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, out var corners, out var status))
                         {
-                            if (path.status == NavMeshPathStatus.PathComplete) return main;
-                            else return GetNearEntity<BaseCombatEntity>(path.corners[path.corners.Length - 1], 5f, 1 << 8 | 1 << 21);
+                            if (status == NavMeshPathStatus.PathComplete) return main;
+                            else if (corners.Length > 0) return GetNearEntity<BaseCombatEntity>(corners[corners.Length - 1], 5f, 1 << 8 | 1 << 21);
                         }
                     }
 
@@ -2759,25 +2985,23 @@ namespace GrimmNPC
                     main = GetNearEntity<BuildingBlock>(pos, 15f, 1 << 21);
                     if (main == null) return null;
 
-                    if (NavMesh.SamplePosition(main.transform.position, out navMeshHit, 30f, NavAgent.areaMask))
+                    if (RecastNav.SamplePosition(main.transform.position, out navMeshHit, 30f, NavAgent.areaMask))
                     {
-                        NavMeshPath path = new NavMeshPath();
-                        if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
+                        if (RecastNav.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, out var corners, out var status))
                         {
-                            if (path.status == NavMeshPathStatus.PathComplete) return main;
-                            else return GetNearEntity<BaseCombatEntity>(path.corners[path.corners.Length - 1], 5f, 1 << 8 | 1 << 21);
+                            if (status == NavMeshPathStatus.PathComplete) return main;
+                            else if (corners.Length > 0) return GetNearEntity<BaseCombatEntity>(corners[corners.Length - 1], 5f, 1 << 8 | 1 << 21);
                         }
                     }
                 }
                 else if (IsRaidStateMelee)
                 {
-                    if (NavMesh.SamplePosition(main.transform.position, out navMeshHit, 30f, NavAgent.areaMask))
+                    if (RecastNav.SamplePosition(main.transform.position, out navMeshHit, 30f, NavAgent.areaMask))
                     {
-                        NavMeshPath path = new NavMeshPath();
-                        if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
+                        if (RecastNav.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, out var corners, out var status))
                         {
-                            if (path.status == NavMeshPathStatus.PathComplete && Vector3.Distance(navMeshHit.position, main.transform.position) < 6f) return main;
-                            else return GetNearEntity<BaseCombatEntity>(path.corners[path.corners.Length - 1], 6f, 1 << 8 | 1 << 21);
+                            if (status == NavMeshPathStatus.PathComplete && Vector3.Distance(navMeshHit.position, main.transform.position) < 6f) return main;
+                            else if (corners.Length > 0) return GetNearEntity<BaseCombatEntity>(corners[corners.Length - 1], 6f, 1 << 8 | 1 << 21);
                         }
                     }
                 }
@@ -3065,8 +3289,17 @@ namespace GrimmNPC
             #region Stationary
             public bool IsStationary { get; set; }
 
+            /// <summary>BotReSpawn fail path: no mesh at spawn → stay Idle/CombatStationary, never Resume/path.</summary>
+            internal bool ForcedStationaryNoNavMesh { get; private set; }
+
             public void UpdateStationary()
             {
+                if (ForcedStationaryNoNavMesh)
+                {
+                    IsStationary = true;
+                    return;
+                }
+
                 if (Config?.States == null)
                 {
                     IsStationary = Config != null && Config.Speed == 0f;
@@ -3078,6 +3311,177 @@ namespace GrimmNPC
                                (Config.States.Contains("CombatStationaryState") && Config.States.Count == 1) ||
                                Config.States.Count == 0 ||
                                Config.Speed == 0f;
+            }
+
+            /// <summary>
+            /// BotReSpawn: if still !isOnNavMesh after PlaceOnNavMesh → do not path forever (wound/fail).
+            /// We force stationary combat-in-place instead of BecomeWounded so monument guards remain usable.
+            /// </summary>
+            internal void ForceStationaryOffNavMesh(string reason)
+            {
+                ForcedStationaryNoNavMesh = true;
+                IsStationary = true;
+                if (NavAgent != null && NavAgent.enabled)
+                    NavAgent.enabled = false;
+                if (Brain?.Navigator != null)
+                {
+                    Brain.Navigator.CanUseNavMesh = false;
+                    Brain.Navigator.CanUseCustomNav = false;
+                    Brain.Navigator.DefaultArea = "Not Walkable";
+                    try { Brain.Navigator.Pause(); } catch { }
+                }
+                MaybeLogNavDebug($"Forced stationary — {reason}");
+                _ins?.PrintWarning($" NPC '{Config?.Name ?? displayName}' forced stationary (no NavMesh): {reason} at {transform.position}");
+            }
+
+            /// <summary>
+            /// BotReSpawn / RaidableBases placement: sample → Warp → enable agent → PlaceOnNavMesh → verify.
+            /// Returns true if on mesh, parent/swim/stationary OK, or already handled. Final phase forces stationary on failure.
+            /// </summary>
+            internal bool EnsurePlacedOnNavMesh(string phase = null)
+            {
+                if (IsDestroyed)
+                    return false;
+                if (ForcedStationaryNoNavMesh)
+                    return false;
+
+                UpdateStationary();
+                if (IsStationary)
+                {
+                    if (NavAgent != null && NavAgent.enabled)
+                        NavAgent.enabled = false;
+                    if (Brain?.Navigator != null)
+                        Brain.Navigator.CanUseNavMesh = false;
+                    MaybeLogNavDebug($"EnsurePlaced skipped: stationary ({phase})");
+                    return true;
+                }
+
+                // Cargo / AStar deck: BetterNPC disables terrain nav in NextTick — never PlaceOnNavMesh under ship.
+                if (HasParentTransform)
+                {
+                    MaybeLogNavDebug($"EnsurePlaced skipped: parented ({phase})");
+                    return true;
+                }
+                if (Brain?.Navigator != null && !Brain.Navigator.CanUseNavMesh
+                    && Brain.Navigator.CanUseAStar && Brain.Navigator.AStarGraph != null)
+                {
+                    MaybeLogNavDebug($"EnsurePlaced skipped: AStar deck ({phase})");
+                    return true;
+                }
+
+                if (ShouldBypassDryNavmeshPlanning())
+                {
+                    MaybeLogNavDebug($"EnsurePlaced skipped: swim ({phase})");
+                    return true;
+                }
+
+                if (IsMounted())
+                {
+                    MaybeLogNavDebug($"EnsurePlaced skipped: mounted ({phase})");
+                    return true;
+                }
+
+                if (NavAgent == null)
+                    NavAgent = GetComponent<RustNavMeshAgent>();
+                if (NavAgent == null || Brain?.Navigator == null)
+                {
+                    MaybeLogNavDebug($"EnsurePlaced wait: no agent/navigator ({phase})");
+                    return false;
+                }
+
+                if (NavAgent.isOnNavMesh && NavAgent.enabled && Brain.Navigator.CanUseNavMesh)
+                {
+                    MaybeLogNavDebug($"EnsurePlaced already on mesh ({phase})");
+                    return true;
+                }
+
+                int areaMask = Config != null && Config.AreaMask != 0 ? Config.AreaMask : (NavAgent.areaMask != 0 ? NavAgent.areaMask : 1);
+                int agentTypeId = Config != null ? Config.AgentTypeID : NavAgent.agentTypeID;
+                // Pair mask ↔ agent like BotReSpawn / BetterNPC NavigationGridType:
+                //   human Walkable: mask 1 + GetSettingsByIndex(1) (-1372625422)
+                //   alt grid:       mask 25 + agent 0
+                // ZombieHorde previously sent mask 25 + human agent → SamplePosition always fails.
+                if (areaMask == 1 && (agentTypeId == 0 || agentTypeId == -1))
+                    agentTypeId = NavMesh.GetSettingsByIndex(1).agentTypeID;
+                else if (areaMask == 25 && agentTypeId == -1372625422)
+                {
+                    // Prefer human terrain mesh over broken mask/agent pair
+                    areaMask = 1;
+                    agentTypeId = NavMesh.GetSettingsByIndex(1).agentTypeID;
+                }
+
+                var filter = new NavMeshQueryFilter { areaMask = areaMask, agentTypeID = agentTypeId };
+                Vector3 pos = transform.position;
+                if (!RecastNav.IsMeshReadyAt(pos))
+                {
+                    MaybeLogNavDebug($"EnsurePlaced wait: recast not ready ({phase})");
+                    return false;
+                }
+                bool sampled = RecastNav.SamplePosition(pos, out NavMeshHit hit, 2f, filter)
+                    || RecastNav.SamplePosition(pos, out hit, 14f, filter);
+                if (!sampled && areaMask != 25)
+                    sampled = RecastNav.SamplePosition(pos, out hit, 14f, new NavMeshQueryFilter { areaMask = 25, agentTypeID = 0 });
+                if (!sampled)
+                    sampled = RecastNav.SamplePosition(pos, out hit, 20f, NavMesh.AllAreas);
+
+                bool finalPhase = phase != null && (
+                    phase.IndexOf("final", StringComparison.OrdinalIgnoreCase) >= 0
+                    || phase.IndexOf("0.30", StringComparison.Ordinal) >= 0);
+                if (!sampled)
+                {
+                    if (finalPhase)
+                        ForceStationaryOffNavMesh($"SamplePosition failed ({phase})");
+                    else
+                        MaybeLogNavDebug($"EnsurePlaced sample miss ({phase})");
+                    return false;
+                }
+
+                // BotReSpawn: agent off while configuring, then enable + PlaceOnNavMesh
+                NavAgent.enabled = false;
+                Brain.Navigator.CanUseNavMesh = false;
+                NavAgent.areaMask = areaMask;
+                NavAgent.agentTypeID = agentTypeId;
+                NavAgent.baseOffset = Config != null ? Config.BaseOffSet : NavAgent.baseOffset;
+                Brain.Navigator.DefaultArea = "Walkable";
+                Brain.Navigator.topologyPreference = (TerrainTopology.Enum)TerrainTopology.EVERYTHING;
+
+                if (!RecastNav.Warp(Brain.Navigator, hit.position))
+                {
+                    transform.position = hit.position;
+                    ServerPosition = hit.position;
+                }
+                if (HomePosition == Vector3.zero || (HomePosition - hit.position).sqrMagnitude > 100f)
+                    HomePosition = hit.position;
+                if (RoamPoint == Vector3.zero)
+                    RoamPoint = hit.position;
+
+                Brain.Navigator.CanUseNavMesh = !AiManager.nav_disable;
+                NavAgent.enabled = true;
+                try { Brain.Navigator.Init(this, Brain.Navigator.Agent ?? NavAgent); }
+                catch { }
+                try
+                {
+                    Brain.Navigator.SetNavMeshEnabled(true);
+                    Brain.Navigator.PlaceOnNavMesh(2f);
+                    if (!NavAgent.isOnNavMesh)
+                        Brain.Navigator.PlaceOnNavMesh(14f);
+                }
+                catch { }
+
+                if (NavAgent.isOnNavMesh)
+                {
+                    _ins?.DebugLog(
+                        $"[Nav] '{Config?.Name ?? displayName}' ON mesh ({phase}) " +
+                        $"pos={transform.position} type={NavAgent.agentTypeID} mask={NavAgent.areaMask}");
+                    MaybeLogNavDebug($"EnsurePlaced OK ({phase})");
+                    return true;
+                }
+
+                if (finalPhase)
+                    ForceStationaryOffNavMesh($"PlaceOnNavMesh failed ({phase}) type={NavAgent.agentTypeID} mask={NavAgent.areaMask}");
+                else
+                    MaybeLogNavDebug($"EnsurePlaced place miss ({phase})");
+                return false;
             }
             #endregion Stationary
 
@@ -3343,17 +3747,11 @@ namespace GrimmNPC
                     return true;
                 }
 
-                // Navigator.Stop() disables the agent; always revive before pathing or SetDestination returns false forever.
+                // Only Resume when already on NavMesh — unconditional Resume spam fills the log when
+                // BetterNPC/GrimmNPC scientists spawn off-mesh or on wrong agent type.
                 try
                 {
-                    Brain.Navigator.Resume();
-                    if (Brain.Navigator.Agent != null)
-                    {
-                        if (!Brain.Navigator.Agent.enabled)
-                            Brain.Navigator.SetNavMeshEnabled(true);
-                        if (Brain.Navigator.Agent.isStopped)
-                            Brain.Navigator.Agent.isStopped = false;
-                    }
+                    TrySafeResume();
                 }
                 catch { }
 
@@ -3374,30 +3772,33 @@ namespace GrimmNPC
                     }
                     return true;
                 }
-                
-                // Enhanced: Find valid navmesh position before setting destination
-                if (!EnhancedNavmeshSpawnPoint.Find(pos, radius, out pos))
+
+                // RaidableBases CanUseNavMesh(): skip Navigator.SetDestination when stuck/off-mesh —
+                // still record destination so chase/roam keep a target without Unity Resume errors.
+                if (!CanPathOnNavMesh())
                 {
-                    // If we can't find a valid position, try using the original with GetSamplePosition
-                    pos = GetSamplePosition(pos, radius);
+                    MaybeLogNavDebug($"SetDestination soft-fail (off-mesh/stuck) dest={pos}");
+                    Brain.Navigator.Destination = pos;
+                    finalDestination = pos;
+                    _onDestinationReachedCallback = onReached;
+                    return false;
                 }
                 
-                // Enhanced: Check for walls/obstacles before setting destination (prevents walking through structures)
-                if (!IsPathClear(transform.position, pos))
+                // The navigator already paths around obstacles. Skip while it is still
+                // walking toward a point within 2m of this request (roam/chase call this every think).
+                Vector3 currentDest = Brain.Navigator.Destination;
+                if (Brain.Navigator.Moving && currentDest != Vector3.zero)
                 {
-                    // Path blocked - try to find alternative position
-                    Vector3 alternativePos = FindAlternativePosition(pos, radius);
-                    if (alternativePos != Vector3.zero)
-                    {
-                        pos = alternativePos;
-                    }
-                    else
-                    {
-                        // Can't find clear path, return false
-                        return false;
-                    }
+                    Vector3 kept = pos - currentDest;
+                    kept.y = 0f;
+                    if (kept.sqrMagnitude < 4f)
+                        return true;
                 }
-                
+
+                // One short Recast snap. Do not run the spawn-point finder or a second A* here;
+                // BaseNavigator.SetDestination pathfinds on the agent.
+                pos = GetSamplePosition(pos, radius);
+
                 if (!pos.IsEqualVector3(Brain.Navigator.Destination))
                 {
                     _onDestinationReachedCallback = onReached;
@@ -3413,91 +3814,7 @@ namespace GrimmNPC
                 }
                 return true; // Already at destination
             }
-            
-            // Enhanced: Check if path to destination is clear of walls/obstacles (from BaseNavigator collision detection)
-            private bool IsPathClear(Vector3 from, Vector3 to)
-            {
-                if (from == Vector3.zero || to == Vector3.zero) return false;
-                
-                Vector3 direction = (to - from).normalized;
-                float distance = Vector3.Distance(from, to);
-                
-                // Use same layerMask as BaseNavigator Base navigation (10551552 = buildings, structures, etc.)
-                int layerMask = 10551552;
-                
-                // Check for obstacles in path using Raycast (similar to BaseNavigator)
-                RaycastHit hitInfo;
-                Vector3 rayStart = from + Vector3.up * 0.5f; // Start slightly above ground
-                
-                // Raycast from current position to destination
-                if (Physics.Raycast(rayStart, direction, out hitInfo, distance + 0.5f, layerMask))
-                {
-                    // Hit something - check if it's a wall/structure (not just ground)
-                    float hitDistance = Vector3.Distance(from, hitInfo.point);
-                    if (hitDistance < distance * 0.9f) // If hit is close to destination, might be okay
-                    {
-                        // Enhanced: Check if hit is a building block, door, or gate (prevents walking through gates/doors)
-                        BaseEntity hitEntity = hitInfo.collider?.GetComponentInParent<BaseEntity>();
-                        if (hitEntity != null)
-                        {
-                            string prefabName = hitEntity.ShortPrefabName?.ToLower() ?? "";
-                            if (hitEntity is BuildingBlock || hitEntity is SimpleBuildingBlock || 
-                                prefabName.Contains("gate") || prefabName.Contains("door") || prefabName.Contains("prison"))
-                            {
-                                // Blocked by building structure, door, or gate
-                                return false;
-                            }
-                        }
-                    }
-                }
-                
-                // Also check with SphereCast for better detection (like BaseNavigator)
-                float sphereRadius = 0.25f; // NPC radius approximation
-                if (Physics.SphereCast(rayStart, sphereRadius, direction, out hitInfo, distance, layerMask))
-                {
-                    float hitDistance = Vector3.Distance(from, hitInfo.point);
-                    if (hitDistance < distance * 0.8f)
-                    {
-                        BaseEntity hitEntity = hitInfo.collider?.GetComponentInParent<BaseEntity>();
-                        // Enhanced: Also check for doors and gates
-                        if (hitEntity != null)
-                        {
-                            string prefabName = hitEntity.ShortPrefabName?.ToLower() ?? "";
-                            if (hitEntity is BuildingBlock || hitEntity is SimpleBuildingBlock || 
-                                prefabName.Contains("gate") || prefabName.Contains("door") || prefabName.Contains("prison"))
-                            {
-                                return false;
-                            }
-                        }
-                    }
-                }
-                
-                return true; // Path appears clear
-            }
-            
-            // Enhanced: Find alternative position when path is blocked
-            private Vector3 FindAlternativePosition(Vector3 blockedPos, float radius)
-            {
-                // Try positions around the blocked destination
-                for (int i = 0; i < 8; i++)
-                {
-                    float angle = (360f / 8f) * i;
-                    Vector3 offset = Quaternion.Euler(0, angle, 0) * Vector3.forward * (radius * 0.5f);
-                    Vector3 candidate = blockedPos + offset;
-                    
-                    if (IsPathClear(transform.position, candidate))
-                    {
-                        // Validate with EnhancedNavmeshSpawnPoint
-                        if (EnhancedNavmeshSpawnPoint.Find(candidate, radius, out Vector3 validPos, areaMask: 25))
-                        {
-                            return validPos;
-                        }
-                    }
-                }
-                
-                return Vector3.zero; // No alternative found
-            }
-            
+
             // Check if destination reached and trigger callback
             private void CheckDestinationReached()
             {
@@ -3529,48 +3846,17 @@ namespace GrimmNPC
 
             internal Vector3 GetSamplePosition(Vector3 source, float radius)
             {
-                // Enhanced: Use enhanced navmesh finder with validation
-                // Use areaMask 25 (building navigation) for movement destinations
-                if (EnhancedNavmeshSpawnPoint.Find(source, radius, out Vector3 validPosition, areaMask: 25))
-                {
-                    return validPosition;
-                }
-                
-                // Fallback to original method
-                NavMeshHit navMeshHit;
-                if (NavMesh.SamplePosition(source, out navMeshHit, radius, NavAgent.areaMask))
-                {
-                    NavMeshPath path = new NavMeshPath();
-                    if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
-                    {
-                        if (path.status == NavMeshPathStatus.PathComplete) return navMeshHit.position;
-                        else return path.corners[path.corners.Length - 1];
-                    }
-                }
-                
-                {
-                    // Broader search fallback to find any nearby navmesh when standing on foundations
-                    if (NavMesh.SamplePosition(source, out navMeshHit, Mathf.Max(30f, radius), NavAgent.areaMask))
-                    {
-                        NavMeshPath path = new NavMeshPath();
-                        if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavAgent.areaMask, path))
-                        {
-                            if (path.status == NavMeshPathStatus.PathComplete) return navMeshHit.position;
-                            else return path.corners[path.corners.Length - 1];
-                        }
-                    }
+                if (NavAgent == null)
+                    return source;
 
-                    // Any-area fallback
-                    if (NavMesh.SamplePosition(source, out navMeshHit, Mathf.Max(30f, radius), NavMesh.AllAreas))
-                    {
-                        NavMeshPath path = new NavMeshPath();
-                        if (NavMesh.CalculatePath(transform.position, navMeshHit.position, NavMesh.AllAreas, path))
-                        {
-                            if (path.status == NavMeshPathStatus.PathComplete) return navMeshHit.position;
-                            else return path.corners[path.corners.Length - 1];
-                        }
-                    }
-                }
+                // Recast sample extent is Vector3.one * radius. Keep movement snaps short.
+                // Spawn placement still uses EnhancedNavmeshSpawnPoint.Find.
+                float sampleRadius = radius < 2f ? 2f : radius;
+                if (sampleRadius > 6f)
+                    sampleRadius = 6f;
+
+                if (RecastNav.SamplePosition(source, out NavMeshHit navMeshHit, sampleRadius, NavAgent.areaMask))
+                    return navMeshHit.position;
                 return source;
             }
 
@@ -3623,20 +3909,22 @@ namespace GrimmNPC
                     targetPos.z + approach.z * radius + right.z * lateral);
             }
 
-            // Enhanced: Get near nav point with better spawn finding (from BotReSpawn improvements)
+            // NpcSpawn roam pick: a few short samples around home, not a 40-attempt / 150m search.
             internal Vector3 GetNearNavPoint(int radius = 30)
             {
-                Vector3 targetPos = CurrentTarget != null ? CurrentTarget.transform.position : HomePosition;
-                Vector3 sourcePos = CurrentTarget == null ? transform.position : targetPos;
-                
-                // Use EnhancedNavmeshSpawnPoint with increased attempts
-                if (EnhancedNavmeshSpawnPoint.Find(sourcePos, radius, out Vector3 validPosition, areaMask: 25))
+                Vector3 center = HomePosition != Vector3.zero ? HomePosition : transform.position;
+                float roam = radius < 2 ? 2f : radius;
+                int mask = NavAgent != null ? NavAgent.areaMask : NavMesh.AllAreas;
+                for (int i = 0; i < 8; i++)
                 {
-                    return validPosition;
+                    Vector3 candidate = GetRandomPos(center, roam);
+                    if (!RecastNav.SamplePosition(candidate, out NavMeshHit hit, 4f, mask))
+                        continue;
+                    if (Vector3.Distance(transform.position, hit.position) < 2f)
+                        continue;
+                    return hit.position;
                 }
-                
-                // Fallback to current position if no valid nav point found
-                return transform.position;
+                return Vector3.zero;
             }
 
             internal bool IsMoving => Brain != null && Brain.Navigator != null && Brain.Navigator.Moving;
@@ -3645,6 +3933,7 @@ namespace GrimmNPC
             #region States
             internal bool CanChaseState()
             {
+                if (IsStationary || ForcedStationaryNoNavMesh) return false;
                 if (IsRunAwayWater) return false;
                 if (IsFireC4 || IsFireRocketLauncher) return false;
                 if (DistanceFromBase > Config.ChaseRange) return false;
@@ -3819,7 +4108,7 @@ namespace GrimmNPC
                         else
                             Brain.sleeping = false;
                         if (Brain.Navigator != null)
-                            Brain.Navigator.Resume();
+                            TrySafeResume();
                     }
                 }
             }
@@ -3829,6 +4118,14 @@ namespace GrimmNPC
         public class CustomScientistBrain : ScientistBrain
         {
             internal CustomScientistNpc Npc { get; set; } = null;
+
+            // NpcSpawn 3.3.0 updates senses every 0.5s. Doing it on every 0.25s think
+            // (plus a fresh player-sphere alloc) was a large slice of AIThinkManager time.
+            private const float UpdateSensesInterval = 0.5f;
+            private const float DormantCheckInterval = 1f;
+            private float _nextSensesTime;
+            private float _nextDormantCheckTime;
+            private static readonly BasePlayer[] DormantPlayerBuffer = new BasePlayer[64];
 
             public override void AddStates()
             {
@@ -3908,9 +4205,8 @@ namespace GrimmNPC
                 
                 Navigator.Speed = Npc.Config.Speed;
                 
-                // Enhanced navigation configuration (from ChaosNPC improvements)
-                // Enable all navigation methods for maximum flexibility
-                Navigator.CanUseNavMesh = true;
+                // RaidableBases SetupNavigator + ChaosNPC flexibility
+                Navigator.CanUseNavMesh = !AiManager.nav_disable;
                 Navigator.CanUseBaseNav = true;
                 Navigator.CanUseAStar = true;
                 Navigator.CanUseCustomNav = false;
@@ -3922,11 +4218,20 @@ namespace GrimmNPC
                     if (Npc.NavAgent != null && Npc.NavAgent.enabled)
                         Npc.NavAgent.enabled = false;
                     Navigator.CanUseNavMesh = false;
+                    Navigator.DefaultArea = "Not Walkable";
+                }
+                else
+                {
+                    // RB uses "Walkable" + full topology; "NavMesh" default area was a common mismatch.
+                    Navigator.DefaultArea = "Walkable";
+                    Navigator.topologyPreference = (TerrainTopology.Enum)TerrainTopology.EVERYTHING;
+                    if (Navigator.CanUseNavMesh && Navigator.Agent != null)
+                    {
+                        try { Navigator.Init(Npc, Navigator.Agent); }
+                        catch { }
+                    }
                 }
                 
-                // Set DefaultArea for BaseNavigator (helps with building navigation)
-                // BaseNavigator will use this as fallback when NavMesh is unavailable
-                Navigator.DefaultArea = "NavMesh";
                 // Improve pursuit defaults for aggressive NPCs
                 Navigator.MoveTowardsSpeed = BaseNavigator.NavigationSpeed.Fast;
                 Navigator.FaceMoveTowardsTarget = true;
@@ -3955,6 +4260,8 @@ namespace GrimmNPC
 
                 ThinkMode = AIThinkMode.Interval;
                 thinkRate = 0.25f;
+                _nextSensesTime = Time.time + UnityEngine.Random.Range(0f, UpdateSensesInterval);
+                _nextDormantCheckTime = Time.time + UnityEngine.Random.Range(0f, DormantCheckInterval);
                 PathFinder = new HumanPathFinder();
                 ((HumanPathFinder)PathFinder).Init(Npc);
             }
@@ -3981,9 +4288,16 @@ namespace GrimmNPC
                     float defaultSleepDistance = _ins._config.DefaultSleepDistance;
                     float wakeupRange = Mathf.Max(serverWakeupRange, Mathf.Max(configSleepDistance, defaultSleepDistance));
                     
+                    // Throttle: this runs for every scientist in the think queue, including sleepers.
+                    if (Time.time < _nextDormantCheckTime)
+                    {
+                        if (sleeping) return;
+                    }
+                    else
+                    {
+                    _nextDormantCheckTime = Time.time + DormantCheckInterval;
                     // Use BotReSpawn approach: GetPlayersInSphere (not Fast) with simpler filter
-                    BasePlayer[] localPlayerResults = new BasePlayer[64];
-                    int playerCount = BaseEntity.Query.Server.GetPlayersInSphere(Npc.transform.position, wakeupRange, localPlayerResults, x => x != null && x.net?.connection != null && x.userID.IsSteamId() && !x.IsNpc && !x.IsSleeping());
+                    int playerCount = BaseEntity.Query.Server.GetPlayersInSphere(Npc.transform.position, wakeupRange, DormantPlayerBuffer, x => x != null && x.net?.connection != null && x.userID.IsSteamId() && !x.IsNpc && !x.IsSleeping());
                     bool hasNearbyPlayers = playerCount > 0;
                     
                     if (!hasNearbyPlayers)
@@ -4025,6 +4339,7 @@ namespace GrimmNPC
                         }
                         // Continue with normal Think() processing below
                     }
+                    }
                 }
                 
                 // Handle sleeping state (only if ForceRespectAiDormant is not enabled or ai_dormant is false)
@@ -4038,21 +4353,19 @@ namespace GrimmNPC
                     return;
                 }
                 
-                // Update senses and targeting (only if not running away from water)
-                if (!Npc.IsRunAwayWater)
+                // Senses and raid path checks are the expensive part of a think.
+                // NpcSpawn refreshes them on a 0.5s interval; the navigator keeps moving in between.
+                if (!Npc.IsRunAwayWater && Time.time >= _nextSensesTime)
                 {
-                    // Null check Senses before Update (may not be initialized yet)
+                    _nextSensesTime = Time.time + UpdateSensesInterval;
                     if (Senses != null)
                     {
                         Senses.Update();
                         Npc.CurrentTarget = Npc.GetBestTarget();
                     }
-                    
-                    // Update raid target if in raid state (always update when in raid state)
+
                     if (Npc.IsRaidState || Npc.IsRaidStateMelee)
-                    {
                         Npc.CurrentRaidTarget = Npc.GetRaidTarget();
-                    }
                 }
                 
                 // Execute current state logic
@@ -4089,16 +4402,16 @@ namespace GrimmNPC
 
                 public RoamState(CustomScientistNpc npc) : base(AIState.Roam) { _npc = npc; }
 
-                public override float GetWeight() => 20f;
+                public override float GetWeight() => _npc.IsStationary || _npc.ForcedStationaryNoNavMesh ? 0f : 20f;
 
                 public override void StateLeave(BaseAIBrain brain, BaseEntity entity) { _npc.ThrownSmoke(); }
 
                 public override StateStatus StateThink(float delta, BaseAIBrain brain, BaseEntity entity)
                 {
-                    // Enhanced: Better roam point management with distance tracking (from BotReSpawn improvements)
+                    // NpcSpawn only picks a roam point when the NPC has stopped.
+                    // Re-calling SetDestination every think made the navigator rebuild the path at 4 Hz.
                     if (_npc.DistanceFromBase > _npc.Config.RoamRange)
                     {
-                        // Return home if too far
                         BaseNavigator.NavigationSpeed speed = _npc.DistanceFromBase > 10f ? BaseNavigator.NavigationSpeed.Fast : _npc.DistanceFromBase > 5f ? BaseNavigator.NavigationSpeed.Normal : BaseNavigator.NavigationSpeed.Slow;
                         if (_npc.SetDestination(_npc.HomePosition, 2f, speed))
                         {
@@ -4107,71 +4420,31 @@ namespace GrimmNPC
                             _npc.RoamDistance = Vector3.Distance(_npc.HomePosition, _npc.transform.position);
                         }
                     }
-                    else
+                    else if (!_npc.IsMoving && _npc.Config.RoamRange > 2f && (DateTime.Now - _npc.LastMove).TotalSeconds >= 2.1f)
                     {
-                        // Enhanced roam point logic with distance tracking
-                        _npc.RoamDistance1 = Vector3.Distance(_npc.RoamPoint, _npc.transform.position);
-                        
-                        // If we're getting closer to roam point and still have distance to go, continue
-                        if (_npc.RoamDistance1 < _npc.RoamDistance && _npc.RoamDistance1 > 2f && _npc.RoamPoint != Vector3.zero)
+                        Vector3 newRoamPoint = _npc.GetNearNavPoint((int)(_npc.Config.RoamRange - 2f));
+                        if (newRoamPoint == Vector3.zero)
+                            newRoamPoint = _npc.GetRandomPos(_npc.HomePosition != Vector3.zero ? _npc.HomePosition : _npc.transform.position, _npc.Config.RoamRange - 2f);
+                        if (newRoamPoint != Vector3.zero && Vector3.Distance(newRoamPoint, _npc.transform.position) >= 2f)
                         {
-                            _npc.LastMove = DateTime.Now;
-                            _npc.RoamDistance = _npc.RoamDistance1;
-                            _npc.SetDestination(_npc.RoamPoint, 2f, BaseNavigator.NavigationSpeed.Slow);
-                        }
-                        else
-                        {
-                            // Check pause length before finding new roam point
-                            float pauseLength = 0f; // Config could have Roam_Pause_Length, but using 0 for now
-                            if ((DateTime.Now - _npc.LastMove).TotalSeconds < pauseLength + 2.1f)
+                            if (_npc.SetDestination(newRoamPoint, 2f, BaseNavigator.NavigationSpeed.Slow))
                             {
-                                return StateStatus.Running;
-                            }
-                            
-                            // Find new roam point
-                            if (_npc.Config.RoamRange > 2f)
-                            {
-                                Vector3 newRoamPoint = _npc.GetNearNavPoint((int)(_npc.Config.RoamRange - 2f));
-                                
-                                if (newRoamPoint != Vector3.zero && newRoamPoint != _npc.transform.position)
-                                {
-                                    if (_npc.SetDestination(newRoamPoint, 2f, BaseNavigator.NavigationSpeed.Slow))
-                                    {
-                                        _npc.LastMove = DateTime.Now;
-                                        _npc.RoamDistance = Vector3.Distance(newRoamPoint, _npc.transform.position);
-                                        _npc.RoamPoint = newRoamPoint;
-                                    }
-                                }
-                                else
-                                {
-                                    // Fallback: Use building-aware finder for random position (better for building navigation)
-                                    Vector3 randomPos = _npc.GetRandomPos(_npc.HomePosition, _npc.Config.RoamRange - 2f);
-                                    // Use EnhancedNavmeshSpawnPoint to find valid building position
-                                    if (EnhancedNavmeshSpawnPoint.Find(randomPos, (int)(_npc.Config.RoamRange - 2f), out Vector3 validPos, areaMask: 25))
-                                    {
-                                        randomPos = validPos;
-                                    }
-                                    if (_npc.SetDestination(randomPos, 2f, BaseNavigator.NavigationSpeed.Slow))
-                                    {
-                                        _npc.LastMove = DateTime.Now;
-                                        _npc.RoamDistance = Vector3.Distance(randomPos, _npc.transform.position);
-                                        _npc.RoamPoint = randomPos;
-                                    }
-                                }
+                                _npc.LastMove = DateTime.Now;
+                                _npc.RoamDistance = Vector3.Distance(newRoamPoint, _npc.transform.position);
+                                _npc.RoamPoint = newRoamPoint;
                             }
                         }
-                        
-                        // Enhanced: Stuck detection and recovery during roam
-                        if (brain.Navigator != null && brain.Navigator.StuckOffNavmesh
-                            && brain.Navigator.CanUseNavMesh && !_npc.HasParentTransform && !_npc.IsStationary)
-                        {
-                            if (_npc.RoamPoint != Vector3.zero)
-                                _npc.transform.position = _npc.RoamPoint;
-                            else if (_npc.HomePosition != Vector3.zero)
-                                _npc.transform.position = _npc.HomePosition;
-                            brain.Navigator.SetNavMeshEnabled(true);
-                            brain.Navigator.PlaceOnNavMesh(2f);
-                        }
+                    }
+
+                    if (brain.Navigator != null && brain.Navigator.StuckOffNavmesh
+                        && brain.Navigator.CanUseNavMesh && !_npc.HasParentTransform && !_npc.IsStationary)
+                    {
+                        if (_npc.RoamPoint != Vector3.zero)
+                            _npc.transform.position = _npc.RoamPoint;
+                        else if (_npc.HomePosition != Vector3.zero)
+                            _npc.transform.position = _npc.HomePosition;
+                        brain.Navigator.SetNavMeshEnabled(true);
+                        brain.Navigator.PlaceOnNavMesh(2f);
                     }
 
                     _npc.TryDeployTrapDuringRoam();
@@ -5320,10 +5593,7 @@ namespace GrimmNPC
                         {
                             sleepable.WakeAI();
                         }
-                        if (victimNpc.Brain.Navigator != null)
-                        {
-                            victimNpc.Brain.Navigator.Resume();
-                        }
+                        victimNpc.TrySafeResume();
                     }
                     if (victimNpc.NavAgent != null && !victimNpc.NavAgent.enabled
                         && !victimNpc.IsStationary && !victimNpc.HasParentTransform)
@@ -5377,10 +5647,7 @@ namespace GrimmNPC
                             {
                                 nearbySleepable.WakeAI();
                             }
-                            if (customNpc.Brain.Navigator != null)
-                            {
-                                customNpc.Brain.Navigator.Resume();
-                            }
+                            customNpc.TrySafeResume();
                         }
                         if (customNpc.NavAgent != null && !customNpc.NavAgent.enabled
                             && !customNpc.IsStationary && !customNpc.HasParentTransform)
@@ -5833,7 +6100,7 @@ namespace GrimmNPC
 
         private static bool IsRaycast(Vector3 position, out RaycastHit raycastHit) => Physics.Raycast(position, Vector3.down, out raycastHit, 500f, GroundLayers);
 
-        private static bool IsNavMesh(Vector3 position, out NavMeshHit navMeshHit) => NavMesh.SamplePosition(position, out navMeshHit, 2f, NavMesh.AllAreas);
+        private static bool IsNavMesh(Vector3 position, out NavMeshHit navMeshHit) => RecastNav.SamplePosition(position, out navMeshHit, 2f, NavMesh.AllAreas);
 
         private static bool IsEntities(Vector3 position, float radius)
         {
@@ -5932,7 +6199,7 @@ namespace GrimmNPC
                     
                     // Use provided areaMask (default 25 = ground + construction + buildings) for building navigation
                     NavMeshHit hit;
-                    bool navMeshFound = NavMesh.SamplePosition(position, out hit, maxDistance, areaMask);
+                    bool navMeshFound = RecastNav.SamplePosition(position, out hit, maxDistance, areaMask);
                     
                     // For building spawns, be more lenient - navmesh might not exist at building height
                     // BaseNavigator will handle building navigation anyway
@@ -5952,7 +6219,7 @@ namespace GrimmNPC
                             // Try with ground-only areaMask as fallback
                             if (isBuildingHeight && attempts < 2 && areaMask != 1)
                             {
-                                if (NavMesh.SamplePosition(position, out hit, maxDistance, 1))
+                                if (RecastNav.SamplePosition(position, out hit, maxDistance, 1))
                                 {
                                     position = hit.position;
                                     return true;
@@ -5997,7 +6264,7 @@ namespace GrimmNPC
                     Vector2 r = UnityEngine.Random.insideUnitCircle.normalized;
                     float d = UnityEngine.Random.Range(rescueRadius * 0.3f, rescueRadius);
                     Vector3 tryPos = targetPosition + new Vector3(r.x, 0f, r.y) * d;
-                    if (NavMesh.SamplePosition(tryPos, out NavMeshHit rescueHit, rescueRadius, areaMask))
+                    if (RecastNav.SamplePosition(tryPos, out NavMeshHit rescueHit, rescueRadius, areaMask))
                     {
                         float w = WaterLevel.GetWaterSurface(rescueHit.position, waves: false, volumes: true);
                         if (rescueHit.position.y >= w)
@@ -8073,7 +8340,7 @@ namespace GrimmNPC
             for (int i = container.itemList.Count - 1; i >= 0; i--)
             {
                 Item item = container.itemList[i];
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 item.Remove();
             }
         }

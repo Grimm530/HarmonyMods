@@ -3038,7 +3038,7 @@ namespace RaidableBases
             {
                 if (_downRetryAttempts >= MaxDownRetries)
                 {
-                    env?.Puts($"Elevator down-retry limit ({MaxDownRetries}) reached; stopping retries.");
+                    Puts($"Elevator down-retry limit ({MaxDownRetries}) reached; stopping retries.");
                     return;
                 }
                 _downRetryAttempts++;
@@ -4131,7 +4131,7 @@ namespace RaidableBases
                         continue;
                     }
                     item.GetHeldEntity().SafelyKill();
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     item.Remove(0f);
                 }
                 return hasItems;
@@ -4245,13 +4245,16 @@ namespace RaidableBases
 
             private void EquipWeapon()
             {
-                AttackWeapons.RemoveAll(IsKilled);
-                if (AttackWeapons.Count <= 1 || npc.IsWounded())
+                if (RemoveLostWeapons())
+                {
+                    IdentifyWeapon();
+                }
+                if (AttackWeapons.Count == 0 || npc.IsWounded() || AttackWeapons.Count == 1 && npc.GetHeldEntity() == AttackWeapons[0])
                 {
                     return;
                 }
                 Shuffle(AttackWeapons);
-                foreach (var weapon in AttackWeapons)
+                foreach (AttackEntity weapon in AttackWeapons)
                 {
                     if (AttackTransform != null)
                     {
@@ -4264,11 +4267,28 @@ namespace RaidableBases
                             continue;
                         }
                     }
-                    UpdateWeapon(weapon, weapon.ownerItemUID);
-                    _attackEntity = null;
-                    IdentifyWeapon();
-                    break;
+                    if (UpdateWeapon(weapon, weapon.ownerItemUID))
+                    {
+                        break;
+                    }
                 }
+                IdentifyWeapon();
+            }
+
+            private bool RemoveLostWeapons()
+            {
+                bool removed = false;
+                for (int i = AttackWeapons.Count - 1; i >= 0; i--)
+                {
+                    AttackEntity weapon = AttackWeapons[i];
+                    if (weapon.IsKilled() || weapon.GetParentEntity() != npc)
+                    {
+                        AttackWeapons.RemoveAt(i);
+                        removed = true;
+                    }
+                }
+
+                return removed;
             }
 
             public bool HasCorpseLoot()
@@ -4302,7 +4322,13 @@ namespace RaidableBases
                         return;
                     }
                 }
-                MedicalTools.RemoveAll(IsKilled);
+                for (int i = MedicalTools.Count - 1; i >= 0; i--)
+                {
+                    if (!TryGetMedicalTool(MedicalTools[i], out _))
+                    {
+                        MedicalTools.RemoveAt(i);
+                    }
+                }
                 if (MedicalTools.Count == 0)
                 {
                     return;
@@ -4312,25 +4338,61 @@ namespace RaidableBases
                 StartCoroutine(Heal(tool));
             }
 
-            private IEnumerator Heal(Item medicalItem)
+            private bool TryGetMedicalTool(Item item, out MedicalTool tool)
             {
-                npc.UpdateActiveItem(medicalItem.uid);
-                MedicalTool medicalTool = medicalItem.GetHeldEntity() as MedicalTool;
-                yield return CoroutineEx.waitForSeconds(1f);
-                if (medicalTool != null)
+                ItemContainer belt = npc.inventory?.containerBelt;
+                if (belt == null || item == null || !item.IsValid() || item.parent != belt)
                 {
-                    medicalTool.ServerUse();
+                    tool = null;
+                    return false;
                 }
-                if (!npc.IsKilled())
+                tool = item.GetHeldEntity() as MedicalTool;
+                return tool != null && tool.GetParentEntity() == npc;
+            }
+
+            private IEnumerator Heal(Item item)
+            {
+                npc.UpdateActiveItem(item.uid);
+                yield return CoroutineEx.waitForSeconds(1f);
+                if (isKilled)
+                {
+                    yield break;
+                }
+                if (!TryGetMedicalTool(item, out MedicalTool tool) || npc.GetActiveItem() != item)
+                {
+                    equipToolTime = 0f;
+                    yield break;
+                }
+                tool.ServerUse();
+                if (!isKilled)
                 {
                     npc.Heal(npc.MaxHealth());
                     equipToolTime = 0f;
                 }
             }
 
-            public void UpdateWeapon(AttackEntity attackEntity, ItemId uid)
+            public bool UpdateWeapon(AttackEntity attackEntity, ItemId uid)
             {
+                ItemContainer belt = npc?.inventory?.containerBelt;
+
+                if (belt == null || attackEntity == null)
+                {
+                    return false;
+                }
+
+                Item item = belt.FindItemByUID(uid);
+
+                if (item == null || item.parent != belt || item.GetHeldEntity() != attackEntity)
+                {
+                    return false;
+                }
+
                 npc.UpdateActiveItem(uid);
+
+                if (attackEntity.IsKilled() || item.parent != belt || npc.GetActiveItem() != item)
+                {
+                    return false;
+                }
 
                 if (attackEntity is Chainsaw cs)
                 {
@@ -4341,6 +4403,7 @@ namespace RaidableBases
 
                 attackEntity.TopUpAmmo();
                 attackEntity.SetHeld(true);
+                return true;
             }
 
             internal void IdentifyWeapon()
@@ -7897,7 +7960,7 @@ namespace RaidableBases
             }
 
             private bool isAuthorized;
-            private void OnWeaponItemPreRemove(Item item)
+            private void OnWeaponItemPreRemove(Item item, BasePlayer sourcePlayer)
             {
                 if (isAuthorized || IsUnloading || IsDespawning)
                 {
@@ -9012,7 +9075,7 @@ namespace RaidableBases
                 {
                     Item item = container.itemList[i];
                     item.GetHeldEntity().SafelyKill();
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     item.Remove(0f);
                 }
             }
@@ -11121,7 +11184,7 @@ namespace RaidableBases
                     Item slot = turret.inventory.GetSlot(0);
                     if (slot != null && (slot.info.category == ItemCategory.Weapon || slot.info.category == ItemCategory.Fun))
                     {
-                        slot.RemoveFromContainer();
+                        slot.RemoveFromContainer(null);
                         slot.Remove();
                     }
                 }
@@ -11133,7 +11196,7 @@ namespace RaidableBases
 
                 if (config.Weapons.InfiniteAmmo.AutoTurret)
                 {
-                    turret.inventory.onPreItemRemove += new Action<Item>(OnWeaponItemPreRemove);
+                    turret.inventory.onPreItemRemove += new Action<Item, BasePlayer>(OnWeaponItemPreRemove);
                 }
             }
 
@@ -11495,7 +11558,7 @@ namespace RaidableBases
 
                 if (config.Weapons.InfiniteAmmo.GunTrap)
                 {
-                    gt.inventory.onPreItemRemove += new Action<Item>(OnWeaponItemPreRemove);
+                    gt.inventory.onPreItemRemove += new Action<Item, BasePlayer>(OnWeaponItemPreRemove);
                 }
 
                 triggers[gt.trigger] = gt;
@@ -11621,7 +11684,7 @@ namespace RaidableBases
 
                 if (config.Weapons.InfiniteAmmo.SamSite)
                 {
-                    ss.inventory.onPreItemRemove += new Action<Item>(OnWeaponItemPreRemove);
+                    ss.inventory.onPreItemRemove += new Action<Item, BasePlayer>(OnWeaponItemPreRemove);
                 }
 
                 ss.startHealth = UnityEngine.Random.Range(Options.SamSite.Min, Options.SamSite.Max);
@@ -15783,11 +15846,11 @@ namespace RaidableBases
                 target.prefabID = source.prefabID;
             }
 
-            private bool InstantiateEntity(List<Vector3> wander, Vector3 position, bool isStationary, bool spawnedInside, List<int> baseRoute, out HumanoidBrain brain, out HumanoidNPC npc)
+            private bool InstantiateEntity(List<Vector3> wander, Vector3 position, Quaternion rotation, bool isStationary, bool spawnedInside, List<int> baseRoute, out HumanoidBrain brain, out HumanoidNPC npc)
             {
                 const string prefabName = "assets/rust.ai/agents/npcplayer/humannpc/scientist/scientistnpc_heavy.prefab";
                 var prefab = GameManager.server.FindPrefab(prefabName);
-                var go = Facepunch.Instantiate.GameObject(prefab, position, Quaternion.identity);
+                var go = Facepunch.Instantiate.GameObject(prefab, position, rotation);
 
                 go.SetActive(false);
 
@@ -15889,12 +15952,12 @@ namespace RaidableBases
 
             private HumanoidNPC SpawnNpc(bool isMurderer, int respawnsRemaining = int.MinValue)
             {
-                if (!TryGetNpcSpawn(isMurderer, out bool isStationary, out bool spawnedInside, out var position, out var positions, out var baseRoute))
+                if (!TryGetNpcSpawn(isMurderer, out bool isStationary, out bool spawnedInside, out var position, out var rotation, out var positions, out var baseRoute))
                 {
                     return null;
                 }
 
-                if (!InstantiateEntity(positions, position, isStationary, spawnedInside, baseRoute, out var brain, out var npc))
+                if (!InstantiateEntity(positions, position, rotation, isStationary, spawnedInside, baseRoute, out var brain, out var npc))
                 {
                     ResetToPool(ref positions);
                     ResetToPool(ref baseRoute);
@@ -15935,6 +15998,7 @@ namespace RaidableBases
                 npc.RadioChatterEffects = Array.Empty<GameObjectRef>();
                 npc.radioChatterType = ScientistNPC.RadioChatterType.NONE;
                 npc.EnableSaving(false);
+                npc.OverrideViewAngles(rotation.eulerAngles);
                 npc.Spawn();
                 npc.CancelInvoke(npc.EquipTest);
 
@@ -15947,11 +16011,12 @@ namespace RaidableBases
                 return npc;
             }
 
-            private bool TryGetNpcSpawn(bool isMurderer, out bool isStationary, out bool spawnedInside, out Vector3 position, out List<Vector3> positions, out List<int> baseRoute)
+            private bool TryGetNpcSpawn(bool isMurderer, out bool isStationary, out bool spawnedInside, out Vector3 position, out Quaternion rotation, out List<Vector3> positions, out List<int> baseRoute)
             {
                 isStationary = false;
                 spawnedInside = false;
                 position = default;
+                rotation = Quaternion.identity;
                 positions = null;
                 baseRoute = null;
 
@@ -15960,7 +16025,7 @@ namespace RaidableBases
                     return false;
                 }
 
-                spawnedInside = SpawnInsideBase(isMurderer, out position);
+                spawnedInside = SpawnInsideBase(isMurderer, out position, out rotation);
 
                 if (!isMurderer && !Options.NPC.Inside.SpawnScientistsOutside && !spawnedInside)
                 {
@@ -16448,18 +16513,64 @@ namespace RaidableBases
 
             private bool IsOutside(BaseEntity entity) => entity.IsOutside(entity.WorldSpaceBounds().position.WithY(entity.transform.position.y));
 
-            public bool SpawnInsideBase(bool isMurderer, out Vector3 position)
+            public bool SpawnInsideBase(bool isMurderer, out Vector3 position, out Quaternion rotation)
             {
                 position = default;
+                rotation = Quaternion.identity;
                 if (isMurderer) return false;
                 if (npcMaxAmountInside == -1) npcMaxAmountInside = npcMaxAmountScientists;
                 if (npcAmountInside >= npcMaxAmountInside) return false;
-                return TryGetRugSpawnPosition(out position) || TryGetBedSpawnPosition(out position) || TryGetFloorSpawnPosition(out position);
+                if (TryGetRugSpawnPosition(out position)) return true;
+                if (TryGetBedSpawnPosition(out position, out rotation)) return true;
+                return TryGetFloorSpawnPosition(out position);
             }
 
             private bool TryGetRugSpawnPosition(out Vector3 v) => TryGetEntitySpawnPosition(_rugSpawns, Options.NPC.Inside.SpawnOnRugs, out v);
 
-            private bool TryGetBedSpawnPosition(out Vector3 v) => TryGetEntitySpawnPosition(_beds, Options.NPC.Inside.SpawnOnBeds, out v);
+            private bool TryGetBedSpawnPosition(out Vector3 position, out Quaternion rotation)
+            {
+                position = default;
+                rotation = Quaternion.identity;
+                if (!Options.NPC.Inside.SpawnOnBeds)
+                {
+                    return false;
+                }
+
+                using var candidates = DisposableList<int>();
+                for (int i = 0; i < _beds.Count; i++)
+                {
+                    SleepingBag bed = _beds[i];
+                    if (bed.IsKilled())
+                    {
+                        continue;
+                    }
+
+                    bed.GetSpawnPos(out Vector3 candidate, out _);
+                    if (candidate == default || IsNpcNearSpot(candidate) || IsNpcSpawnExcluded(candidate))
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(i);
+                }
+
+                if (candidates.Count == 0)
+                {
+                    return false;
+                }
+
+                SleepingBag chosen = _beds[candidates.GetRandom()];
+                if (Options.NPC.Inside.Sleepers.Enabled)
+                {
+                    chosen.GetSpawnPos(out position, out rotation);
+                }
+                else
+                {
+                    chosen.GetSpawnPos(out position, out _);
+                }
+
+                return position != default;
+            }
 
             private bool TryGetFloorSpawnPosition(out Vector3 position)
             {

@@ -43,7 +43,8 @@ A **Harmony mod** for map voting on Rust servers **without Oxide**. Converted fr
 - **mvoteready** (admin): Same as starting a vote from the pool. If a vote is already open, re-posts the current maps to Discord.
 - **Open voting UI** (players): Type the configured command (e.g. `vote` or `mapvote`) in chat to open the map voting panel and cast your vote.
 - **mvtest** / **mapvotestart** (admin): Same as **mvote** — pick from pool, post to Discord, open the vote.
-- **mvotediscord** (admin, server console): Resend the current vote status to Discord (useful if the bridge was down or the initial send failed).
+- **mvotediscord** (admin, server console): Post a **new** Discord vote thread for the current vote (or resend vote_ended if the vote already closed).
+- **discordedit** (admin, server console): Edit the **existing** Discord map cards (add images, refresh wipe ETA / votes). Does not create a second thread.
 - Click **VOTE** on a map to cast your vote; close button destroys the UI
 
 ## CUI Reference
@@ -61,14 +62,15 @@ MapVoter logs to Discord via the **ticket-support-system** `mapvoterDiscordBridg
 2. MapVoter Harmony mod POSTs vote events to `{BridgeUrl}/mapvoter`
 3. The bridge posts embeds to the configured Discord channels (Vote Channel, Winning Map Channel, Logs)
 
-**Map images in Discord:** Discord shows a map image in each vote box when that file exists in the **Images path** (config: `"Images path"`, e.g. `maps/images`). Name them **`{size}_{seed}.png`** or **`.jpg`**. Vote start picks from that pool; MapVoter sends resized JPEG/PNG as base64 to the bridge (max dimension default 512px).
+**Map images in Discord:** Vote start picks from the **Images path** (`{size}_{seed}.png` / `.jpg`). MapVoter resizes each preview to **Discord image max dimension** (default 2048px JPEG at quality 85) and POSTs it as `imageDataBase64`. Reloading MapVoter restores the in-game vote only — it does **not** post or edit Discord. Use **`discordedit`** to attach images to the current cards, or **`mvotediscord`** to post a new thread.
 
 **When Discord messages are sent** (and when they are NOT):
-- **vote_started** – When you run **mvote** / **mvoteready** (picks from the image pool and posts map cards); when auto-vote starts on schedule; or when you run `mvotediscord` while a vote is active
+- **vote_started** – When you run **mvote** / **mvoteready** (picks from the image pool and posts map cards); when auto-vote starts on schedule; or when you run `mvotediscord` while a vote is active (always a new thread)
+- **vote_edit** – When you run **discordedit** while a vote is active (edits the existing thread’s map cards)
 - **vote_ended** – When the vote actually closes (wipe timer or manual stop); or when you run `mvotediscord` after a vote has already ended
-- **Not sent** on plugin load, plugin unload, or when restoring a vote from file after a server restart (use `mvotediscord` to resend if needed)
+- **Not sent** on plugin load, plugin unload, or when restoring a vote from file after a server restart (use `discordedit` or `mvotediscord`)
 
-`mvotediscord` only resends the current vote state to Discord—it does not start or end votes.
+`mvotediscord` posts a new thread (or vote_ended). `discordedit` only patches the existing cards. Neither command starts or ends votes.
 
 **Discord vote buttons** – Clicks **count** only if the voter is **verified** on Platform Sync (`linkingSystem: 3` in the bot). The bot resolves **SteamID** via `link.platformsync.io`, then sends RCON **`global.discordvote <steam64> <mapIndex>`** using the same **Rustcord** server list (`rustcord_relay.servers`). Unverified users get: *You need to be Verified to vote* and a link to `channel_ids.mapvote_verify_channel_id` in the bot config.
 
@@ -99,7 +101,7 @@ When `"Enable Auto Wipe (true/false)"` is `true`, MapVoter:
 
 1. **Uses a first-Thursday calendar** (not Facepunch WipeTimer): forced wipe on the first Thursday of each month at **Forced Wipe time** (e.g. 13:45), then map wipes every **14 days** after that Thursday at **Wipe time** (e.g. 17:30), skipping any 14-day slot that would land on or after the next forced wipe (long months get a second map wipe; then forced wipe is ~7 days later)
 2. **Schedules restart** when that event is within the configured window (default 120 minutes)
-3. **Uses the vote winner** as the next map if a vote is active; otherwise uses a random seed
+3. **Uses the vote winner** as the next map if a vote ran; if nobody voted, picks one of the vote options at random (same 8-map pool). Only invents a new seed if there is no vote list.
 4. **Updates server.cfg** on shutdown (seed, worldsize, or levelurl for custom maps) before the server quits
 5. **Server data wipe** (optional): On the next load after a wipe, deletes old map/save files from `server/{identity}/` if enabled
 
@@ -133,7 +135,7 @@ Map preview images are resized and JPEG-compressed before being sent to the voti
 Config options in `HarmonyConfig/MapVoter.json`:
 - `"Map image max dimension (resize/compress for UI - default 768)"`: 256–2048
 - `"Map image JPEG quality (0-100, default 75)"`: 50–95 (lower = smaller file)
-- `"Discord image max dimension (smaller = smaller payload - default 512)"`: 256–1024 (images sent to Discord are resized to this to keep POST size down)
+- `"Discord image max dimension (default 2048)"`: 256–2048 (Discord lightbox uses this size; 512 looked blurry when enlarged)
 
 Original files on disk are not modified; compression happens when loading into FileStorage for the UI.
 
@@ -162,7 +164,7 @@ The vote seed list is stored in `HarmonyData/MapVoter/current_vote_seeds.txt`:
 
 - **File format**: First line = map size, following lines = one seed per line
 - **On mvote** / **mvoteready** / auto-vote: Random maps are picked from the image pool and written to the file; vote is opened and posted to Discord
-- **On server restart**: If the file exists and matching images are still on disk, the vote is restored (Discord is **not** auto-posted; use `mvotediscord` to resend)
+- **On server restart**: If the file exists and matching images are still on disk, the vote is restored (Discord is **not** auto-posted; use `discordedit` to update existing cards or `mvotediscord` to post a new thread)
 - **On vote end** (wipe timer or manual stop): The file is deleted
 
 **Manually changing a seed**: Unload the mod (`harmony.unload MapVoter`), edit `HarmonyData/MapVoter/current_vote_seeds.txt` to change a seed number, ensure the corresponding image exists (e.g. `4000_12345678.png` or `.jpg`) in the Images path, reload (`harmony.load MapVoter`), then run **mvoteready** again if you need to repost to Discord.

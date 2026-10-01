@@ -89,6 +89,7 @@ namespace JetPackHarmony
                 plugin = new HarmonyPlugin();
                 HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
+                GrimmCorePluginHooks.Bind("JetPack", plugin);
             }
             catch (Exception ex)
             {
@@ -126,6 +127,7 @@ namespace JetPackHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCorePluginHooks.Unbind("JetPack");
             ChatSayBridge.Unregister("JetPack");
             if (_permissionsReadyCallback != null)
             {

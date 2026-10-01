@@ -17,16 +17,17 @@ namespace CustomMapGen.Patches
         }
 
         private static readonly object Sync = new object();
-        private static bool _active;
+        private static volatile bool _active;
         private static string _sourceMapName = "";
         private static readonly Dictionary<uint, int> ExpectedCounts = new Dictionary<uint, int>();
         private static readonly Dictionary<uint, int> AttemptedCounts = new Dictionary<uint, int>();
         private static readonly Dictionary<uint, int> NullPrefabCounts = new Dictionary<uint, int>();
         private static readonly List<SwapRowSnapshot> ExpectedRows = new List<SwapRowSnapshot>();
-        private static bool _finalizeRequested;
+        private static volatile bool _finalizeRequested;
         private static DateTime _finalizeNotBeforeUtc;
         private const float FinalizeDelaySeconds = 20f;
-        private static bool _recoveryRequested;
+        private static volatile bool _recoveryRequested;
+        private static volatile bool _recoveryAborted;
         private static List<SwapRowSnapshot> _pendingRecoveryRows;
         private static float _pendingRecoveryDelaySeconds = 20f;
 
@@ -34,7 +35,11 @@ namespace CustomMapGen.Patches
         {
             lock (Sync)
             {
+                if (CustomMapGen.IsLoadingExistingMap)
+                    return;
+
                 _active = true;
+                _recoveryAborted = false;
                 _sourceMapName = sourceMapName ?? "(unknown)";
                 ExpectedCounts.Clear();
                 AttemptedCounts.Clear();
@@ -129,59 +134,65 @@ namespace CustomMapGen.Patches
                 if (ExpectedCounts.Count == 0)
                     return;
 
-                int expectedTotal = 0;
-                int attemptedTotal = 0;
-                int nullTotal = 0;
-                foreach (var kvp in ExpectedCounts) expectedTotal += kvp.Value;
-                foreach (var kvp in AttemptedCounts) attemptedTotal += kvp.Value;
-                foreach (var kvp in NullPrefabCounts) nullTotal += kvp.Value;
-
-                UnityEngine.Debug.Log(
-                    $"[CustomMapGen] [TRACK] Outpost swap spawn coverage ({_sourceMapName}, source={source}): " +
-                    $"expectedRows={expectedTotal} uniqueExpectedIds={ExpectedCounts.Count} attemptedRows={attemptedTotal} nullPrefabRows={nullTotal}");
-
-                var missing = new List<uint>();
-                foreach (var kvp in ExpectedCounts)
-                {
-                    if (!AttemptedCounts.ContainsKey(kvp.Key))
-                        missing.Add(kvp.Key);
-                }
-
-                if (missing.Count == 0)
-                {
-                    UnityEngine.Debug.Log("[CustomMapGen] [TRACK] Every swapped outpost prefab ID was attempted at least once.");
-                }
-                else
-                {
-                    missing.Sort();
-                    UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] Missing attempted IDs: {missing.Count} (showing up to 40)");
-                    int show = Math.Min(40, missing.Count);
-                    for (int i = 0; i < show; i++)
-                    {
-                        uint id = missing[i];
-                        string path = StringPool.Get(id);
-                        int expected = ExpectedCounts.TryGetValue(id, out int e) ? e : 0;
-                        UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] missing id={id} expectedCount={expected} path=\"{path}\"");
-                    }
-                }
-
-                var nullIds = new List<uint>(NullPrefabCounts.Keys);
-                if (nullIds.Count > 0)
-                {
-                    nullIds.Sort();
-                    UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] Null-prefab IDs during spawn: {nullIds.Count} (showing up to 40)");
-                    int show = Math.Min(40, nullIds.Count);
-                    for (int i = 0; i < show; i++)
-                    {
-                        uint id = nullIds[i];
-                        string path = StringPool.Get(id);
-                        int attempts = AttemptedCounts.TryGetValue(id, out int a) ? a : 0;
-                        int nulls = NullPrefabCounts.TryGetValue(id, out int n) ? n : 0;
-                        UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] null id={id} attempts={attempts} nullCount={nulls} path=\"{path}\"");
-                    }
-                }
-
                 var cfg = CustomMapGen.Instance?.GetConfig();
+                bool debug = cfg?.DebugLogging == true;
+                if (debug)
+                {
+                    int expectedTotal = 0;
+                    int attemptedTotal = 0;
+                    int nullTotal = 0;
+                    foreach (var kvp in ExpectedCounts) expectedTotal += kvp.Value;
+                    foreach (var kvp in AttemptedCounts) attemptedTotal += kvp.Value;
+                    foreach (var kvp in NullPrefabCounts) nullTotal += kvp.Value;
+
+                    UnityEngine.Debug.Log(
+                        $"[CustomMapGen] [TRACK] Outpost swap spawn coverage ({_sourceMapName}, source={source}): " +
+                        $"expectedRows={expectedTotal} uniqueExpectedIds={ExpectedCounts.Count} attemptedRows={attemptedTotal} nullPrefabRows={nullTotal}");
+
+                    var missing = new List<uint>();
+                    foreach (var kvp in ExpectedCounts)
+                    {
+                        if (!AttemptedCounts.ContainsKey(kvp.Key))
+                            missing.Add(kvp.Key);
+                    }
+
+                    if (missing.Count == 0)
+                    {
+                        UnityEngine.Debug.Log("[CustomMapGen] [TRACK] Every swapped outpost prefab ID was attempted at least once.");
+                    }
+                    else
+                    {
+                        missing.Sort();
+                        UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] Missing attempted IDs: {missing.Count} (showing up to 40)");
+                        int show = Math.Min(40, missing.Count);
+                        for (int i = 0; i < show; i++)
+                        {
+                            uint id = missing[i];
+                            string path = StringPool.Get(id);
+                            int expected = ExpectedCounts.TryGetValue(id, out int e) ? e : 0;
+                            UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] missing id={id} expectedCount={expected} path=\"{path}\"");
+                        }
+                    }
+
+                    var nullIds = new List<uint>(NullPrefabCounts.Keys);
+                    if (nullIds.Count > 0)
+                    {
+                        nullIds.Sort();
+                        UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] Null-prefab IDs during spawn: {nullIds.Count} (showing up to 40)");
+                        int show = Math.Min(40, nullIds.Count);
+                        for (int i = 0; i < show; i++)
+                        {
+                            uint id = nullIds[i];
+                            string path = StringPool.Get(id);
+                            int attempts = AttemptedCounts.TryGetValue(id, out int a) ? a : 0;
+                            int nulls = NullPrefabCounts.TryGetValue(id, out int n) ? n : 0;
+                            UnityEngine.Debug.Log($"[CustomMapGen] [TRACK] null id={id} attempts={attempts} nullCount={nulls} path=\"{path}\"");
+                        }
+                    }
+                }
+                if (CustomMapGen.IsLoadingExistingMap)
+                    return;
+
                 if (cfg?.SwapMonuments != null && cfg.SwapMonuments.EnableLateEntityRecovery && ExpectedRows.Count > 0)
                 {
                     _pendingRecoveryRows = new List<SwapRowSnapshot>(ExpectedRows);
@@ -194,8 +205,34 @@ namespace CustomMapGen.Patches
             }
         }
 
+        internal static void Cancel()
+        {
+            lock (Sync)
+            {
+                _active = false;
+                _finalizeRequested = false;
+                _recoveryRequested = false;
+                _pendingRecoveryRows = null;
+                _recoveryAborted = true;
+                ExpectedCounts.Clear();
+                AttemptedCounts.Clear();
+                NullPrefabCounts.Clear();
+                ExpectedRows.Clear();
+            }
+        }
+
         internal static void PumpMainThread()
         {
+            if (CustomMapGen.IsLoadingExistingMap)
+            {
+                if (_active || _recoveryRequested)
+                    Cancel();
+                return;
+            }
+
+            if (!_active && !_recoveryRequested)
+                return;
+
             bool shouldFinalize = false;
             bool shouldRecover = false;
             List<SwapRowSnapshot> recoverRows = null;
@@ -233,6 +270,9 @@ namespace CustomMapGen.Patches
             if (delaySeconds > 0f)
                 yield return new WaitForSeconds(delaySeconds);
 
+            if (_recoveryAborted || CustomMapGen.IsLoadingExistingMap)
+                yield break;
+
             if (GameManager.server == null)
             {
                 UnityEngine.Debug.LogWarning("[CustomMapGen] [RECOVER] GameManager.server is null; skipping late entity recovery.");
@@ -244,9 +284,13 @@ namespace CustomMapGen.Patches
             int spawned = 0;
             int skippedExisting = 0;
             int createFailed = 0;
+            int skippedNonEntity = 0;
 
             for (int i = 0; i < rows.Count; i++)
             {
+                if (_recoveryAborted)
+                    yield break;
+
                 var row = rows[i];
                 if (!ShouldAttemptLateRecovery(row.Path))
                     continue;
@@ -255,6 +299,12 @@ namespace CustomMapGen.Patches
                 if (HasNearbyExisting(existing, row.Id, row.Position, 1.5f))
                 {
                     skippedExisting++;
+                    continue;
+                }
+
+                if (!IsRuntimeEntityPrefab(row.Path))
+                {
+                    skippedNonEntity++;
                     continue;
                 }
 
@@ -279,7 +329,7 @@ namespace CustomMapGen.Patches
                 AddExisting(existing, row.Id, row.Position);
             }
 
-            UnityEngine.Debug.Log($"[CustomMapGen] [RECOVER] Late entity recovery complete: candidates={candidates}, spawned={spawned}, skippedExisting={skippedExisting}, createFailed={createFailed}.");
+            UnityEngine.Debug.Log($"[CustomMapGen] [RECOVER] Late entity recovery complete: candidates={candidates}, spawned={spawned}, skippedExisting={skippedExisting}, skippedNonEntity={skippedNonEntity}, createFailed={createFailed}.");
         }
 
         private static Dictionary<uint, List<Vector3>> BuildExistingEntityIndex()
@@ -340,8 +390,14 @@ namespace CustomMapGen.Patches
                 return false;
 
             string p = path.ToLowerInvariant();
-            if (p.IndexOf("assets/prefabs/", StringComparison.Ordinal) >= 0)
-                return true;
+            if (p.IndexOf(".worldmodel", StringComparison.Ordinal) >= 0)
+                return false;
+            if (p.IndexOf(".viewmodel", StringComparison.Ordinal) >= 0)
+                return false;
+            if (p.IndexOf("/worldmodel", StringComparison.Ordinal) >= 0)
+                return false;
+            if (p.IndexOf("/viewmodel", StringComparison.Ordinal) >= 0)
+                return false;
             if (p.IndexOf("/npc/", StringComparison.Ordinal) >= 0)
                 return true;
             if (p.IndexOf("/casino/", StringComparison.Ordinal) >= 0)
@@ -350,7 +406,20 @@ namespace CustomMapGen.Patches
                 return true;
             if (p.IndexOf("/card table/", StringComparison.Ordinal) >= 0)
                 return true;
+            if (p.IndexOf("/deployable/", StringComparison.Ordinal) >= 0)
+                return true;
+            if (p.IndexOf("/npcspawners/", StringComparison.Ordinal) >= 0)
+                return true;
             return false;
+        }
+
+        private static bool IsRuntimeEntityPrefab(string path)
+        {
+            if (GameManager.server == null || string.IsNullOrEmpty(path))
+                return false;
+
+            GameObject go = GameManager.server.FindPrefab(path);
+            return go != null && go.GetComponent<BaseEntity>() != null;
         }
 
         private static Vector3 GetPrefabVector3(object prefab, string memberName)

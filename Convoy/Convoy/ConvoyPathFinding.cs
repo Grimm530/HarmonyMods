@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.AI;
+using GrimmShared;
 
 namespace Convoy
 {
@@ -105,7 +106,7 @@ namespace Convoy
 
         public static bool GetNavmeshInPoint(Vector3 position, float radius, out NavMeshHit navMeshHit)
         {
-            return NavMesh.SamplePosition(position, out navMeshHit, radius, NavMesh.AllAreas);
+            return RecastNav.SamplePosition(position, out navMeshHit, radius, NavMesh.AllAreas);
         }
     }
 

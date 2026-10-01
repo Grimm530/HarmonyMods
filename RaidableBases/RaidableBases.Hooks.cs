@@ -1131,7 +1131,7 @@ namespace RaidableBases
             if (!player.IsHuman() || !Get(player, player.userID, out var raid)) return null;
             if (raid.CanDropRustBackpack(player.userID))
             {
-                backpack.RemoveFromContainer();
+                backpack.RemoveFromContainer(null);
                 backpack.Drop(player.GetDropPosition() + new Vector3(0f, 0.035f), player.GetDropVelocity());
                 return null;
             }
@@ -1153,7 +1153,7 @@ namespace RaidableBases
                             Item item = container.itemList[i];
                             if (item != null && item.IsBackpack() && item.contents != null && !item.contents.itemList.IsNullOrEmpty())
                             {
-                                if (PreventLooting != null) item.RemoveFromContainer();
+                                if (PreventLooting != null) item.RemoveFromContainer(null);
                                 item.Drop(position, velocity);
                             }
                         }
@@ -1173,7 +1173,7 @@ namespace RaidableBases
                     Item item = backpack.inventory.itemList[i];
                     if (item != null && item.IsBackpack() && item.contents != null && !item.contents.itemList.IsNullOrEmpty())
                     {
-                        if (PreventLooting != null) item.RemoveFromContainer();
+                        if (PreventLooting != null) item.RemoveFromContainer(null);
                         item.Drop(position, velocity);
                     }
                 }
@@ -2324,6 +2324,7 @@ namespace RaidableBases
 
         private void SubscribeDamageHook()
         {
+            // Re-probe TruePVE each time (DLL may load after RaidableBases OnLoaded).
             if (IsPVE())
             {
                 Unsubscribe(nameof(OnEntityTakeDamage));
@@ -2336,7 +2337,8 @@ namespace RaidableBases
             }
         }
 
-        private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) => CanEntityTakeDamage(entity, info);
+        /// <summary>Must return object so TruePVE AppDomain bridge can receive allow/deny bools.</summary>
+        private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) => CanEntityTakeDamage(entity, info);
 
         private DamageResult EvaluatePlayerDamage(BasePlayer victim, ref DamageContext context)
         {

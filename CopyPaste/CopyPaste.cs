@@ -41,7 +41,7 @@ using System.Diagnostics;
 namespace CopyPasteHarmony
 {
     /// <summary>
-    /// CopyPaste 4.2.81 ported for Harmony (Harmony-only). Logic matches Harmony mod; only I/O and hosting differ.
+    /// CopyPaste 4.2.81 ported for Harmony (no Oxide). Logic matches Oxide plugin; only I/O and hosting differ.
     /// </summary>
     public partial class CopyPaste : CopyPasteBase
     {
@@ -491,7 +491,7 @@ namespace CopyPasteHarmony
 
             ProcessItemDefinitions();
         }
-        // ---- Harmony lifecycle (replaces legacy Init / OnServerInitialized / Unload) ----
+        // ---- Harmony lifecycle (replaces Oxide Init / OnServerInitialized / Unload) ----
         public override void HarmonyInit()
         {
             Init();
@@ -1137,7 +1137,7 @@ namespace CopyPasteHarmony
             else
             {
                 var path = _subDirectory + copyData.Filename;
-                var datafile = HarmonyModInterface.DataFileSystem.GetFile(path);
+                var datafile = Interface.DataFileSystem.GetFile(path);
 
                 datafile.Clear();
 
@@ -1164,13 +1164,13 @@ namespace CopyPasteHarmony
                     { "version", Version }
                 };
 
-                HarmonyModInterface.DataFileSystem.SaveDatafile(path);
+                Interface.DataFileSystem.SaveDatafile(path);
 
                 copyData.Player.Reply(Lang("COPY_SUCCESS", copyData.Player.Id, copyData.Filename));
 
                 copyData.Callback?.Invoke();
 
-                HarmonyModInterface.CallHook("OnCopyFinished", copyData.RawData, copyData.Filename, copyData.Player, copyData.SourcePos);
+                Interface.CallHook("OnCopyFinished", copyData.RawData, copyData.Filename, copyData.Player, copyData.SourcePos);
             }
         }
 
@@ -1544,7 +1544,7 @@ namespace CopyPasteHarmony
             }
 
             var firework = entity as PatternFirework;
-            if (firework != null && firework.Design != null && firework.Design.stars != null)
+            if (firework != null && firework?.Design != null && firework?.Design?.stars != null)
             {
                 data.Add("patternfirework", new Dictionary<string, object>
                 {
@@ -2199,7 +2199,7 @@ namespace CopyPasteHarmony
 
                 pasteData.CallbackFinished?.Invoke();
 
-                HarmonyModInterface.CallHook("OnPasteFinished", pasteData.PastedEntities, pasteData.Filename, pasteData.Player, pasteData.StartPos);
+                Interface.CallHook("OnPasteFinished", pasteData.PastedEntities, pasteData.Filename, pasteData.Player, pasteData.StartPos);
             }
         }
 
@@ -4085,8 +4085,7 @@ namespace CopyPasteHarmony
 
                     // Clear the on flag and rerun sprinkler startup so DoSplash is invoked without clearing fuel state
                     sprinkler.SetFlag(BaseEntity.Flags.On, false);
-                    try { sprinkler.SetFuelType(WaterTypes.WaterItemDef, null); } catch { }
-                    sprinkler.UpdateFromInput(sprinkler.ConsumptionAmount(), 0);
+                    sprinkler.TurnOn();
                 });
             }
 
@@ -5183,10 +5182,10 @@ namespace CopyPasteHarmony
 
             var path = _subDirectory + filename;
 
-            if (!HarmonyModInterface.DataFileSystem.ExistsDatafile(path))
+            if (!Interface.DataFileSystem.ExistsDatafile(path))
                 return new ValueTuple<object, PasteData>(Lang("FILE_NOT_EXISTS", userId), null);
 
-            var data = HarmonyModInterface.DataFileSystem.GetDatafile(path);
+            var data = Interface.DataFileSystem.GetDatafile(path);
 
             if (data["default"] == null || data["entities"] == null)
                 return new ValueTuple<object, PasteData>(Lang("FILE_BROKEN", userId), null);
@@ -5591,10 +5590,10 @@ namespace CopyPasteHarmony
         {
             var path = _subDirectory + filename;
 
-            if (!HarmonyModInterface.DataFileSystem.ExistsDatafile(path))
+            if (!Interface.DataFileSystem.ExistsDatafile(path))
                 return Lang("FILE_NOT_EXISTS", player?.Id);
 
-            var data = HarmonyModInterface.DataFileSystem.GetDatafile(path);
+            var data = Interface.DataFileSystem.GetDatafile(path);
 
             if (data["default"] == null || data["entities"] == null)
                 return Lang("FILE_BROKEN", player?.Id);
@@ -5678,7 +5677,7 @@ namespace CopyPasteHarmony
                 return;
             }
 
-            var files = HarmonyModInterface.DataFileSystem.GetFiles(_subDirectory);
+            var files = Interface.DataFileSystem.GetFiles(_subDirectory);
 
             var fileList = new List<string>();
 

@@ -10,7 +10,8 @@
 | **Type** | Harmony mod (`IHarmonyModHooks`) |
 | **Oxide** | None — unload the Oxide Karuza plugins listed below |
 | **API** | `AppDomain.SetData("KaruzaVehicles_ApiType", typeof(KaruzaVehicles.KaruzaVehiclesMod))` |
-| **Upstream** | CustomEntities 1.0.20, Common 1.11.00, RustCar 1.25.0, RustHelicopter 1.31.0, RustPlane 1.37.0 |
+| **Our build** | CustomEntities 1.0.211, Common 1.121, RustCar 1.261, RustHelicopter 1.321, RustPlane 1.381 |
+| **Upstream** | CustomEntities 1.0.21, Common 1.12.00, RustCar 1.26.0, RustHelicopter 1.32.0, RustPlane 1.38.0 |
 
 ## Load order
 

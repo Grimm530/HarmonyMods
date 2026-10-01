@@ -402,9 +402,9 @@ namespace Harmony.Plugins
     /// <summary>Minimal RustPlugin replacement providing the members the ported plugin uses.</summary>
     public sealed class PermissionShim
     {
-        public void RegisterPermission(string permission, object plugin) => global::CHT.PermissionsBridge.RegisterPermission(permission);
+        public void RegisterPermission(string permission, object plugin) => global::PermissionsBridge.RegisterPermission(permission);
         public bool UserHasPermission(string userId, string permission) =>
-            global::CHT.PermissionsBridge.UserHasPermission(userId, permission);
+            global::PermissionsBridge.UserHasPermission(userId, permission);
     }
     public sealed class CommandShim
     {

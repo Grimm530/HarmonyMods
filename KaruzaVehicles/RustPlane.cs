@@ -5,7 +5,7 @@
 using Facepunch;
 using Facepunch.Extend;
 using Network;
-using Oxide.Core;
+using Harmony.Core;
 using Rust;
 using System;
 using System.Collections.Generic;
@@ -21,7 +21,7 @@ using static SeekerTarget;
 
 namespace KaruzaVehicles
 {
-    [Info("RustPlane", "Karuza", "1.37.0")]
+    [Info("RustPlane", "Karuza", "1.381")]
     public class RustPlane : RustPlugin, IKaruzaEntityPlugin
     {
         public static RustPlane Instance;
@@ -1408,7 +1408,7 @@ namespace KaruzaVehicles
             // that would not exist in the translations
             public override void DoRepair(BasePlayer player)
             {
-                if (Interface.CallHook("OnStructureRepair", this, player) != null)
+                if (HarmonyModInterface.CallHook("OnStructureRepair", this, player) != null)
                 {
                     return;
                 }
@@ -2335,12 +2335,22 @@ namespace KaruzaVehicles
 
             public override Vector3 GetNetworkPosition()
             {
-                return cachedTransform.position;
+                if (UseParallelSaves)
+                {
+                    return Facepunch.Extend.TransformEx.Unsafe.GetPosMT(TransformHandle);
+                }
+
+                return TransformHandle.position;
             }
 
             public override Quaternion GetNetworkRotation()
             {
-                return cachedTransform.rotation;
+                if (UseParallelSaves)
+                {
+                    return Facepunch.Extend.TransformEx.Unsafe.GetRotMT(TransformHandle);
+                }
+
+                return TransformHandle.rotation;
             }
 
             #endregion
@@ -3735,7 +3745,7 @@ namespace KaruzaVehicles
                 OnHealthChange = null;
                 OnBoostTimeUpdate = null;
 
-                Interface.CallHook("OnVehicleDestroyed", vehicleNetId);
+                HarmonyModInterface.CallHook("OnVehicleDestroyed", vehicleNetId);
 
                 SeekerTarget.SetSeekerTarget(this, SeekerStrength.OFF);
                 KaruzaEntitiesCommon.Instance.CustomSAMTargets.Remove(this);
@@ -3984,13 +3994,13 @@ namespace KaruzaVehicles
                 //throw new NotImplementedException();
             }
 
-            public bool DefaultInventoryItemFilter(Item item, int targetSlot)
+            public bool DefaultInventoryItemFilter(BasePlayer player, Item item, int targetSlot)
             {
                 //throw new NotImplementedException();
                 return true;
             }
 
-            public void OnItemAddedOrRemoved(Item item, bool added)
+            public void OnItemAddedOrRemoved(Item item, bool added, BasePlayer sourcePlayer)
             {
                 //throw new NotImplementedException();
             }
@@ -4322,7 +4332,7 @@ namespace KaruzaVehicles
             public SamTargetType SAMTargetSettings { get; set; } = new SamTargetType(150f, 1f, 5f);
         }
 
-        public string DirectoryPath { get { return $"{Interface.Oxide.ConfigDirectory}/{Name}/"; } }
+        public string DirectoryPath { get { return $"{HarmonyModInterface.Mods.ConfigDirectory}/{Name}/"; } }
 
         protected override void LoadConfig()
         {
@@ -4348,7 +4358,7 @@ namespace KaruzaVehicles
             }
             catch (Exception ex)
             {
-                Config.WriteObject(configuration, false, $"{Interface.Oxide.ConfigDirectory}/{Name}.jsonError");
+                Config.WriteObject(configuration, false, $"{HarmonyModInterface.Mods.ConfigDirectory}/{Name}.jsonError");
                 PrintError($"The configuration file contains an error. {ex}");
             }
         }

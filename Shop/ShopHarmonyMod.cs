@@ -52,6 +52,8 @@ namespace ShopHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("Shop", 100, Patches.Horse_BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("Shop", 100, Patches.Horse_BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             ShopHost.Init(root);
             _plugin = new Shop();
@@ -140,6 +142,8 @@ namespace ShopHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("Shop");
+            GrimmCoreBridge.UnregisterGameHookMod("Shop");
             ChatSayBridge.Unregister("Shop");
             UnregisterCommands();
             _plugin?.HarmonyUnload();

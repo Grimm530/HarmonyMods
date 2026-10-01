@@ -33,6 +33,8 @@ namespace RestoreItemsHarmony
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("RestoreItems", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("RestoreItems", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             ModRunner.Ensure();
 
             try
@@ -99,6 +101,8 @@ namespace RestoreItemsHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("RestoreItems");
+            GrimmCoreBridge.UnregisterGameHookMod("RestoreItems");
             _permissionsReadyCallback = null;
             UnregisterCommands();
             try { Plugin?.HarmonyUnload(); } catch { }

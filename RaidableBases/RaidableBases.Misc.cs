@@ -2467,7 +2467,7 @@ namespace RaidableBases
                 {
                     if (data.TryGetValue("animationStyle", out obj))
                     {
-                        lights.animationStyle = (ChristmasLights.AnimationType)obj;
+                        lights.animationStyle = (ChristmasLights.AnimationType)ToInt32OrDefault(obj);
                     }
                 }
 
@@ -4034,7 +4034,7 @@ namespace RaidableBases
                         }
                         else
                         {
-                            inventory.Insert(i);
+                            inventory.Insert(i, null);
                         }
                     }
                 }

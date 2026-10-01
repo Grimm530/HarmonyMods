@@ -1,4 +1,4 @@
-# Build 0GrimmCore — load before most mods (0G < 0P). Unified Hurt + AI cull.
+# Build 0GrimmCore — load before most mods (0G < 0P). Unified Hurt/Spawn/Kill/game-hook dispatchers + hook bus + AI cull.
 Write-Host "Building 0GrimmCore..." -ForegroundColor Cyan
 
 $projectPath = Join-Path $PSScriptRoot "0GrimmCore.csproj"

@@ -1040,6 +1040,12 @@ namespace LimitEntities
                 positions.Remove(position);
         }
 
+        /// <summary>
+        /// 2.3.9: a reskin that replaces the entity is not in EntitiesTracked yet
+        /// (spawn ran before OwnerID was restored). Count it the same way as a fresh spawn.
+        /// Already-tracked entities (skin id only, same net id) are left alone.
+        /// Called from Analytics.Azure.OnEntitySkinChanged after SprayCan finishes the swap.
+        /// </summary>
         public void OnEntityReskinned(BaseEntity entity)
         {
             if (!_initialized || entity == null || !entity.IsValid()) return;

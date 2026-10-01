@@ -114,6 +114,8 @@ namespace RadioHarmony
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("Radio", 100, Patches.Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("Radio", 100, Patches.Kill_Patch.Prefix);
             _root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             LoadConfig();
             Vehicles = new VehicleRadioService(this, _root);
@@ -148,6 +150,8 @@ namespace RadioHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("Radio");
+            GrimmCoreBridge.UnregisterGameHookMod("Radio");
             if (_permissionsReady != null)
                 PermissionsBridge.UnregisterReadyCallback(_permissionsReady);
             DestroyRadioPhone();

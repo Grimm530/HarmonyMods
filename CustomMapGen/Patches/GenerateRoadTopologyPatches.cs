@@ -25,15 +25,33 @@ namespace CustomMapGen.Patches
                 {
                     NativeArray<int> map = (NativeArray<int>)dstField.GetValue(topomap);
                     int res = (int)resField.GetValue(topomap);
+                    // Construction.TestPlacingCloseToRoad blocks on Road (2048) | Powerline (524288), not Roadside (4096).
+                    // 0x31 is Field | Beach | Forest, the same cells vanilla will paint as roadside.
+                    const int Road = 2048;
+                    const int BuildableGround = 0x31;
+                    const int Building = 0x200000;
+                    int cleared = 0;
+                    int leftBlocked = 0;
                     for (int z = 0; z < res; z++)
                     {
                         for (int x = 0; x < res; x++)
                         {
                             int index = z * res + x;
-                            map[index] &= ~4096;
+                            int bits = map[index];
+                            if ((bits & Road) == 0)
+                                continue;
+                            if ((bits & BuildableGround) == 0)
+                            {
+                                leftBlocked++;
+                                continue;
+                            }
+                            bits &= ~Road;
+                            bits |= Building;
+                            map[index] = bits;
+                            cleared++;
                         }
                     }
-                    UnityEngine.Debug.Log("[CustomMapGen] Removed roadside topology flags to allow building on roads");
+                    UnityEngine.Debug.Log($"[CustomMapGen] Allow building on roads: cleared the road bit on {cleared} field/beach/forest cells. {leftBlocked} road cells stayed blocked (cliff, ocean, monument, or other ground).");
                 }
             }
         }

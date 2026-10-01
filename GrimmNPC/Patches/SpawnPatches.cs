@@ -4,6 +4,7 @@ using Rust.Ai;
 using System;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.AI;
 using ConVar;
 
 namespace GrimmNPC.Patches
@@ -674,6 +675,14 @@ namespace GrimmNPC.Patches
                 navigator.MoveTowardsSpeed = BaseNavigator.NavigationSpeed.Normal; // Movement speed preference
                 navigator.FaceMoveTowardsTarget = true; // Face target when moving towards it
                 // StoppingDistance defaults to 0.5f (good for most cases, can be customized per NPC if needed)
+
+                var spawnAgent = navigator.Agent;
+                if (spawnAgent != null)
+                {
+                    if (spawnAgent.obstacleAvoidanceType == ObstacleAvoidanceType.NoObstacleAvoidance)
+                        spawnAgent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+                    spawnAgent.avoidancePriority = (int)(netId % 99);
+                }
                 
                 // CRITICAL: Apply area mask and agent type - MUST be set BEFORE navigation operations
                 // According to AI_Navigation_Instructional.md line 627-628, these can be set "BEFORE calling Init() or AFTER initialization"

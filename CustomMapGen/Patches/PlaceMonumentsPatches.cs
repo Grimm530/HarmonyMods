@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using System.Collections.Generic;
 using UnityEngine;
@@ -15,6 +16,11 @@ namespace CustomMapGen.Patches
                 return;
             var config = CustomMapGen.Instance.GetConfig();
             if (config.MinMonumentDistance <= 0)
+                return;
+            // Fishing villages keep the prefab gap (300m). Forcing the global 75m lets one
+            // sit beside a small monument where the boat path still succeeds but the ramp misses land.
+            string folder = __instance.ResourceFolder ?? "";
+            if (folder.IndexOf("fishing_village", StringComparison.OrdinalIgnoreCase) >= 0)
                 return;
             __instance.MinDistanceDifferentType = config.MinMonumentDistance;
             if (config.DebugLogging)

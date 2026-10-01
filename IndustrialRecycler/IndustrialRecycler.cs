@@ -582,7 +582,7 @@ namespace Harmony.Plugins
                 _pendingOutputTransfers.Remove(itemId);
                 yield break;
             }
-            item.RemoveFromContainer();
+            item.RemoveFromContainer(null);
             if (!SafeMoveToContainer(item, outputInventory))
                 item.Drop(recycler.transform.position + Vector3.up, recycler.transform.forward * 2f);
             _pendingOutputTransfers.Remove(itemId);
@@ -1962,7 +1962,7 @@ namespace Harmony.Plugins
                         Item attachment = attachments[i];
                         if (attachment == null || !attachment.IsValid() || attachment.info == null)
                             continue;
-                        attachment.RemoveFromContainer();
+                        attachment.RemoveFromContainer(null);
                         MoveItemToOutputOrDrop(attachment, recyclerComponent);
                     }
                 }
@@ -1995,7 +1995,7 @@ namespace Harmony.Plugins
                 return true;
             if (!dropOnFailure)
                 return false;
-            item.RemoveFromContainer();
+            item.RemoveFromContainer(null);
             item.Drop(recycler.transform.position + Vector3.up, recycler.transform.forward * 2f);
             return true;
         }
@@ -2201,7 +2201,7 @@ namespace Harmony.Plugins
             {
                 Item item = itemsToDrop[i];
                 if (item.parent != null)
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
             }
             for (int i = 0; i < itemsToDrop.Count; i += 6)
             {
@@ -2983,7 +2983,7 @@ namespace Harmony.Plugins
                         items.Add(item);
                 }
                 foreach (Item item in items)
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                 return items;
             }
 

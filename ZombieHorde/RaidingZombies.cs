@@ -393,16 +393,22 @@ namespace ZombieHorde
 
             private void AssignRaidTarget(BuildingPrivlidge priv)
             {
-                for (int i = raiders.Count - 1; i >= 0; i--)
+                List<ZombieNPC> dead = null;
+                foreach (ZombieNPC raider in raiders)
                 {
-                    var raider = raiders[i];
                     if (raider == null || raider.IsDestroyed || raider.Npc == null)
                     {
-                        raiders.Remove(raider);
+                        dead ??= new List<ZombieNPC>();
+                        dead.Add(raider);
                         continue;
                     }
 
                     GrimmNpcBridge.AssignRaidTarget(raider.Npc, priv);
+                }
+                if (dead != null)
+                {
+                    for (int i = 0; i < dead.Count; i++)
+                        raiders.Remove(dead[i]);
                 }
             }
         }

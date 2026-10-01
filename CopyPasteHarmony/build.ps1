@@ -1,5 +1,5 @@
 # Build script for CopyPaste Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\CopyPasteHarmony.dll
+# Output: <workspace>\HarmonyMods\CopyPasteHarmony.dll
 
 Write-Host "Building CopyPasteHarmony..." -ForegroundColor Cyan
 
@@ -7,7 +7,8 @@ $projectPath = Join-Path $PSScriptRoot "CopyPasteHarmony.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $serverRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+    $harmonyModsPath = Join-Path $serverRoot "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

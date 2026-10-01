@@ -3,11 +3,9 @@ using UnityEngine;
 
 namespace ServerQoL.Patches
 {
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     internal static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
+        public static void Postfix(BaseNetworkable __instance)
         {
             ServerQoLService service = ServerQoLMod.Service;
             if (service == null) return;

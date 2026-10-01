@@ -26,6 +26,8 @@ namespace PveModeHarmony
                 BumpGenerationAndPublishApi();
                 AppDomain.CurrentDomain.SetData(AppDomainDamageKey, (Func<BaseEntity, HitInfo, object>)PveModeManager.CanEntityTakeDamageApi);
                 AppDomain.CurrentDomain.SetData(AppDomainTargetKey, (Func<BaseEntity, BaseEntity, object>)PveModeManager.CanEntityBeTargetedApi);
+                GrimmCoreBridge.RegisterHook("PveMode", "CanEntityTakeDamage", 10, (Func<BaseEntity, HitInfo, object>)PveModeManager.CanEntityTakeDamageApi);
+                GrimmCoreBridge.RegisterHook("PveMode", "CanEntityBeTargeted", 10, (Func<BaseEntity, BaseEntity, object>)PveModeManager.CanEntityBeTargetedApi);
             }
             catch (Exception ex)
             {
@@ -43,6 +45,7 @@ namespace PveModeHarmony
                 AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
                 AppDomain.CurrentDomain.SetData(AppDomainDamageKey, null);
                 AppDomain.CurrentDomain.SetData(AppDomainTargetKey, null);
+                GrimmCoreBridge.UnregisterHookMod("PveMode");
             }
             catch { }
         }

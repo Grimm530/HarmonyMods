@@ -3,11 +3,9 @@ using UnityEngine;
 
 namespace RadioHarmony.Patches
 {
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     internal static class Spawn_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
+        public static void Postfix(BaseNetworkable __instance)
         {
             if (!(__instance is Minicopter) && !(__instance is AttackHelicopter) && !(__instance is Tugboat))
                 return;
@@ -16,11 +14,9 @@ namespace RadioHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill))]
     internal static class Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             try { RadioMod.Instance?.Vehicles?.OnEntityKilled(__instance); }
             catch (System.Exception ex) { Debug.LogWarning("[Radio] Kill: " + ex.Message); }

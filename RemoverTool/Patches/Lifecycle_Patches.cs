@@ -22,12 +22,10 @@ namespace RemoverToolHarmony.Patches
         }
     }
 
-    /// <summary>compat OnEntitySpawned — BaseNetworkable.Spawn postfix (only when subscribed).</summary>
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
+    /// <summary>compat OnEntitySpawned — GrimmCore spawn postfix (only when subscribed).</summary>
     internal static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
+        public static void Postfix(BaseNetworkable __instance)
         {
             if (__instance is not BaseEntity entity) return;
             var plugin = RemoverToolHarmonyMod.Instance?.Plugin;
@@ -37,12 +35,10 @@ namespace RemoverToolHarmony.Patches
         }
     }
 
-    /// <summary>Oxide OnEntityKill — BaseNetworkable.Kill prefix (only when subscribed).</summary>
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), typeof(BaseNetworkable.DestroyMode), typeof(bool))]
+    /// <summary>Oxide OnEntityKill — GrimmCore Kill observer (only when subscribed).</summary>
     internal static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             if (__instance is not BaseEntity entity) return;
             var plugin = RemoverToolHarmonyMod.Instance?.Plugin;

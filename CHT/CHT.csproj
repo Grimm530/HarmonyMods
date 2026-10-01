@@ -48,4 +48,6 @@
   <ItemGroup><Compile Remove="CHT\RustCui.cs" /></ItemGroup>
   <ItemGroup><Compile Remove="CHT\Patches\CuiEndtestPatch.cs" /></ItemGroup>
   <ItemGroup><Compile Remove="CHT\Patches\CuiEndtestRebind.cs" /></ItemGroup>
-</Project>
+  <ItemGroup>
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup></Project>

@@ -36,7 +36,10 @@ namespace RemoverToolHarmony
         public RemoverTool Plugin => _plugin;
 
         public void OnLoaded(OnHarmonyModLoadedArgs args)
-        {            Instance = this;
+        {
+            Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("RemoverTool", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("RemoverTool", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, ".."));
             RemoverToolHost.Init(root);
             _plugin = new RemoverTool();
@@ -52,6 +55,8 @@ namespace RemoverToolHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("RemoverTool");
+            GrimmCoreBridge.UnregisterGameHookMod("RemoverTool");
             try { ChatSayBridge.Unregister("RemoverTool"); } catch { }
             UnregisterCommands();
             try { _plugin?.HarmonyUnload(); }

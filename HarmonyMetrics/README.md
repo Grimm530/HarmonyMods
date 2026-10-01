@@ -58,7 +58,7 @@ Do not replace the DLL mid-load without unload.
 | `RuntimeProfiler` public `TimeSpan`s | `runtime_profiler` | Values Facepunch writes every `ServerMgr.Update` (`ServerMgr_Update`, `Net_Cycle`, `Physics_SyncTransforms`, `Companion_Tick`, `BasePlayer_ServerCycle`). Accumulated over the second. No Azure analytics / `profile.*` convars required. |
 | `HarmonyLoader.GetHarmonyMods()` + Harmony patch owners | `harmony_mods`, `harmony_mod_count` | Name, version, patch count per loaded mod. Extra Harmony IDs (not a loader entry) are reported as `version=extra`. |
 | `HarmonyLoader.TryLoadMod` / `TryUnloadMod` | `harmony_mod_event` | `event=load` or `event=unload`. |
-| Timed game methods | `server_update`, `work_queue`, `rpc_calls`, `invoke_execution`, `console_commands` | Same delayed Harmony timing patches as upstream (applied after the server is up). |
+| Timed game methods | `server_update`, `work_queue`, `rpc_calls`, `invoke_execution`, `console_commands` | Same delayed Harmony timing patches as upstream (applied after the server is up). **`invoke_execution` is off by default** — see Gather Invoke Timing. |
 | Player connection | `connection_latency`, `client_performance` | Optional; toggle in config. |
 
 ## Setup
@@ -86,14 +86,28 @@ That copies **only** `HarmonyMetrics.dll` into the server `HarmonyMods\` folder.
   "Influx Database User": "metrics",
   "Influx Database Password": "secret",
   "Server Tag": "staging",
-  "Debug Logging": false,
+  "Debug Logging": true,
   "Amount of metrics to submit in each request": 1000,
   "Gather Player Averages (Client FPS, Client Latency, Player FPS, Player Memory, Player Latency, Player Packet Loss)": true,
-  "Gather Harmony Mod Inventory": true
+  "Gather Harmony Mod Inventory": true,
+  "Gather NPC Census (vanilla vs mod bots/animals)": true,
+  "Gather RPC Timing (expensive; patches every RPC_Server method)": false,
+  "Gather Work Queue Timing (expensive; patches every ObjectWorkQueue.RunJob)": false,
+  "Gather Invoke Timing (expensive; wraps every InvokeHandler.DoTick Action.Invoke)": false
 }
 ```
 
 `Server Tag` must be unique per dedicated server if several write to the same database.
+
+**Expensive flags (default off — leave them off):**
+
+| Config key | Cost |
+|------------|------|
+| `Gather Invoke Timing (expensive; wraps every InvokeHandler.DoTick Action.Invoke)` | Wraps **every** invoke `Action.Invoke` with Stopwatch. This was a live hitch source. Turn on only while hunting a specific invoke hitch, then turn it off and restart/reload HarmonyMetrics. |
+| `Gather RPC Timing` | Patches every `RPC_Server` method |
+| `Gather Work Queue Timing` | Patches every `ObjectWorkQueue.RunJob` |
+
+Missing keys use the C# defaults in `Config/ConfigData.cs` (`false` for all three).
 
 ## Commands
 

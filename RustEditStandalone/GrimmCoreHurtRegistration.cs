@@ -1,3 +1,4 @@
+using RustEditStandalone.Core;
 using RustEditStandalone.Features;
 
 namespace RustEditStandalone
@@ -6,8 +7,20 @@ namespace RustEditStandalone
     {
         private const string ModId = "RustEditStandalone";
 
-        internal static void Register() => GrimmCoreBridge.RegisterHurtPrefix(ModId, 15, Prefix);
-        internal static void Unregister() => GrimmCoreBridge.UnregisterHurtMod(ModId);
+        internal static void Register()
+        {
+            GrimmCoreBridge.RegisterHurtPrefix(ModId, 15, Prefix);
+            GrimmCoreBridge.RegisterSpawnPostfix(ModId, 15, Spawn);
+            GrimmCoreBridge.RegisterKillObserver(ModId, 15, Patches.BaseNetworkable_Kill_Patch.Prefix);
+        }
+        internal static void Unregister()
+        {
+            GrimmCoreBridge.UnregisterHurtMod(ModId);
+            GrimmCoreBridge.UnregisterSpawnMod(ModId);
+            GrimmCoreBridge.UnregisterGameHookMod(ModId);
+        }
+
+        private static void Spawn(BaseNetworkable entity) => RustEditHub.NotifyEntitySpawned(entity);
 
         private static bool? Prefix(BaseCombatEntity entity, HitInfo info)
         {

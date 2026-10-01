@@ -1,5 +1,5 @@
 using UnityEngine;
-using Oxide.Core;
+using Harmony.Core;
 
 namespace KaruzaVehicles
 {
@@ -130,7 +130,7 @@ namespace KaruzaVehicles
                     return;
                 }
 
-                if (vehicle.CanPushNow(player) && !(vehicle.rigidBody == null) && (!vehicle.OnlyOwnerAccessible() || !(player != vehicle.creatorEntity)) && Interface.CallHook("OnVehiclePush", this, player) == null)
+                if (vehicle.CanPushNow(player) && !(vehicle.rigidBody == null) && (!vehicle.OnlyOwnerAccessible() || !(player != vehicle.creatorEntity)) && HarmonyModInterface.CallHook("OnVehiclePush", this, player) == null)
                 {
                     player.metabolism.calories.Subtract(3f);
                     player.metabolism.SendChanges();

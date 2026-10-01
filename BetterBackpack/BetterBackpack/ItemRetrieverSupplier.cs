@@ -210,7 +210,7 @@ internal static class ItemRetrieverSupplier
             else
             {
                 taken += item.amount;
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 if (collect != null)
                     collect.Add(item);
                 else

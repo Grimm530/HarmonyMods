@@ -99,7 +99,7 @@ namespace RaidableBases.RaidableBasesExtensionMethods
         public static void SetAiming(this BasePlayer a, bool f) { a.modelState.aiming = f; a.SendNetworkUpdate(); }
         public static void SetNoTarget(this AutoTurret a) { if (a == null) return; a.SetTarget(null); a.target = null; }
         public static void SafelyStrip(this PlayerInventory inv) { if (inv == null) return; inv.containerMain?.Clear(); inv.containerWear?.Clear(); inv.containerBelt?.Clear(); ItemManager.DoRemoves(); }
-        public static void SafelyRemove(this ItemContainer inv, string shortname) { if (inv == null) return; Item item = inv.FindItemByItemName(shortname); if (item == null) return; item.RemoveFromContainer(); item.Remove(); }
+        public static void SafelyRemove(this ItemContainer inv, string shortname) { if (inv == null) return; Item item = inv.FindItemByItemName(shortname); if (item == null) return; item.RemoveFromContainer(null); item.Remove(); }
         public static BasePlayer Player(this IPlayer user) => user?.Object as BasePlayer;
         public static string MaterialName(this Collider collider) { try { return collider.sharedMaterial.name; } catch { return string.Empty; } }
         public static string ObjectName(this Collider collider) { try { return collider.name ?? string.Empty; } catch { return string.Empty; } }

@@ -1,6 +1,6 @@
 # Minimap Harmony Mod (1.3.1)
 
-Harmony Harmony port of **Minimap 1.3.1** (Chaos UI / Chaos Map). Uses **0Permissions** for `minimap.use`. Map images are stored with vanilla `FileStorage` (no ImageLibrary).
+Harmony Harmony port of **Minimap 1.3.1** (Chaos UI / Chaos Map). Uses **0Permissions** for `minimap.use`. Map images are cached on disk under `HarmonyData/Minimap/cache`. A single vanilla `FileStorage` CRC per image name is kept for CUI `png` (same requirement as Oxide ImageLibrary). Replacing a name removes the previous CRC so overlays like heat do not accumulate in `sv.files`.
 
 ## Load order
 
@@ -61,7 +61,7 @@ Button commands are rewritten in `ChaosUI.Show` to `cui.endtest MINIMAP minimap.
 | Flag | Effect |
 |------|--------|
 | `Enable PVP heat (player vs player deaths)` | Hotspots where players killed other players. Events expire (default 30 min) and can persist across restarts. |
-| `Enable PVE heat (NPC locations)` | Live density of NPCs: scientists, animals, sharks, scarecrows, custom NPC players, etc. Refreshed on the update interval. |
+| `Enable PVE heat (NPC locations)` | Live density of NPCs: scientists, animals, sharks, scarecrows, custom NPC players, etc. Refreshed on the update interval. Each tick replaces the previous FileStorage CRC (does not append to `sv.files`). |
 
 Both can be on at once (same overlay). A fire icon on the minimap toggles it.
 

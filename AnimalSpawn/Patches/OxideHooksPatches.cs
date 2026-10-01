@@ -10,28 +10,9 @@ namespace AnimalSpawn
     {
         private static AnimalSpawn Ins => AnimalSpawn.Instance;
 
-        [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill))]
         private static class Patch_OnEntityKill
         {
-            private static void Prefix(BaseNetworkable __instance)
-            {
-                if (Ins == null) return;
-                if (__instance is AnimalSpawn.CustomAnimalNpc animal)
-                    Ins.OnEntityKill(animal);
-            }
-        }
-
-        [HarmonyPatch(typeof(BaseCombatEntity), nameof(BaseCombatEntity.Hurt), typeof(HitInfo))]
-        private static class Patch_OnEntityTakeDamage
-        {
-            private static bool Prefix(BaseCombatEntity __instance, HitInfo info)
-            {
-                if (Ins == null || info == null) return true;
-                if (!AnimalSpawn.IsCustomAnimal(__instance) && !AnimalSpawn.IsCustomAnimal(info.Initiator))
-                    return true;
-                object r = Ins.OnEntityTakeDamage(__instance, info);
-                return r == null;
-            }
+            // GrimmCore owns Kill. Handler is GrimmCoreHurtRegistration.Kill.
         }
 
         [HarmonyPatch(typeof(HumanNPC), nameof(HumanNPC.GetBestTarget))]

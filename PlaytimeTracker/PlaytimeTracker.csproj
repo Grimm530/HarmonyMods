@@ -29,4 +29,6 @@
     <Reference Include="Newtonsoft.Json"><HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
-</Project>
+  <ItemGroup>
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup></Project>

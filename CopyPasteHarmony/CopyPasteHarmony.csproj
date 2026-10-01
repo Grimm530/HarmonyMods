@@ -6,7 +6,17 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <LangVersion>12.0</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Krafs.Publicizer" Version="2.2.1" PrivateAssets="all" />
+    <Publicize Include="Assembly-CSharp" IncludeVirtualMembers="true" IncludeCompilerGeneratedMembers="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\ConsoleIndexCompat.cs" Link="ConsoleIndexCompat.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="Rust.Harmony">
@@ -59,6 +69,9 @@
     </Reference>
     <Reference Include="Facepunch.Steamworks.Win64">
       <HintPath>..\..\..\RustDedicated_Data\Managed\Facepunch.Steamworks.Win64.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Drawing">
+      <HintPath>..\..\..\RustDedicated_Data\Managed\System.Drawing.dll</HintPath>
     </Reference>
   </ItemGroup>
 

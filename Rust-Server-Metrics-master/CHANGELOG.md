@@ -4,14 +4,27 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 
 > **IMPORTANT FOR FUTURE UPDATES**: When making code changes to this mod, please automatically update this changelog file (`CHANGELOG.md`) to document those changes. Add new entries at the top with the date and categorize changes as Added, Changed, Fixed, or Removed.
 
+## [Custom Build] - 2026-09-10
+
+### Changed
+- **`build.ps1` deploy**: always copy `src\RustServerMetrics\bin\Windows\net48\RustServerMetrics.dll` (or Linux equivalent) to this server's `HarmonyMods\RustServerMetrics.dll` after a successful build. No longer skip the copy while RustDedicated is running.
+
+### Fixed
+- **`0fps 0gc` / frozen `Time.time`**: `ObjectWorkQueue_RunJob_Patch` threw from `ServerMgr.OpenConnection`'s postfix, which aborted `Bootstrap.StartServer` before it restored `Time.timeScale` (`pausewhileloading`). The console reads `Performance.current` (`Nfps Mgc`); with scaled time stuck at 0, that stays `0fps 0gc`. `OnServerStarted` is now isolated so startup can finish.
+- **`ClientRPCPlayer` removed**: player perf requests now use `ClientRPC(RpcTarget.Player("GetPerformanceReport", player), ...)`.
+- **`MissingFieldException` on `ConsoleSystem.Index.Server.Dict`**: this game build keys the command dictionary with `Facepunch.StringView`, not `string`. The deployed DLL was compiled against an older `Facepunch.Console`. Command registration now uses `FullName` indexing (implicit `string` → `StringView`), null-checks `Dict`/`All`, and no longer aborts `Awake` if registration fails.
+- **`ObjectWorkQueue_RunJob_Patch` Harmony null target**: skip types without a concrete `RunJob` (e.g. `PersistentObjectWorkQueue` / `RunList` queues) so delayed patches after it still apply.
+- **Delayed patch isolation**: each startup patch is applied in its own try/catch so one failure cannot skip RPC/server-update metrics.
+- **Windows dependency scripts**: `update-win-dependencies.bat` / `update-win-staging.bat` now copy Managed assemblies from this server tree (`RustDedicated_Data\Managed`) instead of a hardcoded `D:\!RustServer` path.
+
 ## [Custom Build] - 2026-01-06
 
 ### Added
-- **HarmonyMod Plugin Tracking**: Automatic tracking of HarmonyMod plugins alongside Harmony mods
+- **HarmonyMod Plugin Tracking**: Automatic tracking of HarmonyMod plugins alongside Oxide plugins
   - New method `OnHarmonyModMetrics()` in `MetricsLogger.cs`
   - Collects HarmonyMod plugin information every 5 seconds
-  - HarmonyMod plugins appear in the same `oxide_plugins` measurement as Harmony mods
-  - Uses `hookTime=1` to indicate loaded status (vs. actual execution times for Harmony mods)
+  - HarmonyMod plugins appear in the same `oxide_plugins` measurement as Oxide plugins
+  - Uses `hookTime=1` to indicate loaded status (vs. actual execution times for Oxide plugins)
 
 ### Changed
 - **MetricsLogger.StartLoggingMetrics()**: Added periodic call to `OnHarmonyModMetrics()` every 5 seconds
@@ -25,7 +38,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
   - Falls back to searching all loaded assemblies if type not found by name
   - Accesses `HarmonyModInfo` struct fields via reflection (`GetField()` not `GetProperty()`)
   
-- **Data Format**: HarmonyMod plugins use identical format to Harmony mods
+- **Data Format**: HarmonyMod plugins use identical format to Oxide plugins
   - Measurement: `oxide_plugins`
   - Format: `plugin="ModName" hookTime=1`
   - No type tags or version tags (seamless integration per user requirement)
@@ -33,7 +46,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 - **Error Handling**: Comprehensive error logging for debugging
   - Logs assembly names searched if type resolution fails
   - Logs specific failure points (method not found, null returns, etc.)
-  - Graceful failure - Harmony mod tracking continues if HarmonyMod tracking fails
+  - Graceful failure - Oxide plugin tracking continues if HarmonyMod tracking fails
 
 ### Files Modified
 1. `src/RustServerMetrics/MetricsLogger.cs`
@@ -58,7 +71,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 
 ### Testing
 - Verified HarmonyMod plugins appear in InfluxDB `oxide_plugins` measurement
-- Confirmed format matches Harmony mods exactly
+- Confirmed format matches Oxide plugins exactly
 - Tested reflection-based type resolution with multiple assembly names
 - Verified error handling and logging
 
@@ -73,7 +86,7 @@ All notable changes to the Rust Server Metrics HarmonyMod will be documented in 
 ---
 
 ## Original Version
-- Harmony mod tracking
+- Oxide plugin tracking
 - Server performance metrics
 - Network statistics
 - Player metrics

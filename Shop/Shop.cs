@@ -12722,7 +12722,7 @@ namespace ShopHarmony
                 }
 
                 foreach (var itemToTake in itemsToTake)
-                    itemToTake.RemoveFromContainer();
+                    itemToTake.RemoveFromContainer(null);
             }
             finally
             {
@@ -12763,7 +12763,7 @@ namespace ShopHarmony
                 }
 
                 foreach (var obj in list)
-                    obj.RemoveFromContainer();
+                    obj.RemoveFromContainer(null);
             }
             finally
             {

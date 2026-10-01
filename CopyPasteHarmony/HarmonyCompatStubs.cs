@@ -614,6 +614,10 @@ namespace Harmony.Plugins
 {
     public static class CopyPasteGameExtensions
     {
+        private const ulong SteamIdBase = 76561197960265728UL;
+
+        public static bool IsSteamId(this ulong id) => id > SteamIdBase;
+
         public static void SetChandelierLength(this Chandelier chandelier, float length)
         {
             if (chandelier == null) return;

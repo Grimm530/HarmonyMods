@@ -89,6 +89,7 @@ namespace VirtualItemsHarmony
                 plugin = new HarmonyPlugin();
                 HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
+                GrimmCorePluginHooks.Bind("VirtualItems", plugin);
             }
             catch (Exception ex)
             {
@@ -126,6 +127,7 @@ namespace VirtualItemsHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCorePluginHooks.Unbind("VirtualItems");
             ChatSayBridge.Unregister("VirtualItems");
             if (_permissionsReadyCallback != null)
             {

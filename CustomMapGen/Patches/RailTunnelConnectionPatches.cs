@@ -20,6 +20,22 @@ namespace CustomMapGen.Patches
         {
             if (World.Networked || World.Cached)
                 return;
+            try
+            {
+                ConnectAboveGroundRails(seed);
+            }
+            finally
+            {
+                // PathLink has already used the vanilla compound door. Paste outpost.map
+                // after rail links so the entrance still exists while those segments are built.
+                World_AddPrefab_Patch.ReplaceCenterOutpostAfterDungeonGen();
+            }
+        }
+
+        static void ConnectAboveGroundRails(uint seed)
+        {
+            if (World.Networked || World.Cached)
+                return;
             if (!CustomMapGen.IsCustomMapGenEnabled() || TerrainMeta.Path == null)
                 return;
             var config = CustomMapGen.Instance?.GetConfig();

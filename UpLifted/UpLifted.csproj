@@ -79,4 +79,6 @@
   </ItemGroup>
   <ItemGroup><Compile Remove="RustCui.cs" /></ItemGroup>
   <ItemGroup><Compile Remove="Patches\GameHooks_Patches.cs" /></ItemGroup>
-</Project>
+  <ItemGroup>
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup></Project>

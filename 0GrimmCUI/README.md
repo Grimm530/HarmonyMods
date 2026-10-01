@@ -1,5 +1,7 @@
 # 0GrimmCUI — Shared CUI Foundation
 
+**Consumers:** hard-ref `HarmonyMods/0GrimmCUI.dll` (`Private=false`); exclude local `RustCui.cs` / Chaos copies. Agent contract: `PluginInstructionalFiles/GrimmCore_Harmony_Infrastructure.md`.
+
 Loads first (alphabetically: `0Permissions` → **`0GrimmCUI`** → `0GrimmNPC` → feature mods).
 
 ## What it provides

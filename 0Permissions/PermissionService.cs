@@ -157,13 +157,19 @@ namespace PermissionsHarmony
             Debug.Log("[Permissions] " + message);
         }
 
+        public static bool IsPlaceholderNickname(string nickname, string playerId)
+        {
+            if (string.IsNullOrWhiteSpace(nickname)) return true;
+            if (nickname.Equals("Unnamed", StringComparison.OrdinalIgnoreCase)) return true;
+            return !string.IsNullOrEmpty(playerId) &&
+                   nickname.Equals(playerId, StringComparison.OrdinalIgnoreCase);
+        }
+
         private string FormatUser(string playerId)
         {
             if (string.IsNullOrEmpty(playerId)) return "(unknown)";
             if (_users.TryGetValue(playerId, out var user) &&
-                !string.IsNullOrEmpty(user.LastSeenNickname) &&
-                !string.Equals(user.LastSeenNickname, "Unnamed", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(user.LastSeenNickname, playerId, StringComparison.OrdinalIgnoreCase))
+                !IsPlaceholderNickname(user.LastSeenNickname, playerId))
                 return $"{playerId} ({user.LastSeenNickname})";
             return playerId;
         }
@@ -775,9 +781,21 @@ namespace PermissionsHarmony
 
         public void TouchUser(string playerId, string nickname)
         {
+            if (string.IsNullOrEmpty(playerId) || IsPlaceholderNickname(nickname, playerId)) return;
             var user = GetOrCreateUser(playerId);
-            if (!string.IsNullOrEmpty(nickname))
-                user.LastSeenNickname = nickname;
+            user.LastSeenNickname = nickname.Trim();
+        }
+
+        public bool SetUserNickname(string playerId, string nickname)
+        {
+            if (string.IsNullOrEmpty(playerId) || IsPlaceholderNickname(nickname, playerId)) return false;
+            var user = GetOrCreateUser(playerId);
+            nickname = nickname.Trim();
+            if (string.Equals(user.LastSeenNickname, nickname, StringComparison.Ordinal)) return false;
+            user.LastSeenNickname = nickname;
+            SaveUsers();
+            Audit($"Set nickname for {playerId} to '{nickname}'");
+            return true;
         }
 
         #endregion

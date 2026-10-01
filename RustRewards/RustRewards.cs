@@ -1271,7 +1271,7 @@ namespace RustRewardsHarmony
 			if (!VehicleAttackers.TryGetValue(id, out var attackers) || attackers == null || attackers.Count == 0)
 				return 0U;
 			ulong bestId = 0U;
-			int bestHits = int.MinValue;
+			float bestHits = float.MinValue;
 			foreach (var pair in attackers)
 			{
 				if (pair.Value > bestHits)

@@ -33,8 +33,18 @@ Write-Host ""
 $SolutionPath = Join-Path $PSScriptRoot "RustServerMetrics.sln"
 $ProjectPath = Join-Path $PSScriptRoot "src\RustServerMetrics\RustServerMetrics.csproj"
 $OutputPath = Join-Path $PSScriptRoot "src\RustServerMetrics\bin\$Configuration\net48\RustServerMetrics.dll"
-$TargetPath = "D:\!RustServer\HarmonyMods\RustServerMetrics.dll"
+# This tree lives at {serverRoot}\.cursor\HarmonyMods\Rust-Server-Metrics-master
+# Deploy to THIS server's HarmonyMods, not a hardcoded !RustServer path.
+$serverRoot = if ($env:RSM_SERVER_ROOT) {
+    $env:RSM_SERVER_ROOT
+} else {
+    (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..\..")).Path
+}
+$harmonyModsDir = Join-Path $serverRoot "HarmonyMods"
 $Platform = "Any CPU"
+Write-Host "Server root: $serverRoot" -ForegroundColor Gray
+Write-Host "Deploy target: $(Join-Path $harmonyModsDir 'RustServerMetrics.dll')" -ForegroundColor Gray
+Write-Host ""
 
 # Check if solution exists
 if (-not (Test-Path $SolutionPath)) {
@@ -101,9 +111,9 @@ if ($updateDeps -eq "y" -or $updateDeps -eq "Y") {
     Write-Host ""
     Write-Host "Updating $Configuration dependencies..." -ForegroundColor Cyan
     
-    # Check if Rust server path exists
-    $rustServerPath = "D:\!RustServer\RustDedicated_Data\Managed"
-    if (-not (Test-Path $rustServerPath)) {
+    # Check if Rust server path exists (same server this repo sits under)
+    $rustServerPath = Join-Path $serverRoot "RustDedicated_Data\Managed"
+    if (-not (Test-Path -LiteralPath $rustServerPath)) {
         Write-Host "WARNING: Rust server path not found: $rustServerPath" -ForegroundColor Yellow
         Write-Host "Skipping dependency update. Build may fail if dependencies are outdated." -ForegroundColor Yellow
     } else {
@@ -278,59 +288,31 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host ""
-Write-Host "Build successful!" -ForegroundColor Green
-Write-Host ""
+# Copies only RustServerMetrics.dll into server HarmonyMods/
+if (-not (Test-Path -LiteralPath $harmonyModsDir)) {
+    New-Item -ItemType Directory -Path $harmonyModsDir -Force | Out-Null
+}
 
-# Check if output file exists
-if (-not (Test-Path $OutputPath)) {
-    Write-Host "ERROR: Output file not found at: $OutputPath" -ForegroundColor Red
-    Write-Host "Build may have succeeded but DLL was not generated." -ForegroundColor Yellow
+$dllPath = $OutputPath
+if (-not (Test-Path -LiteralPath $dllPath)) {
+    $dllPath = Join-Path $PSScriptRoot "src\RustServerMetrics\bin\$Configuration\RustServerMetrics.dll"
+}
+if (-not (Test-Path -LiteralPath $dllPath)) {
+    Write-Host "Build output not found at: $OutputPath" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "Output file: $OutputPath" -ForegroundColor Gray
-$fileInfo = Get-Item $OutputPath
+$fileInfo = Get-Item -LiteralPath $dllPath
+Write-Host ""
+Write-Host "Output file: $dllPath" -ForegroundColor Gray
 Write-Host "  Size: $([math]::Round($fileInfo.Length / 1KB, 2)) KB" -ForegroundColor Gray
 Write-Host "  Modified: $($fileInfo.LastWriteTime)" -ForegroundColor Gray
-Write-Host ""
 
-# Copy to target location
-Write-Host "Copying to target location..." -ForegroundColor Cyan
-$targetDir = Split-Path $TargetPath -Parent
+$destPath = Join-Path $harmonyModsDir "RustServerMetrics.dll"
+Copy-Item -LiteralPath $dllPath -Destination $destPath -Force
+Write-Host "`nBuild successful! RustServerMetrics.dll -> $destPath" -ForegroundColor Green
+Write-Host "Load: harmony.load RustServerMetrics  (or restart the server)" -ForegroundColor Yellow
 
-if (-not (Test-Path $targetDir)) {
-    Write-Host "Creating target directory: $targetDir" -ForegroundColor Yellow
-    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-}
-
-# Backup existing file if it exists
-if (Test-Path $TargetPath) {
-    $backupPath = $TargetPath + ".backup"
-    Write-Host "Backing up existing file to: $backupPath" -ForegroundColor Gray
-    Copy-Item $TargetPath $backupPath -Force
-}
-
-# Copy the DLL
-Copy-Item $OutputPath $TargetPath -Force
-Write-Host "Copied to: $TargetPath" -ForegroundColor Green
-Write-Host ""
-
-# Verify copy
-if (Test-Path $TargetPath) {
-    $targetInfo = Get-Item $TargetPath
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "Build and deployment complete!" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "File Details:" -ForegroundColor Cyan
-    Write-Host "  Location: $TargetPath" -ForegroundColor Gray
-    Write-Host "  Size: $([math]::Round($targetInfo.Length / 1KB, 2)) KB" -ForegroundColor Gray
-    Write-Host "  Modified: $($targetInfo.LastWriteTime)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "The mod is ready to use. Restart your Rust server to load the new version." -ForegroundColor Yellow
-    Write-Host ""
-} else {
-    Write-Host "ERROR: Failed to copy file to target location!" -ForegroundColor Red
-    exit 1
+if (Get-Process -Name "RustDedicated" -ErrorAction SilentlyContinue) {
+    Write-Host "RustDedicated is running. Restart (or unload/load) to pick up the new DLL." -ForegroundColor Yellow
 }

@@ -46,4 +46,7 @@
       <HintPath>$(RustManaged)\System.Net.Http.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup>
 </Project>

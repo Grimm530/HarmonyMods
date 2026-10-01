@@ -81,6 +81,7 @@ namespace IndustrialRecyclerHarmony
                 plugin = new HarmonyPlugin();
                 HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
+                GrimmCorePluginHooks.Bind("IndustrialRecycler", plugin);
             }
             catch (Exception ex)
             {
@@ -129,6 +130,7 @@ namespace IndustrialRecyclerHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCorePluginHooks.Unbind("IndustrialRecycler");
             ChatSayBridge.Unregister("IndustrialRecycler");
             if (_permissionsReadyCallback != null)
             {

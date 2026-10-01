@@ -4,35 +4,9 @@ using ZM = Harmony.Plugins.ZoneManager;
 
 namespace ZoneManagerHarmony.Patches
 {
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
-    public static class BaseNetworkable_Spawn_Patch
-    {
-        [HarmonyPostfix]
-        public static void Postfix(BaseNetworkable __instance)
-        {
-            if (!(__instance is BaseEntity entity)) return;
-            try
-            {
-                if (Deployer_DoDeploy_Patch.Pending != null)
-                {
-                    var deployer = Deployer_DoDeploy_Patch.Pending;
-                    var item = deployer.GetItem();
-                    var mod = item?.info?.GetComponent<ItemModDeployable>();
-                    if (mod != null)
-                        ZM.Dispatch_OnItemDeployed(deployer, mod, entity);
-                    else
-                        ZM.Dispatch_OnItemDeployed(deployer, deployer.GetParentEntity(), entity);
-                }
-                ZM.Dispatch_OnEntitySpawned(entity);
-            }
-            catch (System.Exception ex) { Debug.LogWarning("[ZoneManager] OnEntitySpawned: " + ex.Message); }
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill))]
     public static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
+        // GrimmCore owns BaseNetworkable.Kill. Handler registered in GrimmCoreHurtRegistration.
         public static void Prefix(BaseNetworkable __instance)
         {
             if (!(__instance is BaseEntity entity)) return;

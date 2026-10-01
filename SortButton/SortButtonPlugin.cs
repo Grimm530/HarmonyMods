@@ -383,7 +383,7 @@ namespace SortButton
                 {
                     var item = container.itemList[i];
                     if (item.position >= 24) continue;
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     itemList.Add(item);
                 }
             }
@@ -392,7 +392,7 @@ namespace SortButton
                 for (int i = container.itemList.Count - 1; i >= 0; i--)
                 {
                     var item = container.itemList[i];
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     itemList.Add(item);
                 }
             }

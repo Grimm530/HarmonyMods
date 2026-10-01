@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using GrimmShared;
 using GrimmBoss.Patches;
 using HarmonyPlugin = Harmony.Plugins.GrimmBoss;
 
@@ -98,7 +99,7 @@ namespace GrimmBoss
                     {
                         if (monument == null) continue;
                         Vector3 p = monument.transform.position;
-                        if (UnityEngine.AI.NavMesh.SamplePosition(p, out _, 80f, UnityEngine.AI.NavMesh.AllAreas))
+                        if (RecastNav.SamplePosition(p, out _, 80f, UnityEngine.AI.NavMesh.AllAreas))
                             return true;
                         if (++tested >= 12) break;
                     }
@@ -106,7 +107,7 @@ namespace GrimmBoss
 
                 Vector3 probe = Vector3.zero;
                 probe.y = TerrainMeta.HeightMap.GetHeight(probe);
-                return UnityEngine.AI.NavMesh.SamplePosition(probe, out _, 500f, UnityEngine.AI.NavMesh.AllAreas);
+                return RecastNav.SamplePosition(probe, out _, 500f, UnityEngine.AI.NavMesh.AllAreas);
             }
             catch
             {

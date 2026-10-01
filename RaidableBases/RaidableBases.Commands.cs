@@ -325,15 +325,26 @@ namespace RaidableBases
 
             UI.GetOffsets(player.userID, type);
 
+            // Done: exit move mode. DragRPC only fires on mouse-up, and the Done click often
+            // races ahead of that RPC — defer rebuild so the final position can land first.
             if (UI.IsMovingUi(player, type))
             {
                 UI.TrySetMoveUi(player, type, true);
-            }
-            else
-            {
-                UI.TrySetMoveUi(player, type);
+                timer.Once(0.15f, () =>
+                {
+                    if (player == null || !player.IsConnected) return;
+                    if (SaveOffsetDataTimer is { Destroyed: false })
+                    {
+                        SaveOffsetDataTimer.Destroy();
+                        SaveOffsetDataTimer = null;
+                    }
+                    UI.SaveOffsetData();
+                    UI.UpdateUi(player, type);
+                });
+                return;
             }
 
+            UI.TrySetMoveUi(player, type);
             UI.UpdateUi(player, type);
         }
 

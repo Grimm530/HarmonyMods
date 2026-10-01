@@ -15,6 +15,10 @@ public delegate void GrimmCoreHurtSideEffectHandler(BaseCombatEntity entity, Hit
 /// <summary>Postfix: runs after Hurt when damage was not blocked at prefix stage.</summary>
 public delegate void GrimmCoreHurtPostfixHandler(BaseCombatEntity entity, HitInfo info);
 
+public delegate void GrimmCoreSpawnHandler(BaseNetworkable entity);
+
+public delegate void GrimmCoreKillHandler(BaseNetworkable entity);
+
 /// <summary>
 /// Harmony hook semantics helper: non-null hook return = cancel damage.
 /// </summary>
@@ -30,6 +34,10 @@ public static class GrimmCoreBridge
     public const string RegisterSideEffectKey = "GrimmCore_RegisterHurtSideEffect";
     public const string RegisterPostfixKey = "GrimmCore_RegisterHurtPostfix";
     public const string UnregisterModKey = "GrimmCore_UnregisterHurtMod";
+    public const string RegisterSpawnKey = "GrimmCore_RegisterSpawnPostfix";
+    public const string UnregisterSpawnKey = "GrimmCore_UnregisterSpawnMod";
+    public const string RegisterGameHookKey = "GrimmCore_RegisterGameHook";
+    public const string UnregisterGameHookModKey = "GrimmCore_UnregisterGameHookMod";
 
     /// <summary>Blank Steam workshop skin marking custom/mod entities (nivex 3793751435).</summary>
     public const ulong CustomEntitySkinId = 3793751435UL;
@@ -112,6 +120,58 @@ public static class GrimmCoreBridge
             fn?.Invoke(modId);
         }
         catch { }
+    }
+
+    public static bool RegisterSpawnPostfix(string modId, int priority, GrimmCoreSpawnHandler handler)
+    {
+        if (string.IsNullOrEmpty(modId) || handler == null) return false;
+        try
+        {
+            var fn = AppDomain.CurrentDomain.GetData(RegisterSpawnKey) as Action<string, int, Delegate>;
+            fn?.Invoke(modId, priority, handler);
+            return fn != null;
+        }
+        catch { return false; }
+    }
+
+    public static void UnregisterSpawnMod(string modId)
+    {
+        if (string.IsNullOrEmpty(modId)) return;
+        try
+        {
+            var fn = AppDomain.CurrentDomain.GetData(UnregisterSpawnKey) as Action<string>;
+            fn?.Invoke(modId);
+        }
+        catch { }
+    }
+
+    public static bool RegisterGameHook(string modId, string hook, int priority, Delegate handler)
+    {
+        if (string.IsNullOrEmpty(modId) || string.IsNullOrEmpty(hook) || handler == null) return false;
+        try
+        {
+            var fn = AppDomain.CurrentDomain.GetData(RegisterGameHookKey) as Action<string, string, int, Delegate>;
+            fn?.Invoke(modId, hook, priority, handler);
+            return fn != null;
+        }
+        catch { return false; }
+    }
+
+    public static void UnregisterGameHookMod(string modId)
+    {
+        if (string.IsNullOrEmpty(modId)) return;
+        try
+        {
+            var fn = AppDomain.CurrentDomain.GetData(UnregisterGameHookModKey) as Action<string>;
+            fn?.Invoke(modId);
+        }
+        catch { }
+    }
+
+    public static bool RegisterKillObserver(string modId, int priority, GrimmCoreKillHandler handler)
+    {
+        if (handler == null) return false;
+        return RegisterGameHook(modId, "OnEntityKill", priority, handler);
     }
 
     /// <summary>Tag a spawned entity as mod-owned (AI + identification).</summary>

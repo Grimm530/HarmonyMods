@@ -58,4 +58,7 @@
       <HintPath>$(RustManaged)\Rust.Localization.dll</HintPath>
     </Reference>
   </ItemGroup>
-</Project>
+  <ItemGroup>
+    <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+    <Compile Include="..\_Shared\PermissionsBridge.cs" Link="PermissionsBridge.cs" />
+  </ItemGroup></Project>

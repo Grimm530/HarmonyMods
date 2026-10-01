@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Plugins;
-using Game.Rust.Cui;
+using Oxide.Game.Rust.Cui;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Collections;

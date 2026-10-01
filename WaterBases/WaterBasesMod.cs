@@ -92,6 +92,8 @@ namespace WaterBasesHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("WaterBases", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("WaterBases", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             ModRunner.Ensure();
 
             try
@@ -160,6 +162,8 @@ namespace WaterBasesHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("WaterBases");
+            GrimmCoreBridge.UnregisterGameHookMod("WaterBases");
             try
             {
                 if (_permissionsReadyCallback != null)

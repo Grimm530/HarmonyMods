@@ -170,6 +170,13 @@ The mod creates a configuration file at `HarmonyConfig/CustomMapGen.json` on fir
 - **Ziplines** (bool): `true` = allow ziplines (launch/arrival points), `false` = block zipline prefabs during map generation.
 - **RemoveSmallPowerLines** / **RemoveLargePowerLines** (bool): Legacy; when **Powerlines** is not in the config, powerlines are derived from these (both true = no powerlines).
 - **RemoveRivers** (bool): Remove rivers from map
+- **RiverSettings.Width** (float): Absolute river width in meters. `-1` leaves vanilla width. When this is greater than 0 it wins over `WidthScale`.
+- **RiverSettings.WidthScale** (float): Multiply the width vanilla just generated. `1` leaves it unchanged.
+- **RemoveUndergroundTunnels** (bool): Turns off underground rails and also skips the `tunnel-entrance` monument group.
+- **RemoveTunnelEntrances** (bool): Skips the `tunnel-entrance` monument group while leaving underground rails on.
+- **GenerateRingRoad** / **AboveGroundRails** `"Wanted"`: On maps under 5000 this now uses the 8-node ring, the same layout vanilla uses at 5000 and above.
+- **AllowBuildingOnRoads** (bool): Clears the road topology bit on field, beach, and forest. That is the bit `Construction` checks. Cliff, ocean, and monument road cells stay blocked.
+- **MonumentGroups**: On the first generation, every `PlaceMonuments` folder is appended to the config with `ShouldChange: false`. Set `ShouldChange` true to apply `Generate`, `TargetCount`, distances, `OverrideFolder`, `IncludePrefabs`, `ExcludePrefabs`, `PrefabCopies`, `IgnoreWorldSizeMultiplier`, and `Filter`. New folders from a Rust update are added the same way and do not overwrite rows you already edited.
 - **ConnectRailsToTunnelEntrances** (bool): When `true` (default), add rail segments from the above-ground rail network to each train tunnel entrance so tracks connect visually. Set `false` for vanilla behavior (tracks may run past entrances). If your config was created before this option existed, add `"ConnectRailsToTunnelEntrances": true` to enable.
 - **RemoveCarWrecks** (bool): Remove roadside car wreck monuments
 - **SwapMonuments.TrySpawningOutpostInCenter** (bool): Move the outpost (and bandit camp) to map center. The game still places one outpost; the mod only redirects its position to center (no second outpost is created). Required when using custom outpost.prefab.map at center.

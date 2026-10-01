@@ -1,7 +1,7 @@
 /*
  * Reflection consumer for PermissionsHarmony.PermissionsMod (0Permissions).
  * Generation rebind + ready callbacks per Harmony_Mod_Execution_Framework.md section 10a.
- * Harmony-only references. Signatures match AdminMenu / Kits / Backpacks / SkillTree bridges.
+ * No Oxide references. Signatures match AdminMenu / Kits / Backpacks / SkillTree bridges.
  */
 using System;
 using System.Collections;

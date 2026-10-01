@@ -107,7 +107,7 @@ namespace WaterBasesHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), typeof(Item))]
+    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), typeof(Item), typeof(BasePlayer))]
     public static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]
@@ -119,7 +119,7 @@ namespace WaterBasesHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Remove), typeof(Item))]
+    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Remove), typeof(Item), typeof(BasePlayer))]
     public static class ItemContainer_Remove_Patch
     {
         [HarmonyPostfix]

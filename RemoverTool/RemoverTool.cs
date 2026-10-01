@@ -1376,7 +1376,7 @@ namespace RemoverToolHarmony
                 if (activeItem?.GetHeldEntity() is HeldEntity)
                 {
                     var slot = activeItem.position;
-                    activeItem.SetParent(null);
+                    activeItem.SetParent(null, null);
                     Player.Invoke(() =>
                     {
                         if (activeItem == null || !activeItem.IsValid())
@@ -1386,7 +1386,7 @@ namespace RemoverToolHarmony
                         if (Player.inventory.containerBelt.GetSlot(slot) == null)
                         {
                             activeItem.position = slot;
-                            activeItem.SetParent(Player.inventory.containerBelt);
+                            activeItem.SetParent(Player.inventory.containerBelt, null);
                         }
                         else
                         {
@@ -2249,7 +2249,7 @@ namespace RemoverToolHarmony
                         if (item.amount <= need)
                         {
                             take += item.amount;
-                            item.RemoveFromContainer();
+                            item.RemoveFromContainer(null);
                             collect?.Add(item);
                         }
                         if (take == amount)

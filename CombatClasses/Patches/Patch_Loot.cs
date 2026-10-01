@@ -73,7 +73,7 @@ namespace CombatClassesHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(ItemContainer), "Insert", new[] { typeof(Item) })]
+    [HarmonyPatch(typeof(ItemContainer), "Insert", new[] { typeof(Item), typeof(BasePlayer) })]
     public static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]

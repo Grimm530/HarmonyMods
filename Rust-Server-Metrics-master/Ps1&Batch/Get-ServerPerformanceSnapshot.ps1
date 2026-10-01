@@ -4,7 +4,7 @@
   Pulls server FPS, frametime, entity count, players, and memory from InfluxDB (Rust Server Metrics).
 
 .DESCRIPTION
-  Complements Get-PluginResourceReport.ps1: Harmony hook times do NOT include Unity InvokeRepeating / FixedUpdate
+  Complements Get-PluginResourceReport.ps1: Oxide hook times do NOT include Unity InvokeRepeating / FixedUpdate
   on spawned entities (e.g. event turrets). Use this to correlate FPS dips with load (entities, players, frame spikes).
 
 .PARAMETER Hours
@@ -131,7 +131,7 @@ Write-Host "  mean FPS ~= healthy average. min/max often = one bad second (save/
 Write-Host "  stddev + 'seconds below 60 FPS' show variance. p95 frametime = typical worst second (ignores single spikes)." -ForegroundColor DarkGray
 Write-Host "  memory.used = system RAM used (MB, OS-level via Rust native), not RustDedicated.exe private bytes." -ForegroundColor DarkGray
 Write-Host "  GC collections = cumulative process count; 'delta in window' = new collections while profiling." -ForegroundColor DarkGray
-Write-Host "  Plugin TSV = Harmony hook time only - not Unity InvokeRepeating on event entities (turrets, etc.)." -ForegroundColor DarkGray
+Write-Host "  Plugin TSV = Oxide hook time only - not Unity InvokeRepeating on event entities (turrets, etc.)." -ForegroundColor DarkGray
 Write-Host ""
 
 $queries = @(
@@ -197,6 +197,6 @@ if ($null -ne $script:fpsSamples -and $null -ne $script:fpsUnder60) {
 }
 
 Write-Host "Correlate with plugin-metrics TSV:" -ForegroundColor DarkGray
-Write-Host "  If event plugins show tiny mean_*_ms but FPS still dips -> look at native load (entities, physics, AI), not Harmony hooks." -ForegroundColor DarkGray
+Write-Host "  If event plugins show tiny mean_*_ms but FPS still dips -> look at native load (entities, physics, AI), not Oxide hooks." -ForegroundColor DarkGray
 Write-Host "  If seconds_under_60 is high vs samples -> sustained low-FPS seconds; if it is 1-2 -> rare hitches (max frametime)." -ForegroundColor DarkGray
 Write-Host ""

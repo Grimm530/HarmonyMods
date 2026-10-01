@@ -4,7 +4,7 @@ using ProtoBuf;
 using Rust;
 using System.Collections.Generic;
 using UnityEngine;
-using Oxide.Core.Plugins;
+using Harmony.Core.Plugins;
 using static Facepunch.Pool;
 
 namespace KaruzaVehicles

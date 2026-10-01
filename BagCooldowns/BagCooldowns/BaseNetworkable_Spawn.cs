@@ -1,13 +1,10 @@
-using HarmonyLib;
 using UnityEngine;
 
 namespace BagCooldowns;
 
-[HarmonyPatch(typeof(BaseNetworkable), "Spawn")]
-internal class BaseNetworkable_Spawn
+internal static class BaseNetworkable_Spawn
 {
-	[HarmonyPostfix]
-	private static void Postfix(BaseNetworkable __instance)
+	public static void Postfix(BaseNetworkable __instance)
 	{
 		if (__instance == null || __instance is not SleepingBag sleepingBag)
 			return;

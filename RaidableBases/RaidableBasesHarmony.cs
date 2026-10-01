@@ -893,6 +893,16 @@ namespace RaidableBases
                 return RaidableBasesHost.Instance?.Kits ?? new KitsPluginStub();
             if (name.Equals("CopyPaste", StringComparison.OrdinalIgnoreCase))
                 return RaidableBasesHost.Instance?.CopyPaste ?? new CopyPastePluginStub();
+            if (name.Equals("TruePVE", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (AppDomain.CurrentDomain.GetData("TruePVE_ApiType") is Type)
+                        return RaidableBasesHost.Instance?.ModInstance ?? new object();
+                }
+                catch { }
+                return null;
+            }
             return null;
         }
     }
@@ -1042,7 +1052,14 @@ namespace RaidableBases
         }
         private IEnumerator WaitAndRun(float seconds, Timer timer, Action callback)
         {
-            yield return new WaitForSeconds(seconds);
+            // Reset() sets NeedsRestart so move-mode / save debounce can actually extend.
+            do
+            {
+                timer.NeedsRestart = false;
+                yield return new WaitForSeconds(seconds);
+            }
+            while (!timer.Destroyed && timer.NeedsRestart);
+
             try { callback?.Invoke(); } catch (Exception ex) { Debug.LogWarning("[RaidableBases] Timer: " + ex.Message); }
         }
         /// <summary>Alias for Once (Oxide timer.In).</summary>
@@ -1201,6 +1218,29 @@ namespace RaidableBases
             catch (Exception ex)
             {
                 Debug.LogWarning("[RaidableBases] InvokeHookCached " + name + ": " + ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// TruePVE damage bridge: always invoke object CanEntityTakeDamage even if only
+        /// OnEntityTakeDamage is marked subscribed (legacy PVP subscription name).
+        /// </summary>
+        public object InvokeCanEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+        {
+            var mod = ModInstance;
+            if (mod == null || entity == null || info == null)
+                return null;
+            try
+            {
+                var method = _hookMethodCache.GetOrAdd("CanEntityTakeDamage", n => ResolveHookMethod(mod.GetType(), n, entity, info));
+                if (method == null)
+                    return null;
+                return method.Invoke(mod, new object[] { entity, info });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[RaidableBases] InvokeCanEntityTakeDamage: " + ex.Message);
                 return null;
             }
         }

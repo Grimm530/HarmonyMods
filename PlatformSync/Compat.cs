@@ -186,7 +186,7 @@ namespace PlatformSync
                 get
                 {
                     EnsureBound();
-                    return _permType != null && _addUserGroup != null;
+                    return PermissionsBridge.IsAvailable;
                 }
             }
 
@@ -248,86 +248,26 @@ namespace PlatformSync
 
             private void EnsureBound()
             {
-                int gen = ReadGeneration();
-                object live = ReadLiveInstance(_permType);
-                if (_permType != null && _boundGen == gen && live != null && _addUserGroup != null)
-                    return;
-
-                try
+                if (PermissionsBridge.IsAvailable)
                 {
-                    ClearBind();
-                    _permType = ResolveLivePermType();
-                    live = ReadLiveInstance(_permType);
-                    if (_permType == null || live == null)
-                    {
-                        if (!_resolveAttempted)
-                        {
-                            _resolveAttempted = true;
-                            Debug.LogWarning("[PlatformSync] 0Permissions not loaded yet — Discord groups will use local groups.json until Permissions is ready.");
-                        }
-                        EnsureLocalLoaded();
-                        return;
-                    }
-
                     _resolveAttempted = false;
-                    const BindingFlags sf = BindingFlags.Public | BindingFlags.Static;
-                    _userHasGroup = _permType.GetMethod("UserHasGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
-                    _addUserGroup = _permType.GetMethod("AddUserGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
-                    _removeUserGroup = _permType.GetMethod("RemoveUserGroup", sf, null, new[] { typeof(string), typeof(string) }, null);
-                    _groupExists = _permType.GetMethod("GroupExists", sf, null, new[] { typeof(string) }, null);
-                    _createGroup = _permType.GetMethod("CreateGroup", sf, null, new[] { typeof(string), typeof(string), typeof(int) }, null);
-                    _getUserIdsInGroup = _permType.GetMethod("GetUserIdsInGroup", sf, null, new[] { typeof(string) }, null);
-                    _registerReady = _permType.GetMethod("RegisterReadyCallback", sf, null, new[] { typeof(Action) }, null);
-                    _boundGen = gen;
+                    EnsureReadyCallback();
+                    return;
+                }
 
-                    if (!_loggedLink)
-                    {
-                        _loggedLink = true;
-                        Puts("Linked to Permissions Harmony mod for Discord/nitro groups.");
-                    }
-                    else
-                        Puts("Re-linked to Permissions Harmony mod (gen=" + gen + ").");
-                }
-                catch (Exception ex)
+                if (!_resolveAttempted)
                 {
-                    ClearBind();
-                    Debug.LogWarning("[PlatformSync] Permissions bind failed: " + ex.Message);
-                    EnsureLocalLoaded();
+                    _resolveAttempted = true;
+                    Debug.LogWarning("[PlatformSync] 0Permissions not loaded yet — Discord groups will use local groups.json until Permissions is ready.");
                 }
+                EnsureLocalLoaded();
             }
 
             private void EnsureReadyCallback()
             {
                 if (_readyCallback != null) return;
-                _readyCallback = () =>
-                {
-                    EnsureBound();
-                };
-                try
-                {
-                    if (_registerReady != null)
-                    {
-                        _registerReady.Invoke(null, new object[] { _readyCallback });
-                        return;
-                    }
-                }
-                catch { }
-
-                try
-                {
-                    var list = AppDomain.CurrentDomain.GetData("Permissions_ReadyCallbacks") as IList;
-                    if (list == null)
-                    {
-                        list = new List<Action>();
-                        AppDomain.CurrentDomain.SetData("Permissions_ReadyCallbacks", list);
-                    }
-                    lock (list)
-                    {
-                        if (!list.Contains(_readyCallback))
-                            list.Add(_readyCallback);
-                    }
-                }
-                catch { }
+                _readyCallback = () => { EnsureBound(); };
+                PermissionsBridge.RegisterReadyCallback(_readyCallback);
             }
 
             private void EnsureLocalLoaded()
@@ -418,8 +358,8 @@ namespace PlatformSync
             {
                 EnsureBound();
                 if (string.IsNullOrWhiteSpace(groupName)) return false;
-                if (_groupExists != null)
-                    return InvokeBool(_groupExists, groupName);
+                if (PermissionsBridge.IsAvailable)
+                    return PermissionsBridge.GroupExists(groupName);
                 return true;
             }
 
@@ -427,19 +367,16 @@ namespace PlatformSync
             {
                 EnsureBound();
                 if (string.IsNullOrWhiteSpace(groupName)) return;
-                if (_createGroup != null)
-                {
-                    try { _createGroup.Invoke(null, new object[] { groupName, title ?? groupName, rank }); }
-                    catch (Exception ex) { Debug.LogWarning("[PlatformSync] CreateGroup: " + ex.Message); }
-                }
+                if (PermissionsBridge.IsAvailable)
+                    PermissionsBridge.CreateGroup(groupName, title ?? groupName, rank);
             }
 
             public bool UserHasGroup(string userId, string groupName)
             {
                 EnsureBound();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(groupName)) return false;
-                if (_userHasGroup != null)
-                    return InvokeBool(_userHasGroup, userId, groupName);
+                if (PermissionsBridge.IsAvailable)
+                    return PermissionsBridge.UserHasGroup(userId, groupName);
                 EnsureLocalLoaded();
                 return _localGroups.TryGetValue(userId, out var set) && set.Contains(groupName);
             }
@@ -449,9 +386,9 @@ namespace PlatformSync
                 EnsureBound();
                 EnsureReadyCallback();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(groupName)) return;
-                if (_addUserGroup != null)
+                if (PermissionsBridge.IsAvailable)
                 {
-                    InvokeBool(_addUserGroup, userId, groupName);
+                    PermissionsBridge.AddUserGroup(userId, groupName);
                     MirrorLocalAdd(userId, groupName);
                     return;
                 }
@@ -467,9 +404,9 @@ namespace PlatformSync
                 EnsureBound();
                 EnsureReadyCallback();
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(groupName)) return;
-                if (_removeUserGroup != null)
+                if (PermissionsBridge.IsAvailable)
                 {
-                    InvokeBool(_removeUserGroup, userId, groupName);
+                    PermissionsBridge.RemoveUserGroup(userId, groupName);
                     MirrorLocalRemove(userId, groupName);
                     return;
                 }
@@ -488,36 +425,15 @@ namespace PlatformSync
                 var result = new List<string>();
                 if (string.IsNullOrWhiteSpace(groupName)) return result;
 
-                if (_getUserIdsInGroup != null)
+            if (PermissionsBridge.IsAvailable)
+            {
+                foreach (var id in PermissionsBridge.GetUsersInGroup(groupName))
                 {
-                    try
-                    {
-                        var raw = _getUserIdsInGroup.Invoke(null, new object[] { groupName });
-                        if (raw is string[] arr)
-                        {
-                            for (int i = 0; i < arr.Length; i++)
-                            {
-                                if (!string.IsNullOrWhiteSpace(arr[i]))
-                                    result.Add(arr[i].Trim());
-                            }
-                            return result;
-                        }
-                        if (raw is IEnumerable enumerable)
-                        {
-                            foreach (var item in enumerable)
-                            {
-                                var s = item?.ToString();
-                                if (!string.IsNullOrWhiteSpace(s))
-                                    result.Add(s.Trim());
-                            }
-                            return result;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning("[PlatformSync] GetUsersInGroup: " + ex.Message);
-                    }
+                    if (!string.IsNullOrWhiteSpace(id))
+                        result.Add(id.Trim());
                 }
+                return result;
+            }
 
                 EnsureLocalLoaded();
                 foreach (var kv in _localGroups)

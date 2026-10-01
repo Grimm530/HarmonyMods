@@ -4,8 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
+using Harmony.Core.Libraries.Covalence;
+using Harmony.Core.Plugins;
 using UnityEngine;
 
 namespace KaruzaVehicles
@@ -18,9 +18,7 @@ namespace KaruzaVehicles
     {
         public static KaruzaVehiclesMod Instance { get; private set; }
 
-        public const int VersionMajor = 1;
-        public const int VersionMinor = 11;
-        public const int VersionPatch = 0;
+        public const string Version = "1.121";
 
         public const string AppDomainApiKey = "KaruzaVehicles_ApiType";
 
@@ -44,6 +42,8 @@ namespace KaruzaVehicles
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("KaruzaVehicles", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("KaruzaVehicles", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
 
             try
             {
@@ -83,7 +83,7 @@ namespace KaruzaVehicles
             EnsureRunner();
             _runner.GetComponent<KaruzaVehiclesRunner>().Begin(this);
 
-            Debug.Log($"[KaruzaVehicles] OK: Loaded v{VersionMajor}.{VersionMinor}.{VersionPatch}");
+            Debug.Log($"[KaruzaVehicles] OK: Loaded v{Version}");
             Debug.Log("[KaruzaVehicles] -> Config: HarmonyConfig/KaruzaEntitiesCommon.json, RustCar.json, RustHelicopter.json, RustPlane.json");
             Debug.Log("[KaruzaVehicles] -> Vehicle defs: HarmonyConfig/RustCar/, RustHelicopter/, RustPlane/");
             Debug.Log("[KaruzaVehicles] -> Lang: HarmonyLanguage/KaruzaVehicles.json");
@@ -144,6 +144,8 @@ namespace KaruzaVehicles
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("KaruzaVehicles");
+            GrimmCoreBridge.UnregisterGameHookMod("KaruzaVehicles");
             try
             {
                 if (_permissionsReadyCallback != null)

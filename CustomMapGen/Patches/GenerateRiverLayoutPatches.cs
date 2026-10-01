@@ -31,8 +31,10 @@ namespace CustomMapGen.Patches
         /// <summary>Drop truncated stubs that would only be a short ditch beside the outpost.</summary>
         private const float MinRemainingLength = 120f;
 
-        static bool Prefix(GenerateRiverLayout __instance, ref uint seed)
+        static bool Prefix(GenerateRiverLayout __instance, ref uint seed, out int __state)
         {
+            var existing = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+            __state = existing?.Count ?? 0;
             if (CustomMapGen.IsCustomMapGenEnabled())
             {
                 var config = CustomMapGen.Instance.GetConfig();
@@ -48,7 +50,7 @@ namespace CustomMapGen.Patches
             return true;
         }
 
-        static void Postfix(GenerateRiverLayout __instance, uint seed)
+        static void Postfix(GenerateRiverLayout __instance, uint seed, int __state)
         {
             if (!CustomMapGen.IsCustomMapGenEnabled())
                 return;
@@ -56,10 +58,49 @@ namespace CustomMapGen.Patches
             var config = CustomMapGen.Instance.GetConfig();
             if (config.DisableRiverLayoutPatch || config.RemoveRivers)
                 return;
+
+            ApplyRiverWidth(config, __state);
             if (!config.TrySpawningOutpostInCenter)
                 return;
 
             ClipRiversAwayFromCenterOutpost(config.DebugLogging);
+        }
+
+        /// <summary>
+        /// RiverSettings.Width &gt; 0 sets an absolute width. Otherwise WidthScale multiplies the width vanilla just wrote.
+        /// Only rivers added by this Process call are changed.
+        /// </summary>
+        static void ApplyRiverWidth(MapGenConfig config, int riversBefore)
+        {
+            var settings = config.RiverSettings;
+            if (settings == null)
+                return;
+            bool absolute = settings.Width > 0f;
+            bool scale = settings.WidthScale > 0f && !Mathf.Approximately(settings.WidthScale, 1f);
+            if (!absolute && !scale)
+                return;
+
+            var rivers = TerrainPathAccess.GetRivers(TerrainMeta.Path);
+            if (rivers == null || rivers.Count == 0)
+                return;
+
+            int start = riversBefore < 0 ? 0 : (riversBefore > rivers.Count ? rivers.Count : riversBefore);
+            int changed = 0;
+            for (int i = start; i < rivers.Count; i++)
+            {
+                PathList river = rivers[i];
+                if (river == null)
+                    continue;
+                if (absolute)
+                    river.Width = settings.Width;
+                else
+                    river.Width *= settings.WidthScale;
+                changed++;
+            }
+            if (changed > 0)
+                UnityEngine.Debug.Log(absolute
+                    ? $"[CustomMapGen] River width set to {settings.Width} on {changed} rivers."
+                    : $"[CustomMapGen] River width scaled x{settings.WidthScale} on {changed} rivers.");
         }
 
         private static void ClipRiversAwayFromCenterOutpost(bool debugLogging)

@@ -8,7 +8,7 @@ $projectPath = Join-Path $PSScriptRoot "Backpacks.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $harmonyModsPath = Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

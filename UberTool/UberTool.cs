@@ -211,7 +211,7 @@ namespace Harmony.Plugins
                     }
                     else
                     {
-                        item.RemoveFromContainer();
+                        item.RemoveFromContainer(null);
                     }
 
                     player.inventory.UpdateContainer(0f, PlayerInventory.Type.Belt, player.inventory.containerBelt, false, 0f);
@@ -1977,7 +1977,7 @@ namespace Harmony.Plugins
                     {
                         if (removeItemsOnDeactivation)
                         {
-                            item.RemoveFromContainer();
+                            item.RemoveFromContainer(null);
                             item.RemoveFromWorld();
                             item.Remove(0f);
                         }
@@ -3535,7 +3535,7 @@ namespace Harmony.Plugins
                 {
                     if (removeItemsOnDeactivation)
                     {
-                        item.RemoveFromContainer();
+                        item.RemoveFromContainer(null);
                         item.RemoveFromWorld();
                         item.Remove(0f);
                     }

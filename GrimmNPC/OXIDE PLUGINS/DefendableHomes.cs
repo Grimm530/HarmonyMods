@@ -8,7 +8,7 @@ using UnityEngine;
 using Facepunch;
 using UnityEngine.AI;
 using System.Collections;
-using Game.Rust.Cui;
+using Oxide.Game.Rust.Cui;
 using System.IO;
 using Rust;
 using UnityEngine.Networking;

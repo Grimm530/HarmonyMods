@@ -17966,7 +17966,7 @@ namespace Harmony.Plugins
             if ((!config.ultimate_settings.ultimate_scavenger.scrap_skinned_items && item.skin > 0) || (!config.ultimate_settings.ultimate_scavenger.scrap_named_items && !string.IsNullOrEmpty(item.name)) || config.ultimate_settings.ultimate_scavenger.item_blacklist.Contains(item.info.shortname) || (!config.ultimate_settings.ultimate_scavenger.scrap_text_items && !string.IsNullOrEmpty(item.text))) return;
             var blueprint = item.info.Blueprint;
             if (blueprint == null) return;
-            item.RemoveFromContainer();
+            item.RemoveFromContainer(null);
             foreach (var ingredient in blueprint.ingredients)
             {
                 int amount;

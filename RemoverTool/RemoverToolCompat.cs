@@ -333,7 +333,6 @@ namespace RemoverToolHarmony
                 if (!_loggedLink)
                 {
                     _loggedLink = true;
-                    Debug.Log("[RemoverTool] OK: Linked to Permissions Harmony mod.");
                 }
                 else
                     Debug.Log($"[RemoverTool] OK: Re-linked to Permissions Harmony mod (gen={gen}).");
@@ -415,15 +414,7 @@ namespace RemoverToolHarmony
             if (string.IsNullOrEmpty(perm)) return true;
             if (_granted.Contains(userId + ":" + perm)) return true;
 
-            EnsureBound();
-            try
-            {
-                if (_userHas != null && _userHas.Invoke(null, new object[] { userId, perm }) is bool ok)
-                    return ok;
-            }
-            catch { }
-
-            return false;
+            return PermissionsBridge.UserHasPermission(userId, perm);
         }
 
         public void GrantUserPermission(string userId, string perm)
@@ -431,7 +422,7 @@ namespace RemoverToolHarmony
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(perm)) return;
             _granted.Add(userId + ":" + perm);
             EnsureBound();
-            try { _grantUser?.Invoke(null, new object[] { userId, perm }); } catch { }
+            PermissionsBridge.GrantUserPermission(userId, perm);
         }
     }
 

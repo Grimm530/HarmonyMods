@@ -7,6 +7,7 @@ public sealed class AutoTurretManager : MonoBehaviour
     private AutoTurret _turret;
     private int _ammoItemId;
     public bool UnlimitedAmmo { get; private set; }
+    private bool _weaponApplied;
 
     private void Awake()
     {
@@ -21,15 +22,16 @@ public sealed class AutoTurretManager : MonoBehaviour
 
         _turret.SetPeacekeepermode(peaceKeeper);
 
-        if (!string.IsNullOrEmpty(weaponShortname))
+        if (!_weaponApplied && !string.IsNullOrEmpty(weaponShortname) && _turret.GetAttachedWeapon() == null)
         {
+            _weaponApplied = true;
             Item item = ItemManager.CreateByName(weaponShortname, 1, 0uL);
             if (item != null)
             {
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 item.Remove();
                 item.position = 0;
-                item.SetParent(_turret.inventory);
+                item.SetParent(_turret.inventory, null);
                 _turret.inventory.MarkDirty();
                 item.MarkDirty();
                 _turret.Invoke(_turret.UpdateAttachedWeapon, 0.5f);

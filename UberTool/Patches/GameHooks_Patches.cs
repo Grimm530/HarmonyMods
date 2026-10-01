@@ -5,7 +5,7 @@ using P = Harmony.Plugins.UberTool;
 
 namespace UberToolHarmony.Patches
 {
-    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), new[] { typeof(Item) })]
+    [HarmonyPatch(typeof(ItemContainer), nameof(ItemContainer.Insert), new[] { typeof(Item), typeof(BasePlayer) })]
     public static class ItemContainer_Insert_Patch
     {
         [HarmonyPostfix]
@@ -138,10 +138,8 @@ namespace UberToolHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     public static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
         public static void Postfix(BaseNetworkable __instance)
         {
             try { P.Dispatch_OnEntitySpawned(__instance); }

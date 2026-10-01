@@ -2790,11 +2790,6 @@ namespace RaidableBases
                 if (types.Count == 0)
                 {
                     Movers.Remove(userid);
-
-                    if (Instance.SaveOffsetDataTimer is { Destroyed: false })
-                    {
-                        Instance.SaveOffsetDataTimer.Reset();
-                    }
                 }
 
                 if (closer is { Destroyed: false })

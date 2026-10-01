@@ -1443,7 +1443,33 @@ namespace RaidableBases
             };
         }
 
-        private bool IsPVE() => TruePVE != null || SimplePVE != null || NextGenPVE != null || Imperium != null || AegisPVE != null;
+        /// <summary>
+        /// Oxide used [PluginReference] TruePVE. Harmony never auto-binds that field, so without
+        /// an AppDomain probe IsPVE() stayed false → void OnEntityTakeDamage subscribed → TruePVE
+        /// never received allow=true for OwnerID-0 raid buildings (player bases stay blocked by RuleSets).
+        /// </summary>
+        private bool IsPVE()
+        {
+            ResolvePvePluginRefs();
+            return TruePVE != null || SimplePVE != null || NextGenPVE != null || Imperium != null || AegisPVE != null;
+        }
+
+        private static readonly object PvePluginSentinel = new object();
+
+        private void ResolvePvePluginRefs()
+        {
+            if (TruePVE != null) return;
+            try
+            {
+                // TruePVE Harmony publishes this in OnLoaded (before RaidableBases soft-start finishes).
+                if (AppDomain.CurrentDomain.GetData("TruePVE_ApiType") is Type)
+                {
+                    TruePVE = PvePluginSentinel;
+                    UnityEngine.Debug.Log("[RaidableBases] TruePVE Harmony mod detected — PVE damage allow path enabled for raid bases.");
+                }
+            }
+            catch { }
+        }
 
         [HookMethod("IsPremium")]
         public bool IsPremium() => true;

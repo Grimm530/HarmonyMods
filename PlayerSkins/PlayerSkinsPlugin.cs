@@ -23,7 +23,7 @@ using PlayerSkinsHarmony;
 
 namespace PlayerSkinsHarmony
 {
-    /// <summary>PlayerSkins 3.0.142 Harmony port</summary>
+    /// <summary>PlayerSkins 3.0.143 Harmony port</summary>
     public class PlayerSkinsPlugin : PlayerSkinsPluginBase
     {
         #region Fields
@@ -33,6 +33,7 @@ namespace PlayerSkinsHarmony
         private Datafile<Hash<ulong, UserData>> m_UserData;
         private Datafile<Hash<string, Hash<ulong, SkinData>>> m_SkinData;
         private Datafile<List<ulong>> m_ExcludedSkins;
+        private Datafile<WorkshopScrapeState> m_ScrapeState;
         
         private readonly List<ulong> m_SkinsToLoad = new List<ulong>();
         private readonly HashSet<ItemDefinition> m_SkinnableItems = new HashSet<ItemDefinition>();
@@ -337,12 +338,12 @@ namespace PlayerSkinsHarmony
             player.UpdateActiveItem(default);
             
             int slot = item.position;
-            item.SetParent(null);
+            item.SetParent(null, null);
             item.MarkDirty();
                                 
             player.inventory.SendUpdatedInventory(PlayerInventory.Type.Belt, item.parent, false);
                                 
-            item.SetParent(player.inventory.containerBelt);
+            item.SetParent(player.inventory.containerBelt, null);
             item.position = slot;
             item.MarkDirty();
                                 
@@ -781,7 +782,13 @@ namespace PlayerSkinsHarmony
             if (Configuration.Workshop.Enabled && Configuration.Workshop.ScrapeMaxPerItem > 0 && !m_WorkshopScrapeStarted)
             {
                 m_WorkshopScrapeStarted = true;
-                BeginWorkshopScrape();
+                if (ShouldSkipStartupWorkshopScrape(out string skipReason))
+                {
+                    Puts(skipReason);
+                    StampWorkshopScrapeIfMissing();
+                }
+                else
+                    BeginWorkshopScrape();
             }
         }
         
@@ -1119,12 +1126,89 @@ namespace PlayerSkinsHarmony
                 }
 
                 Puts($"Workshop scrape complete. Added {added} community skins.");
+                SaveWorkshopScrapeState();
             }
             }
             finally
             {
                 m_WorkshopScrapeRunning = false;
             }
+        }
+
+        private int CountAllCommunitySkins()
+        {
+            int count = 0;
+            if (m_SkinData?.Data == null)
+                return 0;
+
+            foreach (KeyValuePair<string, Hash<ulong, SkinData>> kvp in m_SkinData.Data)
+                count += CountCommunitySkins(kvp.Key);
+
+            return count;
+        }
+
+        private DateTime GetLastWorkshopScrapeUtc()
+        {
+            string raw = m_ScrapeState?.Data?.LastCompletedUtc;
+            if (string.IsNullOrEmpty(raw))
+                return DateTime.MinValue;
+
+            if (DateTime.TryParse(raw, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out DateTime parsed))
+            {
+                if (parsed.Kind == DateTimeKind.Unspecified)
+                    return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+                return parsed.ToUniversalTime();
+            }
+
+            return DateTime.MinValue;
+        }
+
+        private void SaveWorkshopScrapeState()
+        {
+            if (m_ScrapeState == null)
+                return;
+
+            if (m_ScrapeState.Data == null)
+                m_ScrapeState.Data = new WorkshopScrapeState();
+
+            m_ScrapeState.Data.LastCompletedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+            m_ScrapeState.Data.CommunitySkinCount = CountAllCommunitySkins();
+            m_ScrapeState.Save();
+        }
+
+        private void StampWorkshopScrapeIfMissing()
+        {
+            if (m_ScrapeState?.Data == null)
+                return;
+            if (!string.IsNullOrEmpty(m_ScrapeState.Data.LastCompletedUtc))
+                return;
+
+            SaveWorkshopScrapeState();
+        }
+
+        private bool ShouldSkipStartupWorkshopScrape(out string reason)
+        {
+            reason = null;
+            if (!Configuration.Workshop.SkipStartupScrapeIfStored)
+                return false;
+
+            int stored = CountAllCommunitySkins();
+            if (stored <= 0)
+                return false;
+
+            int intervalHours = Configuration.Workshop.AutoScrapeIntervalHours;
+            if (intervalHours > 0)
+            {
+                DateTime last = GetLastWorkshopScrapeUtc();
+                if (last != DateTime.MinValue && (DateTime.UtcNow - last).TotalHours >= intervalHours)
+                    return false;
+            }
+
+            reason = $"Workshop scrape skipped: {stored} community skins already stored locally. Run 'playerskins.skins scrape' to refresh from Steam.";
+            if (intervalHours > 0)
+                reason += $" Automatic refresh is every {intervalHours} hour(s).";
+            return true;
         }
 
         private List<WorkshopScrapeTarget> BuildWorkshopScrapeTargets(int maxPerItem)
@@ -3853,6 +3937,13 @@ namespace PlayerSkinsHarmony
                 if (Configuration.Workshop.ScrapeDelaySeconds <= 0f)
                     Configuration.Workshop.ScrapeDelaySeconds = 0.35f;
             }
+
+            if (oldVersion < new VersionNumber(3, 0, 143))
+            {
+                Configuration.Workshop.SkipStartupScrapeIfStored = true;
+                if (Configuration.Workshop.AutoScrapeIntervalHours < 0)
+                    Configuration.Workshop.AutoScrapeIntervalHours = 0;
+            }
         }
 
         protected override ConfigurationFile OnLoadConfig(ref ConfigurationFile configurationFile) =>
@@ -3906,6 +3997,8 @@ namespace PlayerSkinsHarmony
                     Enabled = true,
                     ScrapeMaxPerItem = 50,
                     ScrapeDelaySeconds = 0.35f,
+                    SkipStartupScrapeIfStored = true,
+                    AutoScrapeIntervalHours = 0,
                     Filter = new string[0],
                     SteamAPIKey = string.Empty
                 },
@@ -4043,6 +4136,12 @@ namespace PlayerSkinsHarmony
                 [JsonProperty(PropertyName = "Workshop scrape delay between requests (seconds)")]
                 public float ScrapeDelaySeconds { get; set; }
 
+                [JsonProperty(PropertyName = "Skip startup scrape when community skins already exist")]
+                public bool SkipStartupScrapeIfStored { get; set; }
+
+                [JsonProperty(PropertyName = "Hours between automatic scrapes (0 = never auto-refresh after first scrape)")]
+                public int AutoScrapeIntervalHours { get; set; }
+
                 [JsonProperty(PropertyName = "Word filter for workshop skins. If the skin title partially contains any of these words it will not be available as a potential skin")]
                 public string[] Filter { get; set; }
 
@@ -4167,6 +4266,12 @@ namespace PlayerSkinsHarmony
         #endregion
 
         #region Data
+        private class WorkshopScrapeState
+        {
+            public string LastCompletedUtc = string.Empty;
+            public int CommunitySkinCount;
+        }
+
         private class SkinData
         {
             public string permission = string.Empty;
@@ -4354,6 +4459,7 @@ namespace PlayerSkinsHarmony
 	        m_UserData = new Datafile<Hash<ulong, UserData>>("PlayerSkins/userdata");
 	        m_SkinData = new Datafile<Hash<string, Hash<ulong, SkinData>>>("PlayerSkins/skinlist");
 	        m_ExcludedSkins = new Datafile<List<ulong>>("PlayerSkins/excludedskins");
+	        m_ScrapeState = new Datafile<WorkshopScrapeState>("PlayerSkins/scrapestate");
 	        
             SetupUIComponents();
             PlayerSkinsHost.Instance?.ReloadLanguage();

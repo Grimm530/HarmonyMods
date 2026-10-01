@@ -2998,7 +2998,7 @@ namespace BackpacksHarmony
             {
                 if (amount >= item.amount)
                 {
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     if (collect != null)
                     {
                         collect.Add(item);
@@ -6227,7 +6227,7 @@ namespace BackpacksHarmony
                 var itemData = CustomPool.Get<ItemData>().Setup(item, _backpack.FoodSpoilingMultiplier, firstEmptyPosition);
                 ItemDataList.Add(itemData);
 
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 item.Remove();
 
                 _backpack.SetFlag(Backpack.Flag.Dirty, true);
@@ -6278,7 +6278,7 @@ namespace BackpacksHarmony
 
             private Action _onDirty;
             private Func<BasePlayer, Item, int, bool> _canAcceptItem;
-            private Action<Item, bool> _onItemAddedRemoved;
+            private Action<Item, bool, BasePlayer> _onItemAddedRemoved;
 
             private Backpacks _plugin => _backpack.Plugin;
             private Configuration _config => _plugin._config;
@@ -6302,7 +6302,7 @@ namespace BackpacksHarmony
                     }
                     return result;
                 };
-                _onItemAddedRemoved = (item, wasAdded) =>
+                _onItemAddedRemoved = (item, wasAdded, _) =>
                 {
                     _backpack.HandleItemCountChanged();
                 };
@@ -6436,7 +6436,7 @@ namespace BackpacksHarmony
                     }
 
                     collect.Add(itemToTake);
-                    itemToTake.RemoveFromContainer();
+                    itemToTake.RemoveFromContainer(null);
                 }
             }
 
@@ -6449,7 +6449,7 @@ namespace BackpacksHarmony
                         continue;
 
                     collect.Add(item);
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                 }
             }
 
@@ -6464,7 +6464,7 @@ namespace BackpacksHarmony
                         continue;
 
                     collect.Add(item);
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     i--;
                 }
             }
@@ -6492,7 +6492,7 @@ namespace BackpacksHarmony
                 for (var i = ItemContainer.itemList.Count - 1; i >= 0; i--)
                 {
                     var item = ItemContainer.itemList[i];
-                    item.RemoveFromContainer();
+                    item.RemoveFromContainer(null);
                     item.Remove();
                 }
             }
@@ -6719,7 +6719,7 @@ namespace BackpacksHarmony
             private Queue<(Item, ItemContainer)> _queuedItemsToGather;
 
             public GatherModeStats Stats;
-            private Action<Item, bool> _onItemAddedRemoved;
+            private Action<Item, bool, BasePlayer> _onItemAddedRemoved;
             private Item _itemBeingGathered;
             private Action _processGatherQueue;
 
@@ -6754,7 +6754,7 @@ namespace BackpacksHarmony
                 return _backpack.Plugin._backpackManager.IsBackpack(rootContainer);
             }
 
-            private void OnItemAddedRemoved(Item item, bool wasAdded)
+            private void OnItemAddedRemoved(Item item, bool wasAdded, BasePlayer sourcePlayer)
             {
                 if (!wasAdded)
                 {
@@ -9330,7 +9330,7 @@ namespace BackpacksHarmony
                     {
                         foreach (var contentItem in Contents)
                         {
-                            contentItem.ToItem(foodSpoilingMultiplier)?.SetParent(item.contents);
+                            contentItem.ToItem(foodSpoilingMultiplier)?.SetParent(item.contents, null);
                         }
                     }
                 }

@@ -4,11 +4,9 @@ using UnityEngine;
 
 namespace AutoCodeLockHarmony.Patches
 {
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     internal static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
+        public static void Postfix(BaseNetworkable __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
             if (plugin == null) return;
@@ -27,11 +25,9 @@ namespace AutoCodeLockHarmony.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill), typeof(BaseNetworkable.DestroyMode), typeof(bool))]
     internal static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             var plugin = AutoCodeLockMod.Instance?.Plugin;
             if (plugin == null) return;

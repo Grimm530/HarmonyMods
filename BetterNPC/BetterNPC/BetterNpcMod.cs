@@ -29,6 +29,8 @@ namespace BetterNpc
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("BetterNPC", 100, Harmony.Plugins.BetterNpc.Dispatch_Spawned);
+            GrimmCoreBridge.RegisterKillObserver("BetterNPC", 100, Patch_BaseNetworkable_Kill.Prefix);
             ModRunner.Ensure();
 
             try
@@ -87,6 +89,8 @@ namespace BetterNpc
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("BetterNPC");
+            GrimmCoreBridge.UnregisterGameHookMod("BetterNPC");
             if (_initCoroutine != null && ModRunner.Instance != null)
             {
                 ModRunner.Instance.StopCoroutine(_initCoroutine);

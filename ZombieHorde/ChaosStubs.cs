@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.AI;
+using GrimmShared;
 
 namespace ZombieHorde
 {
@@ -69,7 +70,7 @@ namespace ZombieHorde
 
     public static class NavmeshSpawnPoint
     {
-        /// <summary>True when terrain NavMesh is queryable (respects aimanager.nav_wait / AI.move).</summary>
+        /// <summary>True when terrain Recast/Unity navmesh is queryable (respects aimanager.nav_wait / AI.move).</summary>
         public static bool IsWorldReady()
         {
             try
@@ -79,6 +80,11 @@ namespace ZombieHorde
                 if (TerrainMeta.HeightMap == null || !TerrainMeta.HeightMap.isInitialized || World.Size <= 0)
                     return false;
 
+                Vector3 probe = Vector3.zero;
+                probe.y = TerrainMeta.HeightMap.GetHeight(probe);
+                if (!RecastNav.UsesUnityMesh)
+                    return RecastNav.IsMeshReadyAt(probe);
+
                 if (TerrainMeta.Path?.Monuments != null)
                 {
                     int tested = 0;
@@ -86,15 +92,13 @@ namespace ZombieHorde
                     {
                         if (monument == null) continue;
                         Vector3 p = monument.transform.position;
-                        if (NavMesh.SamplePosition(p, out NavMeshHit hit, 80f, NavMesh.AllAreas) && hit.distance <= 40f)
+                        if (RecastNav.SamplePosition(p, out NavMeshHit hit, 80f, NavMesh.AllAreas) && hit.distance <= 40f)
                             return true;
                         if (++tested >= 12) break;
                     }
                 }
 
-                Vector3 probe = Vector3.zero;
-                probe.y = TerrainMeta.HeightMap.GetHeight(probe);
-                return NavMesh.SamplePosition(probe, out _, 500f, NavMesh.AllAreas);
+                return RecastNav.SamplePosition(probe, out _, 500f, NavMesh.AllAreas);
             }
             catch
             {
@@ -105,7 +109,7 @@ namespace ZombieHorde
         public static bool Find(Vector3 position, float radius, out Vector3 result)
         {
             result = position;
-            if (NavMesh.SamplePosition(position, out NavMeshHit hit, radius, NavMesh.AllAreas))
+            if (RecastNav.SamplePosition(position, out NavMeshHit hit, radius, NavMesh.AllAreas))
             {
                 result = hit.position;
                 return true;
@@ -116,7 +120,7 @@ namespace ZombieHorde
                 Vector2 offset = UnityEngine.Random.insideUnitCircle * radius;
                 Vector3 sample = position + new Vector3(offset.x, 0f, offset.y);
                 sample.y = TerrainMeta.HeightMap != null ? TerrainMeta.HeightMap.GetHeight(sample) : sample.y;
-                if (NavMesh.SamplePosition(sample, out hit, radius, NavMesh.AllAreas))
+                if (RecastNav.SamplePosition(sample, out hit, radius, NavMesh.AllAreas))
                 {
                     result = hit.position;
                     return true;

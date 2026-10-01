@@ -23,7 +23,7 @@ src/RustServerMetrics/
     ├── BasePlayer_*.cs            # Player-related patches
     ├── Bootstrap_*.cs             # Server startup patches
     ├── NetWrite_*.cs              # Network packet patches
-    ├── OxideMod_*.cs              # Harmony mod metrics patches
+    ├── OxideMod_*.cs              # Oxide plugin metrics patches
     ├── Performance_*.cs           # Performance monitoring patches
     ├── ServerMgr_*.cs             # Server manager patches
     └── Delayed/                   # Patches applied after server start
@@ -70,7 +70,7 @@ src/RustServerMetrics/
 **Key Methods**:
 - `Initialize()`: Sets up the logger, loads configuration, and initializes the uploader
 - `StartLoggingMetrics()`: Begins periodic metric collection via `InvokeRepeating`
-- `OnOxidePluginMetrics(Dictionary<string, double> metrics)`: Receives Harmony mod hook times and calculates initialization vs runtime metrics
+- `OnOxidePluginMetrics(Dictionary<string, double> metrics)`: Receives Oxide plugin hook times and calculates initialization vs runtime metrics
 - `OnHarmonyModMetrics()`: **NEW** - Collects HarmonyMod plugin information
 - `UploadPacket<T>(string ID, T data, Action<StringBuilder, T> serializer)`: Queues metrics for upload
 
@@ -115,21 +115,25 @@ The mod uses HarmonyLib to patch Rust server code at runtime. Patches are organi
 - `BasePlayer_PerformanceReport_Patch`: Hooks client performance reports
 - `NetWrite_PacketID_Patch`: Tracks network packet types
 - `NetWrite_Send_Patch`: Tracks network send operations
-- `OxideMod_OnFrame_Patch`: Collects Harmony mod metrics
+- `OxideMod_OnFrame_Patch`: Collects Oxide plugin metrics
 - `Performance_FPSTimer_Patch`: Tracks server FPS
-- `ServerMgr_OpenConnection_Patch`: Tracks new connections
+- `ServerMgr_OpenConnection_Patch`: Applies delayed startup patches from `OnServerStarted`. The postfix is try/caught so a Harmony failure cannot abort `Bootstrap.StartServer` (that coroutine restores `Time.timeScale` after `pausewhileloading`; an uncaught throw leaves the console at `0fps 0gc`).
 
 **Delayed Patches** (applied after server start via `DelayedHarmonyPatchAttribute`):
 - `ConsoleSystem_Internal_Patch`: Tracks console commands
 - `InvokeHandlerBase_DoTick_Patch`: Tracks invoke execution
-- `ObjectWorkQueue_RunJob_Patch`: Tracks work queue jobs
+- `ObjectWorkQueue_RunJob_Patch`: Tracks work queue jobs (`RunJob` only; skips queues that use `RunList` / have no method)
 - `RPCServer_Attribute_Method_Patch`: Tracks RPC calls
 - `ServerMgr_Metrics_Patches`: Tracks server update methods
+
+Each delayed patch is applied independently. A Harmony exception in one class must not prevent the rest from loading.
+
+**Console command registration (this game build):** `ConsoleSystem.Index.Server.Dict` is `Dictionary<Facepunch.StringView, ConsoleSystem.Command>`. Compile against this server's `Facepunch.Console.dll` (refresh `deps/windows` from `RustDedicated_Data\Managed`). A DLL built against `Dictionary<string, Command>` throws `MissingFieldException` in `MetricsLogger.Awake` and skips `servermetrics.reloadcfg` / `servermetrics.status`.
 
 ## HarmonyMod Tracking Feature
 
 ### Overview
-Added functionality to automatically track HarmonyMod plugins in the same way Harmony mods are tracked, appearing seamlessly in Grafana dashboards.
+Added functionality to automatically track HarmonyMod plugins in the same way Oxide plugins are tracked, appearing seamlessly in Grafana dashboards.
 
 ### Implementation Details
 
@@ -139,7 +143,7 @@ Added functionality to automatically track HarmonyMod plugins in the same way Ha
 1. Uses reflection to access `HarmonyLoader.GetHarmonyMods()` without a direct compile-time dependency
 2. Iterates through loaded HarmonyMods using the `HarmonyModInfo` struct
 3. Uploads each HarmonyMod as a metric in the `oxide_plugins` measurement
-4. Uses `hookTime=1` to indicate the mod is loaded (vs. Harmony mods which use actual hook execution times)
+4. Uses `hookTime=1` to indicate the mod is loaded (vs. Oxide plugins which use actual hook execution times)
 
 **Key Implementation Points**:
 
@@ -154,17 +158,17 @@ Added functionality to automatically track HarmonyMod plugins in the same way Ha
    - Fields are accessed via reflection: `nameField.GetValue(modInfo)`
 
 3. **Data Format**:
-   - Uses the same `oxide_plugins` measurement as Harmony mods
+   - Uses the same `oxide_plugins` measurement as Oxide plugins
    - Format: `plugin="ModName" hookTime=1`
    - No type tags or version tags (per user requirement for seamless integration)
 
 4. **Collection Frequency**:
    - Called every 5 seconds via `InvokeRepeating(OnHarmonyModMetrics, UnityEngine.Random.Range(1f, 2f), 5f)`
-   - Less frequent than Harmony mods (which report on every frame)
+   - Less frequent than Oxide plugins (which report on every frame)
 
 5. **Error Handling**:
    - Comprehensive error logging with `Debug.LogWarning()` for debugging
-   - Graceful failure - if HarmonyMod tracking fails, Harmony mod tracking continues
+   - Graceful failure - if HarmonyMod tracking fails, Oxide plugin tracking continues
    - Logs assembly names searched if type resolution fails
 
 **Code Flow**:
@@ -254,7 +258,12 @@ ReportUploader Coroutine
   "Influx Database Password": "password",
   "Server Tag": "server-01",
   "Debug Logging": false,
-  "Amount of metrics to submit in each request": 1000
+  "Amount of metrics to submit in each request": 1000,
+  "Gather Player Averages (Client FPS, Client Latency, Player FPS, Player Memory, Player Latency, Player Packet Loss)": true,
+  "Gather Harmony Mod Inventory": true,
+  "Gather NPC Census (vanilla vs mod bots/animals)": true,
+  "Gather RPC Timing (expensive; patches every RPC_Server method)": false,
+  "Gather Work Queue Timing (expensive; patches every ObjectWorkQueue.RunJob)": false
 }
 ```
 
@@ -359,7 +368,7 @@ Putting **`Start-Process ... -ArgumentList ...`** in the shortcut **Arguments** 
 
 Dashboard auto-update (hookTime → avgRunningTime) uses `res/Grafana-Dashboard.json` in this repo, with a fallback to `HarmonyMods\ps1scripts\Grafana-Dashboard.json` if present.
 
-**Grafana “No data” but Influx logs show `POST /write` 204:** the Rust mod and Influx credentials are fine. The dashboard needs the **DS_INFLUXDB** template variable set to your Influx **data source** in Grafana (not the same JSON as `HarmonyMods_Data/ServerMetrics/Configuration.json`). If the URL contains `var-DS_INFLUXDB=` with nothing after the `=`, open the variable dropdown, pick your InfluxDB source, then **Save dashboard**. Re-importing `Ps1&Batch/Grafana-Dashboard.json` runs the import wizard so you map **DS_INFLUXDB** once.
+**Grafana “No data” but Influx logs show `POST /write` 204:** the Rust mod and Influx credentials are fine. Import **`Ps1&Batch/Grafana-Dashboard.json`** (or `res/grafana-Dashboard.json`) — not an old copy with empty `DS_INFLUXDB`. On the import form, set **InfluxDB (Rust Server Metrics)** to your Grafana data source named `influxdb`. After import the URL must not contain `var-DS_INFLUXDB=` with nothing after `=`. The **Rust Server** variable must match `Server Tag` in `HarmonyMods_Data/ServerMetrics/Configuration.json` (this workspace: `stagingserver`).
 
 `run-grafana-console.ps1` at the repo root is a **thin wrapper** (delegates only) around `Ps1&Batch\Start-Grafana.ps1` — same behavior, **not** a Grafana installer. Safe to delete if no shortcut points at it; prefer `Ps1&Batch\Start-Grafana.bat` / `Start-Grafana-AsAdmin.bat`.
 
@@ -439,7 +448,7 @@ Do this from `master` (or your working branch).
    Fix compile errors before restarting the game server.
 
 6. **Deploy**  
-   Copy the built `RustServerMetrics.dll` to `HarmonyMods` (your `build.ps1` may already target `D:\!RustServer\HarmonyMods\`). **Never** replace the DLL while the Rust server is running.
+   Copy the built `RustServerMetrics.dll` to this server's `HarmonyMods\` (`build.ps1` deploys to `{serverRoot}\HarmonyMods\`, resolved from the repo path). **Never** replace the DLL while the Rust server is running.
 
 7. **Commit**  
    `git commit` if the merge stopped for conflicts, or commit the merge result with a message like `merge: rustymoose main through <date>`.
@@ -473,7 +482,7 @@ The build script will:
 - Optionally update dependencies
 - Clean previous builds
 - Build the solution for Linux
-- Copy the DLL to `D:\!RustServer\HarmonyMods\RustServerMetrics.dll`
+- Copy the DLL to `{serverRoot}\HarmonyMods\RustServerMetrics.dll` (this workspace: `D:\!OxideServer\HarmonyMods\`)
 - Create backups of existing files
 
 **Manual build (alternative)**
@@ -487,7 +496,7 @@ msbuild RustServerMetrics.sln /p:Configuration=Linux /p:Platform="Any CPU" /t:Bu
 
 ### Output
 - `src/RustServerMetrics/bin/Linux/net48/RustServerMetrics.dll`
-- Automatically copied to: `D:\!RustServer\HarmonyMods\RustServerMetrics.dll`
+- Automatically copied to: `{serverRoot}\HarmonyMods\RustServerMetrics.dll`
 
 ## Debugging
 
@@ -557,18 +566,18 @@ WHERE "plugin" = 'RustVehicles'
 - More flexible and resilient to changes in the HarmonyMod loader
 
 ### Why Same Measurement?
-- User requirement: HarmonyMod plugins should appear seamlessly with Harmony mods
+- User requirement: HarmonyMod plugins should appear seamlessly with Oxide plugins
 - Simplifies Grafana dashboard queries (no filtering needed)
 - Consistent data structure for all plugin metrics
 
 ### Why hookTime=1?
-- Harmony mods use actual hook execution times
+- Oxide plugins use actual hook execution times
 - HarmonyMods don't have hook execution times (they're IL patches)
 - `1` indicates "loaded" status, making it easy to filter in Grafana if needed
 - Simple, consistent value that's easy to query
 
 ### Why 5 Second Interval?
-- Less frequent than Harmony mods (which report every frame)
+- Less frequent than Oxide plugins (which report every frame)
 - Reduces database writes for static "loaded" status
 - Still frequent enough to track mod loading/unloading
 - Random initial delay (1-2 seconds) prevents thundering herd
@@ -605,9 +614,9 @@ Potential improvements:
   - Maintains backward compatibility with `hookTime` field
 - **HarmonyMod Tracking**: Added automatic tracking of HarmonyMod plugins
 - **Reflection-Based Access**: Uses reflection to avoid compile-time dependencies
-- **Seamless Integration**: HarmonyMod plugins appear in same measurement as Harmony mods
+- **Seamless Integration**: HarmonyMod plugins appear in same measurement as Oxide plugins
 - **Debug Logging Control**: HarmonyMod success log message only appears when Debug Logging is enabled in configuration
 
 ### Previous Versions
-- Original: Harmony mod tracking only
+- Original: Oxide plugin tracking only
 - Metrics collection for server performance, network, players, etc.

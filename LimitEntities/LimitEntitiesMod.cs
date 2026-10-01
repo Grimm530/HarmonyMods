@@ -28,6 +28,8 @@ namespace LimitEntities
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("LimitEntities", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
+            GrimmCoreBridge.RegisterKillObserver("LimitEntities", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
             try
@@ -98,6 +100,8 @@ namespace LimitEntities
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("LimitEntities");
+            GrimmCoreBridge.UnregisterGameHookMod("LimitEntities");
             try
             {
                 if (_permissionsReadyCallback != null)

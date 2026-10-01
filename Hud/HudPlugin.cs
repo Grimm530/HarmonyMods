@@ -28,6 +28,18 @@ namespace Harmony.Plugins
 
         private HashSet<ulong> _inComputerStation = new();
 
+        private static string JoinArgViews(Facepunch.StringView[] args, int startIndex)
+        {
+            if (args == null || startIndex >= args.Length)
+                return string.Empty;
+            if (startIndex == args.Length - 1)
+                return args[startIndex].ToString();
+            var parts = new string[args.Length - startIndex];
+            for (var i = startIndex; i < args.Length; i++)
+                parts[i - startIndex] = args[i].ToString();
+            return string.Join(" ", parts);
+        }
+
         // Ownerless world-event entity tracking (avoids serverEntities.OfType scans on touch/UI refresh)
         private readonly HashSet<ulong> _eventBradley = new();
         private readonly HashSet<ulong> _eventPatrolHeli = new();
@@ -1027,7 +1039,7 @@ namespace Harmony.Plugins
                         timer.Once(_config.MainSetup.AdditionalMenu.AutoCloseTime, () => ShowUIAdditionalMenu(player));
                     break;
                 case "USECOMMAND":
-                    player.SendConsoleCommand(arg.GetBool(1) ? $"{string.Join(" ", arg.Args.Skip(2))}" : $"chat.say \"{string.Join(" ", arg.Args.Skip(2))}\""); 
+                    player.SendConsoleCommand(arg.GetBool(1) ? $"{JoinArgViews(arg.Args, 2)}" : $"chat.say \"{JoinArgViews(arg.Args, 2)}\""); 
   
                     if (_config.MainSetup.AdditionalMenu.AutoCloseCommand)
                         ShowUIAdditionalMenu(player);
@@ -1080,7 +1092,7 @@ namespace Harmony.Plugins
                             ShowUISettings(player);
                             break;
                         case "name":
-                            _config.MainSetup.ServerName = string.Join(" ", arg.Args.Skip(2));
+                            _config.MainSetup.ServerName = JoinArgViews(arg.Args, 2);
                             ShowUISettings(player);
                             break;
                         case "namecolor":
@@ -1298,7 +1310,7 @@ namespace Harmony.Plugins
                             OpenInfoMessagesConfiguration(player);
                             break;
                         case "imadd":
-                            _config.MainSetup.InfoMessages.Messages.Add(string.Join(" ", arg.Args.Skip(2)));
+                            _config.MainSetup.InfoMessages.Messages.Add(JoinArgViews(arg.Args, 2));
                             OpenInfoMessagesConfiguration(player);
                             break;
                         case "amenable":
@@ -1344,12 +1356,12 @@ namespace Harmony.Plugins
                             OpenEventHookList(player, arg.GetInt(2), arg.GetInt(3));
                             break;
                         case "amebtext":
-                            _config.MainSetup.AdditionalMenu.Commands[arg.GetInt(2)].Text = string.Join(" ", arg.Args.Skip(3));
+                            _config.MainSetup.AdditionalMenu.Commands[arg.GetInt(2)].Text = JoinArgViews(arg.Args, 3);
                             OpenAdditionalMenuConfiguration(player);
                             OpenAdditionalMenuButtonConfiguration(player, arg.GetInt(2));
                             break;
                         case "amebcommand":
-                            _config.MainSetup.AdditionalMenu.Commands[arg.GetInt(2)].Command = string.Join(" ", arg.Args.Skip(3));
+                            _config.MainSetup.AdditionalMenu.Commands[arg.GetInt(2)].Command = JoinArgViews(arg.Args, 3);
                             OpenAdditionalMenuButtonConfiguration(player, arg.GetInt(2));
                             break;
                         case "ameboutlinecolor":

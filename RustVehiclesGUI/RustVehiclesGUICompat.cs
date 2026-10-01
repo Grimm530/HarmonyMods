@@ -357,7 +357,6 @@ namespace RustVehiclesGUIHarmony
                 if (!_loggedLink)
                 {
                     _loggedLink = true;
-                    Debug.Log("[RustVehiclesGUI] OK: Linked to Permissions Harmony mod.");
                 }
                 else
                     Debug.Log($"[RustVehiclesGUI] OK: Re-linked to Permissions Harmony mod (gen={gen}).");
@@ -439,15 +438,7 @@ namespace RustVehiclesGUIHarmony
             if (string.IsNullOrEmpty(perm)) return true;
             if (_granted.Contains(userId + ":" + perm)) return true;
 
-            EnsureBound();
-            try
-            {
-                if (_userHas != null && _userHas.Invoke(null, new object[] { userId, perm }) is bool ok)
-                    return ok;
-            }
-            catch { }
-
-            return false;
+            return PermissionsBridge.UserHasPermission(userId, perm);
         }
 
         public void GrantUserPermission(string userId, string perm)
@@ -455,7 +446,7 @@ namespace RustVehiclesGUIHarmony
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(perm)) return;
             _granted.Add(userId + ":" + perm);
             EnsureBound();
-            try { _grantUser?.Invoke(null, new object[] { userId, perm }); } catch { }
+            PermissionsBridge.GrantUserPermission(userId, perm);
         }
     }
 

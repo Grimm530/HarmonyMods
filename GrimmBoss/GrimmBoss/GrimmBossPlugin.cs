@@ -14,6 +14,7 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.AI;
 using Rust.Ai.Gen2;
+using GrimmShared;
 
 namespace Harmony.Plugins
 {
@@ -699,7 +700,7 @@ namespace Harmony.Plugins
                     {
                         if (monument == null) continue;
                         Vector3 p = monument.transform.position;
-                        if (NavMesh.SamplePosition(p, out NavMeshHit hit, 80f, NavMesh.AllAreas) && hit.distance <= 40f)
+                        if (RecastNav.SamplePosition(p, out NavMeshHit hit, 80f, NavMesh.AllAreas) && hit.distance <= 40f)
                             return true;
                         if (++tested >= 12) break;
                     }
@@ -707,7 +708,7 @@ namespace Harmony.Plugins
 
                 Vector3 probe = Vector3.zero;
                 probe.y = TerrainMeta.HeightMap.GetHeight(probe);
-                return NavMesh.SamplePosition(probe, out NavMeshHit centerHit, 500f, NavMesh.AllAreas);
+                return RecastNav.SamplePosition(probe, out NavMeshHit centerHit, 500f, NavMesh.AllAreas);
             }
             catch
             {
@@ -1094,7 +1095,7 @@ namespace Harmony.Plugins
             foreach (Item existing in container.itemList.ToList())
             {
                 if (existing == null) continue;
-                existing.RemoveFromContainer();
+                existing.RemoveFromContainer(null);
                 existing.Remove();
             }
         }
@@ -1330,7 +1331,7 @@ namespace Harmony.Plugins
             int mask = agent.areaMask > 0
                 ? agent.areaMask
                 : (terrainRoamSpawn || (config != null && config.TypeNavMesh == 0) ? NavAreaTerrain : NavAreaMonument);
-            if (NavMesh.SamplePosition(npc.transform.position, out NavMeshHit hit, 8f, mask) && hit.distance <= 4f)
+            if (RecastNav.SamplePosition(npc.transform.position, out NavMeshHit hit, 8f, mask) && hit.distance <= 4f)
                 return true;
 
             reason = $"not on NavMesh near spawn (AreaMask={mask})";
@@ -1407,13 +1408,13 @@ namespace Harmony.Plugins
             bool terrainByParent = forceTerrainNav || parentTypeNavMesh == 1;
             bool legacyParent = !forceTerrainNav && parentTypeNavMesh != 0 && parentTypeNavMesh != 1;
             bool autoHelperMonument = !terrainByParent && !legacyParent && parentTypeNavMesh == 0
-                && NavMesh.SamplePosition(desired, out _, 25f, NavAreaMonument);
+                && RecastNav.SamplePosition(desired, out _, 25f, NavAreaMonument);
             bool helperMonument = !terrainByParent && (legacyParent || autoHelperMonument);
             int areaMask = helperMonument ? NavAreaMonument : NavAreaTerrain;
             const float sampleR = 6f;
 
             Vector3 pathStart = pathFrom;
-            if (NavMesh.SamplePosition(pathFrom, out NavMeshHit startHit, 5f, areaMask))
+            if (RecastNav.SamplePosition(pathFrom, out NavMeshHit startHit, 5f, areaMask))
                 pathStart = startHit.position;
 
             string tag = string.IsNullOrEmpty(parentBossName) ? "HelperNav" : $"[{parentBossName}] HelperNav";
@@ -1426,7 +1427,7 @@ namespace Harmony.Plugins
                 if (attempt > 0)
                     probe += new Vector3(UnityEngine.Random.Range(-2.2f, 2.2f), 0f, UnityEngine.Random.Range(-2.2f, 2.2f));
 
-                if (!NavMesh.SamplePosition(probe, out NavMeshHit hit, sampleR, areaMask))
+                if (!RecastNav.SamplePosition(probe, out NavMeshHit hit, sampleR, areaMask))
                 {
                     lastDetail = $"try{attempt + 1} probe={probe} no SamplePosition (mask={areaMask})";
                     continue;
@@ -1591,7 +1592,7 @@ namespace Harmony.Plugins
         private static bool SnapSpawnToNavMesh(ref Vector3 pos, float maxDistance = 80f)
         {
             NavMeshHit hit;
-            if (NavMesh.SamplePosition(pos, out hit, maxDistance, NavAreaTerrain))
+            if (RecastNav.SamplePosition(pos, out hit, maxDistance, NavAreaTerrain))
             {
                 pos = hit.position;
                 return true;
@@ -1633,7 +1634,7 @@ namespace Harmony.Plugins
 
         /// <summary>
         /// Picks NavMesh near a fixed world point with tight vertical/horizontal limits so /CustomPos does not jump decks/roofs
-        /// (unlike large NavMesh.SamplePosition radius used for stock monument spawns).
+        /// (unlike large RecastNav.SamplePosition radius used for stock monument spawns).
         /// </summary>
         private static bool TrySelectNavMeshNearWorldPoint(Vector3 reference, Vector3 probeOrigin, out NavMeshHit bestHit, float maxSampleRadius, float maxVerticalDelta, float maxHorizontalFromReference)
         {
@@ -1659,9 +1660,9 @@ namespace Harmony.Plugins
 
             void ProbeAt(Vector3 pt)
             {
-                if (NavMesh.SamplePosition(pt, out NavMeshHit hm, maxSampleRadius, NavAreaMonument))
+                if (RecastNav.SamplePosition(pt, out NavMeshHit hm, maxSampleRadius, NavAreaMonument))
                     Consider(hm);
-                if (NavMesh.SamplePosition(pt, out NavMeshHit ht, maxSampleRadius, NavAreaTerrain))
+                if (RecastNav.SamplePosition(pt, out NavMeshHit ht, maxSampleRadius, NavAreaTerrain))
                     Consider(ht);
             }
 
@@ -1715,12 +1716,12 @@ namespace Harmony.Plugins
                 int want = GetMonumentAgentTypeID(target);
                 if (want != 0 && navAgent.agentTypeID != want)
                     navAgent.agentTypeID = want;
-                if (NavMesh.SamplePosition(target, out NavMeshHit warpHit, 2.5f, NavAreaMonument))
-                    navigator.Warp(warpHit.position);
-                else if (NavMesh.SamplePosition(target, out warpHit, 2.5f, NavAreaTerrain))
-                    navigator.Warp(warpHit.position);
+                if (RecastNav.SamplePosition(target, out NavMeshHit warpHit, 2.5f, NavAreaMonument))
+                    RecastNav.Warp(navigator, warpHit.position);
+                else if (RecastNav.SamplePosition(target, out warpHit, 2.5f, NavAreaTerrain))
+                    RecastNav.Warp(navigator, warpHit.position);
                 else
-                    navigator.Warp(target);
+                    RecastNav.Warp(navigator, target);
             }
 
             navigator.PlaceOnNavMesh(8f);
@@ -1772,22 +1773,22 @@ namespace Harmony.Plugins
                 {
                     float ang = (Mathf.PI * 2f / 8f) * i;
                     Vector3 tryPos = p + new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r);
-                    if (NavMesh.SamplePosition(tryPos, out NavMeshHit hitM, 18f, NavAreaMonument))
+                    if (RecastNav.SamplePosition(tryPos, out NavMeshHit hitM, 18f, NavAreaMonument))
                         ConsiderWalkable(hitM.position, true);
-                    if (NavMesh.SamplePosition(tryPos, out NavMeshHit hitT, 18f, NavAreaTerrain))
+                    if (RecastNav.SamplePosition(tryPos, out NavMeshHit hitT, 18f, NavAreaTerrain))
                         ConsiderWalkable(hitT.position, true);
                 }
             }
 
             if (!found)
             {
-                if (NavMesh.SamplePosition(p, out NavMeshHit hitM, 22f, NavAreaMonument))
+                if (RecastNav.SamplePosition(p, out NavMeshHit hitM, 22f, NavAreaMonument))
                     ConsiderWalkable(hitM.position, false);
-                if (!found && NavMesh.SamplePosition(p, out NavMeshHit hitT, 30f, NavAreaTerrain))
+                if (!found && RecastNav.SamplePosition(p, out NavMeshHit hitT, 30f, NavAreaTerrain))
                     ConsiderWalkable(hitT.position, false);
-                if (!found && NavMesh.SamplePosition(p, out NavMeshHit hitW, 40f, NavAreaTerrain))
+                if (!found && RecastNav.SamplePosition(p, out NavMeshHit hitW, 40f, NavAreaTerrain))
                     ConsiderWalkable(hitW.position, false);
-                if (!found && NavMesh.SamplePosition(p, out NavMeshHit hitW2, 40f, NavAreaMonument))
+                if (!found && RecastNav.SamplePosition(p, out NavMeshHit hitW2, 40f, NavAreaMonument))
                     ConsiderWalkable(hitW2.position, false);
             }
 
@@ -1802,8 +1803,8 @@ namespace Harmony.Plugins
 
             // Warp registers the agent on the mesh more reliably than transform moves + PlaceOnNavMesh alone.
             if (navAgent != null && navAgent.agentTypeID != 0
-                && NavMesh.SamplePosition(npc.transform.position, out NavMeshHit warpHit, 12f, NavAreaMonument))
-                navigator.Warp(warpHit.position);
+                && RecastNav.SamplePosition(npc.transform.position, out NavMeshHit warpHit, 12f, NavAreaMonument))
+                RecastNav.Warp(navigator, warpHit.position);
             navigator.PlaceOnNavMesh(10f);
         }
 
@@ -1883,7 +1884,7 @@ namespace Harmony.Plugins
             foreach (MonumentInfo _ in EnumerateMonumentsContaining(position, true))
                 return true;
             NavMeshHit hit;
-            return NavMesh.SamplePosition(position, out hit, 5f, NavAreaMonument);
+            return RecastNav.SamplePosition(position, out hit, 5f, NavAreaMonument);
         }
 
         private bool IsPositionInAnyMonumentBounds(Vector3 position)
@@ -1932,7 +1933,7 @@ namespace Harmony.Plugins
         private int DetectAgentTypeBySampling(Vector3 position)
         {
             NavMeshHit hit;
-            if (NavMesh.SamplePosition(position, out hit, 10f, NavAreaMonument))
+            if (RecastNav.SamplePosition(position, out hit, 10f, NavAreaMonument))
             {
                 if (ResolveMonumentNavMeshAgentType(hit.position, out int resolved) && resolved != 0)
                     return resolved;
@@ -1942,7 +1943,7 @@ namespace Harmony.Plugins
                     if (aid != 0) return aid;
                 }
             }
-            if (NavMesh.SamplePosition(position, out hit, 10f, NavAreaTerrain))
+            if (RecastNav.SamplePosition(position, out hit, 10f, NavAreaTerrain))
                 return NavAgentTerrain;
             return NavAgentTerrain;
         }
@@ -2113,12 +2114,12 @@ namespace Harmony.Plugins
             if (agent == null) return surface;
             int mask = agent.areaMask;
             NavMeshHit nmh;
-            if (NavMesh.SamplePosition(surface, out nmh, 5f, mask))
+            if (RecastNav.SamplePosition(surface, out nmh, 5f, mask))
             {
                 if (nmh.position.y >= surface.y - 2.5f && nmh.position.y <= surface.y + 3.5f)
                     return nmh.position;
             }
-            if (NavMesh.SamplePosition(surface, out nmh, 10f, NavMesh.AllAreas))
+            if (RecastNav.SamplePosition(surface, out nmh, 10f, NavMesh.AllAreas))
             {
                 if (nmh.position.y >= surface.y - 2.5f && nmh.position.y <= surface.y + 3.5f)
                     return nmh.position;
@@ -2408,14 +2409,14 @@ namespace Harmony.Plugins
             {
                 Vector3 clamped = ClampToBounds(desired);
                 NavMeshHit hit;
-                if (NavMesh.SamplePosition(clamped, out hit, 3f, Npc.NavAgent.areaMask))
+                if (RecastNav.SamplePosition(clamped, out hit, 3f, Npc.NavAgent.areaMask))
                 {
                     return ClampToBounds(hit.position);
                 }
                 for (int i = 0; i < 6; i++)
                 {
                     Vector3 rnd = new Vector3(UnityEngine.Random.Range(_boundsMin.x, _boundsMax.x), clamped.y, UnityEngine.Random.Range(_boundsMin.z, _boundsMax.z));
-                    if (NavMesh.SamplePosition(rnd, out hit, 3f, Npc.NavAgent.areaMask))
+                    if (RecastNav.SamplePosition(rnd, out hit, 3f, Npc.NavAgent.areaMask))
                     {
                         return ClampToBounds(hit.position);
                     }
@@ -2603,7 +2604,7 @@ namespace Harmony.Plugins
                         // Skip PlaceOnNavMesh when there is no sample for this mask — avoids Unity console spam if spawn is still misconfigured.
                         if (Npc.NavAgent == null
                             || Npc.NavAgent.isOnNavMesh
-                            || NavMesh.SamplePosition(Npc.transform.position, out _, 10f, Npc.NavAgent.areaMask > 0 ? Npc.NavAgent.areaMask : NavAreaMonument))
+                            || RecastNav.SamplePosition(Npc.transform.position, out _, 10f, Npc.NavAgent.areaMask > 0 ? Npc.NavAgent.areaMask : NavAreaMonument))
                             Npc.Brain.Navigator.PlaceOnNavMesh(6f);
                     }
                     // Do not SetTarget here: early event-memory + Chase while senses/nav are still settling causes NpcSpawn
@@ -2656,7 +2657,7 @@ namespace Harmony.Plugins
                 bool movingDbg = ag.velocity.SqrMagnitude() > 0.04f;
                 bool pathingDbg = ag.hasPath;
 
-                if (NavMesh.SamplePosition(p, out NavMeshHit hit, 3.5f, mask))
+                if (RecastNav.SamplePosition(p, out NavMeshHit hit, 3.5f, mask))
                 {
                     float signedY = p.y - hit.position.y;
                     float absY = Mathf.Abs(signedY);
@@ -2685,7 +2686,7 @@ namespace Harmony.Plugins
                         }
                     }
                 }
-                else if (navDebug && NavMesh.SamplePosition(p, out hit, 8f, NavMesh.AllAreas))
+                else if (navDebug && RecastNav.SamplePosition(p, out hit, 8f, NavMesh.AllAreas))
                 {
                     float signedY = p.y - hit.position.y;
                     float absY = Mathf.Abs(signedY);
@@ -2737,7 +2738,7 @@ namespace Harmony.Plugins
                 try
                 {
                     AlignNavigatorDefaultAreaForBoss();
-                    nav.Warp(hit.position);
+                    RecastNav.Warp(nav, hit.position);
                     nav.PlaceOnNavMesh(12f);
                     if (_ins._config != null && _ins._config.Debug && _ins._config.DebugNavMesh)
                         _ins.DebugNavLog($"[{BossName}] NavWatch: auto-recover Warp+PlaceOnNavMesh dY={signedY:F2}m targetY={hit.position.y:F2}");
@@ -2762,16 +2763,16 @@ namespace Harmony.Plugins
 
                 bool nearMonumentMesh = false;
                 NavMeshHit meshHit;
-                if (NavMesh.SamplePosition(pos, out meshHit, 5f, NavAreaMonument))
+                if (RecastNav.SamplePosition(pos, out meshHit, 5f, NavAreaMonument))
                     nearMonumentMesh = true;
                 bool monumentContext = !TerrainRoamSpawn && (_isOnMonument || nearMonumentMesh);
 
                 // NpcSpawn can temporarily or intentionally leave the raw Unity agent disabled while the boss still works.
                 // Treat nearby walkable mesh as healthy and only warn when there is no usable mesh evidence.
                 const float feetToMeshOk = 3.5f;
-                bool feetOnWalkableMonumentNav = NavMesh.SamplePosition(pos, out NavMeshHit feetHit, 10f, NavAreaMonument)
+                bool feetOnWalkableMonumentNav = RecastNav.SamplePosition(pos, out NavMeshHit feetHit, 10f, NavAreaMonument)
                     && feetHit.distance <= feetToMeshOk;
-                bool feetOnWalkableTerrainNav = NavMesh.SamplePosition(pos, out NavMeshHit terrainHit, 10f, NavAreaTerrain)
+                bool feetOnWalkableTerrainNav = RecastNav.SamplePosition(pos, out NavMeshHit terrainHit, 10f, NavAreaTerrain)
                     && terrainHit.distance <= feetToMeshOk;
                 bool feetOnAnyWalkableNav = feetOnWalkableMonumentNav || feetOnWalkableTerrainNav;
 
@@ -2841,7 +2842,7 @@ namespace Harmony.Plugins
                 if (agent == null) return;
 
                 Vector3 pos = Npc.transform.position;
-                bool nearMonumentMesh = NavMesh.SamplePosition(pos, out _, 5f, NavAreaMonument);
+                bool nearMonumentMesh = RecastNav.SamplePosition(pos, out _, 5f, NavAreaMonument);
                 bool monumentCtx = _isOnMonument || nearMonumentMesh;
                 if (!monumentCtx)
                     return;
@@ -2872,21 +2873,21 @@ namespace Harmony.Plugins
 
                 // SamplePosition + Warp matches RecoverCombatNavigation; fixes flat monument floors where PlaceOnNavMesh alone leaves isOnNavMesh false.
                 Vector3 feet = Npc.transform.position;
-                if (nav != null && agent.agentTypeID != 0 && NavMesh.SamplePosition(feet, out NavMeshHit direct, 22f, NavAreaMonument))
+                if (nav != null && agent.agentTypeID != 0 && RecastNav.SamplePosition(feet, out NavMeshHit direct, 22f, NavAreaMonument))
                 {
-                    nav.Warp(direct.position);
+                    RecastNav.Warp(nav, direct.position);
                     nav.PlaceOnNavMesh(18f);
                     if (agent.isOnNavMesh)
                         return;
                     feet = Npc.transform.position;
                 }
 
-                // PlaceOnNavMesh only searches near the entity; if the saved spawn is on props/air above the mesh, warp to NavMesh.SamplePosition hits.
+                // PlaceOnNavMesh only searches near the entity; if the saved spawn is on props/air above the mesh, warp to RecastNav.SamplePosition hits.
                 for (float sampleR = 12f; sampleR <= 40f; sampleR += 14f)
                 {
-                    if (nav == null || agent.agentTypeID == 0 || !NavMesh.SamplePosition(feet, out NavMeshHit mh, sampleR, NavAreaMonument))
+                    if (nav == null || agent.agentTypeID == 0 || !RecastNav.SamplePosition(feet, out NavMeshHit mh, sampleR, NavAreaMonument))
                         continue;
-                    nav.Warp(mh.position);
+                    RecastNav.Warp(nav, mh.position);
                     nav.PlaceOnNavMesh(18f);
                     if (agent.isOnNavMesh)
                         return;
@@ -2923,7 +2924,7 @@ namespace Harmony.Plugins
                     agent.agentTypeID = want;
                 agent.enabled = true;
                 AlignNavigatorDefaultAreaForBoss();
-                nav.Warp(hit.position);
+                RecastNav.Warp(nav, hit.position);
                 nav.PlaceOnNavMesh(12f);
             }
 
@@ -4036,10 +4037,10 @@ namespace Harmony.Plugins
             {
                 Vector2 ring = UnityEngine.Random.insideUnitCircle.normalized * UnityEngine.Random.Range(3f, 6f);
                 Vector3 desired = new Vector3(around.x + ring.x, around.y + 1f, around.z + ring.y);
-                if (UnityEngine.AI.NavMesh.SamplePosition(desired, out UnityEngine.AI.NavMeshHit hit, 6f, 1))
+                if (RecastNav.SamplePosition(desired, out UnityEngine.AI.NavMeshHit hit, 6f, 1))
                     return hit.position;
                 Vector3 fallback = new Vector3(desired.x, TerrainMeta.HeightMap.GetHeight(desired), desired.z);
-                if (UnityEngine.AI.NavMesh.SamplePosition(fallback, out hit, 2f, 1))
+                if (RecastNav.SamplePosition(fallback, out hit, 2f, 1))
                     return hit.position;
                 return fallback;
             }
@@ -4418,7 +4419,7 @@ namespace Harmony.Plugins
                 nav.Resume();
 
                 bool monument = !TerrainRoamSpawn && _typeNavMesh != 1
-                    && (_isOnMonument || NavMesh.SamplePosition(Npc.transform.position, out _, 5f, NavAreaMonument));
+                    && (_isOnMonument || RecastNav.SamplePosition(Npc.transform.position, out _, 5f, NavAreaMonument));
                 if (monument)
                 {
                     _isOnMonument = true;
@@ -4453,9 +4454,9 @@ namespace Harmony.Plugins
                 }
                 else
                 {
-                    got = NavMesh.SamplePosition(p, out hit, 12f, mask)
-                        || NavMesh.SamplePosition(p, out hit, 28f, mask)
-                        || NavMesh.SamplePosition(p, out hit, 45f, NavMesh.AllAreas);
+                    got = RecastNav.SamplePosition(p, out hit, 12f, mask)
+                        || RecastNav.SamplePosition(p, out hit, 28f, mask)
+                        || RecastNav.SamplePosition(p, out hit, 45f, NavMesh.AllAreas);
                 }
 
                 if (got)
@@ -4576,7 +4577,7 @@ namespace Harmony.Plugins
                     if (!isOnMonumentNavmesh)
                     {
                         NavMeshHit hit;
-                        if (NavMesh.SamplePosition(Npc.transform.position, out hit, 5f, NavAreaMonument))
+                        if (RecastNav.SamplePosition(Npc.transform.position, out hit, 5f, NavAreaMonument))
                         {
                             isOnMonumentNavmesh = true;
                             if (!_isOnMonument)
@@ -5483,7 +5484,7 @@ namespace Harmony.Plugins
                 int mask = agent != null && agent.areaMask != 0 ? agent.areaMask : NavAreaMonument;
                 foreach (float sampleR in new float[] { 3f, 7f, 12f, 18f })
                 {
-                    if (!NavMesh.SamplePosition(d, out NavMeshHit hit, sampleR, mask))
+                    if (!RecastNav.SamplePosition(d, out NavMeshHit hit, sampleR, mask))
                         continue;
                     Vector3 cand = hit.position;
                     cand.y = fromXZ.y;
@@ -5492,7 +5493,7 @@ namespace Harmony.Plugins
                 }
                 foreach (float sampleR in new float[] { 6f, 14f, 24f })
                 {
-                    if (!NavMesh.SamplePosition(d, out NavMeshHit hit, sampleR, NavAreaTerrain))
+                    if (!RecastNav.SamplePosition(d, out NavMeshHit hit, sampleR, NavAreaTerrain))
                         continue;
                     Vector3 cand = hit.position;
                     cand.y = fromXZ.y;
@@ -5831,7 +5832,7 @@ namespace Harmony.Plugins
                 }
                 NavMeshHit hit;
                 int mask = Npc?.NavAgent != null ? Npc.NavAgent.areaMask : NavMesh.AllAreas;
-                if (NavMesh.SamplePosition(center, out hit, MaxCombatTeleportDistanceFromPlayer, mask) &&
+                if (RecastNav.SamplePosition(center, out hit, MaxCombatTeleportDistanceFromPlayer, mask) &&
                     HorizontalDistanceXZ(hit.position, center) <= MaxCombatTeleportDistanceFromPlayer + 0.5f)
                 {
                     Vector3 snapped = _ins.SnapBossTeleportPosition(Npc, hit.position, center);
@@ -5841,7 +5842,7 @@ namespace Harmony.Plugins
                         return true;
                     }
                 }
-                if (NavMesh.SamplePosition(center, out hit, MaxCombatTeleportDistanceFromPlayer, NavMesh.AllAreas) &&
+                if (RecastNav.SamplePosition(center, out hit, MaxCombatTeleportDistanceFromPlayer, NavMesh.AllAreas) &&
                     HorizontalDistanceXZ(hit.position, center) <= MaxCombatTeleportDistanceFromPlayer + 0.5f)
                 {
                     Vector3 snapped = _ins.SnapBossTeleportPosition(Npc, hit.position, center);
@@ -6018,7 +6019,7 @@ namespace Harmony.Plugins
                             Item item = container.itemList[i];
                             if (config.WearItems.Any(x => x.ShortName == item.info.shortname))
                             {
-                                item.RemoveFromContainer();
+                                item.RemoveFromContainer(null);
                                 item.Remove();
                             }
                         }
@@ -6363,7 +6364,7 @@ namespace Harmony.Plugins
             {
                 if (mask <= 0)
                     mask = NavMesh.AllAreas;
-                if (!NavMesh.SamplePosition(requested, out hit, radius, mask))
+                if (!RecastNav.SamplePosition(requested, out hit, radius, mask))
                     return false;
                 float hitWater = WaterLevel.GetWaterSurface(hit.position, waves: false, volumes: true);
                 return config.CanSwim || hit.position.y >= hitWater - 0.25f;
@@ -6846,7 +6847,7 @@ namespace Harmony.Plugins.GrimmBossExtensionMethods
             for (int i = container.itemList.Count - 1; i >= 0; i--)
             {
                 Item item = container.itemList[i];
-                item.RemoveFromContainer();
+                item.RemoveFromContainer(null);
                 item.Remove();
             }
         }

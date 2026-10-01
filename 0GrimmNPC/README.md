@@ -44,6 +44,8 @@ harmony.load 0GrimmNPC
 - Skin ID for custom NPCs remains `11162132011012`.
 - Optional plugins: **Kits** binds the Harmony Kits mod via AppDomain `Kits_ApiType` (`GiveKit` / `IsKit`) — load `Kits.dll` for NPC `Config.Kit`. Friends / Clans still resolve via Oxide reflection when Oxide is present.
 
+Hotfix 5 Recast navmesh: sampling/pathing goes through `_Shared/RecastNav.cs` (`RustNavMeshHelpers`). Do not call Unity `NavMesh.SamplePosition` while the new mesh is default.
+
 ## Note on Convoy / BossMonster
 
 Mods/plugins that still bind `GrimmNPC.RegisterPending` + `CustomNpcData` need updating to `SpawnNpc` (or keep using `GrimmNPCold` until migrated).

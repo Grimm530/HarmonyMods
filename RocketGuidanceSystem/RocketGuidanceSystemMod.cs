@@ -89,6 +89,7 @@ namespace RocketGuidanceSystemHarmony
                 plugin = new HarmonyPlugin();
                 HarmonyPlugin.SetInstance(plugin);
                 plugin.HarmonyLoadConfig();
+                GrimmCorePluginHooks.Bind("RocketGuidanceSystem", plugin);
             }
             catch (Exception ex)
             {
@@ -126,6 +127,7 @@ namespace RocketGuidanceSystemHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCorePluginHooks.Unbind("RocketGuidanceSystem");
             ChatSayBridge.Unregister("RocketGuidanceSystem");
             if (_permissionsReadyCallback != null)
             {

@@ -3,11 +3,9 @@ using UnityEngine;
 
 namespace KaruzaVehicles.Patches
 {
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
     internal static class BaseNetworkable_Spawn_Patch
     {
-        [HarmonyPostfix]
-        private static void Postfix(BaseNetworkable __instance)
+        public static void Postfix(BaseNetworkable __instance)
         {
             var mod = KaruzaVehiclesMod.Instance;
             if (mod == null) return;
@@ -38,11 +36,9 @@ namespace KaruzaVehicles.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Kill))]
     internal static class BaseNetworkable_Kill_Patch
     {
-        [HarmonyPrefix]
-        private static void Prefix(BaseNetworkable __instance)
+        public static void Prefix(BaseNetworkable __instance)
         {
             var mod = KaruzaVehiclesMod.Instance;
             if (mod == null) return;

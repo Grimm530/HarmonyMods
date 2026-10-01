@@ -22,6 +22,9 @@ namespace TeleportGUI
         private readonly Dictionary<string, GeneratedMonumentWarpPoint> _monumentWarps =
             new Dictionary<string, GeneratedMonumentWarpPoint>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _monumentWarpChatCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _manualWarpChatCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _warpChatCommandTargets =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _monumentRegisteredCommandNames = new List<string>();
         private Coroutine _monumentInitRoutine;
         private GameObject _monumentInitHost;
@@ -328,9 +331,12 @@ namespace TeleportGUI
 
                 if (generated.SpawnCount <= 0)
                 {
+                    Vector3 fallback = monument.transform != null ? monument.transform.position : position;
+                    try { fallback.y = TerrainMeta.HeightMap.GetHeight(fallback) + 1f; }
+                    catch { fallback.y += 1f; }
+                    generated.Position = fallback;
                     _monumentInitEnabledSkipped++;
-                    UnityEngine.Debug.LogWarning("[TeleportGUI] Failed to generate spawn points for monument warp " + uniqueName);
-                    continue;
+                    UnityEngine.Debug.LogWarning("[TeleportGUI] Using monument origin for warp " + uniqueName + " (no sampled spawn points).");
                 }
 
                 if (!string.IsNullOrEmpty(monumentWarp.Permission))
@@ -347,6 +353,11 @@ namespace TeleportGUI
                 generated.Position = generated.PeekPosition();
 
                 _monumentWarps[uniqueName] = generated;
+
+                if (IsOutpostMonument(shortname))
+                    _monumentWarps["Outpost"] = generated;
+                else if (IsBanditMonument(shortname))
+                    _monumentWarps["Bandit"] = generated;
 
                 if (!string.IsNullOrEmpty(monumentCmd) &&
                     !_manualWarpChatCommands.Contains(monumentCmd) &&
@@ -580,6 +591,24 @@ namespace TeleportGUI
 
         #region Warp lookup (manual + generated)
 
+        private static string NormalizeWarpChatCommand(string cmd)
+        {
+            if (string.IsNullOrWhiteSpace(cmd)) return null;
+            cmd = cmd.Trim();
+            if (cmd.StartsWith("/") || cmd.StartsWith("\\"))
+                cmd = cmd.Substring(1).Trim();
+            cmd = cmd.ToLowerInvariant();
+            return string.IsNullOrEmpty(cmd) ? null : cmd;
+        }
+
+        /// <summary>
+        /// Do not rewrite HarmonyConfig/TeleportGUI.json. The live file uses original Oxide property
+        /// names plus VIP tables that this type does not round-trip.
+        /// </summary>
+        private void SaveConfig()
+        {
+        }
+
         /// <summary>
         /// Look up a manual warpdata entry or an in-memory generated monument warp.
         /// Generated warps are never written to warpdata.
@@ -589,21 +618,30 @@ namespace TeleportGUI
             warp = null;
             if (string.IsNullOrEmpty(name)) return false;
 
-            if (_warpData != null && _warpData.TryGetValue(name, out warp) && warp != null)
+            if (_warpData != null && _warpData.TryGetValue(name, out warp) && warp != null &&
+                warp.Position.sqrMagnitude >= 1f)
                 return true;
 
-            if (_monumentWarps.TryGetValue(name, out GeneratedMonumentWarpPoint generated))
+            if (_monumentWarps.TryGetValue(name, out GeneratedMonumentWarpPoint generated) && generated != null)
             {
                 warp = generated;
                 return true;
             }
 
-            // Case-insensitive fallback for manual warps already covered by TeleportGUIWarpData comparer;
-            // also try loose match on monument display names.
+            if (_warpChatCommandTargets != null &&
+                _warpChatCommandTargets.TryGetValue(name, out string mapped) &&
+                !string.IsNullOrEmpty(mapped) &&
+                _monumentWarps.TryGetValue(mapped, out generated) && generated != null)
+            {
+                warp = generated;
+                return true;
+            }
+
             if (_warpData != null)
             {
                 foreach (KeyValuePair<string, TeleportGUIData.WarpPoint> kvp in _warpData)
                 {
+                    if (kvp.Value == null || kvp.Value.Position.sqrMagnitude < 1f) continue;
                     if (string.Equals(kvp.Key, name, StringComparison.OrdinalIgnoreCase))
                     {
                         warp = kvp.Value;
@@ -614,6 +652,7 @@ namespace TeleportGUI
 
             foreach (KeyValuePair<string, GeneratedMonumentWarpPoint> kvp in _monumentWarps)
             {
+                if (kvp.Value == null) continue;
                 if (string.Equals(kvp.Key, name, StringComparison.OrdinalIgnoreCase))
                 {
                     warp = kvp.Value;
@@ -621,7 +660,28 @@ namespace TeleportGUI
                 }
             }
 
-            return false;
+            warp = TryGetMonumentWarpByBuiltInName(name);
+            return warp != null;
+        }
+
+        private GeneratedMonumentWarpPoint TryGetMonumentWarpByBuiltInName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            bool wantOutpost = name.Equals("Outpost", StringComparison.OrdinalIgnoreCase);
+            bool wantBandit = name.Equals("Bandit", StringComparison.OrdinalIgnoreCase)
+                              || name.Equals("Bandit Camp", StringComparison.OrdinalIgnoreCase)
+                              || name.Equals("Bandit Town", StringComparison.OrdinalIgnoreCase);
+            if (!wantOutpost && !wantBandit) return null;
+
+            foreach (KeyValuePair<string, GeneratedMonumentWarpPoint> kvp in _monumentWarps)
+            {
+                if (kvp.Value == null) continue;
+                if (wantOutpost && IsOutpostMonument(kvp.Value.Shortname))
+                    return kvp.Value;
+                if (wantBandit && IsBanditMonument(kvp.Value.Shortname))
+                    return kvp.Value;
+            }
+            return null;
         }
 
         /// <summary>
@@ -629,14 +689,34 @@ namespace TeleportGUI
         /// </summary>
         public IEnumerable<KeyValuePair<string, TeleportGUIData.WarpPoint>> EnumerateAllWarps()
         {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             if (_warpData != null)
             {
                 foreach (KeyValuePair<string, TeleportGUIData.WarpPoint> kvp in _warpData)
+                {
+                    if (kvp.Value == null || kvp.Value.Position.sqrMagnitude < 1f)
+                        continue;
+                    if (!seen.Add(kvp.Key)) continue;
                     yield return kvp;
+                }
             }
 
             foreach (KeyValuePair<string, GeneratedMonumentWarpPoint> kvp in _monumentWarps)
+            {
+                if (kvp.Value == null) continue;
+
+                // Prefer the friendly built-in names in the UI over "Compound (G12)" / "Bandit Town (H4)".
+                if (IsOutpostMonument(kvp.Value.Shortname) &&
+                    !string.Equals(kvp.Key, "Outpost", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (IsBanditMonument(kvp.Value.Shortname) &&
+                    !string.Equals(kvp.Key, "Bandit", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!seen.Add(kvp.Key)) continue;
                 yield return new KeyValuePair<string, TeleportGUIData.WarpPoint>(kvp.Key, kvp.Value);
+            }
         }
 
         public bool TryGetMonumentWarp(string name, out GeneratedMonumentWarpPoint warp) =>
@@ -791,23 +871,24 @@ namespace TeleportGUI
         {
             if (player == null || userData == null) return false;
 
-            TeleportGUIConfig.LimitOptions limits = GetLimitOptions(kind);
-            if (limits.Default == 0)
-                return false;
-
-            int limit = limits.GetHighestOption(perm => HasVipPermission(player, perm));
-            if (limit == 0)
-                return false;
-
+            int limit;
+            int used;
             switch (kind)
             {
                 case TeleportPaymentKind.Home:
-                    return (userData.HomeUsage?.UsesToday ?? userData.HomeUsesToday) >= limit;
+                    limit = GetHomeDailyLimit();
+                    used = userData.HomeUsesToday;
+                    break;
                 case TeleportPaymentKind.Warp:
-                    return (userData.WarpUsage?.UsesToday ?? userData.WarpUsesToday) >= limit;
+                    limit = GetWarpDailyLimit();
+                    used = userData.WarpUsesToday;
+                    break;
                 default:
-                    return (userData.TPUsage?.UsesToday ?? userData.TPUsesToday) >= limit;
+                    limit = GetTPDailyLimit();
+                    used = userData.TPUsesToday;
+                    break;
             }
+            return limit > 0 && used >= limit;
         }
 
         /// <summary>
@@ -1131,6 +1212,14 @@ namespace TeleportGUI
 
                     if (Count >= 30)
                         break;
+                }
+
+                if (_spawnPoints.Count == 0 && transform != null)
+                {
+                    Vector3 fallback = transform.position;
+                    try { fallback.y = TerrainMeta.HeightMap.GetHeight(fallback) + 1f; }
+                    catch { fallback.y += 1f; }
+                    _spawnPoints.Add(fallback);
                 }
 
                 _availablePoints = new List<Vector3>(_spawnPoints);

@@ -57,7 +57,7 @@
                                  ]
                     },
     "editable":  true,
-    "description":  "Rust Server Metrics (Harmony mod → InfluxDB 1.x / InfluxQL). On import, map **DS_INFLUXDB** to your Influx data source. If graphs are empty, open the **DS_INFLUXDB** variable and select your InfluxDB source (URL must not have `var-DS_INFLUXDB=` empty). **Rust Server** matches the mod `server` tag (`Server Tag` in `HarmonyMods_Data/ServerMetrics/Configuration.json`).",
+    "description":  "Rust Server Metrics (Harmony mod → InfluxDB 1.x / InfluxQL). On import, map **DS_INFLUXDB** to the Grafana data source named influxdb. Default Rust Server tag is stagingserver.",
     "fiscalYearStartMonth":  0,
     "graphTooltip":  1,
     "id":  null,
@@ -4413,13 +4413,15 @@
     "style":  "dark",
     "tags":  [
                  "rust-server-metrics",
-                 "testserver"
+                 "stagingserver"
              ],
     "templating":  {
                        "list":  [
                                     {
                                         "current":  {
-
+                                                        "selected":  true,
+                                                        "text":  "influxdb",
+                                                        "value":  "influxdb"
                                                     },
                                         "hide":  0,
                                         "includeAll":  false,
@@ -4434,17 +4436,17 @@
                                         "queryValue":  "",
                                         "refresh":  1,
                                         "regex":  "",
-                                        "skipUrlSync":  false,
+                                        "skipUrlSync":  true,
                                         "type":  "datasource"
                                     },
                                     {
                                         "current":  {
                                                         "selected":  true,
                                                         "text":  [
-                                                                     "testserver"
+                                                                     "stagingserver"
                                                                  ],
                                                         "value":  [
-                                                                      "testserver"
+                                                                      "stagingserver"
                                                                   ]
                                                     },
                                         "datasource":  {
@@ -4453,15 +4455,16 @@
                                                        },
                                         "definition":  "",
                                         "hide":  0,
-                                        "includeAll":  false,
+                                        "includeAll":  true,
+                                        "allValue":  ".*",
                                         "label":  "Rust Server",
                                         "multi":  true,
                                         "name":  "server",
                                         "options":  [
                                                         {
                                                             "selected":  true,
-                                                            "text":  "testserver",
-                                                            "value":  "testserver"
+                                                            "text":  "stagingserver",
+                                                            "value":  "stagingserver"
                                                         }
                                                     ],
                                         "query":  "SHOW TAG VALUES WITH KEY=server",

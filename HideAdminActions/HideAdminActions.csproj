@@ -3,22 +3,23 @@
     <AssemblyName>HideAdminActions</AssemblyName>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup>
-    <LangVersion>12.0</LangVersion>
+    <ManagedPath Condition="'$(ManagedPath)' == ''">$(MSBuildProjectDirectory)\..\..\..\RustDedicated_Data\Managed</ManagedPath>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(ManagedPath)\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
+      <HintPath>$(ManagedPath)\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(ManagedPath)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Console">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
+      <HintPath>$(ManagedPath)\Facepunch.Console.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

@@ -32,6 +32,12 @@ internal static class InvokeHandlerBase_DoTick_Patch
             return false;
         }
 
+        var config = MetricsLogger.Instance?.Configuration;
+        if (config != null && !config.GatherInvokeTiming)
+        {
+            return false;
+        }
+
         return true;
     }
 

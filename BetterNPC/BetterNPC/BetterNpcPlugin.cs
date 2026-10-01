@@ -2071,7 +2071,7 @@ namespace Harmony.Plugins
                 InitLog("All puzzles have been successfully reset!");
             }
 
-            Puts($"BetterNPC ready — {Controllers.Count} monument controller(s), cargo={(CargoConfig is { Enabled: true } ? "on" : "off")}.");
+            Puts($"BetterNPC ready - {Controllers.Count} monument controller(s), cargo={(CargoConfig is { Enabled: true } ? "on" : "off")}.");
             yield return AttachExistingCargoShipsSoft();
         }
 
@@ -2345,13 +2345,17 @@ namespace Harmony.Plugins
             string path = HarmonyModInterface.Mods.DataDirectory + "/" + shortPath;
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
 
-            foreach (string filePath in HarmonyModInterface.Mods.DataFileSystem.GetFiles(shortPath))
+            // Load the active monument set by name. Scanning the folder used to skip
+            // silently when HarmonyData/BetterNpc/Monument/ existed but had no JSON.
+            foreach (string fileName in ActiveLoadNames)
             {
-                string fileName = filePath.GetFileName();
-                if (!IsActiveLoadName(fileName)) continue;
+                if (fileName.Equals("CargoShip", StringComparison.OrdinalIgnoreCase)) continue;
                 TryReadMonumentSpawnPoint(MonumentSpawnPoints, fileName, shortPath);
                 yield return null;
             }
+
+            if (MonumentSpawnPoints.Count == 0)
+                PrintWarning("No active monument spawn-point files loaded from HarmonyData/BetterNpc/Monument/ (expected Launch Site, Airfield, Large Harbor, Small Harbor, Oil Rig, Large Oil Rig).");
         }
 
         private IEnumerator SpawnMonumentSpawnPoints()
@@ -2469,7 +2473,14 @@ namespace Harmony.Plugins
                 dictionary.Remove(fileName);
             }
 
-            MonumentSpawnPoint spawnPoint = HarmonyModInterface.Mods.DataFileSystem.ReadObject<MonumentSpawnPoint>($"{shortPath}{fileName}");
+            string dataName = $"{shortPath}{fileName}";
+            if (!HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(dataName))
+            {
+                PrintWarning($"File {fileName} is missing ({HarmonyModInterface.Mods.DataDirectory}/{dataName}.json) and cannot be loaded!");
+                return false;
+            }
+
+            MonumentSpawnPoint spawnPoint = HarmonyModInterface.Mods.DataFileSystem.ReadObject<MonumentSpawnPoint>(dataName);
             if (spawnPoint == null)
             {
                 PrintError($"File {fileName} is corrupted and cannot be loaded!");
@@ -2795,18 +2806,87 @@ namespace Harmony.Plugins
         {
             TryClearPresetUsage(CargoConfig, "CargoShip");
 
-            CargoConfig = HarmonyModInterface.Mods.DataFileSystem.ReadObject<CargoSpawnPoint>("BetterNpc/Event/CargoShip");
-            if (CargoConfig == null)
+            const string dataName = "BetterNpc/Event/CargoShip";
+            if (!HarmonyModInterface.Mods.DataFileSystem.ExistsDatafile(dataName))
             {
-                PrintError("File CargoShip is corrupted and cannot be loaded!");
-                return;
+                PrintWarning("File CargoShip was missing — writing HarmonyData/BetterNpc/Event/CargoShip.json from defaults.");
+                CargoConfig = CreateDefaultCargoSpawnPoint();
+            }
+            else
+            {
+                CargoConfig = HarmonyModInterface.Mods.DataFileSystem.ReadObject<CargoSpawnPoint>(dataName);
+                if (CargoConfig == null)
+                {
+                    PrintError("File CargoShip is corrupted and cannot be loaded! Check HarmonyData/BetterNpc/Event/CargoShip.json");
+                    return;
+                }
             }
 
+            CargoConfig.Presets ??= new List<PresetConfig>();
             foreach (PresetConfig preset in CargoConfig.Presets) preset.IsCargoFile = true;
             InitLog("Loaded event file CargoShip.");
             AnalyzingSpawnPoint(CargoConfig, "CargoShip");
-            HarmonyModInterface.Mods.DataFileSystem.WriteObject("BetterNpc/Event/CargoShip", CargoConfig);
+            HarmonyModInterface.Mods.DataFileSystem.WriteObject(dataName, CargoConfig);
             if (CargoConfig is { RemoveDefaultNpc: true, Enabled: true }) ConVar.AI.npc_spawn_on_cargo_ship = false;
+        }
+
+        private static CargoSpawnPoint CreateDefaultCargoSpawnPoint()
+        {
+            return new CargoSpawnPoint
+            {
+                Enabled = true,
+                RemoveDefaultNpc = true,
+                RespawnNpcHarbor = true,
+                RespawnNpcCrates = false,
+                Presets = new List<PresetConfig>
+                {
+                    new PresetConfig
+                    {
+                        Enabled = true,
+                        MinDay = 10,
+                        MaxDay = 10,
+                        MinNight = 10,
+                        MaxNight = 10,
+                        PresetName = "Scientist-Cargo-Moving",
+                        Economics = new Dictionary<string, double>(),
+                        CustomPositions = new List<string>(),
+                        IsCargoFile = true
+                    },
+                    new PresetConfig
+                    {
+                        Enabled = true,
+                        MinDay = 2,
+                        MaxDay = 2,
+                        MinNight = 2,
+                        MaxNight = 2,
+                        PresetName = "Scientist-Cargo-Stationary-1",
+                        Economics = new Dictionary<string, double>(),
+                        CustomPositions = new List<string>
+                        {
+                            "(2.80, 24.69, -40.16)",
+                            "(1.49, 18.50, -38.79)"
+                        },
+                        IsCargoFile = true
+                    },
+                    new PresetConfig
+                    {
+                        Enabled = true,
+                        MinDay = 3,
+                        MaxDay = 3,
+                        MinNight = 3,
+                        MaxNight = 3,
+                        PresetName = "Scientist-Cargo-Stationary-2",
+                        Economics = new Dictionary<string, double>(),
+                        CustomPositions = new List<string>
+                        {
+                            "(-0.18, 23.26, 67.59)",
+                            "(10.69, 27.61, -38.89)",
+                            "(-10.59, 27.61, -38.83)"
+                        },
+                        IsCargoFile = true
+                    }
+                }
+            };
         }
 
         private void TryReadBradleySpawnPoint()

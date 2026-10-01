@@ -11,8 +11,8 @@ namespace DeveloperListOverride.Patches
     {
         static void Postfix(BasePlayer __instance, ref int __result)
         {
-            if (__result == 0 && DeveloperListOverrideConfig.IsOverrideDeveloper(__instance?.UserIDString ?? ""))
-                __result = 1; // AllSkinsUnlocked
+            if (__instance != null && DeveloperListOverrideConfig.IsOverrideDeveloper(__instance.UserIDString))
+                __result = 1;
         }
     }
 

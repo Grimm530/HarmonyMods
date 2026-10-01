@@ -16,13 +16,20 @@ internal class RPCServer_Attribute_Method_Patch
     [HarmonyPrepare]
     public static bool Prepare()
     {
-        if (RustServerMetricsLoader.__serverStarted)
+        if (!RustServerMetricsLoader.__serverStarted)
         {
-            return true;
+            Debug.Log("Note: Cannot patch RPCServer_Attribute_Method_Patch yet. We will patch it upon server start.");
+            return false;
         }
-            
-        Debug.Log("Note: Cannot patch RPCServer_Attribute_Method_Patch yet. We will patch it upon server start.");
-        return false;
+
+        var config = MetricsLogger.Instance?.Configuration;
+        if (config != null && !config.gatherRpcTiming)
+        {
+            Debug.Log("[ServerMetrics]: Skipping RPCServer_Attribute_Method_Patch (disabled in config)");
+            return false;
+        }
+
+        return true;
     }
         
     [HarmonyTargetMethods]
@@ -30,7 +37,7 @@ internal class RPCServer_Attribute_Method_Patch
     {
         var baseNetworkableType = typeof(BaseNetworkable);
         var baseNetworkableAssembly = baseNetworkableType.Assembly;
-        var typesToScan = new Stack<Type>(baseNetworkableAssembly.GetTypes());
+        var typesToScan = new Stack<Type>(Helpers.GetLoadableTypes(baseNetworkableAssembly));
 
         while (typesToScan.TryPop(out var type))
         {

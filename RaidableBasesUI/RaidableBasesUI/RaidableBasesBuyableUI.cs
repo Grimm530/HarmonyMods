@@ -1479,13 +1479,20 @@ namespace RaidableBasesBuyableUI
 
             internal Coroutine _coroutine;
             internal Dictionary<string, string> Images = new();
+            private int _loadState;
 
             public void LoadImages()
             {
+                if (_loadState >= 2)
+                    return;
+
                 // Harmony OnLoaded runs before ServerMgr exists. Defer so we never NRE
                 // or touch FileStorage while identity is still the default.
                 if (ServerMgr.Instance == null)
                 {
+                    if (_loadState == 1)
+                        return;
+                    _loadState = 1;
                     try
                     {
                         var go = new GameObject("RBBUI_ImageLoadWait");
@@ -1494,6 +1501,7 @@ namespace RaidableBasesBuyableUI
                     }
                     catch (Exception ex)
                     {
+                        _loadState = 0;
                         Puts("LoadImages defer failed: " + ex.Message);
                     }
                     return;
@@ -1501,6 +1509,7 @@ namespace RaidableBasesBuyableUI
 
                 if (_coroutine != null)
                     return;
+                _loadState = 2;
                 _coroutine = ServerMgr.Instance.StartCoroutine(LoadAllImages());
             }
 
@@ -1713,123 +1722,45 @@ namespace RaidableBasesBuyableUI
             private IEnumerator LoadGradientImages()
             {
                 var gradientColors = new[] { "blue", "green", "purple", "red" };
-                
-                // Use Oxide's DataFileSystem to get the correct path
                 var fullImagesPath = Paths.ImagesDir;
-                
-                // Ensure directory exists
+
                 if (!Directory.Exists(fullImagesPath))
-                {
                     Directory.CreateDirectory(fullImagesPath);
-                    Puts($"Created directory: {fullImagesPath}");
-                }
-                
-                Puts($"Looking for gradient images in: {fullImagesPath}");
-                
-                // List files in directory for debugging
-                if (Directory.Exists(fullImagesPath))
-                {
-                    var files = Directory.GetFiles(fullImagesPath, "*.png");
-                    Puts($"Found {files.Length} PNG files in directory:");
-                    foreach (var file in files)
-                    {
-                        Puts($"  - {Path.GetFileName(file)}");
-                    }
-                }
-                
+
+                int loaded = 0;
                 foreach (var color in gradientColors)
                 {
                     var imageKey = $"gradient_{color}";
-                    var fileName = $"{imageKey}.png";
-                    var filePath = Path.Combine(fullImagesPath, fileName);
-                    
-                    // Normalize path separators for Windows
-                    filePath = Path.GetFullPath(filePath);
-                    
-                    Puts($"Checking for gradient image: {filePath}");
-                    
-                    if (File.Exists(filePath))
-                    {
-                        try
-                        {
-                            var bytes = File.ReadAllBytes(filePath);
-                            if (bytes != null && bytes.Length > 0)
-                            {
-                                // Store image in FileStorage and get texture ID
-                                var textureId = FileStorage.server.Store(bytes, FileStorage.Type.png, CommunityEntity.ServerInstance.net.ID);
-                                Images[imageKey] = textureId.ToString();
-                                Puts($"OK: Loaded gradient image: {imageKey} -> texture ID: {textureId} (file: {fileName}, size: {bytes.Length} bytes)");
-                            }
-                            else
-                            {
-                                Puts($"Warning: Gradient image file is empty: {filePath}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Puts($"Error loading gradient image {fileName}: {ex.Message}");
-                            Puts($"Stack trace: {ex.StackTrace}");
-                        }
-                    }
-                    else
-                    {
-                        Puts($"FAIL: Gradient image not found: {filePath}");
-                        // Try alternative path
-                        var altPath = Path.Combine(Paths.ServerRoot, "HarmonyImages", "RaidableBasesBuyableUI", fileName);
-                        altPath = altPath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                        if (File.Exists(altPath))
-                        {
-                            Puts($"Found image at alternative path: {altPath}");
-                            try
-                            {
-                                var bytes = File.ReadAllBytes(altPath);
-                                if (bytes != null && bytes.Length > 0)
-                                {
-                                    var textureId = FileStorage.server.Store(bytes, FileStorage.Type.png, CommunityEntity.ServerInstance.net.ID);
-                                    Images[imageKey] = textureId.ToString();
-                                    Puts($"OK: Loaded gradient image from alternative path: {imageKey} -> texture ID: {textureId}");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Puts($"Error loading from alternative path: {ex.Message}");
-                            }
-                        }
-                    }
+                    if (TryStoreLocalPng(imageKey, Path.Combine(fullImagesPath, imageKey + ".png"))
+                        || TryStoreLocalPng(imageKey, Path.Combine(Paths.ServerRoot, "HarmonyImages", "RaidableBasesBuyableUI", imageKey + ".png")))
+                        loaded++;
                 }
-                
-                // Load boy.png image for title panel
-                var boyImageKey = "boy";
-                var boyFileName = "boy.png";
-                var boyFilePath = Path.Combine(fullImagesPath, boyFileName);
-                boyFilePath = Path.GetFullPath(boyFilePath);
-                
-                Puts($"Checking for boy image: {boyFilePath}");
-                
-                if (File.Exists(boyFilePath))
-                {
-                    try
-                    {
-                        var bytes = File.ReadAllBytes(boyFilePath);
-                        if (bytes != null && bytes.Length > 0)
-                        {
-                            var textureId = FileStorage.server.Store(bytes, FileStorage.Type.png, CommunityEntity.ServerInstance.net.ID);
-                            Images[boyImageKey] = textureId.ToString();
-                            Puts($"OK: Loaded boy image: {boyImageKey} -> texture ID: {textureId} (file: {boyFileName}, size: {bytes.Length} bytes)");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Puts($"Error loading boy image {boyFileName}: {ex.Message}");
-                    }
-                }
-                else
-                {
-                    Puts($"FAIL: Boy image not found: {boyFilePath}");
-                }
-                
-                Puts($"Loaded {Images.Count} gradient images total");
+
+                TryStoreLocalPng("boy", Path.Combine(fullImagesPath, "boy.png"));
+                Puts($"OK: Loaded {loaded} gradient images from {fullImagesPath}");
                 yield return null;
+            }
+
+            private bool TryStoreLocalPng(string imageKey, string filePath)
+            {
+                if (string.IsNullOrEmpty(imageKey) || Images.ContainsKey(imageKey))
+                    return true;
+                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+                    return false;
+                try
+                {
+                    var bytes = File.ReadAllBytes(filePath);
+                    if (bytes == null || bytes.Length == 0)
+                        return false;
+                    var textureId = FileStorage.server.Store(bytes, FileStorage.Type.png, CommunityEntity.ServerInstance.net.ID);
+                    Images[imageKey] = textureId.ToString();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Puts($"Error loading image {imageKey}: {ex.Message}");
+                    return false;
+                }
             }
 
 

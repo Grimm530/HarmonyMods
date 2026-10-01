@@ -30,6 +30,7 @@ namespace LootQoLHarmony
         {
             GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
             Instance = this;
+            GrimmCoreBridge.RegisterKillObserver("LootQoL", 100, Patches.BaseNetworkable_Kill_Patch.Prefix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
             try
@@ -90,6 +91,7 @@ namespace LootQoLHarmony
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterGameHookMod("LootQoL");
             try
             {
                 if (_permissionsReadyCallback != null)

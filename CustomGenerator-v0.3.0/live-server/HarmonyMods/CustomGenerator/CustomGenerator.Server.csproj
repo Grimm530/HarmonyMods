@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>CustomGenerator.Server</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net48</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup />
+  <ItemGroup />
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json" />
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\..\..\..\..\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Core" />
+    <Reference Include="Facepunch.System" />
+    <Reference Include="UnityEngine.CoreModule" />
+    <Reference Include="Rust.Harmony">
+      <HintPath>..\..\..\..\..\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony" />
+    <Reference Include="Rust.World" />
+    <Reference Include="Rust.Data" />
+    <Reference Include="Facepunch.UnityEngine" />
+  </ItemGroup>
+</Project>

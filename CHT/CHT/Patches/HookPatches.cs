@@ -14,17 +14,6 @@ namespace CHT.Patches
         }
     }
 
-    [HarmonyPatch(typeof(BaseNetworkable), nameof(BaseNetworkable.Spawn))]
-    public static class SpawnPatch
-    {
-        [HarmonyPostfix]
-        static void Postfix(BaseNetworkable __instance)
-        {
-            if (__instance is TimedExplosive explosive)
-                CHTMod.Plugin?.OnEntitySpawned(explosive);
-        }
-    }
-
     [HarmonyPatch(typeof(ResourceDispenser), "GiveResourceFromItem")]
     public static class GatherPatch
     {

@@ -25,6 +25,7 @@ namespace ServerQoL
         public void OnLoaded(OnHarmonyModLoadedArgs args)
         {
             Instance = this;
+            GrimmCoreBridge.RegisterSpawnPostfix("ServerQoL", 100, Patches.BaseNetworkable_Spawn_Patch.Postfix);
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
             try
@@ -80,6 +81,7 @@ namespace ServerQoL
 
         public void OnUnloaded(OnHarmonyModUnloadedArgs args)
         {
+            GrimmCoreBridge.UnregisterSpawnMod("ServerQoL");
             try
             {
                 if (_permissionsReadyCallback != null)

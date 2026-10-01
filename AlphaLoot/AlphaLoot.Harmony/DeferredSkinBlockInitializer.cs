@@ -16,18 +16,23 @@ internal class DeferredSkinBlockInitializer : MonoBehaviour
 		_startedAt = Time.realtimeSinceStartup;
 	}
 
+	private const float MaxWaitSeconds = 120f;
+
 	private void Update()
 	{
-		if (!AlphaLootMod.AreSkinDefinitionsReady())
+		float num = Time.realtimeSinceStartup - _startedAt;
+		bool ready = AlphaLootMod.AreSkinDefinitionsReady();
+		if (!ready && num < MaxWaitSeconds)
 		{
-			float num = Time.realtimeSinceStartup - _startedAt;
 			if (num >= _nextStatusLogAt)
 			{
-				Debug.LogWarning((object)$"[AlphaLoot.Harmony] Still waiting {Mathf.RoundToInt(num)}s for item skin and Steam inventory definitions...");
+				Debug.LogWarning((object)$"[AlphaLoot.Harmony] Still waiting {Mathf.RoundToInt(num)}s for item skin definitions...");
 				_nextStatusLogAt += 30f;
 			}
 			return;
 		}
+		if (!ready)
+			Debug.LogWarning((object)$"[AlphaLoot.Harmony] Proceeding without full skin definitions after {Mathf.RoundToInt(num)}s wait.");
 		try
 		{
 			OnReady?.Invoke();
