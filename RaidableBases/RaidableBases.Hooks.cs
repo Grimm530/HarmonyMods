@@ -1131,7 +1131,7 @@ namespace RaidableBases
             if (!player.IsHuman() || !Get(player, player.userID, out var raid)) return null;
             if (raid.CanDropRustBackpack(player.userID))
             {
-                backpack.RemoveFromContainer(null);
+                backpack.RemoveFromContainer();
                 backpack.Drop(player.GetDropPosition() + new Vector3(0f, 0.035f), player.GetDropVelocity());
                 return null;
             }
@@ -1153,7 +1153,7 @@ namespace RaidableBases
                             Item item = container.itemList[i];
                             if (item != null && item.IsBackpack() && item.contents != null && !item.contents.itemList.IsNullOrEmpty())
                             {
-                                if (PreventLooting != null) item.RemoveFromContainer(null);
+                                if (PreventLooting != null) item.RemoveFromContainer();
                                 item.Drop(position, velocity);
                             }
                         }
@@ -1173,7 +1173,7 @@ namespace RaidableBases
                     Item item = backpack.inventory.itemList[i];
                     if (item != null && item.IsBackpack() && item.contents != null && !item.contents.itemList.IsNullOrEmpty())
                     {
-                        if (PreventLooting != null) item.RemoveFromContainer(null);
+                        if (PreventLooting != null) item.RemoveFromContainer();
                         item.Drop(position, velocity);
                     }
                 }

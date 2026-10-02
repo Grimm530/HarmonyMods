@@ -1095,7 +1095,7 @@ namespace Harmony.Plugins
             foreach (Item existing in container.itemList.ToList())
             {
                 if (existing == null) continue;
-                existing.RemoveFromContainer(null);
+                existing.RemoveFromContainer();
                 existing.Remove();
             }
         }
@@ -6019,7 +6019,7 @@ namespace Harmony.Plugins
                             Item item = container.itemList[i];
                             if (config.WearItems.Any(x => x.ShortName == item.info.shortname))
                             {
-                                item.RemoveFromContainer(null);
+                                item.RemoveFromContainer();
                                 item.Remove();
                             }
                         }
@@ -6847,7 +6847,7 @@ namespace Harmony.Plugins.GrimmBossExtensionMethods
             for (int i = container.itemList.Count - 1; i >= 0; i--)
             {
                 Item item = container.itemList[i];
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 item.Remove();
             }
         }

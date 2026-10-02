@@ -28,10 +28,10 @@ public sealed class AutoTurretManager : MonoBehaviour
             Item item = ItemManager.CreateByName(weaponShortname, 1, 0uL);
             if (item != null)
             {
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 item.Remove();
                 item.position = 0;
-                item.SetParent(_turret.inventory, null);
+                item.SetParent(_turret.inventory);
                 _turret.inventory.MarkDirty();
                 item.MarkDirty();
                 _turret.Invoke(_turret.UpdateAttachedWeapon, 0.5f);

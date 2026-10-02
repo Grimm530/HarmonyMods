@@ -455,6 +455,20 @@ namespace Radar
             public int EntityInformationTextSize { get; set; } = 24;
         }
 
+        /// <summary>AdminRadar 5.4.4 "Voice Detection". Hook payload is unused; the hook only means the player is speaking.</summary>
+        [Serializable]
+        public class VoiceDetectionConfig
+        {
+            [JsonProperty("Enabled")]
+            public bool Enabled { get; set; } = true;
+
+            [JsonProperty("Timeout After X Seconds")]
+            public int Interval { get; set; } = 3;
+
+            [JsonProperty("Detection Radius")]
+            public float Distance { get; set; } = 30f;
+        }
+
         [Serializable]
         public class ConfigData
         {
@@ -472,6 +486,9 @@ namespace Radar
 
             [JsonProperty("Settings")]
             public SettingsConfig Settings { get; set; } = new SettingsConfig();
+
+            [JsonProperty("Voice Detection")]
+            public VoiceDetectionConfig Voice { get; set; } = new VoiceDetectionConfig();
         }
 
         public static ConfigData Config { get; private set; }
@@ -500,6 +517,7 @@ namespace Radar
                     if (cfg != null)
                     {
                         Config = cfg;
+                        NormalizeVoice(Config);
                         _configPath = p;
                         UnityEngine.Debug.Log("[Radar] Config loaded from " + p);
                         return;
@@ -508,6 +526,7 @@ namespace Radar
 
                 // Create default config in HarmonyConfig on first load.
                 Config = new ConfigData();
+                NormalizeVoice(Config);
                 _configPath = Path.Combine(serverRoot, "HarmonyConfig", "Radar.json");
                 var dir = Path.GetDirectoryName(_configPath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -520,7 +539,17 @@ namespace Radar
             {
                 UnityEngine.Debug.LogError("[Radar] Config load error: " + ex.Message);
                 Config ??= new ConfigData();
+                NormalizeVoice(Config);
             }
+        }
+
+        /// <summary>AdminRadar clamps voice timeout to at least 3 seconds.</summary>
+        private static void NormalizeVoice(ConfigData cfg)
+        {
+            if (cfg == null) return;
+            cfg.Voice ??= new VoiceDetectionConfig();
+            if (cfg.Voice.Interval < 3)
+                cfg.Voice.Interval = 3;
         }
 
         public static void SaveConfig()

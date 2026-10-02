@@ -88,7 +88,7 @@ namespace AirbourneSpawnHarmony
                 if (slot.MoveToContainer(player.inventory.containerMain))
                     goto GIVE_PARACHUTE;
 
-                slot.RemoveFromContainer(null);
+                slot.RemoveFromContainer();
 
                 for (int i = 0; i < player.inventory.containerMain.capacity; i++)
                 {
@@ -96,7 +96,7 @@ namespace AirbourneSpawnHarmony
                     if (occupiedSlot != null)
                         continue;
 
-                    slot.SetParent(player.inventory.containerMain, null);
+                    slot.SetParent(player.inventory.containerMain);
                     slot.position = i;
                     slot.MarkDirty();
                     player.inventory.containerMain.MarkDirty();
@@ -113,7 +113,7 @@ namespace AirbourneSpawnHarmony
             {
                 item.position = 7;
                 if (!item.MoveToContainer(player.inventory.containerWear, 7))
-                    item.SetParent(player.inventory.containerWear, null);
+                    item.SetParent(player.inventory.containerWear);
                 item.conditionNormalized = Mathf.Clamp01(AirbourneSpawnPlugin.Configuration.Parachute.Condition);
                 if (AirbourneSpawnPlugin.Configuration.Parachute.DestroyOnLand)
                     ParachuteItems.Add(item);

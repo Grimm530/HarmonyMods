@@ -7,6 +7,7 @@ Standalone Harmony mod for tracking core Rust game stats (Harmony-only). Tracks 
 | Item | Value |
 |------|--------|
 | **Purpose** | Core-game leaderboard: gather, build, kill, loot, craft, recycle, play time |
+| **Version** | 1.5.72 (aligned with Ultimate Leaderboard) |
 | **Entry point** | `LeaderboardMod` implements `IHarmonyModHooks` |
 | **Loading** | `harmony.load Leaderboard` (from `HarmonyMods/Leaderboard.dll`) |
 
@@ -53,14 +54,15 @@ Standalone Harmony mod for tracking core Rust game stats (Harmony-only). Tracks 
 
 | Patch | Target | Purpose |
 |-------|--------|---------|
-| BaseCombatEntity.Die | Postfix | NPC/animal/heli/Bradley/block kills → attacker |
-| BasePlayer.Die | Postfix | Deaths (victim), kills + max_distance (killer) |
+| BaseCombatEntity.Die | Postfix | NPC/animal/heli/Bradley/block kills → attacker. Heli uses the last player who damaged it when the killing hit has no player |
+| BasePlayer.Die | Postfix | Player deaths, PvP kills + max_distance. Scientist and other NPC players are stored by prefab (outbreak, boat, RHIB, scientist2, and the rest), not as PvP kills |
 | BasePlayer.GiveItem | Postfix | ResourceHarvested → **Gather** (stone, ore, etc.); Crafted + fish → **Fishing** |
 | BasePlayer.LifeStoryShotFired | Postfix | **ShotFired** (ammo type per shot when firing projectile weapons) |
 | BaseEntity.OnPlaced | Postfix | Construction |
 | BuildingBlock.SetGrade | Postfix | Upgrade |
 | ItemCrafter.FinishCrafting | Postfix | Craft |
-| Recycler.MoveItemToOutput | Postfix | RecycleItem |
+| Recycler.SVSwitch | Postfix | Remember who turned the recycler on |
+| Recycler.MoveItemToOutput | Postfix | RecycleItem, credited to that player or LastLootedByPlayer |
 | PlayerLoot.StartLootingEntity | Postfix | **Crate** (container type) when opening any crate/box (LootContainer or StorageContainer) |
 | Item.MoveToContainer | Prefix/Postfix | **LootItems** when you take items from a crate/box into your inventory (manual looting) |
 | WorldItem.Pickup | Prefix/Postfix | **LootItems** when a world item is picked up (e.g. InstantBarrel barrel loot, ground pickups) |

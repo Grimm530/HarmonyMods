@@ -1132,8 +1132,8 @@ namespace AnimalSpawn
                 AppDomain.CurrentDomain.SetData(AppDomainApiKey, typeof(AnimalSpawn));
                 AppDomain.CurrentDomain.SetData(AppDomainDamageKey, (Func<BaseEntity, HitInfo, object>)CanEntityTakeDamageApi);
                 AppDomain.CurrentDomain.SetData(AppDomainTargetKey, (Func<BaseEntity, BaseEntity, object>)CanEntityBeTargetedApi);
-                GrimmCoreBridge.RegisterHook("AnimalSpawn", "CanEntityTakeDamage", 50, (Func<BaseEntity, HitInfo, object>)CanEntityTakeDamageApi);
-                GrimmCoreBridge.RegisterHook("AnimalSpawn", "CanEntityBeTargeted", 50, (Func<BaseEntity, BaseEntity, object>)CanEntityBeTargetedApi);
+                GrimmCoreBridge.RegisterGameHook("AnimalSpawn", "CanEntityTakeDamage", 50, (Func<BaseEntity, HitInfo, object>)CanEntityTakeDamageApi);
+                GrimmCoreBridge.RegisterGameHook("AnimalSpawn", "CanEntityBeTargeted", 50, (Func<BaseEntity, BaseEntity, object>)CanEntityBeTargetedApi);
             }
             catch (Exception ex)
             {
@@ -1150,7 +1150,7 @@ namespace AnimalSpawn
                 AppDomain.CurrentDomain.SetData(AppDomainApiKey, null);
                 AppDomain.CurrentDomain.SetData(AppDomainDamageKey, null);
                 AppDomain.CurrentDomain.SetData(AppDomainTargetKey, null);
-                GrimmCoreBridge.UnregisterHookMod("AnimalSpawn");
+                GrimmCoreBridge.UnregisterGameHookMod("AnimalSpawn");
             }
             catch { }
         }

@@ -1,19 +1,12 @@
 using System;
-using GrimmCuiHarmony;
 using System.Collections.Generic;
-using GrimmCuiHarmony;
 using System.Reflection;
-using GrimmCuiHarmony;
 using ConVar;
-using GrimmCuiHarmony;
 using Facepunch;
 using GrimmCuiHarmony;
 using Network;
-using GrimmCuiHarmony;
 using Newtonsoft.Json.Linq;
-using GrimmCuiHarmony;
 using UnityEngine;
-using GrimmCuiHarmony;
 
 namespace Radar;
 
@@ -40,9 +33,16 @@ public class RadarMod : IHarmonyModHooks
 
     internal readonly Dictionary<ulong, RadarState> PlayerStates = new Dictionary<ulong, RadarState>();
 
+    /// <summary>AdminRadar 5.4.4: radar user id -> speaker id -> draw expiry. Voice bytes are unused.</summary>
+    private readonly Dictionary<ulong, Dictionary<ulong, float>> _voices = new Dictionary<ulong, Dictionary<ulong, float>>();
+    private float _nextVoiceCleanupTime;
+    private int _enabledRadarCount;
+    private static readonly Vector3 VoiceFiveUp = new Vector3(0f, 5f, 0f);
+    private static readonly Vector3 VoiceTwoHalfUp = new Vector3(0f, 2.5f, 0f);
+
     public void OnLoaded(OnHarmonyModLoadedArgs args)
     {
-            GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
+        GrimmCui.RegisterReadyCallback(GrimmCuiRegistration.Register);
         Instance = this;
         try
         {
@@ -91,7 +91,7 @@ public class RadarMod : IHarmonyModHooks
         {
             UnityEngine.Debug.LogWarning($"[Radar] Command registration failed: {ex.Message}");
         }
-        UnityEngine.Debug.Log("[Radar] Loaded. Use /radar to toggle. Admin only.");
+        UnityEngine.Debug.Log("[Radar] Loaded (AdminRadar 5.4.4). Use /radar to toggle. Admin only.");
     }
 
     private static void HandleRadarCmd(ConsoleSystem.Arg arg)
@@ -127,6 +127,8 @@ public class RadarMod : IHarmonyModHooks
             }
         }
         PlayerStates.Clear();
+        _voices.Clear();
+        _enabledRadarCount = 0;
         if (_replicatedList is System.Collections.IList list)
         {
             if (_radarCmdCommand != null) list.Remove(_radarCmdCommand);
@@ -166,8 +168,109 @@ public class RadarMod : IHarmonyModHooks
         return true;
     }
 
-    /// <summary>AdminRadar voice hook — bytes unused; reserved for future speaking-player overlay.</summary>
-    internal void OnPlayerVoice(BasePlayer player) { }
+    /// <summary>Console <c>radar</c> from <c>RunWithResult</c>. No args toggles. Subcommands are not the 5.4.4 voice fix.</summary>
+    internal void HandleRadarCommand(BasePlayer player, string[] args)
+    {
+        if (player == null) return;
+        if (args != null && args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
+        {
+            SendMessage(player, "Unknown radar command.");
+            return;
+        }
+        ToggleRadar(player);
+    }
+
+    /// <summary>
+    /// AdminRadar 5.4.4 <c>OnPlayerVoice</c>. Oxide now passes <c>ArraySegment&lt;byte&gt;</c>; the bytes are unused.
+    /// Draws a yellow arrow above a speaking player for each active radar within the detection radius.
+    /// </summary>
+    internal void OnPlayerVoice(BasePlayer player)
+    {
+        if (_enabledRadarCount <= 0 || player == null || player.IsDestroyed)
+            return;
+
+        var voice = RadarConfig.Config?.Voice;
+        if (voice == null || !voice.Enabled || voice.Distance <= 0f)
+            return;
+
+        float currentTime = UnityEngine.Time.time;
+        if (currentTime >= _nextVoiceCleanupTime)
+        {
+            _nextVoiceCleanupTime = currentTime + 30f;
+            CleanupVoices(currentTime);
+        }
+
+        Vector3 speakerPos = player.transform.position;
+        float sqrDistance = voice.Distance * voice.Distance;
+        float duration = voice.Interval + 0.02f;
+        ulong speakerId = player.userID;
+
+        foreach (var kv in PlayerStates)
+        {
+            var state = kv.Value;
+            if (state == null || !state.Enabled)
+                continue;
+
+            BasePlayer radarPlayer = BasePlayer.FindByID(kv.Key);
+            if (radarPlayer == null || !radarPlayer.IsConnected)
+                continue;
+
+            Vector3 delta = speakerPos - radarPlayer.transform.position;
+            if (delta.sqrMagnitude > sqrDistance)
+                continue;
+
+            if (!_voices.TryGetValue(kv.Key, out var speakers))
+                _voices[kv.Key] = speakers = new Dictionary<ulong, float>(4);
+
+            if (speakers.TryGetValue(speakerId, out float expiry) && currentTime < expiry)
+                continue;
+
+            speakers[speakerId] = currentTime + voice.Interval;
+            radarPlayer.Command("ddraw.arrow", duration, Color.yellow, speakerPos + VoiceFiveUp, speakerPos + VoiceTwoHalfUp, 0.5f);
+        }
+    }
+
+    private void CleanupVoices(float currentTime)
+    {
+        List<ulong> emptyRadars = null;
+        foreach (var kv in _voices)
+        {
+            var speakers = kv.Value;
+            if (speakers == null || speakers.Count == 0)
+            {
+                emptyRadars ??= new List<ulong>(4);
+                emptyRadars.Add(kv.Key);
+                continue;
+            }
+
+            List<ulong> expired = null;
+            foreach (var speaker in speakers)
+            {
+                if (currentTime < speaker.Value)
+                    continue;
+                expired ??= new List<ulong>(4);
+                expired.Add(speaker.Key);
+            }
+
+            if (expired != null)
+            {
+                for (int i = 0; i < expired.Count; i++)
+                    speakers.Remove(expired[i]);
+            }
+
+            if (speakers.Count == 0)
+            {
+                emptyRadars ??= new List<ulong>(4);
+                emptyRadars.Add(kv.Key);
+            }
+        }
+
+        if (emptyRadars == null)
+            return;
+
+        for (int i = 0; i < emptyRadars.Count; i++)
+            _voices.Remove(emptyRadars[i]);
+    }
 
     /// <returns>True if Radar handled the command (caller should skip original).</returns>
     /// <param name="args">From cui.endtest: ["RADAR", action]; from RADAR_CMD: [action]. Caller guarantees player and args non-null.</param>
@@ -354,6 +457,14 @@ public class RadarMod : IHarmonyModHooks
         }
         var state = GetOrCreateState(player);
         state.Enabled = !state.Enabled;
+        if (state.Enabled)
+            _enabledRadarCount++;
+        else
+        {
+            if (_enabledRadarCount > 0)
+                _enabledRadarCount--;
+            _voices.Remove(player.userID);
+        }
 
         if (state.Enabled)
         {

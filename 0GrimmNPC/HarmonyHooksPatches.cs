@@ -35,6 +35,44 @@ namespace GrimmNPC
             }
         }
 
+        [HarmonyPatch(typeof(PatrolHelicopterAI), nameof(PatrolHelicopterAI.PlayerVisible))]
+        private static class Patch_CanHelicopterTarget
+        {
+            private static bool Prefix(PatrolHelicopterAI __instance, BasePlayer ply, ref bool __result)
+            {
+                if (Ins == null || !(ply is GrimmNPC.CustomScientistNpc npc)) return true;
+                object r = Ins.CanHelicopterTarget(__instance, npc);
+                if (r is bool b)
+                {
+                    __result = b;
+                    return false;
+                }
+                return true;
+            }
+        }
+
+        [HarmonyPatch(typeof(PatrolHelicopterAI), nameof(PatrolHelicopterAI.State_Strafe_Enter))]
+        private static class Patch_CanHelicopterStrafeTarget
+        {
+            private static bool Prefix(PatrolHelicopterAI __instance, BasePlayer strafeTarget)
+            {
+                if (Ins == null || !(strafeTarget is GrimmNPC.CustomScientistNpc npc)) return true;
+                object r = Ins.CanHelicopterStrafeTarget(__instance, npc);
+                return !(r is bool b) || b;
+            }
+        }
+
+        [HarmonyPatch(typeof(HelicopterTurret), nameof(HelicopterTurret.SetTarget))]
+        private static class Patch_OnHelicopterTarget
+        {
+            private static bool Prefix(HelicopterTurret __instance, BaseCombatEntity newTarget)
+            {
+                if (Ins == null || !(newTarget is GrimmNPC.CustomScientistNpc npc)) return true;
+                object r = Ins.OnHelicopterTarget(__instance, npc);
+                return r == null;
+            }
+        }
+
         [HarmonyPatch(typeof(BradleyAPC), nameof(BradleyAPC.VisibilityTest))]
         private static class Patch_CanBradleyApcTarget
         {

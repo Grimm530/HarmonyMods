@@ -10,6 +10,11 @@ internal static class GrimmCoreHurtRegistration
     private static void Postfix(BaseCombatEntity entity, HitInfo info)
     {
         if (info?.HitEntity != entity) return;
+        if (entity is PatrolHelicopter heli)
+        {
+            CombatTracking.NoteHeliAttacker(heli, info.InitiatorPlayer);
+            return;
+        }
         if (entity is not BasePlayer victim) return;
 
         var attacker = info.InitiatorPlayer;

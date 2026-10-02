@@ -9,49 +9,49 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Rust.Harmony">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Harmony.dll</HintPath>
+      <HintPath>$(RustManaged)\Rust.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\0Harmony.dll</HintPath>
+      <HintPath>$(RustManaged)\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(RustManaged)\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>$(RustManaged)\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Console">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
+      <HintPath>$(RustManaged)\Facepunch.Console.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Network">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
+      <HintPath>$(RustManaged)\Facepunch.Network.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.System">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
+      <HintPath>$(RustManaged)\Facepunch.System.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
+      <HintPath>$(RustManaged)\Facepunch.UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Data">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
+      <HintPath>$(RustManaged)\Rust.Data.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Global">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
+      <HintPath>$(RustManaged)\Rust.Global.dll</HintPath>
     </Reference>
     <Reference Include="Rust.FileSystem">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.FileSystem.dll</HintPath>
+      <HintPath>$(RustManaged)\Rust.FileSystem.dll</HintPath>
     </Reference>
     <Reference Include="Rust.Localization">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Rust.Localization.dll</HintPath>
+      <HintPath>$(RustManaged)\Rust.Localization.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(RustManaged)\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(RustManaged)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>D:\!RustServer\RustDedicated_Data\Managed\UnityEngine.dll</HintPath>
+      <HintPath>$(RustManaged)\UnityEngine.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

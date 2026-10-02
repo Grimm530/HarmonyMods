@@ -59,7 +59,7 @@ public static class AlphaLootTools
 			Item item = container.itemList[0];
 			if (item != null)
 			{
-				item.RemoveFromContainer(null);
+				item.RemoveFromContainer();
 				item.Remove();
 				continue;
 			}

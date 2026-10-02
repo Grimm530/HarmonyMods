@@ -67,6 +67,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\_Shared\GrimmCoreBridge.cs" Link="GrimmCoreBridge.cs" />
+    <Compile Remove="OxideCompat.cs" />
   </ItemGroup>
   <ItemDefinitionGroup>
     <Reference>

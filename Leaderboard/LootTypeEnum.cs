@@ -32,5 +32,6 @@ public enum LootType
     Gambling = 26,
     SkillTree = 27,
     Trivia = 28,
-    MixingTable = 29
+    MixingTable = 29,
+    RaidableBoats = 30
 }

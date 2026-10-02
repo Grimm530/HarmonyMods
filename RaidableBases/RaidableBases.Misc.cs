@@ -4034,7 +4034,7 @@ namespace RaidableBases
                         }
                         else
                         {
-                            inventory.Insert(i, null);
+                            inventory.Insert(i);
                         }
                     }
                 }

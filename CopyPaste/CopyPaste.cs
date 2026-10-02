@@ -4083,9 +4083,12 @@ namespace CopyPasteHarmony
                     if (!sprinkler.IsValid() || sprinkler.IsDestroyed || !sprinkler.IsOn())
                         return;
 
-                    // Clear the on flag and rerun sprinkler startup so DoSplash is invoked without clearing fuel state
-                    sprinkler.SetFlag(BaseEntity.Flags.On, false);
-                    sprinkler.TurnOn();
+                    // Restart the splash cycle. RefreshSprinklerState turns the sprinkler off and
+                    // clears the fuel source when power is not applied yet.
+                    sprinkler.SetFlag(BaseEntity.Flags.On, true);
+                    Action splash = sprinkler.DoSplash;
+                    if (!sprinkler.IsInvoking(splash))
+                        sprinkler.InvokeRandomized(splash, sprinkler.SplashFrequency * 0.5f, sprinkler.SplashFrequency, sprinkler.SplashFrequency * 0.2f);
                 });
             }
 

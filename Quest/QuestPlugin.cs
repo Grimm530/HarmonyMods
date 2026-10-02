@@ -4840,7 +4840,7 @@ namespace Harmony.Plugins
 					use.amount -= amountQuest;
 					if (use.amount == 0)
 					{
-						use.RemoveFromContainer(null);
+						use.RemoveFromContainer();
 						use.Remove();
 					}
 
@@ -4849,7 +4849,7 @@ namespace Harmony.Plugins
 				else
 				{
 					amountQuest -= use.amount;
-					use.RemoveFromContainer(null);
+					use.RemoveFromContainer();
 					use.Remove();
 				}
 

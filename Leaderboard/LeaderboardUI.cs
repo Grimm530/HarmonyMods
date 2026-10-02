@@ -981,32 +981,84 @@ public static class LeaderboardUI
         float upgrades = stats.GetTotal(LootType.Upgrade);
         v[5] = upgrades >= 1000 ? (upgrades / 1000f).ToString("F1") + "K" : ((int)upgrades).ToString();
         v[6] = FormatBuildingMaterial(GetTopKey(stats, LootType.Upgrade, out _));
-        // Events = Bradley + Patrol Helicopter only
         float events = GetEventCount(stats);
         v[7] = ((int)events).ToString();
         v[8] = GetFavoriteEvent(stats);
         return v;
     }
 
-    /// <summary>Total events completed: Bradley + Patrol Helicopter (from LootType.Kill).</summary>
+    /// <summary>Bradley, patrol helicopter, and recorded event wins (Subway, Shipwreck, and the other event hooks).</summary>
     private static float GetEventCount(PlayerStats stats)
     {
         if (stats == null) return 0f;
         stats.TryGetItem(LootType.Kill, "helicopter", out var heli);
         stats.TryGetItem(LootType.Kill, "bradleyapc", out var bradley);
-        return heli + bradley;
+        return heli + bradley + stats.GetTotal(LootType.Event);
     }
 
-    /// <summary>Favorite event: whichever of Bradley or Patrol Helicopter the player has completed more.</summary>
+    /// <summary>Favorite event by count. Known events use a display name. Unknown keys are spaced, never a raw UI.Field key.</summary>
     private static string GetFavoriteEvent(PlayerStats stats)
     {
         if (stats == null) return "—";
+        string bestKey = null;
+        float best = 0f;
+        void Consider(string key, float value)
+        {
+            if (string.IsNullOrEmpty(key) || value <= best) return;
+            best = value;
+            bestKey = key;
+        }
+
         stats.TryGetItem(LootType.Kill, "helicopter", out var heli);
         stats.TryGetItem(LootType.Kill, "bradleyapc", out var bradley);
-        if (heli <= 0 && bradley <= 0) return "—";
-        if (bradley > heli) return "Bradley";
-        if (heli > bradley) return "Patrol Helicopter";
-        return "Bradley"; // tie: either is fine
+        Consider("helicopter", heli);
+        Consider("bradleyapc", bradley);
+        var events = stats.GetAll(LootType.Event);
+        if (events != null)
+        {
+            foreach (var kv in events)
+                Consider(kv.Key, kv.Value);
+        }
+        return bestKey == null ? "—" : FriendlyEventName(bestKey);
+    }
+
+    private static readonly Dictionary<string, string> EventDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["helicopter"] = "Patrol Helicopter",
+        ["bradleyapc"] = "Bradley",
+        ["Convoy"] = "Convoy",
+        ["ArmoredTrainEvent"] = "Armored Train",
+        ["CHT"] = "Helicopter Tiers",
+        ["SubwayEvent"] = "Subway",
+        ["CargoPlaneCrash"] = "Cargo Plane Crash",
+        ["GuardedCrate"] = "Guarded Crate",
+        ["F15CrashEvent"] = "F15 Crash",
+        ["Shipwreck"] = "Shipwreck",
+        ["HarborEvent"] = "Harbor"
+    };
+
+    private static string FriendlyEventName(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return "—";
+        if (EventDisplayNames.TryGetValue(key, out var known)) return known;
+        const string missingLang = "UI.Field.";
+        if (key.StartsWith(missingLang, StringComparison.Ordinal))
+            key = key.Substring(missingLang.Length);
+        if (string.IsNullOrEmpty(key)) return "—";
+        var sb = new System.Text.StringBuilder(key.Length + 4);
+        for (int i = 0; i < key.Length; i++)
+        {
+            char c = key[i];
+            if (c == '_' || c == '.')
+            {
+                sb.Append(' ');
+                continue;
+            }
+            if (i > 0 && char.IsUpper(c) && char.IsLower(key[i - 1]))
+                sb.Append(' ');
+            sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     private static string GetTopKey(PlayerStats stats, LootType type, out float value)
@@ -1042,8 +1094,8 @@ public static class LeaderboardUI
         if (player == null) return "Today: —";
         var mod = LeaderboardMod.Instance;
         if (mod == null || !mod.TryGetStats(player.userID, out var stats)) return "Today: —";
-        var sec = (System.DateTime.UtcNow - stats.ConnectTime).TotalSeconds;
-        if (sec < 0) return "Today: —";
+        var sec = stats.GetCurrentPlayTimeSeconds();
+        if (sec <= 0) return "Today: —";
         return "Today: " + FormatPlayTime(sec);
     }
 

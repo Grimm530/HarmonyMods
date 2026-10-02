@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: Cooking 2.0.35 (Harmony port). Config: HarmonyConfig/Cooking.json. Data: Custom cooking data directory or HarmonyData/Cooking. Requires Permissions mod.</Description>
+    <Description>Harmony mod: Cooking 2.1.0 (Harmony port). Config: HarmonyConfig/Cooking.json. Data: Custom cooking data directory or HarmonyData/Cooking. Requires Permissions mod.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>

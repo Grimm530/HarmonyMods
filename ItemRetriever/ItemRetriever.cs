@@ -762,7 +762,7 @@ namespace ItemRetrieverHarmony
                         }
                         else
                         {
-                            item.RemoveFromContainer(null);
+                            item.RemoveFromContainer();
 
                             if (collect != null)
                             {

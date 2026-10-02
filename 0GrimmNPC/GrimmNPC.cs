@@ -25,7 +25,7 @@ namespace GrimmNPC
     public class GrimmNPC : IHarmonyModHooks
     {
         public static GrimmNPC Instance { get; private set; }
-        public static readonly VersionNumber Version = new VersionNumber(3, 3, 4);
+        public static readonly VersionNumber Version = new VersionNumber(3, 4, 8);
 
         // Public classes for inter-plugin communication
         public class NpcBelt { public string ShortName; public int Amount; public ulong SkinID; public HashSet<string> Mods; public string Ammo; }
@@ -125,6 +125,7 @@ namespace GrimmNPC
         {
             Puts("Creating a default config...");
             _config = PluginConfig.DefaultConfig();
+            ApplyDefaultNpcDamageScales(_config.WeaponsParameters);
             _config.PluginVersion = GrimmNPC.Version;
             SaveConfig();
             Puts("Creation of the default config completed!");
@@ -230,6 +231,62 @@ namespace GrimmNPC
             addWeapon(0, "krieg.chainsword");
             addWeapon(1, "krieg.shotgun");
             addWeapon(3, "rifle.lr300.space");
+        }
+
+        // NpcSpawn 3.4.8 weapon damage multipliers. Missing JSON values deserialize as 0.
+        private static void ApplyDefaultNpcDamageScales(Dictionary<string, DefaultSettings> parameters)
+        {
+            if (parameters == null) return;
+            foreach (KeyValuePair<string, DefaultSettings> kvp in parameters)
+            {
+                if (kvp.Value == null || kvp.Value.NpcDamageScale > 0f) continue;
+                kvp.Value.NpcDamageScale = DefaultNpcDamageScale(kvp.Key);
+            }
+        }
+
+        private static float DefaultNpcDamageScale(string shortname)
+        {
+            switch (shortname)
+            {
+                case "rifle.bolt":
+                case "rifle.l96":
+                case "multiplegrenadelauncher":
+                    return 0.5f;
+                case "smg.thompson":
+                case "snowballgun":
+                    return 0.2f;
+                case "smg.2":
+                case "speargun":
+                case "bow.compound":
+                case "crossbow":
+                case "legacy bow":
+                case "bow.hunting":
+                case "minicrossbow":
+                case "pistol.nailgun":
+                case "blowpipe":
+                case "pistol.eoka":
+                case "crossbowbowless":
+                    return 0.25f;
+                case "t1_smg":
+                    return 0.4f;
+                case "blunderbuss":
+                case "shotgun.double":
+                case "shotgun.pump":
+                case "shotgun.waterpipe":
+                case "krieg.shotgun":
+                    return 0.15f;
+                case "revolver.hc":
+                    return 0.18f;
+                case "pistol.python":
+                    return 0.21f;
+                case "pistol.prototype17":
+                case "pistol.semiauto":
+                    return 0.28f;
+                case "rifle.lr300.space":
+                    return 0.25f;
+                default:
+                    return 1f;
+            }
         }
 
         private void UpdateConfigValues()
@@ -396,6 +453,8 @@ namespace GrimmNPC
             }
             if (_config.PluginVersion < new VersionNumber(2, 8, 45))
                 MergeAdditionalWeaponEntries();
+            if (_config.PluginVersion < new VersionNumber(3, 4, 8))
+                ApplyDefaultNpcDamageScales(_config.WeaponsParameters);
             _config.PluginVersion = GrimmNPC.Version;
             Puts("Config update completed!");
             SaveConfig();
@@ -408,6 +467,7 @@ namespace GrimmNPC
             [JsonProperty(En ? "Effective Range" : "Дальность прицельной стрельбы")] public float EffectiveRange { get; set; }
             [JsonProperty(En ? "Minimum Attack Duration" : "Минимальная продолжительность стрельбы")] public float AttackLengthMin { get; set; }
             [JsonProperty(En ? "Maximum Attack Duration" : "Максимальная продолжительность стрельбы")] public float AttackLengthMax { get; set; }
+            [JsonProperty(En ? "Weapon Damage Multiplier" : "Множитель урона оружия")] public float NpcDamageScale { get; set; }
         }
 
         private void DebugLog(string message)
@@ -2576,28 +2636,18 @@ namespace GrimmNPC
                 else
                 {
                     float distanceToTarget = DistanceToTarget;
-                    int type = -1;
+                    float multiplier = Config != null ? Config.AttackRangeMultiplier : 1f;
+                    float bestRange = float.MinValue;
                     foreach (Item item in inventory.containerBelt.itemList)
                     {
-                        int currentType = GetTypeWeaponItem(item);
-                        if (currentType == -1) continue;
-                        if (type == -1)
+                        if (GetTypeWeaponItem(item) == -1) continue;
+                        float newDistance = WeaponEffectiveRange(item) * multiplier;
+                        if ((bestRange > distanceToTarget && newDistance > distanceToTarget && newDistance < bestRange) ||
+                            (bestRange < distanceToTarget && newDistance > distanceToTarget) ||
+                            (bestRange < distanceToTarget && newDistance < distanceToTarget && newDistance > bestRange))
                         {
                             weapon = item;
-                            type = currentType;
-                        }
-                        else
-                        {
-                            if (type == currentType) continue;
-                            float oldDistance = type > 0 ? Config.AttackRangeMultiplier * type * 10f : 2f;
-                            float newDistance = currentType > 0 ? Config.AttackRangeMultiplier * currentType * 10f : 2f;
-                            if ((oldDistance > distanceToTarget && newDistance > distanceToTarget && newDistance < oldDistance) ||
-                                (oldDistance < distanceToTarget && newDistance > distanceToTarget) ||
-                                (oldDistance < distanceToTarget && newDistance < distanceToTarget && newDistance > oldDistance))
-                            {
-                                weapon = item;
-                                type = currentType;
-                            }
+                            bestRange = newDistance;
                         }
                     }
                 }
@@ -2624,6 +2674,8 @@ namespace GrimmNPC
                     attackEntity.effectiveRange = weaponSettings.EffectiveRange;
                     attackEntity.attackLengthMin = weaponSettings.AttackLengthMin;
                     attackEntity.attackLengthMax = weaponSettings.AttackLengthMax;
+                    if (weaponSettings.NpcDamageScale > 0f)
+                        attackEntity.npcDamageScale = weaponSettings.NpcDamageScale;
                 }
                 if (attackEntity is Chainsaw) (attackEntity as Chainsaw).ServerNPCStart();
                 if (attackEntity is BaseProjectile)
@@ -2688,6 +2740,17 @@ namespace GrimmNPC
                         return i;
                 }
                 return -1;
+            }
+
+            private float WeaponEffectiveRange(Item item)
+            {
+                AttackEntity held = item?.GetHeldEntity() as AttackEntity;
+                float range = held != null ? held.effectiveRange : 2f;
+                if (item?.info != null && _config?.WeaponsParameters != null
+                    && _config.WeaponsParameters.TryGetValue(item.info.shortname, out DefaultSettings setting)
+                    && setting != null)
+                    range = setting.EffectiveRange;
+                return range;
             }
             #endregion Equip Weapons
 
@@ -5389,6 +5452,30 @@ namespace GrimmNPC
                     return false; // Block targeting based on config
                 }
             }
+            return null;
+        }
+
+        // Patrol Heli Support spawns its event heli with this skin. That heli is allowed to fight custom scientists.
+        private const ulong PatrolHeliSupportSkin = 3622136509UL;
+
+        private static bool IsPatrolHeliSupport(PatrolHelicopterAI heli)
+        {
+            return heli != null && heli.helicopterBase != null && heli.helicopterBase.skinID == PatrolHeliSupportSkin;
+        }
+
+        internal object CanHelicopterTarget(PatrolHelicopterAI heli, CustomScientistNpc victim)
+        {
+            if (IsPatrolHeliSupport(heli)) return null;
+            if (IsCustomScientist(victim)) return false;
+            return null;
+        }
+
+        internal object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, CustomScientistNpc victim) => CanHelicopterTarget(heli, victim);
+
+        internal object OnHelicopterTarget(HelicopterTurret turret, CustomScientistNpc victim)
+        {
+            if (turret != null && IsPatrolHeliSupport(turret._heliAI)) return null;
+            if (IsCustomScientist(victim)) return true;
             return null;
         }
 
@@ -8340,7 +8427,7 @@ namespace GrimmNPC
             for (int i = container.itemList.Count - 1; i >= 0; i--)
             {
                 Item item = container.itemList[i];
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 item.Remove();
             }
         }

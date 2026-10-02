@@ -138,6 +138,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\ConsoleIndexCompat.cs" Link="ConsoleIndexCompat.cs" />
+    <Compile Remove="OxideCompat.cs" />
     <Compile Remove="obj\**" />
     <None Remove="obj\**" />
   </ItemGroup>

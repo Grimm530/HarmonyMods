@@ -23,7 +23,7 @@ using UnityEngine;
 
 namespace Harmony.Plugins
 {
-    [Info("TruePVE", "Nivex & Grimm530", "2.4.31")]
+    [Info("TruePVE", "Nivex & Grimm530", "2.4.5")]
     [Description("Improvement of the default Rust PVE behavior")]
     // Thanks to the original author, ignignokt84.
     public partial class TruePVE : RustPlugin
@@ -142,6 +142,19 @@ namespace Harmony.Plugins
             VehiclesTakeCollisionDamage = 1uL << 47
         }
 
+        [Flags]
+        public enum ProtectionHook : ulong
+        {
+            None = 0,
+            Damage = 1uL << 0,
+            Familiarity = 1uL << 1,
+            Leading = 1uL << 2,
+            Milking = 1uL << 3,
+            RefuseTarget = 1uL << 4,
+            Shearing = 1uL << 5
+        }
+
+        private ProtectionHook protectionHooks;
         private bool IsUnloading;
         private Timer scheduleUpdateTimer;                              // timer to check for schedule updates
         private bool shareRedirectDudEnabled;                           // undocumented. UAYOR.
@@ -556,6 +569,12 @@ namespace Harmony.Plugins
             Unsubscribe(nameof(CanAffordApartmentMasterKey));
             Unsubscribe(nameof(OnApartmentMasterKeyPurchase));
             Unsubscribe(nameof(CanChangeGrade));
+            Unsubscribe(nameof(OnLootNetworkUpdate));
+            Unsubscribe(nameof(OnEntityDistanceCheck));
+            Unsubscribe(nameof(OnEntityVisibilityCheck));
+            Unsubscribe(nameof(CanLivestockAnimalRefuseTarget));
+            Unsubscribe(nameof(OnLivestockAnimalFamiliarityAdd));
+            Unsubscribe(nameof(OnLivestockShear));
             // register console commands automagically
             foreach (Command command in Enum.GetValues(typeof(Command)))
             {
@@ -565,6 +584,7 @@ namespace Harmony.Plugins
             AddCovalenceCommand("tpve_prod", nameof(CommandDelegator));
             AddCovalenceCommand("tpve_enable", nameof(CommandDelegator));
             AddCovalenceCommand("tpve", nameof(CommandDelegator));
+            AddCovalenceCommand("tpve.resetfamiliarity", nameof(CommandResetFamiliarity));
             permission.RegisterPermission(PermCanMap, this);
             
             // Register PreventLooting permissions and commands
@@ -791,6 +811,10 @@ namespace Harmony.Plugins
             else if (config.options.Loot.Backpacks)
             {
                 Subscribe(nameof(CanLootEntity));
+            }
+            if (config.options.Loot.HasLocks())
+            {
+                Subscribe(nameof(OnLootNetworkUpdate));
             }
             // Ensure CanLootEntity is active for integrated loot protection
             if (config.LootDefender.Enabled || config.PreventLooting.Enabled)
@@ -1187,17 +1211,25 @@ namespace Harmony.Plugins
 
             if (args.Contains("pvp"))
             {
-                if (currentRuleSet.rules.Remove("players cannot hurt players"))
+                if (currentRuleSet == null)
                 {
-                    currentRuleSet.rules.Add("players can hurt players");
-                }
-                else if (currentRuleSet.rules.Remove("player can hurt players"))
-                {
-                    currentRuleSet.rules.Add("player cannot hurt players");
+                    user.Reply("No active ruleset.");
+                    return;
                 }
 
-                Puts("PVP toggled {0}", currentRuleSet.rules.Contains("players can hurt players") ? "on" : "off");
+                bool allow = currentRuleSet.rules.Remove("players cannot hurt players");
+                if (!allow && !currentRuleSet.rules.Remove("players can hurt players"))
+                {
+                    user.Reply($"{currentRuleSet.name} ruleset does not contain a 'players can hurt players' or 'players cannot hurt players' rule.");
+                    return;
+                }
+
+                currentRuleSet.rules.Add(allow ? "players can hurt players" : "players cannot hurt players");
+                currentRuleSet.parsedRules.Clear();
+                currentRuleSet.Build(this);
+                ValidateCurrentDamageHook();
                 SaveConfig();
+                Puts("PVP toggled {0}", allow ? "on" : "off");
                 return;
             }
 
@@ -1209,9 +1241,9 @@ namespace Harmony.Plugins
 
             if (command == "tpve_enable")
             {
-				tpveEnabled = !tpveEnabled;
+                tpveEnabled = !tpveEnabled;
                 ValidateCurrentDamageHook();
-                Message(user, "Enable", tpveEnabled);
+                Message(user, "Enable", IsEnabled());
                 return;
             }
 
@@ -1252,9 +1284,9 @@ namespace Harmony.Plugins
                     HandleTrace(user);
                     return;
                 case Command.enable:
-					tpveEnabled = !tpveEnabled;
+                    tpveEnabled = !tpveEnabled;
                     ValidateCurrentDamageHook();
-                    Message(user, "Enable", tpveEnabled);
+                    Message(user, "Enable", IsEnabled());
                     return;
                 case Command.usage:
                 default:
@@ -2000,6 +2032,7 @@ namespace Harmony.Plugins
                 config.options.BlockHandler.Twig = config.options.BlockHandler._Twig.Value;
                 config.options.BlockHandler._Twig = null;
             }
+            config.options.Livestock ??= new();
             TryUpdateConfig();
             config.configVersion = Version.ToString();
             CheckMappings();
@@ -2010,7 +2043,7 @@ namespace Harmony.Plugins
             _pvpReflectionEnabled = config.options.Reflect.Any;
             _canKillOfflinePlayerEnabled = config.AllowKillingSleepersHoursOffline > 0;
             _playersTriggerOption = config.PlayersTriggerTraps || config.PlayersTriggerTurrets;
-            _playersHurtOption = config.PlayersHurtTraps || config.PlayersHurtTurrets;
+            _playersHurtOption = config.PlayersHurtTraps || config.PlayersHurtTurrets || config.PlayersHurtSamSites;
             // ensure loot defender/prevent looting defaults exist
             config.LootDefender ??= new();
             config.PreventLooting ??= new();
@@ -2020,13 +2053,21 @@ namespace Harmony.Plugins
 
         private void TryUpdateConfig()
         {
-            if (!TryParseVersionNumber(config.configVersion, out var vn) || vn >= Version)
+            if (!TryParseVersionNumber(config.configVersion, out var vn))
                 return;
 
-            Dictionary<string, string> updates = new(StringComparer.OrdinalIgnoreCase)
+            // 2.4.31 was this port's stamp (patch >= 10). It is older than upstream 2.4.5.
+            bool internalStamp = vn.Major == 2 && vn.Minor == 4 && vn.Patch >= 10;
+            if (vn >= Version && !internalStamp)
+                return;
+
+            Dictionary<string, List<string>> updates = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["npcs"] = "SnakeHazard",
-                ["dispensers"] = "VineSwingingTree"
+                ["npcs"] = new() { nameof(SnakeHazard), nameof(ScientistNPC2) },
+                ["dispensers"] = new() { nameof(VineSwingingTree), nameof(LivestockCorpse) },
+                ["traps"] = new() { "spikes.trap" },
+                ["barricades2"] = new() { "barricade.medieval", "barricade.cover.wood", "barricade.cover.wood_double" },
+                ["farm"] = new() { nameof(Sheep), nameof(Cow) },
             };
 
             for (int i = 0; i < config.groups.Count; i++)
@@ -2049,10 +2090,17 @@ namespace Harmony.Plugins
                     continue;
                 }
 
-                if (updates.TryGetValue(group.name, out var update) && !ContainedInGroups(update))
+                if (!updates.TryGetValue(group.name, out var members))
                 {
-                    group.members = $"{group.members.TrimEnd(',', ' ')}{", "}{update}";
                     continue;
+                }
+
+                foreach (var member in members)
+                {
+                    if (!ContainedInGroups(member))
+                    {
+                        group.members = $"{group.members.TrimEnd(',', ' ')}, {member}";
+                    }
                 }
             }
         }
@@ -2245,7 +2293,7 @@ namespace Harmony.Plugins
 
             config.groups.Add(new("dispensers")
             {
-                members = "BaseCorpse, HelicopterDebris, PlayerCorpse, NPCPlayerCorpse, HorseCorpse, SkyLantern, Pinata"
+                members = "BaseCorpse, HelicopterDebris, PlayerCorpse, NPCPlayerCorpse, HorseCorpse, SkyLantern, Pinata, LivestockCorpse"
             });
 
             config.groups.Add(new("fire")
@@ -2351,7 +2399,7 @@ namespace Harmony.Plugins
 
             config.groups.Add(new("farm")
             {
-                members = "simplechicken.entity, FarmableAnimal, ChickenCoop"
+                members = "simplechicken.entity, FarmableAnimal, ChickenCoop, Sheep, Cow"
             });
         }
 
@@ -2526,7 +2574,271 @@ namespace Harmony.Plugins
 
         private string CurrentRuleSetName() => currentRuleSet?.name;
 
-        private bool IsEnabled() => tpveEnabled;
+        #region Livestock
+
+        private class LookupTime
+        {
+            public bool Result;
+            public long ExpiresAt;
+            public LookupTime(bool result, long expiresAt)
+            {
+                Result = result;
+                ExpiresAt = expiresAt;
+            }
+        }
+
+        private long nextLivestockLookupCleanTime;
+        private Dictionary<(ulong livestockId, ulong userId), LookupTime> livestockLookupTimes = new();
+
+        private bool BlockHeliDamageToLivestock(BaseEntity entity)
+        {
+            return config.options.Livestock.Damage && entity is LivestockAnimal livestock && IsKeptLivestock(livestock);
+        }
+
+        private bool IsKeptLivestock(LivestockAnimal livestock)
+        {
+            return livestock.OwnerID.IsSteamId() || livestock.IsTame || livestock.IsLeading() || livestock.TryGetHomeCupboard(out _);
+        }
+
+        private bool ShouldBlockLivestockInteraction(LivestockAnimal livestock, BasePlayer player, bool useCache = false, long length = 1)
+        {
+            if (!IsEnabled() || canBypass(player) || !IsKeptLivestock(livestock))
+            {
+                return false;
+            }
+
+            useCache &= livestock.net != null;
+
+            long now = 0L;
+            (ulong livestockId, ulong userId) key = default;
+            if (useCache)
+            {
+                now = Stopwatch.GetTimestamp();
+                key = (livestock.net.ID.Value, player.userID);
+
+                if (livestockLookupTimes.TryGetValue(key, out var lookup) && lookup.ExpiresAt > now)
+                {
+                    return lookup.Result;
+                }
+
+                if (now >= nextLivestockLookupCleanTime)
+                {
+                    nextLivestockLookupCleanTime = now + Stopwatch.Frequency * 30L;
+                    var expired = new List<(ulong, ulong)>();
+                    foreach (var pair in livestockLookupTimes)
+                    {
+                        if (now >= pair.Value.ExpiresAt)
+                        {
+                            expired.Add(pair.Key);
+                        }
+                    }
+                    for (int i = 0; i < expired.Count; i++)
+                    {
+                        livestockLookupTimes.Remove(expired[i]);
+                    }
+                }
+            }
+
+            RuleSet ruleSet = currentRuleSet;
+            if (useZones)
+            {
+                using var entityLocations = GetLocationKeys(livestock);
+                using var playerLocations = GetLocationKeys(player);
+                ruleSet = CheckExclusion(entityLocations, playerLocations, false) ? null : GetRuleSet(entityLocations, playerLocations);
+            }
+
+            bool blocked = ruleSet != null && ruleSet.enabled && !ruleSet.IsEmpty() && !IsLivestockAlly(livestock, player, (ruleSet._flags & RuleFlags.CupboardOwnership) != 0);
+            if (useCache)
+            {
+                livestockLookupTimes[key] = new LookupTime(blocked, now + Stopwatch.Frequency * length);
+            }
+            return blocked;
+        }
+
+        private bool IsLivestockAlly(LivestockAnimal livestock, BasePlayer player, bool cupboardOwnership)
+        {
+            if (livestock.acquaintances != null)
+            {
+                for (int i = 0; i < livestock.acquaintances.Length; i++)
+                {
+                    var acquaintance = livestock.acquaintances[i];
+                    if (acquaintance.userId.IsSteamId() && acquaintance.seconds >= ConVar.Livestock.trustToBond && IsAlly(player, acquaintance.userId))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (livestock.TryGetHomeCupboard(out var home))
+            {
+                return (home.OwnerID.IsSteamId() && IsAlly(player, home.OwnerID)) || (cupboardOwnership && home.IsAuthed(player));
+            }
+
+            if (livestock.OwnerID.IsSteamId())
+            {
+                return IsAlly(player, livestock.OwnerID);
+            }
+
+            if (livestock.IsLeading() && livestock.LeadingPlayer.Get(true) is BasePlayer leader && IsAlly(player, leader))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        public void CheckLivestockDamageOption()
+        {
+            livestockLookupTimes.Clear();
+            var opt = config.options.Livestock;
+            if (opt == null)
+            {
+                return;
+            }
+
+            opt.Damage = opt.Leading || opt.Milking || opt.Shearing;
+            if (opt.Damage)
+            {
+                return;
+            }
+
+            if (useZones && shareRedirectDudEnabled)
+            {
+                opt.Damage = true;
+                return;
+            }
+
+            int ruleSetCount = useZones ? config.ruleSets.Count : 1;
+            for (int i = 0; i < ruleSetCount; i++)
+            {
+                RuleSet ruleSet = useZones ? config.ruleSets[i] : currentRuleSet;
+                if (ruleSet == null || !ruleSet.enabled || ruleSet.IsEmpty())
+                {
+                    continue;
+                }
+
+                if (!ruleSet.defaultAllowDamage || (ruleSet._flags & (RuleFlags.AuthorizedFarmableDamage | RuleFlags.NoHeliDamage | RuleFlags.NoMLRSDamage)) != 0)
+                {
+                    opt.Damage = true;
+                    return;
+                }
+
+                foreach (var rule in ruleSet.parsedRules)
+                {
+                    if (rule == null || !rule.valid || rule.hurt || string.IsNullOrEmpty(rule.key))
+                    {
+                        continue;
+                    }
+
+                    int index = rule.key.IndexOf("->", StringComparison.Ordinal);
+                    if (index < 0)
+                    {
+                        continue;
+                    }
+
+                    string targetGroupName = rule.key.Substring(index + 2);
+                    if (targetGroupName.Equals(Any, StringComparison.OrdinalIgnoreCase))
+                    {
+                        opt.Damage = true;
+                        return;
+                    }
+
+                    foreach (var group in config.groups)
+                    {
+                        if (!group.name.Equals(targetGroupName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        if (group.Contains(nameof(Cow)) || group.Contains(nameof(Sheep)))
+                        {
+                            opt.Damage = true;
+                            return;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        private object OnEntityDistanceCheck(LivestockAnimal livestock, BasePlayer player, uint id, string debugName, float maximumDistance, bool checkParent)
+        {
+            if (!config.options.Livestock.Leading || debugName != "RPC_Lead" || livestock == null || livestock.IsDestroyed || player == null || !player.userID.IsSteamId())
+            {
+                return null;
+            }
+            return livestock.CanStopLead(player) || !ShouldBlockLivestockInteraction(livestock, player) ? null : (object)false;
+        }
+
+        private object OnEntityVisibilityCheck(Cow cow, BasePlayer player, uint id, string debugName, float maximumDistance)
+        {
+            if (!config.options.Livestock.Milking || debugName != "MilkCow" || cow == null || cow.IsDestroyed || player == null || !player.userID.IsSteamId())
+            {
+                return null;
+            }
+            return ShouldBlockLivestockInteraction(cow, player) ? (object)false : null;
+        }
+
+        private object OnLivestockShear(BasePlayer player, HitInfo info)
+        {
+            if (!config.options.Livestock.Shearing || info == null || player == null || !player.userID.IsSteamId() || info.HitEntity is not Sheep sheep || sheep.IsDestroyed)
+            {
+                return null;
+            }
+            if (info.IsProjectile() || !sheep.IsShearTool(info.Weapon) || !sheep.CanBeSheared(player) || !ShouldBlockLivestockInteraction(sheep, player))
+            {
+                return null;
+            }
+            return true;
+        }
+
+        private object OnLivestockAnimalFamiliarityAdd(LivestockAnimal livestock, ulong userId, float seconds, LivestockAnimal.FamiliarityReason reason)
+        {
+            if (!config.options.Livestock.Damage || seconds <= 0f || livestock == null || livestock.IsDestroyed || !userId.IsSteamId())
+            {
+                return null;
+            }
+            BasePlayer player = RelationshipManager.FindByID(userId);
+            if (player == null)
+            {
+                return null;
+            }
+            return ShouldBlockLivestockInteraction(livestock, player) ? (object)false : null;
+        }
+
+        private object CanLivestockAnimalRefuseTarget(LivestockAnimal livestock, BasePlayer target)
+        {
+            if (!config.options.Livestock.Damage || livestock == null || livestock.IsDestroyed || target == null || !target.userID.IsSteamId())
+            {
+                return null;
+            }
+            return ShouldBlockLivestockInteraction(livestock, target, true) ? (object)true : null;
+        }
+
+        private void CommandResetFamiliarity(IPlayer user, string command, string[] args)
+        {
+            if (user == null || !user.IsAdmin) return;
+            BasePlayer player = user.Object as BasePlayer;
+            if (player == null) return;
+            if (!GetRaycastTarget(player, out BaseEntity hit) || hit is not LivestockAnimal livestock || livestock.acquaintances == null)
+            {
+                player.ConsoleMessage("Look at a cow or sheep.");
+                return;
+            }
+            for (int i = 0; i < livestock.acquaintances.Length; i++)
+            {
+                livestock.acquaintances[i].seconds = 0f;
+            }
+            player.ConsoleMessage($"Reset {livestock} familiarity for everyone.");
+        }
+
+        #endregion Livestock
+
+        private bool IsEnabled()
+        {
+            RuleSet ruleSet = currentRuleSet;
+            return tpveEnabled && config.options.handleDamage && ruleSet != null && ruleSet.enabled && !ruleSet.IsEmpty();
+        }
 
         private void OnTimedExplosiveExplode(TimedExplosive explosive, Vector3 explosionFxPos)
         {
@@ -4191,28 +4503,34 @@ namespace Harmony.Plugins
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CanPlayerBeHurtFromMonumentTopology(BaseEntity weapon, Vector3 worldPos)
         {
-            if (!(config.PlayersTriggerTraps && (weapon is BaseTrap or BaseDetector or GunTrap) || config.PlayersTriggerTurrets && (weapon is FlameTurret or AutoTurret)))
+            bool enabled = weapon switch
             {
-                return false;
-            }
-            if (!_monumentTopologyTargets.TryGetValue(weapon.net.ID.Value, out bool value))
-            {
-                _monumentTopologyHurt[weapon.net.ID.Value] = value = (TerrainMeta.TopologyMap.GetTopology(worldPos, 5f) & (int)TerrainTopology.Enum.Monument) != 0;
-                if (_monumentTopologyHurt.Count == 1) timer.Once(60f, _monumentTopologyHurt.Clear);
-            }
-            return value;
+                BaseTrap or BaseDetector or GunTrap => config.PlayersTriggerTraps,
+                FlameTurret or AutoTurret => config.PlayersTriggerTurrets,
+                _ => false
+            };
+            return enabled && weapon.net != null && IsMonumentTopology(weapon.net.ID, worldPos);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CanPlayerHurtTargetInMonumentTopology(BaseEntity entity, Vector3 worldPos)
         {
-            if (!(config.PlayersHurtTraps && (entity is BaseTrap or BaseDetector or GunTrap)) && !(config.PlayersHurtTurrets && (entity is FlameTurret or AutoTurret)))
+            bool enabled = entity switch
             {
-                return false;
-            }
-            if (!_monumentTopologyTargets.TryGetValue(entity.net.ID.Value, out bool value))
+                BaseTrap or BaseDetector or GunTrap => config.PlayersHurtTraps,
+                FlameTurret or AutoTurret => config.PlayersHurtTurrets,
+                SamSite => config.PlayersHurtSamSites,
+                _ => false
+            };
+            return enabled && entity.net != null && IsMonumentTopology(entity.net.ID, worldPos);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsMonumentTopology(NetworkableId id, Vector3 worldPos)
+        {
+            if (!_monumentTopologyTargets.TryGetValue(id.Value, out bool value))
             {
-                _monumentTopologyTargets[entity.net.ID.Value] = value = (TerrainMeta.TopologyMap.GetTopology(worldPos, 5f) & (int)TerrainTopology.Enum.Monument) != 0;
+                _monumentTopologyTargets[id.Value] = value = (TerrainMeta.TopologyMap.GetTopology(worldPos, 5f) & (int)TerrainTopology.Enum.Monument) != 0;
                 if (_monumentTopologyTargets.Count == 1) timer.Once(60f, _monumentTopologyTargets.Clear);
             }
             return value;
@@ -4375,8 +4693,9 @@ namespace Harmony.Plugins
             }
 
             var damageAmount = info.damageTypes.Total();
-
-            if (damageAmount <= 0f)
+            LivestockAnimal livestock = entity as LivestockAnimal;
+            bool isKeptLivestock = config.options.Livestock.Damage && livestock != null && IsKeptLivestock(livestock);
+            if (!isKeptLivestock && damageAmount <= 0f)
             {
                 return true;
             }
@@ -4405,7 +4724,13 @@ namespace Harmony.Plugins
 
             var weapon = initiator ?? info.WeaponPrefab ?? info.Weapon;
 
-            if (entity is BaseNpc || entity is BaseNPC2)
+            if (entity is BaseNpc)
+            {
+                if (trace) Trace($"Target is animal; allow and return {weapon} -> {entity}", 1);
+                return true;
+            }
+
+            if (!isKeptLivestock && entity is BaseNPC2 { IsAnimal: true })
             {
                 if (trace) Trace($"Target is animal; allow and return {weapon} -> {entity}", 1);
                 return true;
@@ -4423,29 +4748,23 @@ namespace Harmony.Plugins
                 return true;
             }
 
-            if (config.scrap)
+            if (isVictim)
             {
-                if (victim != null && weapon is ScrapTransportHelicopter)
+                float? offset = weapon switch
                 {
-                    victim.Teleport(weapon.transform.position + new Vector3(0f, 2.5f, 0f));
-                    info.damageTypes.Clear();
-                    return true;
-                }
-                // Driver path: teleport only when hit target is a player (null victim NRE on BuildingBlock).
-                if (victim != null && weapon is BasePlayer driver && (driver.GetMountedVehicle() is ScrapTransportHelicopter || info.WeaponPrefab is ScrapTransportHelicopter))
-                {
-                    victim.Teleport(weapon.transform.position + new Vector3(0f, 2.5f, 0f));
-                    info.damageTypes.Clear();
-                    return true;
-                }
-            }
+                    ElevatorLift when config.lift => 0.5f,
+                    _ when !isVicId && config.options.VehiclesCanHurtNpcs => null,
+                    ScrapTransportHelicopter when config.scrap => 2.5f,
+                    _ when config.scrap && isAtkId && (info.WeaponPrefab is ScrapTransportHelicopter || (attacker.GetMountedVehicle() is ScrapTransportHelicopter scrapheli && scrapheli.GetDriver() == attacker)) => 2.5f,
+                    _ => null
+                };
 
-            // 2.4.3 added this option (default false) but never read it in AllowDamage; honor it here.
-            if (config.lift && victim != null && weapon is ElevatorLift)
-            {
-                victim.Teleport(weapon.transform.position + new Vector3(0f, 0.5f, 0f));
-                info.damageTypes.Clear();
-                return true;
+                if (offset.HasValue && weapon != null)
+                {
+                    if (isVicId) victim.Teleport(weapon.transform.position + new Vector3(0f, offset.Value, 0f));
+                    info.damageTypes.Clear();
+                    return true;
+                }
             }
 
             // allow damage to door barricades and covers 
@@ -4857,6 +5176,12 @@ namespace Harmony.Plugins
 
             if (isVictim)
             {
+                if (!isVicId && !isAtkId && initiator != null && !config.options.VehiclesCanHurtNpcs && (initiator is BaseMountable || initiator.ShortPrefabName == "turret_attackheli" || (initiator.PrefabName != null && initiator.PrefabName.StartsWith("assets/custom/"))))
+                {
+                    if (trace) Trace("Initiator is a vehicle; vehicles cannot hurt npcs; block and return", 1);
+                    return false;
+                }
+
                 if (isVicId && initiator is AutoTurret)
                 {
                     if (initiator.OwnerID == 0)
@@ -4909,6 +5234,12 @@ namespace Harmony.Plugins
 
             if (isAttacker)
             {
+                if (!mountRulesEvaluated && isAtkId && isVictim && !isVicId && !config.options.VehiclesCanHurtNpcs && IsBlockedByVehicleRules(attacker))
+                {
+                    if (trace) Trace("Player is mounted; vehicles cannot hurt npcs; block and return", 1);
+                    return false;
+                }
+
                 if (isAtkId && !mountRulesEvaluated)
                 {
                     var mounted = attacker.GetMounted();
@@ -5027,6 +5358,12 @@ namespace Harmony.Plugins
                     if (trace) Trace($"Initiator is player {(isAllowed ? "with farm authorization; allow and return" : "without farm authorization; block and return")}", 1);
                     return isAllowed;
                 }
+                else if (isAtkId && isKeptLivestock)
+                {
+                    bool isAllowed = IsLivestockAlly(livestock, attacker, (_flags & RuleFlags.CupboardOwnership) != 0);
+                    if (trace) Trace($"Initiator is player {(isAllowed ? "with livestock authorization; allow and return" : "without livestock authorization; block and return")}", 1);
+                    return isAllowed;
+                }
                 else if ((_flags & RuleFlags.AuthorizedDamage) != 0 && !isVictim && !entity.IsNpc && isAtkId && !(entity is FarmableAnimal))
                 { // ignore checks if authorized damage enabled (except for players and npcs)
                     if ((_flags & RuleFlags.AuthorizedDamageCheckPrivilege) != 0)
@@ -5143,6 +5480,21 @@ namespace Harmony.Plugins
             {
                 Effect.server.Run("assets/bundled/prefabs/fx/headshot.prefab", victim, 0u, new Vector3(0f, 2f, 0f), Vector3.zero, null);
             }
+        }
+
+        private bool IsVehicle(BaseEntity m) => m is BaseVehicle || (m.PrefabName != null && m.PrefabName.StartsWith("assets/custom/"));
+
+        private bool IsBlockedByVehicleRules(BasePlayer attacker)
+        {
+            BaseMountable mounted = attacker.GetMounted();
+            if (mounted != null)
+            {
+                if (IsVehicle(mounted)) return true;
+                BaseEntity parent = mounted.GetParentEntity();
+                return parent != null && IsVehicle(parent);
+            }
+            BaseEntity parent2 = attacker.GetParentEntity();
+            return parent2 != null && IsVehicle(parent2);
         }
 
         private static BaseEntity GetParentEntity(BaseEntity m)
@@ -5282,7 +5634,7 @@ namespace Harmony.Plugins
 
         private bool HandleHelicopter(RuleSet ruleSet, BaseEntity entity, BaseEntity weapon, BasePlayer victim, bool isVicId, bool allow)
         {
-            if (entity is FarmableAnimal or ChickenCoop or Beehive)
+            if ((entity is FarmableAnimal or ChickenCoop or Beehive) || BlockHeliDamageToLivestock(entity))
             {
                 if (trace) Trace($"Initiator is heli, target is {entity.ShortPrefabName}; block and return", 1);
                 return false;
@@ -5363,27 +5715,46 @@ namespace Harmony.Plugins
 
         private bool IsAlly(BasePlayer a, BasePlayer b)
         {
-            if (config.options.Clans && a.serverClan != null && a.clanId != 0 && a.clanId == b.clanId) return true;
-            return IsAlly(a.userID, b.userID);
+            if (config.options.Clans && TryGetClan(a, out IClan clan) && clan.ClanId == b.clanId) return true;
+            return IsAlly(a, b.userID);
         }
 
         private bool IsAlly(BasePlayer a, ulong b)
         {
-            if (config.options.Clans && a.serverClan != null)
+            if (config.options.Clans && a.clanId != 0 && TryGetClan(a, out IClan clan))
             {
-                foreach (var member in a.serverClan.Members)
+                if (clan.Creator == b)
+                {
+                    return true;
+                }
+                foreach (var member in clan.Members)
                 {
                     if (member.SteamId == b)
                     {
                         return true;
                     }
                 }
-                if (a.serverClan.Creator == b)
-                {
-                    return true;
-                }
             }
             return IsAlly(a.userID, b);
+        }
+
+        private static IClan GetClan(BasePlayer player)
+        {
+            if (player == null || player.clanId == 0)
+            {
+                return null;
+            }
+            if (player.serverClan == null)
+            {
+                ClanManager.ServerInstance?.Backend?.TryGet(player.clanId, out player.serverClan);
+            }
+            return player.serverClan;
+        }
+
+        private static bool TryGetClan(BasePlayer player, out IClan clan)
+        {
+            clan = GetClan(player);
+            return clan != null;
         }
 
         private static BasePlayer FindPlayerOrSleeper(ulong userId) => BasePlayer.FindByID(userId) ?? BasePlayer.FindSleeping(userId);
@@ -5477,10 +5848,17 @@ namespace Harmony.Plugins
 
         // Vanish sets limitNetworking (and optionally isInvisible). Also honor AdminCanLoot + bypass.loot.
         // TruePVE loot runs via Harmony Dispatch (not CallHook), so Vanish's CallHook CanLootEntity short-circuit never fires here.
+        private bool canBypass(BasePlayer looter)
+        {
+            if (looter == null) return true;
+            if (config?.options?.Loot == null || !config.options.Loot.Invisible) return false;
+            return looter.isInvisible || looter.limitNetworking;
+        }
+
         internal bool LootCanBypass(BasePlayer looter)
         {
             if (looter == null) return false;
-            if (looter.isInvisible || looter.limitNetworking) return true;
+            if (canBypass(looter)) return true;
             if (config?.PreventLooting != null && config.PreventLooting.AdminCanLoot && looter.IsAdmin) return true;
             return permission != null && permission.UserHasPermission(looter.UserIDString, "truepve.lootdefender.bypass.loot");
         }
@@ -5948,11 +6326,23 @@ namespace Harmony.Plugins
                 return null;
             }
 
-            var staticRespawn = ss == null ? attacker.OwnerID == 0 : ss.staticRespawn;
-            if (staticRespawn && (ruleSet._flags & RuleFlags.StaticSamSitesIgnorePlayers) != 0) return SamSiteHelper(attacker, entity);
-            if (!staticRespawn && (ruleSet._flags & RuleFlags.PlayerSamSitesIgnorePlayers) != 0) return SamSiteHelper(attacker, entity);
+            return SamSiteIgnoresPlayers(attacker, ruleSet) ? SamSiteHelper(attacker, entity) : null;
+        }
 
-            return null;
+        private bool SamSiteIgnoresPlayers(BaseEntity attacker, RuleSet ruleSet)
+        {
+            SamSite ss = attacker as SamSite;
+            bool staticRespawn = ss == null ? attacker.OwnerID == 0 : ss.staticRespawn;
+            if (!staticRespawn)
+            {
+                return (ruleSet._flags & RuleFlags.PlayerSamSitesIgnorePlayers) != 0;
+            }
+            if ((ruleSet._flags & RuleFlags.StaticSamSitesIgnorePlayers) == 0)
+            {
+                return false;
+            }
+            // Players Can Trigger SAM Sites In Monument Topology overrides StaticSamSitesIgnorePlayers.
+            return ss == null || ss.net == null || !config.PlayersTriggerSamSites || !IsMonumentTopology(ss.net.ID, ss.transform.position);
         }
 
         private object OnMlrsFire(MLRS mlrs, BasePlayer player)
@@ -6571,15 +6961,103 @@ namespace Harmony.Plugins
             return true;
         }
 
+        private object OnLootNetworkUpdate(PlayerLoot loot)
+        {
+            if (loot == null || loot.containers == null || loot.containers.Count == 0) return null;
+            BasePlayer player = loot.baseEntity;
+            if (player == null || !TryGetLootWorkbench(loot, out Workbench workbench)) return null;
+            return CanUseWorkbenchLock(player, workbench) ? null : BlockWorkbenchLoot(player);
+        }
+
+        private bool TryGetLootWorkbench(PlayerLoot loot, out Workbench workbench)
+        {
+            return TryGetWorkbench(loot.entitySource, out workbench) || TryGetWorkbench(loot.itemSource?.GetEntityOwner(), out workbench);
+        }
+
+        private bool TryGetWorkbench(BaseEntity entity, out Workbench workbench)
+        {
+            workbench = entity switch
+            {
+                Workbench self => self,
+                IndustrialCrafter crafter => crafter.GetWorkbench(),
+                _ => null
+            };
+            return workbench != null && !workbench.IsDestroyed;
+        }
+
+        private object CanLootWorkbenchEntity(BasePlayer player, BaseEntity entity)
+        {
+            if (!config.options.Loot.HasLocks() || canBypass(player) || entity == null || entity.IsDestroyed) return null;
+            if (!TryGetWorkbench(entity, out Workbench workbench)) return null;
+            return CanUseWorkbenchLock(player, workbench) ? null : BlockWorkbenchLoot(player);
+        }
+
+        private bool CanUseWorkbenchLock(BasePlayer player, Workbench workbench)
+        {
+            if (canBypass(player) || !CanHandleLockEntity(workbench)) return true;
+            BaseLock baseLock = workbench.GetLock();
+            if (baseLock == null || baseLock.IsDestroyed || !baseLock.IsLocked()) return true;
+            if (baseLock is CodeLock codeLock) return codeLock.GetPlayerLockPermission(player) || IsAlly(player, workbench.OwnerID);
+            if (baseLock is KeyLock keyLock) return keyLock.HasLockPermission(player) || IsAlly(player, workbench.OwnerID);
+            return false;
+        }
+
+        private void EndWorkbenchLoot(Workbench workbench)
+        {
+            if (workbench == null) return;
+            EndWorkbenchLoot(workbench, workbench.OwnerID);
+            if (workbench.children == null) return;
+            foreach (BaseEntity child in workbench.children)
+            {
+                if (child is IndustrialCrafter) EndWorkbenchLoot(child, workbench.OwnerID);
+            }
+        }
+
+        private void EndWorkbenchLoot(BaseEntity entity, ulong ownerID)
+        {
+            if (entity is not ILootableEntity lootable) return;
+            BasePlayer looter = lootable.LastLootedByPlayer != null
+                ? lootable.LastLootedByPlayer
+                : lootable.LastLootedBy > 0 ? RelationshipManager.FindByID(lootable.LastLootedBy) : null;
+            BaseEntity source = looter?.inventory?.loot?.entitySource;
+            if (source != null && source == entity && !canBypass(looter) && !IsAlly(looter, ownerID))
+            {
+                BlockWorkbenchLoot(looter);
+            }
+        }
+
+        private object BlockWorkbenchLoot(BasePlayer player)
+        {
+            player.EndLooting();
+            Message(player, "Error_CannotAccessEntity");
+            return true;
+        }
+
+        private bool CanHandleLockEntity(BaseEntity entity)
+        {
+            if (config.options.Loot.NoLocks.Count > 0)
+            {
+                if (config.options.Loot.NoLocks.Contains(entity.ShortPrefabName)) return false;
+                if (config.options.Loot.NoLocks.Contains(GetTypeName(entity))) return false;
+            }
+            return true;
+        }
+
         private void OnEntitySpawned(BaseLock baseLock)
         {
-            if (!config.options.Loot.Locks || baseLock == null)
+            if (baseLock == null || !config.options.Loot.HasLocks())
             {
                 return;
             }
 
             BaseEntity entity = baseLock.GetParentEntity();
-            if (entity == null || !entity.OwnerID.IsSteamId())
+            if (entity == null || !entity.OwnerID.IsSteamId() || !CanHandleLockEntity(entity))
+            {
+                return;
+            }
+
+            if (entity is Workbench lootWorkbench) EndWorkbenchLoot(lootWorkbench);
+            if (!config.options.Loot.Locks)
             {
                 return;
             }
@@ -9144,21 +9622,33 @@ namespace Harmony.Plugins
 
         private void ValidateCurrentDamageHook()
         {
-            if (!config.options.handleDamage)
+            config.options.Livestock ??= new();
+            CheckLivestockDamageOption();
+
+            bool enabled = IsEnabled();
+            var opt = config.options.Livestock;
+
+            UpdateHook(ProtectionHook.Damage, nameof(OnEntityTakeDamage), enabled);
+            UpdateHook(ProtectionHook.RefuseTarget, nameof(CanLivestockAnimalRefuseTarget), enabled && opt.Damage);
+            UpdateHook(ProtectionHook.Familiarity, nameof(OnLivestockAnimalFamiliarityAdd), enabled && opt.Damage);
+            UpdateHook(ProtectionHook.Leading, nameof(OnEntityDistanceCheck), enabled && opt.Leading);
+            UpdateHook(ProtectionHook.Milking, nameof(OnEntityVisibilityCheck), enabled && opt.Milking);
+            UpdateHook(ProtectionHook.Shearing, nameof(OnLivestockShear), enabled && opt.Shearing);
+
+            void UpdateHook(ProtectionHook flag, string hook, bool required)
             {
-                Unsubscribe(nameof(OnEntityTakeDamage));
-                tpveEnabled = false;
-                return;
-            }
-            RuleSet ruleSet = currentRuleSet;
-            tpveEnabled = ruleSet != null && ruleSet.enabled && !ruleSet.IsEmpty();
-            if (tpveEnabled)
-            {
-                Subscribe(nameof(OnEntityTakeDamage));
-            }
-            else
-            {
-                Unsubscribe(nameof(OnEntityTakeDamage));
+                bool subscribed = (protectionHooks & flag) != 0;
+                if (required == subscribed) return;
+                if (required)
+                {
+                    Subscribe(hook);
+                    protectionHooks |= flag;
+                }
+                else
+                {
+                    Unsubscribe(hook);
+                    protectionHooks &= ~flag;
+                }
             }
         }
 
@@ -9166,6 +9656,20 @@ namespace Harmony.Plugins
 
         #region Subclasses
         // configuration and data storage container
+
+        private class LivestockOptions
+        {
+            internal bool Damage = true;
+
+            [JsonProperty(PropertyName = "Prevent non-allies from leading")]
+            public bool Leading = true;
+
+            [JsonProperty(PropertyName = "Prevent non-allies from milking")]
+            public bool Milking = true;
+
+            [JsonProperty(PropertyName = "Prevent non-allies from shearing")]
+            public bool Shearing = true;
+        }
 
         private class TwigDamageOptions
         {
@@ -9285,6 +9789,9 @@ namespace Harmony.Plugins
             [JsonProperty(PropertyName = "TwigDamage (FLAG)")]
             public TwigDamageOptions BlockHandler = new();
 
+            [JsonProperty(PropertyName = "Livestock")]
+            public LivestockOptions Livestock = new();
+
             [JsonProperty(PropertyName = "handleDamage")] // (true) enable TruePVE damage handling hooks
             public bool handleDamage = true;
 
@@ -9397,6 +9904,11 @@ namespace Harmony.Plugins
 
             [JsonProperty(PropertyName = "Prevent non-ally from looting planters")]
             public bool Planters;
+
+            [JsonProperty(PropertyName = "Invis and vanish bypass loot protection (TruePVE only)")]
+            public bool Invisible = true;
+
+            public bool HasLocks() => Locks || (AutoLock != null && (AutoLock.ContainsValue("codelock") || AutoLock.ContainsValue("keylock")));
         }
 
         private class ArmorDamagePVE
@@ -10191,6 +10703,12 @@ namespace Harmony.Plugins
             [JsonProperty(PropertyName = "Players Can Hurt Turrets In Monument Topology")]
             public bool PlayersHurtTurrets;
 
+            [JsonProperty(PropertyName = "Players Can Trigger SAM Sites In Monument Topology")]
+            public bool PlayersTriggerSamSites = true;
+
+            [JsonProperty(PropertyName = "Players Can Hurt SAM Sites In Monument Topology")]
+            public bool PlayersHurtSamSites;
+
             [JsonProperty(PropertyName = "Prevent hackable crate timer from resetting when attacked")]
             public bool laptop = true;
 
@@ -10971,6 +11489,11 @@ namespace Harmony.Plugins
             {
                 if (string.IsNullOrEmpty(value)) return false;
                 return _exclusionSet.Contains(value);
+            }
+
+            public bool Contains(string typeName)
+            {
+                return _memberSet.Contains(typeName) && !_exclusionSet.Contains(typeName);
             }
 
             public bool Contains(string typeName, string prefabName)

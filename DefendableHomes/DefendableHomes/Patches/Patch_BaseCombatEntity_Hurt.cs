@@ -1,5 +1,5 @@
 using HarmonyLib;
-using DHPlugin = Oxide.Plugins.DefendableHomes;
+using DHPlugin = Harmony.Plugins.DefendableHomes;
 
 namespace DefendableHomes.Patches
 {

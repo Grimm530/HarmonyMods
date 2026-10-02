@@ -572,7 +572,7 @@ namespace ZombieHorde
                     Item item = inventory.containerWear.itemList[i];
                     if (item.info == ConfigData.MemberOptions.Loadout.GlowEyes)
                     {
-                        item.RemoveFromContainer(null);
+                        item.RemoveFromContainer();
                         item.Remove(0f);
                     }
                 }
@@ -588,7 +588,7 @@ namespace ZombieHorde
                         Item item = container.itemList[i];
                         if (Array.IndexOf(cfg.Loot.DroppedBlacklist, item.info.shortname) >= 0)
                         {
-                            item.RemoveFromContainer(null);
+                            item.RemoveFromContainer();
                             item.Remove(0f);
                         }
                     }

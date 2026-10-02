@@ -6100,7 +6100,7 @@ namespace PersonalNPCHarmony
                     return false;
                 }
 
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 if (item.MoveToContainer(target, slot))
                     return true;
 

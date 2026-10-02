@@ -1,0 +1,274 @@
+[
+  {
+    "Mod": "0Permissions",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 10.7,
+    "Note": ""
+  },
+  {
+    "Mod": "0GrimmCore",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 8.1,
+    "Note": ""
+  },
+  {
+    "Mod": "0GrimmCUI",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.8,
+    "Note": ""
+  },
+  {
+    "Mod": "0GrimmNPC",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 5.9,
+    "Note": ""
+  },
+  {
+    "Mod": "AdminMenu",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 6.0,
+    "Note": ""
+  },
+  {
+    "Mod": "AlwaysBonus",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.5,
+    "Note": ""
+  },
+  {
+    "Mod": "ArmoredTrain",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 6.0,
+    "Note": ""
+  },
+  {
+    "Mod": "AutoCodeLock",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.7,
+    "Note": ""
+  },
+  {
+    "Mod": "BagCooldowns",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.3,
+    "Note": ""
+  },
+  {
+    "Mod": "BetterAirDrop",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.3,
+    "Note": ""
+  },
+  {
+    "Mod": "BetterBackpack",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "BetterChat",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.5,
+    "Note": ""
+  },
+  {
+    "Mod": "Convoy",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.6,
+    "Note": ""
+  },
+  {
+    "Mod": "CustomMapGen",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.6,
+    "Note": ""
+  },
+  {
+    "Mod": "DeveloperListOverride",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "DynamicCupShare",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.9,
+    "Note": ""
+  },
+  {
+    "Mod": "Economics",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.3,
+    "Note": ""
+  },
+  {
+    "Mod": "EntityOwner",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.6,
+    "Note": ""
+  },
+  {
+    "Mod": "FurnaceSplitter",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.3,
+    "Note": ""
+  },
+  {
+    "Mod": "HitMarkers",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 6.1,
+    "Note": ""
+  },
+  {
+    "Mod": "IndustrialTransferSpeed",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "InventoryCleaner",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 6.3,
+    "Note": ""
+  },
+  {
+    "Mod": "ItemRetriever",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 6.7,
+    "Note": ""
+  },
+  {
+    "Mod": "KillFeed",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 7.4,
+    "Note": ""
+  },
+  {
+    "Mod": "Leaderboard",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.8,
+    "Note": ""
+  },
+  {
+    "Mod": "LootQoL",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 7.2,
+    "Note": ""
+  },
+  {
+    "Mod": "MapVoter",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.8,
+    "Note": ""
+  },
+  {
+    "Mod": "NoGibs",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "PlayerSkins",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 6.2,
+    "Note": ""
+  },
+  {
+    "Mod": "Radar",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "RaidRustPlus",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "RustRewards",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.9,
+    "Note": ""
+  },
+  {
+    "Mod": "StackManager",
+    "Ok": false,
+    "DllFresh": false,
+    "Exit": 1,
+    "Sec": 1.4,
+    "Note": ""
+  },
+  {
+    "Mod": "WipeSchedule",
+    "Ok": true,
+    "DllFresh": true,
+    "Exit": 0,
+    "Sec": 5.6,
+    "Note": ""
+  }
+]

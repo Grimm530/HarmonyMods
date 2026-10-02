@@ -2998,7 +2998,7 @@ namespace BackpacksHarmony
             {
                 if (amount >= item.amount)
                 {
-                    item.RemoveFromContainer(null);
+                    item.RemoveFromContainer();
                     if (collect != null)
                     {
                         collect.Add(item);
@@ -6227,7 +6227,7 @@ namespace BackpacksHarmony
                 var itemData = CustomPool.Get<ItemData>().Setup(item, _backpack.FoodSpoilingMultiplier, firstEmptyPosition);
                 ItemDataList.Add(itemData);
 
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 item.Remove();
 
                 _backpack.SetFlag(Backpack.Flag.Dirty, true);
@@ -6436,7 +6436,7 @@ namespace BackpacksHarmony
                     }
 
                     collect.Add(itemToTake);
-                    itemToTake.RemoveFromContainer(null);
+                    itemToTake.RemoveFromContainer();
                 }
             }
 
@@ -6449,7 +6449,7 @@ namespace BackpacksHarmony
                         continue;
 
                     collect.Add(item);
-                    item.RemoveFromContainer(null);
+                    item.RemoveFromContainer();
                 }
             }
 
@@ -6464,7 +6464,7 @@ namespace BackpacksHarmony
                         continue;
 
                     collect.Add(item);
-                    item.RemoveFromContainer(null);
+                    item.RemoveFromContainer();
                     i--;
                 }
             }
@@ -6492,7 +6492,7 @@ namespace BackpacksHarmony
                 for (var i = ItemContainer.itemList.Count - 1; i >= 0; i--)
                 {
                     var item = ItemContainer.itemList[i];
-                    item.RemoveFromContainer(null);
+                    item.RemoveFromContainer();
                     item.Remove();
                 }
             }
@@ -9330,7 +9330,7 @@ namespace BackpacksHarmony
                     {
                         foreach (var contentItem in Contents)
                         {
-                            contentItem.ToItem(foodSpoilingMultiplier)?.SetParent(item.contents, null);
+                            contentItem.ToItem(foodSpoilingMultiplier)?.SetParent(item.contents);
                         }
                     }
                 }

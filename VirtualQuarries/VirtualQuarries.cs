@@ -5629,13 +5629,13 @@ namespace Harmony.Plugins
                                 {
                                     nonIntOutput["fuel"] += remainingFuel;
                                     item.GetHeldEntity()?.Kill();
-                                    item.RemoveFromContainer(null);
+                                    item.RemoveFromContainer();
                                     item.Remove();
                                     break;
                                 }
                                 itemsToTake -= item.amount;
                                 item.GetHeldEntity()?.Kill();
-                                item.RemoveFromContainer(null);
+                                item.RemoveFromContainer();
                                 item.Remove();
                             }
                         }

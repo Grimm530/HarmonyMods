@@ -25,6 +25,9 @@ public class LeaderboardConfig
 
     /// <summary>When true, body hits on NPC BasePlayers (scientists, etc.) count toward hitrate charts.</summary>
     [JsonProperty("CountNpcHitsForHitrate")] public bool CountNpcHitsForHitrate { get; set; } = false;
+
+    [JsonProperty("Events")]
+    public EventIntegrationConfig Events { get; set; } = new();
 }
 
 public class RelayConfig

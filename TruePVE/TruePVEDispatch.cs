@@ -171,6 +171,16 @@ namespace Harmony.Plugins
                     case LootableCorpse corpse:    return inst.CanLootEntity(player, corpse);
                     case DroppedItemContainer dic: return inst.CanLootEntity(player, dic);
                     case ModularCarGarage garage:  return inst.CanLootEntity(player, garage);
+                    case Workbench workbench:
+                    {
+                        object locked = inst.CanLootWorkbenchEntity(player, workbench);
+                        return locked ?? inst.CanLootEntity(player, workbench);
+                    }
+                    case IndustrialCrafter crafter:
+                    {
+                        object locked = inst.CanLootWorkbenchEntity(player, crafter);
+                        return locked ?? inst.CanLootEntity(player, crafter);
+                    }
                     case StorageContainer sc:      return inst.CanLootEntity(player, sc);
                     default:                       return inst.CanLootEntity(player, entity);
                 }
@@ -607,6 +617,54 @@ namespace Harmony.Plugins
         /// BasePlayer/BuildingBlock PVE early-reflect must be suppressed so RuleSets remain authoritative
         /// while ConVar.Server.pve stays true for Steam listing.
         /// </summary>
+        public static object Dispatch_OnLootNetworkUpdate(PlayerLoot loot)
+        {
+            var inst = Instance;
+            if (inst == null || loot == null || !inst.IsSubscribed(nameof(OnLootNetworkUpdate))) return null;
+            try { return inst.OnLootNetworkUpdate(loot); }
+            catch (Exception ex) { Warn(nameof(OnLootNetworkUpdate), ex); return null; }
+        }
+
+        public static object Dispatch_OnEntityDistanceCheck(LivestockAnimal livestock, BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null || !inst.IsSubscribed(nameof(OnEntityDistanceCheck))) return null;
+            try { return inst.OnEntityDistanceCheck(livestock, player, 0u, "RPC_Lead", 3f, false); }
+            catch (Exception ex) { Warn(nameof(OnEntityDistanceCheck), ex); return null; }
+        }
+
+        public static object Dispatch_OnEntityVisibilityCheck(Cow cow, BasePlayer player)
+        {
+            var inst = Instance;
+            if (inst == null || !inst.IsSubscribed(nameof(OnEntityVisibilityCheck))) return null;
+            try { return inst.OnEntityVisibilityCheck(cow, player, 0u, "MilkCow", 3f); }
+            catch (Exception ex) { Warn(nameof(OnEntityVisibilityCheck), ex); return null; }
+        }
+
+        public static object Dispatch_OnLivestockShear(BasePlayer player, HitInfo info)
+        {
+            var inst = Instance;
+            if (inst == null || !inst.IsSubscribed(nameof(OnLivestockShear))) return null;
+            try { return inst.OnLivestockShear(player, info); }
+            catch (Exception ex) { Warn(nameof(OnLivestockShear), ex); return null; }
+        }
+
+        public static object Dispatch_OnLivestockAnimalFamiliarityAdd(LivestockAnimal livestock, ulong userId, float seconds, LivestockAnimal.FamiliarityReason reason)
+        {
+            var inst = Instance;
+            if (inst == null || !inst.IsSubscribed(nameof(OnLivestockAnimalFamiliarityAdd))) return null;
+            try { return inst.OnLivestockAnimalFamiliarityAdd(livestock, userId, seconds, reason); }
+            catch (Exception ex) { Warn(nameof(OnLivestockAnimalFamiliarityAdd), ex); return null; }
+        }
+
+        public static object Dispatch_CanLivestockAnimalRefuseTarget(LivestockAnimal livestock, BasePlayer target)
+        {
+            var inst = Instance;
+            if (inst == null || !inst.IsSubscribed(nameof(CanLivestockAnimalRefuseTarget))) return null;
+            try { return inst.CanLivestockAnimalRefuseTarget(livestock, target); }
+            catch (Exception ex) { Warn(nameof(CanLivestockAnimalRefuseTarget), ex); return null; }
+        }
+
         public static bool ShouldSuppressVanillaPve()
         {
             var inst = Instance;

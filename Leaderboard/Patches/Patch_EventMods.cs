@@ -26,6 +26,13 @@ internal static class EventRecording
         if (!SteamIdHelper.IsSteamId(userId)) return;
         LeaderboardMod.Instance?.RecordStat(userId, LootType.RaidableBases, mode.ToLowerInvariant(), amount);
     }
+
+    public static void RecordRaidableBoat(ulong userId, string mode, float amount = 1f)
+    {
+        if (userId == 0 || string.IsNullOrEmpty(mode)) return;
+        if (!SteamIdHelper.IsSteamId(userId)) return;
+        LeaderboardMod.Instance?.RecordStat(userId, LootType.RaidableBoats, mode.ToLowerInvariant(), amount);
+    }
 }
 
 public static class EventModPatches

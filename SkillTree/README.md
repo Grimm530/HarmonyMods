@@ -1,6 +1,6 @@
 # SkillTree Harmony Mod
 
-Port of SkillTree 1.7.15 (imthenewguy / Grimm530) to the Harmony Harmony-first stack.
+Port of SkillTree 1.8.0 (changelog site: 1.7.16; imthenewguy / Grimm530) to the Harmony Harmony-first stack.
 
 ## Identity
 
@@ -80,6 +80,17 @@ SkillTree.dll
 ## Optional Integrations
 
 ImageLibrary, Economics, ServerRewards, RaidableBases, ZoneManager, and other optional plugins are resolved via AppDomain at runtime. If absent, SkillTree degrades gracefully (no images, no economy respec, etc.).
+
+## 1.8.0 highlights (changelog site labeled this 1.7.16)
+
+- Prestige ranks can grant bonus starting skill points and bonus max skill points, stacked on permission overrides. An unlimited cap stays unlimited.
+- `wipestpouches` clears offline pouches and reports counts. `wipe_after_days` deletes inactive player files.
+- Honey bandage works with Bandage Expert. Forager, Node_Spawn_Chance, and Mining Ultimate accept HQM. Spawned nodes are skin-tagged; chaining can be turned off. `OnNodeRecycled` fires after a node respawns (outgoing hook; no Oxide bus on this stack).
+- `sttogglepurge` force-disables the buffs listed under Purge mode until toggled off. Not saved across reloads.
+- Switching a skill off disables it everywhere, including instant-gather yields from other plugins. Water Breathing and Instant Untie stay off.
+- Gen2 animals, livestock, and critters, plus a Husbandry tree (Soul Mates, Calming Presence, Rancher line, Impatient Rancher, Patient Negotiator, Silver Tongue). Clever Incubator, Soft Touch, and Factory Farmer move there.
+- Respec cost is calculated on the server. Extra Pockets survive disconnect, death, and reload. Heal Share, Wolf, and Regen stop at max health.
+- Local Harmony behavior kept: shared `CustomSkillTreeDataDirectory`, January/June season wipe (other wipes keep progress), Road Runner / Swim Speed via MovementSpeed, crafting XP via `GetCraftTime()`.
 
 ## 1.7.15 highlights (vs 1.7.14 Harmony port)
 

@@ -29,6 +29,9 @@ namespace Leaderboard;
 
 public class LeaderboardMod : IHarmonyModHooks
 {
+    /// <summary>Matches Ultimate Leaderboard 1.5.72 (Mevent).</summary>
+    public const string Version = "1.5.72";
+
     public static LeaderboardMod Instance { get; private set; }
 
     public const string AppDomainApiKey = "Leaderboard_ApiType";
@@ -134,11 +137,11 @@ public class LeaderboardMod : IHarmonyModHooks
         {
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
+                if (IsHidden(kv.Key, kv.Value)) continue;
                 list.Add((kv.Key, kv.Value.LastName ?? kv.Key.ToString(), kv.Value.GetKills(), kv.Value.GetDeaths(), kv.Value.GetAnimalKills(), kv.Value.GetNpcKills()));
             }
         }
-        list.Sort((a, b) => b.Item3.CompareTo(a.Item3));
+        list.Sort((a, b) => CompareDescThenId(a.Item3, b.Item3, a.Item1, b.Item1));
         var result = new List<(ulong, string, int, int, int, int)>();
         for (int i = 0; i < Math.Min(10, list.Count); i++)
             result.Add(list[i]);
@@ -153,12 +156,15 @@ public class LeaderboardMod : IHarmonyModHooks
         {
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
+                if (IsHidden(kv.Key, kv.Value)) continue;
                 var s = kv.Value;
                 list.Add((kv.Key, s.LastName ?? kv.Key.ToString(), s.GetFoundations(), s.GetWalls(), s.GetFloors(), s.GetDoors(), s.GetToolCupboards()));
             }
         }
-        list.Sort((a, b) => (b.Item3 + b.Item4 + b.Item5 + b.Item6 + b.Item7).CompareTo(a.Item3 + a.Item4 + a.Item5 + a.Item6 + a.Item7));
+        list.Sort((a, b) => CompareDescThenId(
+            a.Item3 + a.Item4 + a.Item5 + a.Item6 + a.Item7,
+            b.Item3 + b.Item4 + b.Item5 + b.Item6 + b.Item7,
+            a.Item1, b.Item1));
         var result = new List<(ulong, string, int, int, int, int, int)>();
         for (int i = 0; i < Math.Min(10, list.Count); i++)
             result.Add(list[i]);
@@ -194,7 +200,7 @@ public class LeaderboardMod : IHarmonyModHooks
         {
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
+                if (IsHidden(kv.Key, kv.Value)) continue;
                 var s = kv.Value;
                 float res = s.GetSumForEntries(FarmersResourcesKeys);
                 float farm = s.GetSumForEntries(FarmersHarvestedKeys);
@@ -204,7 +210,10 @@ public class LeaderboardMod : IHarmonyModHooks
                 list.Add((kv.Key, s.LastName ?? kv.Key.ToString(), res, farm, misc, recycled, fishing));
             }
         }
-        list.Sort((a, b) => (b.Item3 + b.Item4 + b.Item5 + b.Item6 + b.Item7).CompareTo(a.Item3 + a.Item4 + a.Item5 + a.Item6 + a.Item7));
+        list.Sort((a, b) => CompareDescThenId(
+            a.Item3 + a.Item4 + a.Item5 + a.Item6 + a.Item7,
+            b.Item3 + b.Item4 + b.Item5 + b.Item6 + b.Item7,
+            a.Item1, b.Item1));
         var result = new List<(ulong, string, float, float, float, float, float)>();
         for (int i = 0; i < Math.Min(10, list.Count); i++)
             result.Add(list[i]);
@@ -214,23 +223,46 @@ public class LeaderboardMod : IHarmonyModHooks
     /// <summary>Top 10 players for display (name, kills, deaths, kdr, points).</summary>
     public List<(string name, int kills, int deaths, float kdr, float points)> GetTop10ForUI()
     {
-        var list = new List<(string, int, int, float, float)>();
+        var list = new List<(ulong id, string name, int kills, int deaths, float kdr, float points)>();
         lock (_statsLock)
         {
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
+                if (IsHidden(kv.Key, kv.Value)) continue;
                 var k = kv.Value.GetKills();
                 var d = kv.Value.GetDeaths();
                 var kdr = d > 0 ? (float)Math.Round((double)k / d, 2) : k;
-                list.Add((kv.Value.LastName ?? kv.Key.ToString(), k, d, kdr, kv.Value.Points));
+                list.Add((kv.Key, kv.Value.LastName ?? kv.Key.ToString(), k, d, kdr, kv.Value.Points));
             }
         }
-        list.Sort((a, b) => b.Item5.CompareTo(a.Item5));
+        list.Sort((a, b) => CompareDescThenId(a.points, b.points, a.id, b.id));
         var result = new List<(string, int, int, float, float)>();
         for (int i = 0; i < Math.Min(10, list.Count); i++)
-            result.Add(list[i]);
+            result.Add((list[i].name, list[i].kills, list[i].deaths, list[i].kdr, list[i].points));
         return result;
+    }
+
+    private const string HiddenPermission = "ultimateleaderboard.hidden";
+    private static readonly Action HiddenPermissionReady = RegisterHiddenPermission;
+
+    private static bool IsHidden(ulong userId, PlayerStats stats)
+    {
+        if (stats != null && stats.HiddenFromLeaderboard) return true;
+        try
+        {
+            return PermissionsBridge.UserHasPermission(userId.ToString(), HiddenPermission);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Higher score first. Equal scores use the lower Steam id, matching UltimateLeaderboard 1.5.67.</summary>
+    private static int CompareDescThenId(double scoreA, double scoreB, ulong idA, ulong idB)
+    {
+        int byScore = scoreB.CompareTo(scoreA);
+        return byScore != 0 ? byScore : idA.CompareTo(idB);
     }
 
     /// <summary>Top 10 by total play time (including current session): userId, name, totalSeconds.</summary>
@@ -242,12 +274,12 @@ public class LeaderboardMod : IHarmonyModHooks
         {
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
+                if (IsHidden(kv.Key, kv.Value)) continue;
                 double sec = kv.Value.GetTotalPlayTimeIncludingCurrent();
                 list.Add((kv.Key, kv.Value.LastName ?? kv.Key.ToString(), sec));
             }
         }
-        list.Sort((a, b) => b.Item3.CompareTo(a.Item3));
+        list.Sort((a, b) => CompareDescThenId(a.Item3, b.Item3, a.Item1, b.Item1));
         var result = new List<(ulong, string, double)>();
         for (int i = 0; i < Math.Min(10, list.Count); i++)
             result.Add(list[i]);
@@ -288,8 +320,17 @@ public class LeaderboardMod : IHarmonyModHooks
         _tickObject.AddComponent<LeaderboardTickBehaviour>();
 
         RegisterCommands();
+        try
+        {
+            PermissionsBridge.RegisterReadyCallback(HiddenPermissionReady);
+            PermissionsBridge.Initialize(new[] { HiddenPermission });
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning("[Leaderboard] Hidden permission: " + ex.Message);
+        }
         StartLocalImagesLoadCoroutine();
-        UnityEngine.Debug.Log("[Leaderboard] Loaded. Commands: /leaderboard, /lb, /stats. ServerPanel: Leaderboard_Plugin / UltimateLeaderboard_Plugin");
+        UnityEngine.Debug.Log($"[Leaderboard] Loaded {Version}. Commands: /leaderboard, /lb, /stats. ServerPanel: Leaderboard_Plugin / UltimateLeaderboard_Plugin");
     }
 
     private void NextTick(Action action)
@@ -374,7 +415,12 @@ public class LeaderboardMod : IHarmonyModHooks
     public void OnWorldLoaded()
     {
         TryWipeFromMapVoterSignal();
-        NextTick(() => EventModPatches.TryApply(_harmony));
+        NextTick(() =>
+        {
+            var events = _config?.Events;
+            EventModPatches.TryApply(_harmony, events);
+            EventWinHooks.Register(events);
+        });
     }
 
     private void TryWipeFromMapVoterSignal()
@@ -385,6 +431,7 @@ public class LeaderboardMod : IHarmonyModHooks
         lock (_statsLock)
             _playerStats.Clear();
 
+        CombatTracking.Clear();
         _storage?.Wipe();
         WipeSignal.MarkWiped(statePath);
         UnityEngine.Debug.Log("[Leaderboard] Wipe signal applied — stats cleared.");
@@ -398,11 +445,25 @@ public class LeaderboardMod : IHarmonyModHooks
         _harmony?.UnpatchAll("com.leaderboard.patches");
         UnregisterCommands();
         GrimmCoreHurtRegistration.Unregister();
+        EventWinHooks.Unregister();
+        CombatTracking.Clear();
+        try
+        {
+            PermissionsBridge.UnregisterReadyCallback(HiddenPermissionReady);
+            PermissionsBridge.Shutdown();
+        }
+        catch { }
         UnregisterApiType();
         _pluginWrapper = null;
         lock (_uiLock) _serverPanelPlayers.Clear();
         Instance = null;
         UnityEngine.Debug.Log("[Leaderboard] Unloaded.");
+    }
+
+    private static void RegisterHiddenPermission()
+    {
+        try { PermissionsBridge.RegisterPermission(HiddenPermission); }
+        catch (Exception ex) { UnityEngine.Debug.LogWarning("[Leaderboard] Register hidden permission: " + ex.Message); }
     }
 
     private void LoadConfig()
@@ -415,15 +476,23 @@ public class LeaderboardMod : IHarmonyModHooks
             if (File.Exists(_configPath))
             {
                 var json = File.ReadAllText(_configPath);
-                _config = JsonConvert.DeserializeObject<LeaderboardConfig>(json);
+                var loaded = JsonConvert.DeserializeObject<LeaderboardConfig>(json, LeaderboardJson.Settings);
+                if (loaded == null)
+                    throw new InvalidOperationException("Config deserialized empty");
+                _config = loaded;
             }
-            _config ??= new LeaderboardConfig();
-            try { File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, Formatting.Indented)); } catch { }
+            else
+            {
+                _config = new LeaderboardConfig();
+            }
+            _config.Events ??= new EventIntegrationConfig();
+            File.WriteAllText(_configPath, JsonConvert.SerializeObject(_config, LeaderboardJson.Settings));
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogWarning($"[Leaderboard] Config: {ex.Message}");
-            _config = new LeaderboardConfig();
+            UnityEngine.Debug.LogWarning($"[Leaderboard] Config load failed, keeping the file on disk: {ex.Message}");
+            _config ??= new LeaderboardConfig();
+            _config.Events ??= new EventIntegrationConfig();
         }
     }
 
@@ -669,6 +738,13 @@ public class LeaderboardMod : IHarmonyModHooks
                     OnServerPanelCategoryPage(player, category, page);
                     return null;
                 }
+                case "API_OnEventWin":
+                    API_OnEventWin(ArgUlong(args, 0), args.Length > 1 ? args[1]?.ToString() : null,
+                        args.Length > 2 ? ArgInt(args, 2) : 1);
+                    return null;
+                case "OnRaidableBoatCompleted":
+                    OnRaidableBoatCompleted(args.Length > 1 ? args[1] : null, args.Length > 3 ? args[3]?.ToString() : null);
+                    return null;
                 case "API_GetPlayerStat":
                 {
                     ulong userId = 0;
@@ -683,6 +759,7 @@ public class LeaderboardMod : IHarmonyModHooks
                         args.Length > 2 ? args[2]?.ToString() : null);
                 }
                 default:
+                    if (EventWinHooks.TryHandle(method, args)) return null;
                     return null;
             }
         }
@@ -700,6 +777,7 @@ public class LeaderboardMod : IHarmonyModHooks
         public PluginWrapper(LeaderboardMod mod) => _mod = mod;
         public bool IsLoaded => _mod != null && Instance == _mod;
         public string Name => "Leaderboard";
+        public string Version => LeaderboardMod.Version;
         public object Call(string method, params object[] args) => _mod?.Call(method, args);
         public object API_OpenPlugin(BasePlayer player) => _mod?.API_OpenPlugin(player);
     }
@@ -774,14 +852,53 @@ public class LeaderboardMod : IHarmonyModHooks
         if (player == null) return;
         if (TryGetStats(player.userID, out var stats))
         {
-            stats.DisconnectTime = DateTime.UtcNow;
-            stats.TotalPlayTime += (DateTime.UtcNow - stats.ConnectTime).TotalSeconds;
-            stats.IsOnline = false;
             stats.LastName = player.displayName ?? stats.LastName;
+            stats.CommitOnlineSession();
             _storage?.SavePlayer(stats);
             if (_config?.Relay?.Enabled == true)
                 FlushRelayBatch();
         }
+    }
+
+    /// <summary>Same entry point as Ultimate Leaderboard 1.5.72 <c>API_OnEventWin</c>.</summary>
+    public void API_OnEventWin(ulong userId, string eventName, int amount = 1)
+    {
+        if (userId == 0 || string.IsNullOrEmpty(eventName) || amount == 0) return;
+        if (!SteamIdHelper.IsSteamId(userId)) return;
+        RecordStat(userId, LootType.Event, eventName, amount);
+    }
+
+    /// <summary>Raidable Boats completions, keyed by difficulty (easy, medium, hard, nightmare).</summary>
+    public void OnRaidableBoatCompleted(object raiders, string difficulty)
+    {
+        if (string.IsNullOrEmpty(difficulty) || raiders is not System.Collections.IEnumerable list) return;
+        var mode = difficulty.ToLowerInvariant();
+        foreach (var entry in list)
+        {
+            ulong id = 0;
+            if (entry is ulong u) id = u;
+            else if (entry is long l) id = (ulong)l;
+            else ulong.TryParse(entry?.ToString(), out id);
+            if (id == 0 || !SteamIdHelper.IsSteamId(id)) continue;
+            RecordStat(id, LootType.RaidableBoats, mode, 1f);
+        }
+    }
+
+    private static ulong ArgUlong(object[] args, int index)
+    {
+        if (args == null || index >= args.Length || args[index] == null) return 0;
+        if (args[index] is ulong u) return u;
+        if (args[index] is long l) return (ulong)l;
+        ulong.TryParse(args[index].ToString(), out var parsed);
+        return parsed;
+    }
+
+    private static int ArgInt(object[] args, int index)
+    {
+        if (args == null || index >= args.Length || args[index] == null) return 0;
+        if (args[index] is int i) return i;
+        int.TryParse(args[index].ToString(), out var parsed);
+        return parsed;
     }
 
     public void RecordStat(ulong userId, LootType type, string prefab, float value)
@@ -861,7 +978,7 @@ public class LeaderboardMod : IHarmonyModHooks
         {
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
+                if (IsHidden(kv.Key, kv.Value)) continue;
                 list.Add((kv.Key, kv.Value.LastName ?? kv.Key.ToString()));
             }
         }
@@ -895,9 +1012,9 @@ public class LeaderboardMod : IHarmonyModHooks
                     UserId = s.UserId,
                     LastIP = s.LastIP ?? "",
                     LastName = s.LastName ?? "",
-                    ConnectTime = s.ConnectTime.ToString("o"),
-                    DisconnectTime = s.DisconnectTime.ToString("o"),
-                    TotalPlayTime = s.TotalPlayTime.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
+                    ConnectTime = s.ConnectTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    DisconnectTime = s.DisconnectTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    TotalPlayTime = s.TotalPlayTime.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture),
                     Points = s.Points,
                     HiddenFromLeaderboard = s.HiddenFromLeaderboard ? 1 : 0
                 });
@@ -939,18 +1056,22 @@ public class LeaderboardMod : IHarmonyModHooks
         var fields = new List<(string name, string value)>();
         lock (_statsLock)
         {
-            var byKills = new List<(string name, int kills)>();
+            var byKills = new List<(ulong id, string name, int kills)>();
             var sb = new StringBuilder();
             foreach (var kv in _playerStats)
             {
-                if (kv.Value.HiddenFromLeaderboard) continue;
-                var k = kv.Value.GetKills();
-                byKills.Add((kv.Value.LastName ?? kv.Key.ToString(), k));
+                if (IsHidden(kv.Key, kv.Value)) continue;
+                var name = kv.Value.LastName;
+                if (string.IsNullOrEmpty(name)) name = kv.Key.ToString();
+                byKills.Add((kv.Key, name, kv.Value.GetKills()));
             }
-            byKills.Sort((a, b) => b.kills.CompareTo(a.kills));
+            byKills.Sort((a, b) => CompareDescThenId(a.kills, b.kills, a.id, b.id));
             sb.Clear();
             for (int i = 0; i < Math.Min(5, byKills.Count); i++)
+            {
+                if (string.IsNullOrEmpty(byKills[i].name)) continue;
                 sb.AppendLine($"{i + 1}. **{byKills[i].name}** — {byKills[i].kills}");
+            }
             if (sb.Length > 0)
                 fields.Add(("Top 5 Kills", sb.ToString()));
         }

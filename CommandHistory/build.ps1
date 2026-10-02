@@ -1,5 +1,5 @@
 # Build script for CommandHistory Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\CommandHistory.dll
+# Output: <server root>\HarmonyMods\CommandHistory.dll
 
 Write-Host "Building CommandHistory..." -ForegroundColor Cyan
 
@@ -7,7 +7,7 @@ $projectPath = Join-Path $PSScriptRoot "CommandHistory.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $harmonyModsPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\HarmonyMods"))
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }

@@ -338,12 +338,12 @@ namespace PlayerSkinsHarmony
             player.UpdateActiveItem(default);
             
             int slot = item.position;
-            item.SetParent(null, null);
+            item.SetParent(null);
             item.MarkDirty();
                                 
             player.inventory.SendUpdatedInventory(PlayerInventory.Type.Belt, item.parent, false);
                                 
-            item.SetParent(player.inventory.containerBelt, null);
+            item.SetParent(player.inventory.containerBelt);
             item.position = slot;
             item.MarkDirty();
                                 

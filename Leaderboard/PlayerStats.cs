@@ -74,21 +74,24 @@ public class PlayerStats
     public int GetAnimalKills()
     {
         if (!StatsStorage.TryGetValue(LootType.Kill, out var storage)) return 0;
-        var exclude = new HashSet<string> { "kills", "kill_sleepers", "max_distance", "helicopter", "bradleyapc" };
         int sum = 0;
         foreach (var kv in storage)
-            if (!exclude.Contains(kv.Key)) sum += (int)kv.Value;
+        {
+            if (NpcKillName.IsPvpKey(kv.Key) || NpcKillName.IsNpcKey(kv.Key)) continue;
+            sum += (int)kv.Value;
+        }
         return sum;
     }
 
-    /// <summary>Total NPC kills (e.g. helicopter, bradley, scientists).</summary>
+    /// <summary>Total NPC kills (helicopter, bradley, scientists, and the newer scientist variants).</summary>
     public int GetNpcKills()
     {
         if (!StatsStorage.TryGetValue(LootType.Kill, out var storage)) return 0;
-        var npcKeys = new HashSet<string> { "helicopter", "bradleyapc" };
         int sum = 0;
         foreach (var kv in storage)
-            if (npcKeys.Contains(kv.Key)) sum += (int)kv.Value;
+        {
+            if (NpcKillName.IsNpcKey(kv.Key)) sum += (int)kv.Value;
+        }
         return sum;
     }
 
@@ -129,12 +132,34 @@ public class PlayerStats
         return sum;
     }
 
-    /// <summary>Current session play time + total (for display).</summary>
-    public double GetCurrentPlayTimeSeconds() =>
-        IsOnline ? (DateTime.UtcNow - ConnectTime).TotalSeconds : 0;
+    /// <summary>Current session only. A missing or epoch connect time contributes nothing, so playtime cannot jump to years.</summary>
+    public double GetCurrentPlayTimeSeconds()
+    {
+        if (!IsOnline || ConnectTime.Year < 2000) return 0;
+        var session = (DateTime.UtcNow - ConnectTime).TotalSeconds;
+        return session > 0 ? session : 0;
+    }
 
     public double GetTotalPlayTimeIncludingCurrent() =>
         TotalPlayTime + GetCurrentPlayTimeSeconds();
+
+    /// <summary>
+    /// Fold the open session into TotalPlayTime once. A second disconnect or unload does not add it again.
+    /// Connect times before year 2000 are ignored so a bad date cannot inflate playtime.
+    /// </summary>
+    public void CommitOnlineSession()
+    {
+        if (!IsOnline) return;
+        var connect = ConnectTime;
+        var now = DateTime.UtcNow;
+        IsOnline = false;
+        ConnectTime = now;
+        DisconnectTime = now;
+        if (connect.Year < 2000) return;
+        var session = (now - connect).TotalSeconds;
+        if (session > 0)
+            TotalPlayTime += session;
+    }
 
     /// <summary>PvP hit count for a body part (head, chest, stomach, arm, leg).</summary>
     public float GetBodyHits(string areaKey)
@@ -146,5 +171,41 @@ public class PlayerStats
     public float GetTotalBodyHits()
     {
         return GetTotal(LootType.BodyHits);
+    }
+}
+
+/// <summary>Kill-stat keys for players, animals, and NPC prefabs including the 1.5.55 scientist variants.</summary>
+public static class NpcKillName
+{
+    public static string From(BaseEntity entity)
+    {
+        if (entity == null) return "scientist";
+        if (entity.skinID == 14922524UL || entity.skinID == GrimmCoreBridge.LegacyRaidableBasesSkinId)
+            return "raidbase_npc";
+        if (string.Equals(entity.GetType().Name, "ZombieNPC", StringComparison.Ordinal))
+            return "horde_npc";
+        if (entity.skinID == GrimmCoreBridge.LegacyGrimmNpcSkinId && entity is ScientistNPC npc &&
+            !string.IsNullOrEmpty(npc.displayName))
+        {
+            var name = npc.displayName;
+            return name.Length > 64 ? name.Substring(0, 64) : name;
+        }
+
+        var prefab = entity.ShortPrefabName;
+        return string.IsNullOrEmpty(prefab) ? "scientist" : prefab;
+    }
+
+    public static bool IsPvpKey(string key) =>
+        key == "kills" || key == "kill_sleepers" || key == "max_distance";
+
+    public static bool IsNpcKey(string key)
+    {
+        if (string.IsNullOrEmpty(key) || IsPvpKey(key)) return false;
+        if (key == "helicopter" || key == "bradleyapc" || key == "scientist" || key == "raidbase_npc" || key == "horde_npc")
+            return true;
+        if (key.StartsWith("scientist", StringComparison.OrdinalIgnoreCase)) return true;
+        if (key.StartsWith("npc_", StringComparison.OrdinalIgnoreCase)) return true;
+        if (key.StartsWith("zombie", StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 }

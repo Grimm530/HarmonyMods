@@ -4131,7 +4131,7 @@ namespace RaidableBases
                         continue;
                     }
                     item.GetHeldEntity().SafelyKill();
-                    item.RemoveFromContainer(null);
+                    item.RemoveFromContainer();
                     item.Remove(0f);
                 }
                 return hasItems;
@@ -9075,7 +9075,7 @@ namespace RaidableBases
                 {
                     Item item = container.itemList[i];
                     item.GetHeldEntity().SafelyKill();
-                    item.RemoveFromContainer(null);
+                    item.RemoveFromContainer();
                     item.Remove(0f);
                 }
             }
@@ -11184,7 +11184,7 @@ namespace RaidableBases
                     Item slot = turret.inventory.GetSlot(0);
                     if (slot != null && (slot.info.category == ItemCategory.Weapon || slot.info.category == ItemCategory.Fun))
                     {
-                        slot.RemoveFromContainer(null);
+                        slot.RemoveFromContainer();
                         slot.Remove();
                     }
                 }

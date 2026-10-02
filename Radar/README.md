@@ -56,6 +56,7 @@ Both are added to `ConsoleSystem.Index.Server.Replicated` via reflection. CUI bu
 | `Chat_Say_Patch` | `ConVar.Chat.say` | Prefix | Intercept `/radar` when message is sent as chat (e.g. F1 `chat.say /radar`); return `!handled` to suppress default chat when handled |
 | `RunWithResult_Patch` | `ConsoleSystem.RunWithResult` | Prefix | When the client sends the command `radar` or `global.radar` (e.g. /radar in chat box), handle it so /radar works even if the command wasn’t in the client’s replicated list |
 | `Cui_Endtest_Patch` | `cui.endtest` | Prefix | Handle Radar `RADAR` (CLOSE, TOGGLE_RADAR, TOGGLE_{EntityType}, RANGE_UP, RANGE_DOWN); return `!handled` so TCUpgrade etc. can handle their commands |
+| `ServerMgr_OnPlayerVoice_Patch` | `ServerMgr.OnPlayerVoice` | Postfix | AdminRadar 5.4.4 voice detection. Does not read the packet. Draws a yellow arrow above a speaking player for each active radar inside `Voice Detection` radius |
 
 ## Entity Types & Sources
 
@@ -149,4 +150,6 @@ Both mods patch `ConVar.Chat.say` and register replicated console commands. They
 .\build.ps1
 ```
 
-Output: `D:\!RustServer\HarmonyMods\Radar.dll`. Load: `harmony.load Radar`.
+Output: `<server root>\HarmonyMods\Radar.dll`. Load: `harmony.load Radar`.
+
+Tracks Oxide AdminRadar **5.4.4**. That release only fixes `OnPlayerVoice` (`ArraySegment<byte>` instead of `byte[]`). Voice bytes are ignored. While radar is on, a speaking player within `HarmonyConfig/Radar.json` → `Voice Detection` → `Detection Radius` (default 30m) gets a yellow `ddraw.arrow` for `Timeout After X Seconds` (minimum 3). Set `Enabled` to false to turn detection off.

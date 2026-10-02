@@ -12,7 +12,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Description>Harmony mod: SkillTree 1.7.x (Harmony port). Config: HarmonyConfig/SkillTree.json. Data: HarmonyData/ (default SkillTree subfolder) or CustomSkillTreeDataDirectory in config (currently C:\!DataPersistence\oxide\data\SkillTree). Requires Permissions mod.</Description>
+    <Description>Harmony mod: SkillTree 1.8.0 (Harmony port). Config: HarmonyConfig/SkillTree.json. Data: HarmonyData/ (default SkillTree subfolder) or CustomSkillTreeDataDirectory in config (currently C:\!DataPersistence\oxide\data\SkillTree). Requires Permissions mod.</Description>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <!-- Krafs.Publicizer makes all Rust types accessible without reflection -->

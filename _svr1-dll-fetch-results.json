@@ -1,0 +1,206 @@
+[
+  {
+    "Mod": "0Permissions",
+    "Ok": true,
+    "Bytes": 65536,
+    "Note": ""
+  },
+  {
+    "Mod": "0GrimmCore",
+    "Ok": true,
+    "Bytes": 50688,
+    "Note": ""
+  },
+  {
+    "Mod": "0GrimmCUI",
+    "Ok": true,
+    "Bytes": 559616,
+    "Note": ""
+  },
+  {
+    "Mod": "AdminMenu",
+    "Ok": true,
+    "Bytes": 224256,
+    "Note": ""
+  },
+  {
+    "Mod": "AlwaysBonus",
+    "Ok": true,
+    "Bytes": 8704,
+    "Note": ""
+  },
+  {
+    "Mod": "AutoCodeLock",
+    "Ok": true,
+    "Bytes": 92672,
+    "Note": ""
+  },
+  {
+    "Mod": "BetterChat",
+    "Ok": true,
+    "Bytes": 95232,
+    "Note": ""
+  },
+  {
+    "Mod": "Convoy",
+    "Ok": true,
+    "Bytes": 174080,
+    "Note": ""
+  },
+  {
+    "Mod": "CustomMapGen",
+    "Ok": true,
+    "Bytes": 205312,
+    "Note": ""
+  },
+  {
+    "Mod": "DeveloperListOverride",
+    "Ok": true,
+    "Bytes": 12800,
+    "Note": ""
+  },
+  {
+    "Mod": "DynamicCupShare",
+    "Ok": true,
+    "Bytes": 194048,
+    "Note": ""
+  },
+  {
+    "Mod": "EntityOwner",
+    "Ok": true,
+    "Bytes": 62464,
+    "Note": ""
+  },
+  {
+    "Mod": "FurnaceSplitter",
+    "Ok": true,
+    "Bytes": 18432,
+    "Note": ""
+  },
+  {
+    "Mod": "InventoryCleaner",
+    "Ok": true,
+    "Bytes": 47616,
+    "Note": ""
+  },
+  {
+    "Mod": "KillFeed",
+    "Ok": true,
+    "Bytes": 256512,
+    "Note": ""
+  },
+  {
+    "Mod": "Leaderboard",
+    "Ok": true,
+    "Bytes": 140800,
+    "Note": ""
+  },
+  {
+    "Mod": "MapVoter",
+    "Ok": true,
+    "Bytes": 117760,
+    "Note": ""
+  },
+  {
+    "Mod": "RaidRustPlus",
+    "Ok": true,
+    "Bytes": 12288,
+    "Note": ""
+  },
+  {
+    "Mod": "RustRewards",
+    "Ok": true,
+    "Bytes": 180224,
+    "Note": ""
+  },
+  {
+    "Mod": "WipeSchedule",
+    "Ok": true,
+    "Bytes": 199680,
+    "Note": ""
+  },
+  {
+    "Mod": "0GrimmNPC",
+    "Ok": true,
+    "Bytes": 192512,
+    "Note": ""
+  },
+  {
+    "Mod": "ArmoredTrain",
+    "Ok": true,
+    "Bytes": 312832,
+    "Note": ""
+  },
+  {
+    "Mod": "BagCooldowns",
+    "Ok": true,
+    "Bytes": 16384,
+    "Note": ""
+  },
+  {
+    "Mod": "BetterAirDrop",
+    "Ok": true,
+    "Bytes": 11776,
+    "Note": ""
+  },
+  {
+    "Mod": "BetterBackpack",
+    "Ok": true,
+    "Bytes": 52736,
+    "Note": ""
+  },
+  {
+    "Mod": "Economics",
+    "Ok": true,
+    "Bytes": 136192,
+    "Note": ""
+  },
+  {
+    "Mod": "HitMarkers",
+    "Ok": true,
+    "Bytes": 113152,
+    "Note": ""
+  },
+  {
+    "Mod": "IndustrialTransferSpeed",
+    "Ok": true,
+    "Bytes": 8704,
+    "Note": ""
+  },
+  {
+    "Mod": "ItemRetriever",
+    "Ok": true,
+    "Bytes": 52736,
+    "Note": ""
+  },
+  {
+    "Mod": "LootQoL",
+    "Ok": true,
+    "Bytes": 77312,
+    "Note": ""
+  },
+  {
+    "Mod": "NoGibs",
+    "Ok": true,
+    "Bytes": 8192,
+    "Note": ""
+  },
+  {
+    "Mod": "PlayerSkins",
+    "Ok": true,
+    "Bytes": 184320,
+    "Note": ""
+  },
+  {
+    "Mod": "Radar",
+    "Ok": true,
+    "Bytes": 69632,
+    "Note": ""
+  },
+  {
+    "Mod": "StackManager",
+    "Ok": true,
+    "Bytes": 168960,
+    "Note": ""
+  }
+]

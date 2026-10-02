@@ -7,7 +7,7 @@ namespace Radar.Patches;
 /// <summary>
 /// When the client sends "radar" (e.g. from chat box /radar), handle it here so /radar works even if
 /// the client didn't receive "radar" in its replicated command list (e.g. joined before mod load).
-/// Also routes <c>radar findbyitem &lt;shortname&gt;</c> (AdminRadar 5.4.312).
+/// Subcommands are passed to <c>HandleRadarCommand</c>. Bare <c>radar</c> toggles.
 /// </summary>
 [HarmonyPatch(typeof(ConsoleSystem), nameof(ConsoleSystem.RunWithResult), new Type[] { typeof(ConsoleSystem.Option), typeof(string), typeof(object[]) })]
 public static class RunWithResult_Patch

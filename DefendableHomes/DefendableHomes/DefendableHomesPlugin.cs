@@ -3253,7 +3253,7 @@ namespace Harmony.Plugins.DefendableHomesExtensionMethods
             for (int i = container.itemList.Count - 1; i >= 0; i--)
             {
                 Item item = container.itemList[i];
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 item.Remove();
             }
         }

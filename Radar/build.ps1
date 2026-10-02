@@ -1,5 +1,5 @@
 # Build script for Radar Harmony Mod
-# Output: D:\!RustServer\HarmonyMods\Radar.dll
+# Output: <server root>\HarmonyMods\Radar.dll
 
 Write-Host "Building Radar..." -ForegroundColor Cyan
 
@@ -7,21 +7,28 @@ $projectPath = Join-Path $PSScriptRoot "Radar.csproj"
 dotnet build $projectPath -c Release
 
 if ($LASTEXITCODE -eq 0) {
-    $harmonyModsPath = "D:\!RustServer\HarmonyMods"
+    $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
+    $harmonyModsPath = Join-Path $root "HarmonyMods"
     if (-not (Test-Path $harmonyModsPath)) {
         New-Item -ItemType Directory -Path $harmonyModsPath -Force | Out-Null
     }
 
-    $dllPath = Join-Path $PSScriptRoot "bin\Release\net48\Radar.dll"
+    $dllPath = Join-Path $PSScriptRoot "bin\Release\Radar.dll"
     if (-not (Test-Path $dllPath)) {
-        $dllPath = Join-Path $PSScriptRoot "bin\Release\Radar.dll"
+        $dllPath = Join-Path $PSScriptRoot "bin\Release\net48\Radar.dll"
     }
-    $destPath = Join-Path $harmonyModsPath "Radar.dll"
+    if (-not (Test-Path $dllPath)) {
+        Write-Host "Build output not found under bin\Release\Radar.dll" -ForegroundColor Red
+        exit 1
+    }
 
+    $destPath = Join-Path $harmonyModsPath "Radar.dll"
     Copy-Item -Path $dllPath -Destination $destPath -Force
-    Write-Host "`nBuild successful! Radar.dll copied to $destPath" -ForegroundColor Green
-    Write-Host "The mod will load automatically on next server start (harmony.load Radar)." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Build successful! Radar.dll -> $destPath" -ForegroundColor Green
+    Write-Host "Reload with: harmony.load Radar" -ForegroundColor Yellow
 } else {
-    Write-Host "`nBuild failed! Check errors above." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Build failed! Check errors above." -ForegroundColor Red
     exit 1
 }

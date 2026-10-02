@@ -5,10 +5,9 @@ using UnityEngine;
 namespace Radar.Patches;
 
 /// <summary>
-/// AdminRadar 5.4.312: Oxide <c>OnPlayerVoice(BasePlayer, ArraySegment&lt;byte&gt;)</c> (was <c>byte[]</c>).
-/// Harmony observes the same game method Harmony hooks. Postfix only — Radio / ZoneManager / Cooking
-/// already prefix <c>ServerMgr.OnPlayerVoice</c>; do not skip original or consume <c>packet.read</c>.
-/// Voice bytes are unused (AdminRadar ignores <c>data</c> except for the hook signature).
+/// AdminRadar 5.4.4: Oxide <c>OnPlayerVoice(BasePlayer, ArraySegment&lt;byte&gt;)</c> (was <c>byte[]</c>).
+/// Postfix only — Radio / ZoneManager / Cooking already prefix <c>ServerMgr.OnPlayerVoice</c>.
+/// Do not skip the original or consume <c>packet.read</c>. Voice bytes are unused; the hook only marks who is speaking.
 /// </summary>
 [HarmonyPatch(typeof(ServerMgr), "OnPlayerVoice")]
 public static class ServerMgr_OnPlayerVoice_Patch

@@ -35,7 +35,7 @@ namespace GrimmShared
                 hit = default;
                 return false;
             }
-            return RustNavMeshHelpers.SamplePosition(sourcePosition, out hit, maxDistance, areaMask);
+            return RustNavMeshHelpers.SamplePosition(sourcePosition, out hit, maxDistance, areaMask, false);
         }
 
         public static bool SamplePosition(Vector3 sourcePosition, out NavMeshHit hit, float maxDistance, NavMeshQueryFilter filter)

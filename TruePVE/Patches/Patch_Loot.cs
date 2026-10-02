@@ -66,4 +66,19 @@ namespace TruePVEHarmony.Patches
             catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnLoot postfix: " + ex.Message); }
         }
     }
+
+    /// <summary>
+    /// OnLootNetworkUpdate — workbench lock must also cover the autocrafter and recycle bin,
+    /// which attach extra containers after StartLootingEntity.
+    /// </summary>
+    [HarmonyPatch(typeof(PlayerLoot), "SendUpdate")]
+    public static class Patch_PlayerLoot_SendUpdate
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(PlayerLoot __instance)
+        {
+            try { return TPVE.Dispatch_OnLootNetworkUpdate(__instance) == null; }
+            catch (System.Exception ex) { Debug.LogWarning("[TruePVE] OnLootNetworkUpdate: " + ex.Message); return true; }
+        }
+    }
 }

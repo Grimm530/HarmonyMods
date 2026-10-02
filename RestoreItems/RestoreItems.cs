@@ -1667,7 +1667,7 @@ namespace Harmony.Plugins
             // First, try to remove the item from its current container if it has one
             if (item.parent != null)
             {
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
             }
             
             // Special handling for slot 7 in wear container (backpack/parachute/shield slot)
@@ -2260,7 +2260,7 @@ namespace Harmony.Plugins
             {
                 try
                 {
-                    invalidItem.RemoveFromContainer(null);
+                    invalidItem.RemoveFromContainer();
                     // Store it to be added to player inventory separately
                     if (!_invalidWeaponContents.ContainsKey(weapon.uid))
                     {

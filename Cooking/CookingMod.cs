@@ -1,4 +1,4 @@
-// CookingMod.cs — Harmony entry point for Cooking 2.0.35
+// CookingMod.cs — Harmony entry point for Cooking 2.1.0
 // Hosts Harmony.Plugins.Cooking, lifecycle, chat + console commands, SkillTree API.
 
 using System;

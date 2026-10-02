@@ -1,6 +1,6 @@
 # Cooking (Harmony HarmonyCompat port)
 
-Port of Oxide `Cooking` v2.0.35 to a Harmony mod. Player/recipe data is shared across SVR1/SVR2/SVR3 via the existing hardlinked `Cooking.json`.
+Port of Oxide `Cooking` v2.1.0 to a Harmony mod. Player/recipe data is shared across SVR1/SVR2/SVR3 via the existing hardlinked `Cooking.json`.
 
 ## Paths
 
@@ -52,3 +52,5 @@ Copies **only** `Cooking.dll` to root `HarmonyMods/`.
 
 - Data saves use in-place overwrite (`File.WriteAllText`) so the shared hardlink is not broken.
 - Gather/consume/split patches target `ResourceDispenser.GiveResourceFromItem`, `CollectibleEntity.DoPickup`, `Item.ServerCommand`, `Item.SplitItem`, and `ItemModConsume.DoAction` (verified in `.cursor/!Assembly-CSharp-RUST/`).
+- Livestock buffs patch cow milking, sheep shearing, familiarity, and vendor offers.
+- First load after 2.1.0 converts custom milk to the vanilla milk item and switches beef stew from raw bear meat to raw beef. Missing meals (lamb hotpot, beef wellington, creamy rice pudding) are added.

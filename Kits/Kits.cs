@@ -655,7 +655,7 @@ namespace KitsHarmony
                 }
 
                 foreach (var obj in list)
-                    obj.RemoveFromContainer(null);
+                    obj.RemoveFromContainer();
 
                 Pool.FreeUnmanaged(ref list);
             }

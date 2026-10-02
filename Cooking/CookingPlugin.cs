@@ -1,9 +1,11 @@
 using Facepunch;
+using HarmonyLib;
 using Newtonsoft.Json;
 using Harmony.Core;
 using Harmony.Core.Configuration;
 using Harmony.Core.Plugins;
 using Game.Rust.Cui;
+using Rust.Ai.Gen2;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,19 +15,31 @@ using Newtonsoft.Json.Converters;
 using static Harmony.Plugins.Cooking.CookingManager;
 using System.Text;
 
-/* Suggestions
- * Add command option to give recipe cards to target player on command.
- * Add message when a player picks up a recipe card that describes the buffs.
- * Add admin UI to give ingredients
- */
-
-/*​‌​​‌‌​‌​‌​‌​‌​​​‌‌​​​‌‌​‌‌‌‌​​​​‌​​‌‌‌​​‌‌​​‌‌‌​​‌‌‌‌​‌​​‌‌‌‌​‌2.0.35 Change Log
- * Fixed an issue caused by the July wipe that reset calories/hydration when consuming non-cooking related foods that were ingredients in meals.
+/* 2.1.0 Change Log
+ * Added new skill: Clone_Yield. Increases the amount of clone snippings you receive.
+ * Now uses the vanilla milk item; predators no longer drop milk.
+ * Added livestock buffs: yield, taming speed, cooldown, calm and extra vendor offers (with decimal chances).
+ * New meals: lamb hotpot, beef wellington, creamy rice pudding; beef stew now uses beef.
+ * Spoil time is consistent inside the ingredient bag and vanilla outside it; fridge time now counts in the bag.
+ * Vanilla item names are no longer renamed.
+ * Cooking and market commands now validate their input server-side.
+ * Fixed ingredient bag duplicating or losing items on reload or restart.
+ * Fixed free meals when cooking with the ingredient bag open.
+ * Recipe cards and the ingredient bag can no longer be forged by editing item text.
+ * UI mover commands are admin-only.
+ * Fixed buffs:
+ *   - Madness now works.
+ *   - Lifelink now works.
+ *   - Dehydration now drains hydration.
+ *   - Condition-loss reduction now works correctly.
+ * Wealth with the ServerRewards currency now pays ServerRewards.
+ * Fixed empty arguments on the give and market console commands.
+ * General null-safety and stability fixes.
 */
 
 namespace Harmony.Plugins
 {
-	[Info("Cooking", "imthenewguy", "2.0.35")]
+	[Info("Cooking", "imthenewguy", "2.1.0")]
 	[Description("Extends Rust's cooking functionality.")]
 	public partial class Cooking : RustPlugin
 	{
@@ -1077,7 +1091,7 @@ namespace Harmony.Plugins
                     }),
                     ["beef stew"] = new MealInfo(true, "fish.cooked", 2579612163, "This doesn't taste like cow meat.", 0, 15, new Dictionary<Buff, float>() { [Buff.Extra_Calories] = 1.0f }, new Dictionary<string, int>()
                     {
-                        ["raw bear meat"] = 2,
+                        ["raw beef"] = 2,
                         ["tomato"] = 1,
                         ["potato"] = 1,
                         ["spices"] = 1
@@ -1124,6 +1138,28 @@ namespace Harmony.Plugins
                         ["seaweed"] = 1,
                         ["spices"] = 1
                     }),
+
+                    ["lamb hotpot"] = new MealInfo(true, "fish.cooked", 3809686891, "Slow cooked, just like the flock would want.", 600, 15, new Dictionary<Buff, float>() { [Buff.Husbandry_Yield] = 0.5f, [Buff.Husbandry_Cooldown] = 0.15f }, new Dictionary<string, int>()
+                    {
+                        ["raw mutton meat"] = 3,
+                        ["potato"] = 3,
+                        ["milk"] = 1,
+                        ["spices"] = 1
+                    }),
+                    ["beef wellington"] = new MealInfo(true, "fish.cooked", 3809687031, "The herd can smell the confidence on you.", 600, 15, new Dictionary<Buff, float>() { [Buff.Livestock_Handling] = 0.35f, [Buff.Livestock_Calm] = 1f }, new Dictionary<string, int>()
+                    {
+                        ["raw beef"] = 3,
+                        ["mushroom"] = 3,
+                        ["wheat"] = 2,
+                        ["egg"] = 1
+                    }),
+                    ["creamy rice pudding"] = new MealInfo(true, "fish.cooked", 3809687180, "Sweet enough to charm any trader.", 600, 15, new Dictionary<Buff, float>() { [Buff.Livestock_Offers] = 2f }, new Dictionary<string, int>()
+                    {
+                        ["cream"] = 2,
+                        ["rice"] = 2,
+                        ["sugar"] = 1,
+                        ["milk"] = 1
+                    }),
                 };
             }
         }
@@ -1136,7 +1172,7 @@ namespace Harmony.Plugins
                 {
                     ["spices"] = new IngredientsInfo(true, "apple", 2869351030, new List<GatherSource>() { GatherSource.Hemp }),
                     ["sugar"] = new IngredientsInfo(true, "sulfur", 2783266385, new List<GatherSource>() { GatherSource.Potato }),
-                    ["milk"] = new IngredientsInfo(true, "apple", 2572181796, new List<GatherSource>() { GatherSource.Bear, GatherSource.Boar, GatherSource.Deer, GatherSource.Wolf, GatherSource.PolarBear, GatherSource.Panther, GatherSource.Tiger }),
+                    ["milk"] = new IngredientsInfo(true, "milk", 0, new List<GatherSource>() { GatherSource.Default }) { vanillaSpoilTime = true },
                     ["seaweed"] = new IngredientsInfo(true, "apple", 2572183145, new List<GatherSource>() { GatherSource.Gut, GatherSource.Fishing, GatherSource.Shark }),
                     ["rice"] = new IngredientsInfo(true, "apple", 2572182801, new List<GatherSource>() { GatherSource.Corn, GatherSource.Pumpkin }),
                     ["tomato"] = new IngredientsInfo(true, "apple", 2572183535, new List<GatherSource>() { GatherSource.Pumpkin }),
@@ -1153,12 +1189,9 @@ namespace Harmony.Plugins
         // 1.0 = always drops.
         Dictionary<GatherSource, GatherInfo> DefaultGatherSources()
         {
-            List<GatherSource> sources = Pool.Get<List<GatherSource>>();
-            sources.AddRange(Enum.GetValues(typeof(Buff)).Cast<GatherSource>());
-
             Dictionary<GatherSource, GatherInfo> result = new Dictionary<GatherSource, GatherInfo>();
 
-            foreach (var source in sources)
+            foreach (GatherSource source in Enum.GetValues(typeof(GatherSource)))
             {
                 if (source.ToString().IsNumeric()) continue;
                 switch (source)
@@ -1178,7 +1211,6 @@ namespace Harmony.Plugins
                         break;
                 }
             }
-            Pool.FreeUnmanaged(ref sources);
 
             return result;
         }
@@ -1455,12 +1487,29 @@ namespace Harmony.Plugins
             MealCooldowns = null;
         }
 
-        void KillIBags()
+        void CloseAllIngredientBags()
         {
-            foreach (var container in IBagContainers)
+            foreach (var kvp in IBagContainers)
             {
-                if (container.Value != null)
-                    container.Value.Invoke(container.Value.KillMessage, 0.01f);
+                if (kvp.Value == null) continue;
+                var player = BasePlayer.FindByID(kvp.Key);
+                if (player != null)
+                {
+                    SaveIngredientBag(player, kvp.Value);
+                    if (player.inventory.loot.entitySource == kvp.Value) player.EndLooting();
+                }
+                kvp.Value.Kill();
+            }
+            IBagContainers.Clear();
+        }
+
+        void SaveOpenIngredientBags()
+        {
+            foreach (var kvp in IBagContainers)
+            {
+                if (kvp.Value == null) continue;
+                var player = BasePlayer.FindByID(kvp.Key);
+                if (player != null) SaveIngredientBag(player, kvp.Value);
             }
         }
 
@@ -1496,6 +1545,7 @@ namespace Harmony.Plugins
 
         void Unload()
         {
+            CloseAllIngredientBags();
             SaveData();
             if (ConfigRequiresSave) SaveConfig();
             foreach (var player in BasePlayer.activePlayerList)
@@ -1517,11 +1567,11 @@ namespace Harmony.Plugins
             ClearMealCooldowns();            
             DefaultDisplayNames?.Clear();
             DefaultDisplayNames = null;
-            KillIBags();
             RemoveCommands();
             RemoveMarketNPCs();
             ClearLists();
             RemoveCurrencies();
+            Instance = null;
         }
 
         void ClearLists()
@@ -1580,6 +1630,8 @@ namespace Harmony.Plugins
         {
             public bool patched = false;
             public bool patched2 = false;
+            public bool patched3 = false;
+            public bool patched4 = false;
             public Dictionary<ulong, PCDInfo> pEntity = new Dictionary<ulong, PCDInfo>();
             public Dictionary<ulong, List<BagInfo>> bag = new Dictionary<ulong, List<BagInfo>>();
             public List<NPCInfo> npcs = new List<NPCInfo>();
@@ -1606,6 +1658,7 @@ namespace Harmony.Plugins
             public int amount;
             public int slot;
             public float spoilTime;
+            public float refrigeratedSeconds;
             public BagInfo(string shortname, string displayName, int amount, int slot, ulong skin, float spoilTime, string text)
             {
                 this.shortname = shortname;
@@ -1614,6 +1667,7 @@ namespace Harmony.Plugins
                 this.slot = slot;
                 this.skin = skin;
                 this.spoilTime = spoilTime;
+                this.text = text;
             }
         }
 
@@ -1621,20 +1675,6 @@ namespace Harmony.Plugins
         {
             public List<string> favouriteDishes = new List<string>();
             public List<string> learntRecipes = new List<string>();
-        }
-
-        [ConsoleCommand("spit")]
-        void Spit(ConsoleSystem.Arg arg)
-        {
-            List<GatherSource> gatherSource = Pool.Get<List<GatherSource>>();
-            gatherSource.AddRange(Enum.GetValues(typeof(GatherSource)).Cast<GatherSource>());
-
-            foreach (var buff in gatherSource)
-            {
-                Puts($"{buff} - {lang.GetMessage($"{buff}_LocationText", this)}");
-            }
-
-            Pool.FreeUnmanaged(ref gatherSource);
         }
 
         #endregion;
@@ -1678,6 +1718,8 @@ namespace Harmony.Plugins
 
                 ["Boar_LocationText"] = "Skinning boar",
                 ["horse_LocationText"] = "Skinning horses",
+                ["Cow_LocationText"] = "Skinning cattle",
+                ["Sheep_LocationText"] = "Skinning sheep",
                 ["Fishing_LocationText"] = "Catching fish",
                 ["Gut_LocationText"] = "Gutting fish",
                 ["Pumpkin_LocationText"] = "Harvesting pumpkins",
@@ -1686,6 +1728,7 @@ namespace Harmony.Plugins
                 ["Mushroom_LocationText"] = "Picking mushrooms",
                 ["BerryBush_LocationText"] = "Picking berries",
                 ["Hemp_LocationText"] = "Harvesting hemp",
+                ["Wheat_LocationText"] = "Harvesting wheat",
                 ["Crafted_LocationText"] = "Crafted",
                 ["Foodbox_LocationText"] = "Food boxes",
 
@@ -1757,6 +1800,11 @@ namespace Harmony.Plugins
                 ["Woodcutting_Hotspot_MenuDescription"] = "You will always hit the marker of a tree while chopping wood.",
                 ["Lifelink_MenuDescription"] = "You will heal for by <color=#42f105>{0}%</color> of the base damage done to humans and animals.",
                 ["SkillTreeXp_MenuDescription"] = "Increases the amount of xp gained from all sources by <color=#42f105>{0}%</color>.",
+                ["Husbandry_Yield_MenuDescription"] = "Increases the amount of milk and wool received by <color=#42f105>{0}%</color> when milking cows and shearing sheep.",
+                ["Livestock_Handling_MenuDescription"] = "Increases the familiarity gained when handling livestock by <color=#42f105>{0}%</color>, taming them faster.",
+                ["Husbandry_Cooldown_MenuDescription"] = "Reduces the time before a cow can be milked again, or a sheep's wool regrows, by <color=#42f105>{0}%</color>.",
+                ["Livestock_Calm_MenuDescription"] = "Livestock will tolerate your presence, even if they are unfamiliar with you.",
+                ["Livestock_Offers_MenuDescription"] = "Livestock vendors will make you <color=#42f105>{0}</color> additional offer(s) when selling animals or wool.",
                 //["_MenuDescription"] = "<color=#42f105>{4221}%</color>.",
 
                 ["UIOn"] = "<color=#00ab08>ON</color>",
@@ -1985,6 +2033,8 @@ namespace Harmony.Plugins
             public List<GatherSource> gatherSources = new List<GatherSource>();
             [JsonProperty("Spoil time [hours - if applicable]")]
             public float spoilTime = 168;
+            [JsonProperty("Use the item's vanilla spoil time instead [the ingredient bag still preserves it]")]
+            public bool vanillaSpoilTime;
             public List<string> customSources = new List<string>();
             public int minDrops;
             public int maxDrops;
@@ -2114,6 +2164,11 @@ namespace Harmony.Plugins
             Radiation, // Gives the player radiation
             Lifelink, // Heals the player by Damage done
             SkillTreeXp,
+            Husbandry_Yield,
+            Livestock_Handling,
+            Husbandry_Cooldown,
+            Livestock_Calm,
+            Livestock_Offers,
         }
 
         #region GetBuffType method
@@ -2209,6 +2264,9 @@ namespace Harmony.Plugins
             MedicalCrate,
             AmmunitionCrate,
             FuelCrate,
+
+            Cow,
+            Sheep,
         }
 
         #endregion
@@ -2287,6 +2345,7 @@ namespace Harmony.Plugins
                             count += meal.Value.dropWeight;
                             if (roll > count) continue;
                             var reward = CreateItem(meal.Value.shortname, UnityEngine.Random.Range(config.mealSettings.lootSettings.min, config.mealSettings.lootSettings.max + 1), meal.Value.skin, meal.Value.skin > 0 ? meal.Key : null, meal.Value.spoilTime);
+                            if (reward == null) break;
                             container.inventorySlots++;
                             container.inventory.capacity++;
 
@@ -2315,7 +2374,8 @@ namespace Harmony.Plugins
                         {
                             count += ingredient.Value.dropWeight;
                             if (roll > count) continue;
-                            var reward = CreateItem(ingredient.Value.shortname, UnityEngine.Random.Range(config.ingredientSettings.lootSettings.min, config.ingredientSettings.lootSettings.max + 1), ingredient.Value.skin, ingredient.Value.skin > 0 ? ingredient.Key : null, ingredient.Value.spoilTime);
+                            var reward = CreateItem(ingredient.Value.shortname, UnityEngine.Random.Range(config.ingredientSettings.lootSettings.min, config.ingredientSettings.lootSettings.max + 1), ingredient.Value.skin, ingredient.Value.skin > 0 ? ingredient.Key : null, ingredient.Value.spoilTime, ingredient.Value.vanillaSpoilTime);
+                            if (reward == null) break;
                             container.inventorySlots++;
                             container.inventory.capacity++;
 
@@ -2349,15 +2409,16 @@ namespace Harmony.Plugins
             return baseChance += (baseChance * highest);
         }
 
-        public Item CreateItem(string shortname, int quantity, ulong skin, string displayName, float spoilTime)
+        public Item CreateItem(string shortname, int quantity, ulong skin, string displayName, float spoilTime, bool vanillaSpoilTime = false)
         {
             var item = ItemManager.CreateByName(shortname, quantity, skin);
-            if (displayName != null)
+            if (item == null) return null;
+            if (HasCustomName(item.info, skin, displayName))
             {
                 item.name = displayName.ToLower();
                 item.text = displayName.ToLower();
             }
-            if (item.info.GetComponent<ItemModFoodSpoiling>() != null)
+            if (!vanillaSpoilTime && item.info.GetComponent<ItemModFoodSpoiling>() != null)
                 item.instanceData.dataFloat = spoilTime * 3600;
             
             return item;
@@ -2444,6 +2505,20 @@ namespace Harmony.Plugins
                 PatchForCookingUpdate2();
                 updateConfig = true;
                 pcdData.patched2 = true;
+            }
+
+            if (!pcdData.patched3)
+            {
+                PatchForCookingUpdate3();
+                updateConfig = true;
+                pcdData.patched3 = true;
+            }
+
+            if (!pcdData.patched4)
+            {
+                PatchForCookingUpdate4();
+                updateConfig = true;
+                pcdData.patched4 = true;
             }
 
             foreach (var meal in DefaultBasicMeals)
@@ -2764,8 +2839,56 @@ namespace Harmony.Plugins
             }
         }
 
+        void PatchForCookingUpdate3()
+        {
+            IngredientsInfo milk;
+            if (!config.ingredientSettings.ingredients.TryGetValue("milk", out milk) || milk.shortname == "milk") return;
+
+            var oldShortname = milk.shortname;
+            var oldSkin = milk.skin;
+            milk.shortname = "milk";
+            milk.skin = 0;
+            Puts("Converted the custom milk ingredient to the vanilla milk item.");
+
+            foreach (var bag in pcdData.bag)
+            {
+                foreach (var slot in bag.Value)
+                {
+                    if (slot.shortname != oldShortname || slot.skin != oldSkin || !"milk".Equals(slot.displayName, StringComparison.OrdinalIgnoreCase)) continue;
+                    slot.shortname = "milk";
+                    slot.skin = 0;
+                    slot.text = null;
+                }
+            }
+        }
+
+        void PatchForCookingUpdate4()
+        {
+            IngredientsInfo milk;
+            if (config.ingredientSettings.ingredients.TryGetValue("milk", out milk) && milk.shortname == "milk")
+            {
+                milk.vanillaSpoilTime = true;
+                if (milk.gatherSources != null)
+                {
+                    var removed = milk.gatherSources.RemoveAll(x => x == GatherSource.Bear || x == GatherSource.Boar || x == GatherSource.Deer || x == GatherSource.Wolf || x == GatherSource.PolarBear || x == GatherSource.Panther || x == GatherSource.Tiger);
+                    if (milk.gatherSources.Count == 0) milk.gatherSources.Add(GatherSource.Default);
+                    if (removed > 0) Puts($"Removed {removed} animal skinning drop sources from milk. Milk now comes from milking cows.");
+                }
+            }
+
+            MealInfo stew;
+            int amount;
+            if (config.mealSettings.meals.TryGetValue("beef stew", out stew) && stew.ingredients != null && !stew.ingredients.ContainsKey("raw beef") && stew.ingredients.TryGetValue("raw bear meat", out amount) && amount == 2)
+            {
+                stew.ingredients.Remove("raw bear meat");
+                stew.ingredients.Add("raw beef", amount);
+                Puts("Updated the beef stew recipe to use raw beef instead of raw bear meat.");
+            }
+        }
+
         void OnServerSave()
         {
+            SaveOpenIngredientBags();
             SaveData();
         }
 
@@ -3087,7 +3210,7 @@ namespace Harmony.Plugins
                     return;
 
                 case Buff.Dehydration:
-                    player.metabolism.calories.Subtract(player.metabolism.hydration.max * modifier);
+                    player.metabolism.hydration.Subtract(player.metabolism.hydration.max * modifier);
                     return;
 
                 case Buff.Damage:
@@ -3165,8 +3288,12 @@ namespace Harmony.Plugins
         void RefundMeal(BasePlayer player, Item item)
         {
             var meal = ItemManager.CreateByName(item.info.shortname, 1, item.skin);
-            meal.name = item.name.ToLower();
-            if (item.skin > 0) meal.text = item.name.ToLower();
+            if (meal == null) return;
+            if (HasCustomName(meal.info, item.skin, item.name))
+            {
+                meal.name = item.name.ToLower();
+                if (item.skin > 0) meal.text = item.name.ToLower();
+            }
             if (IsSpoilingItem(item)) meal.instanceData.dataFloat = item.instanceData.dataFloat; 
             player.GiveItem(meal);
         }
@@ -3429,6 +3556,18 @@ namespace Harmony.Plugins
                         case "bear.corpse":
                             HandleIngredientChance(player, GatherSource.Bear, false, buffManager, dispenser.baseEntity.net.ID.Value, modifier);
                             break;
+
+                        case "cow.corpse":
+                        case "bull.corpse":
+                        case "calf.corpse":
+                        case "calfmale.corpse":
+                            HandleIngredientChance(player, GatherSource.Cow, false, buffManager, dispenser.baseEntity.net.ID.Value, modifier);
+                            break;
+
+                        case "sheep.corpse":
+                        case "lamb.corpse":
+                            HandleIngredientChance(player, GatherSource.Sheep, false, buffManager, dispenser.baseEntity.net.ID.Value, modifier);
+                            break;
                     }
 
                     if (!(dispenser.baseEntity is LootableCorpse))
@@ -3542,7 +3681,7 @@ namespace Harmony.Plugins
                         HandleIngredientChance(player, GatherSource.Mushroom, false, buffManager, entity.net.ID.Value);
                         break;
 
-                    case "Wheat":
+                    case "wheat-collectable":
                         HandleIngredientChance(player, GatherSource.Wheat, false, buffManager, entity.net.ID.Value);
                         break;
                 }
@@ -3709,6 +3848,7 @@ namespace Harmony.Plugins
             if (HarmonyModInterface.CallHook("OnIngredientBagDrop", player) != null) return;
 
             var container = GetBagContainer(player);
+            if (container == null) return;
             if (container.inventory.itemList?.Count > 0)
             {
                 ulong id = player.userID;
@@ -3716,11 +3856,17 @@ namespace Harmony.Plugins
                 Quaternion rot = player.transform.rotation;
                 timer.Once(0.1f, () =>
                 {
+                    if (container == null || container.IsDestroyed) return;
                     container.inventory.Drop("assets/prefabs/misc/item drop/item_drop.prefab", pos, rot, 0);                    
                     container.Invoke(container.KillMessage, 0.01f);
                     IBagContainers.Remove(id);
                     bagData.Clear();
                 });
+            }
+            else
+            {
+                IBagContainers.Remove(player.userID);
+                container.Invoke(container.KillMessage, 0.01f);
             }
         }
 
@@ -3824,6 +3970,7 @@ namespace Harmony.Plugins
             if (lootContainer != null)
             {
                 LootedContainers.Remove(lootContainer);
+                if (lootContainer.net != null) LuckRolledContainers.Remove(lootContainer.net.ID.Value);
                 return;
             }
         }
@@ -3836,11 +3983,13 @@ namespace Harmony.Plugins
             var buffManager = GetBuffManager(player, false);
             float value;
             if (buffManager == null || !buffManager.GetBuffModifiers.TryGetValue(Buff.Condition_Loss_Reduction, out value)) return;
-            item.condition += (amount * value);
+            amount -= Mathf.Min(amount, amount * value);
         }
 
 
         #region OnEntityTakeDamage
+
+        HashSet<ulong> LuckRolledContainers = new HashSet<ulong>();
 
         object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
         {
@@ -3862,7 +4011,7 @@ namespace Harmony.Plugins
                 if (buffManage_attacker.GetBuffModifiers.TryGetValue(Buff.Barrel_Smasher, out value) && RollSuccessful(value))
                     info.damageTypes.ScaleAll(100f);
 
-                if (info?.damageTypes?.Total() >= lootContainer?.health)
+                if (info?.damageTypes?.Total() >= lootContainer?.health && lootContainer.net != null && LuckRolledContainers.Add(lootContainer.net.ID.Value))
                 {
                     if (buffManage_attacker.GetBuffModifiers.TryGetValue(Buff.Wealth, out value) && RollSuccessful(value))
                     {
@@ -3874,7 +4023,7 @@ namespace Harmony.Plugins
                                 break;
 
                             case "serverrewards":
-                                RewardEconomics(info.InitiatorPlayer, roll);
+                                RewardServerRewards(info.InitiatorPlayer, roll);
                                 break;
 
                             default:
@@ -3887,14 +4036,14 @@ namespace Harmony.Plugins
                     {
                         var itemDef = GetRandomItemDef(ItemCategory.Component);
                         var amount = UnityEngine.Random.Range(config.generalSettings.buffSettings.componentLuckSettings.min, config.generalSettings.buffSettings.componentLuckSettings.max + 1);
-                        AddItemToBarrel(lootContainer, itemDef.shortname, amount);
+                        if (itemDef != null) AddItemToBarrel(lootContainer, itemDef.shortname, amount);
                     }
 
                     if (buffManage_attacker.GetBuffModifiers.TryGetValue(Buff.Electronics_Luck, out value) && RollSuccessful(value))
                     {
                         var itemDef = GetRandomItemDef(ItemCategory.Electrical);
                         var amount = UnityEngine.Random.Range(config.generalSettings.buffSettings.electronicsLuckSettings.min, config.generalSettings.buffSettings.electronicsLuckSettings.max + 1);
-                        AddItemToBarrel(lootContainer, itemDef.shortname, amount);
+                        if (itemDef != null) AddItemToBarrel(lootContainer, itemDef.shortname, amount);
                     }
                 }
             }
@@ -3979,8 +4128,7 @@ namespace Harmony.Plugins
                     {
                         // Attacker is not a real player
 
-                        var animalAttacker = info.Initiator as BaseAnimalNPC;
-                        if (animalAttacker != null)
+                        if (IsAnimal(info.Initiator))
                         {
                             // Attacker is an animal
                             if (buffManager_victim.GetBuffModifiers.TryGetValue(Buff.Animal_Resist, out value))
@@ -4016,8 +4164,7 @@ namespace Harmony.Plugins
             }
             #endregion
 
-            var animal = entity as BaseAnimalNPC;
-            if (animal != null)
+            if (IsAnimal(entity))
             {
                 if (buffManage_attacker != null)
                 {
@@ -4173,7 +4320,7 @@ namespace Harmony.Plugins
             var nearbyPlayers = FindEntitiesOfType<BasePlayer>(player.transform.position, config.generalSettings.buffSettings.madnessSettings.distanceHeard);
             foreach (var p in nearbyPlayers)
             {
-                if (p == player) continue;
+                if (p == player || p.net?.connection == null) continue;
                 EffectNetwork.Send(new Effect(config.generalSettings.buffSettings.madnessSettings.madnessPrefab, player.transform.position, player.transform.position), p.net.connection);
             }
             Pool.FreeUnmanaged(ref nearbyPlayers);
@@ -4328,10 +4475,16 @@ namespace Harmony.Plugins
 
             Item x = ItemManager.CreateByItemID(item.info.itemid);
             item.amount -= amount;
+            item.MigrateItemOwnership(x, amount);
             x.name = item.name;
+            x.text = item.text;
             x.skin = item.skin;
             x.amount = amount;
-            if (IsSpoilingItem(item)) x.instanceData.dataFloat = item.instanceData.dataFloat;
+            if (IsSpoilingItem(item) && item.instanceData != null)
+            {
+                x.instanceData.dataFloat = item.instanceData.dataFloat;
+                x.instanceData.refrigeratedSeconds = item.instanceData.refrigeratedSeconds;
+            }
             x.MarkDirty();
 
             item.MarkDirty();
@@ -4347,6 +4500,13 @@ namespace Harmony.Plugins
         static bool IsSpoilingItem(Item item)
         {
             return item.info.GetComponent<ItemModFoodSpoiling>() != null;
+        }
+
+        static bool IsAnimal(BaseEntity entity)
+        {
+            if (entity == null) return false;
+            if (entity is BaseAnimalNPC) return true;
+            return entity is BaseNPC2 && !(entity is ScientistNPC2);
         }
 
         List<Item> AllItems(BasePlayer player)
@@ -4450,7 +4610,7 @@ namespace Harmony.Plugins
             return meals[UnityEngine.Random.Range(0, meals.Count - 1)].Key;
         }
 
-        bool IsRecipeCard(Item item) => !string.IsNullOrEmpty(item.text) && config.mealSettings.meals.ContainsKey(item.text);
+        bool IsRecipeCard(Item item) => !string.IsNullOrEmpty(item.text) && item.skin == config.mealSettings.cookbookSettings.blueprint.skin && item.info.shortname == config.mealSettings.cookbookSettings.blueprint.shortname && config.mealSettings.meals.ContainsKey(item.text);
 
         private BaseEntity GetTargetEntity(BasePlayer player)
         {
@@ -4628,15 +4788,16 @@ namespace Harmony.Plugins
             if (!config.ingredientSettings.ingredients.TryGetValue(drop, out ingredientData)) return;
 
             var item = ItemManager.CreateByName(ingredientData.shortname, UnityEngine.Random.Range(ingredientData.minDrops, ingredientData.maxDrops + 1), ingredientData.skin);
-            if (ingredientData.skin > 0)
+            if (item == null) return;
+            if (HasCustomName(item.info, ingredientData.skin, drop))
             {
                 item.name = drop.ToLower();
                 item.text = drop.ToLower();
             }
+            SetIngredientSpoilTime(item, ingredientData);
             if (config.generalSettings.ingredientBagSettings.gather_directly_into_bag && IsValidItemForBag(item) && HasIngredientBag(player) && !IsLootingIngredientBag(player)) PlaceIngredientIntoBag(player, item);
             else
             {
-                if (IsSpoilingItem(item)) item.instanceData.dataFloat = 3600 * ingredientData.spoilTime;
                 if (DropNotificationsEnabled(player.UserIDString)) PrintToChat(player, lang.GetMessage("IngredientFoundMessage", this, player.UserIDString), item.amount.ToString(), item.name != null ? lang.GetMessage(item.name, this, player.UserIDString) : item.info.displayName.english);
                 GiveItem(player, item);
             }
@@ -4669,16 +4830,17 @@ namespace Harmony.Plugins
             if (!config.ingredientSettings.ingredients.TryGetValue(drop, out ingredientData)) return;
 
             var item = ItemManager.CreateByName(ingredientData.shortname, UnityEngine.Random.Range(ingredientData.minDrops, ingredientData.maxDrops + 1), ingredientData.skin);
-            if (ingredientData.skin > 0)
+            if (item == null) return;
+            if (HasCustomName(item.info, ingredientData.skin, drop))
             {
                 item.name = drop.ToLower();
                 item.text = drop.ToLower();
             }
+            SetIngredientSpoilTime(item, ingredientData);
 
             container.inventory.capacity++;
             if (item.MoveToContainer(container.inventory))
             {
-                if (IsSpoilingItem(item)) item.instanceData.dataFloat = 3600 * ingredientData.spoilTime;
                 if (DropNotificationsEnabled(player.UserIDString)) PrintToChat(player, lang.GetMessage("IngredientFoundMessage", this, player.UserIDString), item.amount.ToString(), item.name != null ? lang.GetMessage(item.name, this, player.UserIDString) : item.info.displayName.english);
                 return;
             }
@@ -4686,7 +4848,6 @@ namespace Harmony.Plugins
             if (config.generalSettings.ingredientBagSettings.gather_directly_into_bag && IsValidItemForBag(item) && HasIngredientBag(player) && !IsLootingIngredientBag(player)) PlaceIngredientIntoBag(player, item);
             else
             {
-                if (IsSpoilingItem(item)) item.instanceData.dataFloat = 3600 * ingredientData.spoilTime;
                 if (DropNotificationsEnabled(player.UserIDString)) PrintToChat(player, lang.GetMessage("IngredientFoundMessage", this, player.UserIDString), item.amount.ToString(), item.name != null ? lang.GetMessage(item.name, this, player.UserIDString) : item.info.displayName.english);
                 GiveItem(player, item);
             }
@@ -4728,7 +4889,8 @@ namespace Harmony.Plugins
             var count = 0;
             foreach (var drop in drops)
             {
-                count += DropWeightReference[drop];
+                if (!DropWeightReference.TryGetValue(drop, out var dropWeight)) continue;
+                count += dropWeight;
                 if (roll <= count) return drop;
             }
 
@@ -4771,6 +4933,7 @@ namespace Harmony.Plugins
                             }
                             foreach (var item in item_drops)
                             {
+                                if (item == null || !item.IsValid()) continue;
                                 var parent = item.GetOwnerPlayer();
                                 if (parent == null)
                                 {
@@ -4781,6 +4944,7 @@ namespace Harmony.Plugins
                             Pool.FreeUnmanaged(ref item_drops);
                         });
                     }
+                    else Pool.FreeUnmanaged(ref item_drops);
                     LastMagnetSuccess[player] = true;
                 }
                 else LastMagnetSuccess[player] = false;
@@ -4866,8 +5030,9 @@ namespace Harmony.Plugins
 
         void AddItemToBarrel(LootContainer container, string shortname, int amount)
         {
-            container.inventory.capacity++;
             var item = ItemManager.CreateByName(shortname, amount);
+            if (item == null) return;
+            container.inventory.capacity++;
             if (!item.MoveToContainer(container.inventory)) item.Remove();
         }
 
@@ -4896,16 +5061,29 @@ namespace Harmony.Plugins
             return (roll >= 100f - (luck * 100));
         }
 
-        void GiveMeal(BasePlayer player, string shortname, ulong skin, string displayName, float spoilTime, int amount = 1)
+        void GiveMeal(BasePlayer player, string shortname, ulong skin, string displayName, float spoilTime, int amount = 1, bool vanillaSpoilTime = false)
         {
             var item = ItemManager.CreateByName(shortname, amount, skin);
-            if (skin > 0)
+            if (item == null) return;
+            if (HasCustomName(item.info, skin, displayName))
             {
                 item.name = displayName.ToLower();
                 item.text = displayName.ToLower();
             }
-            if (IsSpoilingItem(item)) item.instanceData.dataFloat = 3600 * spoilTime;
+            if (!vanillaSpoilTime && IsSpoilingItem(item)) item.instanceData.dataFloat = 3600 * spoilTime;
             player.GiveItem(item);
+        }
+
+        void SetIngredientSpoilTime(Item item, IngredientsInfo ingredientData)
+        {
+            if (ingredientData.vanillaSpoilTime || !IsSpoilingItem(item)) return;
+            item.instanceData.dataFloat = 3600 * ingredientData.spoilTime;
+        }
+
+        static bool HasCustomName(ItemDefinition def, ulong skin, string displayName)
+        {
+            if (string.IsNullOrEmpty(displayName)) return false;
+            return skin > 0 || !def.displayName.english.Equals(displayName, StringComparison.OrdinalIgnoreCase);
         }
 
         void PayForMeal(BasePlayer player, int quantity, Dictionary<string, int> ingredients, Dictionary<string, IngredientItemInfo> ingredientsUsed)
@@ -5102,6 +5280,20 @@ namespace Harmony.Plugins
             return true;
         }
 
+        BagInfo CreateBagInfo(Item item, int slot)
+        {
+            var bagInfo = new BagInfo(item.info.shortname, item.name ?? item.info.displayName.english.ToLower(), item.amount, slot, item.skin, item.instanceData?.dataFloat ?? 0, item.text);
+            bagInfo.refrigeratedSeconds = item.instanceData?.refrigeratedSeconds ?? 0;
+            return bagInfo;
+        }
+
+        void MergeIntoBagSlot(BagInfo slot, Item item)
+        {
+            if (!IsSpoilingItem(item) || item.instanceData == null) return;
+            slot.spoilTime = slot.spoilTime <= 0 ? item.instanceData.dataFloat : Mathf.Min(slot.spoilTime, item.instanceData.dataFloat);
+            slot.refrigeratedSeconds = Mathf.Min(slot.refrigeratedSeconds, item.instanceData.refrigeratedSeconds);
+        }
+
         bool PlaceIngredientIntoBag(BasePlayer player, Item item)
         {
             List<BagInfo> bagData;
@@ -5118,12 +5310,14 @@ namespace Harmony.Plugins
                     if (excess < 0) continue;
                     if (excess < item.amount)
                     {
+                        if (excess > 0) MergeIntoBagSlot(slot, item);
                         slot.amount += excess;
                         item.amount -= excess;
                         partialBagfill = true;
                         continue;
                     }
                 }
+                MergeIntoBagSlot(slot, item);
                 slot.amount += item.amount;
                 if (DropNotificationsEnabled(player.UserIDString)) PrintToChat(player, String.Format(lang.GetMessage("ItemStoredInBag", this, player.UserIDString), amount, item.name != null ? lang.GetMessage(item.name, this, player.UserIDString) : item.info.displayName.english));
                 item.Remove();                
@@ -5138,7 +5332,7 @@ namespace Harmony.Plugins
                 return false;
             }
             
-            bagData.Add(new BagInfo(item.info.shortname, item.name ?? item.info.displayName.english.ToLower(), item.amount, -1, item.skin, item.instanceData?.dataFloat ?? 0, item.text));
+            bagData.Add(CreateBagInfo(item, -1));
             if (DropNotificationsEnabled(player.UserIDString)) PrintToChat(player, String.Format(lang.GetMessage("ItemStoredInBagNewSlot", this, player.UserIDString), amount, item.name != null ? lang.GetMessage(item.name, this, player.UserIDString) : item.info.displayName.english));
             item.Remove();
             return true;
@@ -5168,11 +5362,12 @@ namespace Harmony.Plugins
                     if (IngredientIsMatch(item, slotData))
                     {
                         foundExisting = true;
+                        MergeIntoBagSlot(slotData, item);
                         slotData.amount += item.amount;
                         break;
                     }
                 }
-                if (!foundExisting) bagData.Add(new BagInfo(item.info.shortname, item.name ?? item.info.displayName.english.ToLower(), item.amount, item.position, item.skin, item.instanceData?.dataFloat ?? 0, item.text));
+                if (!foundExisting) bagData.Add(CreateBagInfo(item, item.position));
             }
 
             foreach (var item in items_to_return)
@@ -5223,6 +5418,7 @@ namespace Harmony.Plugins
                 return;
             }
             var container = GetBagContainer(player);
+            if (container == null) return;
             PlayerLootContainer(player, container);
         }
         
@@ -5252,6 +5448,7 @@ namespace Harmony.Plugins
             {
                 var container = GameManager.server.CreateEntity(config.generalSettings.ingredientBagSettings.bag_prefab, new Vector3(player.transform.position.x, player.transform.position.y - 1000, player.transform.position.z)) as StorageContainer;
                 count = 1;
+                container.enableSaving = false;
                 container.Spawn();
                 container.OwnerID = player.userID;
                 count = 2;
@@ -5263,7 +5460,7 @@ namespace Harmony.Plugins
                 container.inventory.capacity = config.generalSettings.ingredientBagSettings.maxSlots;
                 count = 4;
                 if (!IBagContainers.TryGetValue(player.userID, out var existingContainer)) IBagContainers.Add(player.userID, container);
-                else existingContainer = container;
+                else IBagContainers[player.userID] = container;
                 count = 5;
                 List<BagInfo> bagData;
                 if (!pcdData.bag.TryGetValue(player.userID, out bagData)) pcdData.bag.Add(player.userID, bagData = new List<BagInfo>());
@@ -5293,11 +5490,16 @@ namespace Harmony.Plugins
                     count = 7.2f;
                     // Handles all of the items that have slot numbers and stores them in the same slots.
                     var item = ItemManager.CreateByName(slotData.shortname, slotData.amount, slotData.skin);
+                    if (item == null) continue;
                     count = 7.3f;
-                    if (!string.IsNullOrEmpty(slotData.displayName) && !item.info.displayName.english.Equals(slotData.displayName, StringComparison.OrdinalIgnoreCase)) item.name = slotData.displayName;
-                    if (string.IsNullOrEmpty(slotData.text)) item.text = slotData.text;
+                    if (HasCustomName(item.info, slotData.skin, slotData.displayName)) item.name = slotData.displayName;
+                    if (!string.IsNullOrEmpty(slotData.text)) item.text = slotData.text;
                     count = 7.4f;
-                    if (IsSpoilingItem(item)) item.instanceData.dataFloat = Mathf.Max(slotData.spoilTime, 120);
+                    if (IsSpoilingItem(item))
+                    {
+                        item.instanceData.dataFloat = Mathf.Max(slotData.spoilTime, 120);
+                        item.instanceData.refrigeratedSeconds = slotData.refrigeratedSeconds;
+                    }
                     if (!item.MoveToContainer(container.inventory, slotData.slot, true, true)) failMoveSlot.Add(item);
                 }
                 count = 8;
@@ -5305,11 +5507,16 @@ namespace Harmony.Plugins
                 {
                     count = 8.1f;
                     var item = ItemManager.CreateByName(slotData.shortname, slotData.amount, slotData.skin);
+                    if (item == null) continue;
                     count = 8.2f;
-                    if (!string.IsNullOrEmpty(slotData.displayName)) item.name = slotData.displayName;
-                    if (string.IsNullOrEmpty(slotData.text)) item.text = slotData.text;
+                    if (HasCustomName(item.info, slotData.skin, slotData.displayName)) item.name = slotData.displayName;
+                    if (!string.IsNullOrEmpty(slotData.text)) item.text = slotData.text;
                     count = 8.3f;
-                    if (IsSpoilingItem(item)) item.instanceData.dataFloat = Mathf.Max(slotData.spoilTime, 120);
+                    if (IsSpoilingItem(item))
+                    {
+                        item.instanceData.dataFloat = Mathf.Max(slotData.spoilTime, 120);
+                        item.instanceData.refrigeratedSeconds = slotData.refrigeratedSeconds;
+                    }
                     if (!item.MoveToContainer(container.inventory))
                     {
                         count = 8.4f;
@@ -5469,6 +5676,7 @@ namespace Harmony.Plugins
                 foreach (var entry in config.generalSettings.marketSettings.npcSettings.wornItems)
                 {
                     var item = ItemManager.CreateByName(entry.shortname, 1, entry.skin);
+                    if (item == null) continue;
                     if (!item.MoveToContainer(npc.inventory.containerWear)) item.Remove();
                     item.MarkDirty();
                 }
@@ -6214,10 +6422,11 @@ namespace Harmony.Plugins
                 public float spoilTime;
                 public void CheckSpoilTime(Item item)
                 {
-                    if (item.info.GetComponent<ItemModFoodSpoiling>() != null && (spoilTime <= 0 || item.instanceData.dataFloat < spoilTime)) spoilTime = item.instanceData.dataFloat;
+                    if (item.info.GetComponent<ItemModFoodSpoiling>() != null && item.instanceData != null) CheckSpoilTime(item.instanceData.dataFloat);
                 }
                 public void CheckSpoilTime(float spolTime)
                 {
+                    if (spolTime <= 0) return;
                     if (spoilTime <= 0 || spolTime < spoilTime) spoilTime = spolTime;
                 }
             }
@@ -6225,10 +6434,26 @@ namespace Harmony.Plugins
             private void GiveMeal(CookingInfo meal)
             {
                 var item = ItemManager.CreateByName(meal.shortname, 1, meal.skinID);
-                item.name = meal.displayName.ToLower();
-                item.text = meal.displayName.ToLower();
+                if (item == null) return;
+                if (HasCustomName(item.info, meal.skinID, meal.displayName))
+                {
+                    item.name = meal.displayName.ToLower();
+                    item.text = meal.displayName.ToLower();
+                }
                 if (IsSpoilingItem(item)) item.instanceData.dataFloat = meal.spoilTime * 3600;
                 player.GiveItem(item);
+            }
+
+            private void SetRefundSpoilTime(Item item, string ingredient, float spoilTime)
+            {
+                if (!IsSpoilingItem(item)) return;
+                if (spoilTime > 0)
+                {
+                    item.instanceData.dataFloat = spoilTime;
+                    return;
+                }
+                Cooking.IngredientsInfo ingredientData;
+                if (Instance.config.ingredientSettings.ingredients.TryGetValue(ingredient, out ingredientData)) Instance.SetIngredientSpoilTime(item, ingredientData);
             }
 
             private Dictionary<string, IngredientsInfo> ingredientsToRefund = new Dictionary<string, IngredientsInfo>(StringComparer.InvariantCultureIgnoreCase);
@@ -6259,9 +6484,13 @@ namespace Harmony.Plugins
                 {
                     var ingredientProfile = Instance.Ingredients[ingredient.Key];
                     var item = ItemManager.CreateByName(ingredientProfile.shortname, ingredient.Value.amount, ingredientProfile.skin);
-                    item.name = ingredient.Key.ToLower();
-                    if (ingredientProfile.skin > 0) item.text = ingredient.Key.ToLower();
-                    if (IsSpoilingItem(item)) item.instanceData.dataFloat = ingredient.Value.spoilTime;
+                    if (item == null) continue;
+                    if (HasCustomName(item.info, ingredientProfile.skin, ingredient.Key))
+                    {
+                        item.name = ingredient.Key.ToLower();
+                        if (ingredientProfile.skin > 0) item.text = ingredient.Key.ToLower();
+                    }
+                    SetRefundSpoilTime(item, ingredient.Key, ingredient.Value.spoilTime);
 
                     if (player != null && !player.IsDead()) player.GiveItem(item);
                     else item.DropAndTossUpwards(lastKnownPosition);
@@ -6289,7 +6518,9 @@ namespace Harmony.Plugins
                         else
                         {
                             //HarmonyModInterface.Mods.LogInfo("Adding to existing key for refunds.");
-                            ingredientsToRefund[ingredient.Key].amount += ingredient.Value.amount;
+                            var refund = ingredientsToRefund[ingredient.Key];
+                            refund.amount += ingredient.Value.amount;
+                            if (ingredient.Value.spoilTime > 0 && (refund.spoilTime <= 0 || ingredient.Value.spoilTime < refund.spoilTime)) refund.spoilTime = ingredient.Value.spoilTime;
                         }
                     }
                 }
@@ -6297,12 +6528,13 @@ namespace Harmony.Plugins
                 foreach (var ingredient in ingredientsToRefund)
                 {
                     var item = ItemManager.CreateByName(ingredient.Value.shortname, ingredient.Value.amount, ingredient.Value.skin);
-                    if (ingredient.Value.skin != 0)
+                    if (item == null) continue;
+                    if (HasCustomName(item.info, ingredient.Value.skin, ingredient.Key))
                     {
                         item.name = ingredient.Key.ToLower();
                         item.text = ingredient.Key.ToLower();
                     }
-                    if (IsSpoilingItem(item)) item.instanceData.dataFloat = ingredient.Value.spoilTime;
+                    SetRefundSpoilTime(item, ingredient.Key, ingredient.Value.spoilTime);
 
                     if (player != null && player.IsAlive())
                     {
@@ -7183,7 +7415,8 @@ namespace Harmony.Plugins
                 case Buff.Passive_Regen:    
                 case Buff.Damage_Over_Time: 
                 case Buff.Damage:           
-                case Buff.Radiation:        
+                case Buff.Radiation:
+                case Buff.Livestock_Offers:
                     return $"<color=#07a99d>{lang.GetMessage($"{buff}_ToText", this, player.UserIDString)}:</color> {string.Format(lang.GetMessage($"{buff}_MenuDescription", this, player.UserIDString), modifier)}";
                 default: 
                     return $"<color=#07a99d>{lang.GetMessage($"{buff}_ToText", this, player.UserIDString)}:</color> {string.Format(lang.GetMessage($"{buff}_MenuDescription", this, player.UserIDString), modifier * 100)}";
@@ -7194,14 +7427,24 @@ namespace Harmony.Plugins
         void TryCraftDish(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !arg.HasArgs(4)) return;
+            if (!permission.UserHasPermission(player.UserIDString, perm_use) && !permission.UserHasPermission(player.UserIDString, perm_recipemenu_chat)) return;
 
-            var quantity = Convert.ToInt32(arg.GetString(0));
+            int quantity;
+            if (!int.TryParse(arg.GetString(0), out quantity) || quantity < 1) return;
+            if (quantity > 100) quantity = 100;
             var meal = string.Join(" ", arg.Args.Skip(3));
             var coreElement = Convert.ToInt32(arg.GetString(2));
 
             MealInfo mealData;
-            if (!config.mealSettings.meals.TryGetValue(meal, out mealData)) return;
+            if (!config.mealSettings.meals.TryGetValue(meal, out mealData) || !mealData.enabled) return;
+            if (config.mealSettings.cookbookSettings.enabled && (!CachedRecipes.TryGetValue(player.userID, out var learntMeals) || !learntMeals.ContainsKey(meal))) return;
+
+            if (IBagContainers.TryGetValue(player.userID, out var openBag) && openBag != null)
+            {
+                if (player.inventory.loot.entitySource == openBag) player.EndLooting();
+                CloseIngredientBag(player, openBag);
+            }
 
             if (!string.IsNullOrEmpty(mealData.permissionToCook) && !permission.UserHasPermission(player.UserIDString, mealData.permissionToCook))
             {
@@ -8091,7 +8334,7 @@ namespace Harmony.Plugins
         void SendUIMover_CraftQueue(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
             if (!string.IsNullOrEmpty(config.generalSettings.soundSettings.settings_buttons_sound)) SendEffect(player, config.generalSettings.soundSettings.settings_buttons_sound);
 
@@ -8103,7 +8346,7 @@ namespace Harmony.Plugins
         void SendUIMover_BuffIcons(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
             if (!string.IsNullOrEmpty(config.generalSettings.soundSettings.settings_buttons_sound)) SendEffect(player, config.generalSettings.soundSettings.settings_buttons_sound);
 
@@ -8115,7 +8358,7 @@ namespace Harmony.Plugins
         void SendUIMover_CookingButton(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
             if (!string.IsNullOrEmpty(config.generalSettings.soundSettings.settings_buttons_sound)) SendEffect(player, config.generalSettings.soundSettings.settings_buttons_sound);
 
@@ -8127,7 +8370,7 @@ namespace Harmony.Plugins
         void SendUIMover_UIButtons(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
             if (!string.IsNullOrEmpty(config.generalSettings.soundSettings.settings_buttons_sound)) SendEffect(player, config.generalSettings.soundSettings.settings_buttons_sound);
 
@@ -8422,7 +8665,7 @@ namespace Harmony.Plugins
         void HandleUIMove(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
             UIMoverInfo uiData;
             if (!UIMovers.TryGetValue(player, out uiData)) UIMovers.Add(player, uiData = new UIMoverInfo());
@@ -8486,7 +8729,7 @@ namespace Harmony.Plugins
         void SaveIconPosition(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !permission.UserHasPermission(player.UserIDString, perm_admin)) return;
 
             if (!string.IsNullOrEmpty(config.generalSettings.soundSettings.navigation_into_menu_sound)) SendEffect(player, config.generalSettings.soundSettings.navigation_into_menu_sound);
 
@@ -8846,15 +9089,16 @@ namespace Harmony.Plugins
         void BuyMarketOrder(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !arg.HasArgs(3) || !HasMarketAccess(player)) return;
 
             var index = Convert.ToInt32(arg.GetString(0));
-            var amount = Convert.ToInt32(arg.GetString(1));
+            int amount;
+            if (!int.TryParse(arg.GetString(1), out amount) || amount < 1) return;
             var ingredient = string.Join(" ", arg.Args.Skip(2));
 
             IngredientsInfo ingredientData;
 
-            if (!config.ingredientSettings.ingredients.TryGetValue(ingredient, out ingredientData)) return;
+            if (!MarketIngredients.TryGetValue(ingredient, out ingredientData) || ingredientData.marketInfo.marketSellForPrice <= 0) return;
 
             if (ingredientData.marketInfo.availableStock <= 0)
             {
@@ -8863,7 +9107,11 @@ namespace Harmony.Plugins
                 return;
             }
 
-            var totalCost = amount * ingredientData.marketInfo.marketSellForPrice;
+            if (amount > ingredientData.marketInfo.availableStock) amount = ingredientData.marketInfo.availableStock;
+
+            var totalCostLong = (long)amount * ingredientData.marketInfo.marketSellForPrice;
+            if (totalCostLong > int.MaxValue) return;
+            var totalCost = (int)totalCostLong;
             if (!HasEnoughCurrency(player, totalCost))
             {
                 PrintToChat(player, String.Format(lang.GetMessage("MarketCannotAfford", this, player.UserIDString), amount, lang.GetMessage(ingredient, this, player.UserIDString)));
@@ -8882,7 +9130,7 @@ namespace Harmony.Plugins
             if (ingredientData.marketInfo.availableStock < 0) ingredientData.marketInfo.availableStock = 0;
             ConfigRequiresSave = true;
 
-            GiveMeal(player, ingredientData.shortname, ingredientData.skin, ingredient, ingredientData.spoilTime, amount);
+            GiveMeal(player, ingredientData.shortname, ingredientData.skin, ingredient, ingredientData.spoilTime, amount, ingredientData.vanillaSpoilTime);
             PrintToChat(player, String.Format(lang.GetMessage("MarketPurchaseSuccess", this, player.UserIDString), amount, lang.GetMessage(ingredient, this, player.UserIDString)));
 
             FarmersMarket(player, index);
@@ -8890,16 +9138,19 @@ namespace Harmony.Plugins
 
         bool ConfigRequiresSave = false;
 
+        bool HasMarketAccess(BasePlayer player) => permission.UserHasPermission(player.UserIDString, perm_market_cmd) || permission.UserHasPermission(player.UserIDString, perm_market_npc);
+
         [ConsoleCommand("sellmarketorder")]
         void SellMarketOrder(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null || !arg.HasArgs(3) || !HasMarketAccess(player)) return;
             var index = Convert.ToInt32(arg.GetString(0));
-            var amount = Convert.ToInt32(arg.GetString(1));
+            int amount;
+            if (!int.TryParse(arg.GetString(1), out amount) || amount < 1) return;
             var ingredient = string.Join(" ", arg.Args.Skip(2));
             IngredientsInfo ingredientData;
-            if (!config.ingredientSettings.ingredients.TryGetValue(ingredient, out ingredientData)) return;
+            if (!MarketIngredients.TryGetValue(ingredient, out ingredientData) || ingredientData.marketInfo.marketBuyForPrice <= 0) return;
 
             if (ingredientData.marketInfo.availableStock >= ingredientData.marketInfo.maxStock)
             {
@@ -8936,7 +9187,7 @@ namespace Harmony.Plugins
                 else
                 {
                     var split = soldItem.SplitItem(1);
-                    split.RemoveFromContainer(null);
+                    split.RemoveFromContainer();
                     split.Remove();
                 }
                 ItemManager.DoRemoves();
@@ -8955,7 +9206,7 @@ namespace Harmony.Plugins
                         else
                         {
                             var split = item.SplitItem(amount - found);
-                            split.RemoveFromContainer(null);
+                            split.RemoveFromContainer();
                             split.Remove();
                         }
                         //item.UseItem(amount - found);
@@ -9035,11 +9286,11 @@ namespace Harmony.Plugins
             switch (config.generalSettings.marketSettings.currency)
             {
                 case "economics":
-                    var balance = Economics != null && Economics.IsLoaded ? (double)Economics.Call("Balance", player.userID.Get()) : 0;
+                    var balance = Economics != null && Economics.IsLoaded ? Convert.ToDouble(Economics.Call("Balance", player.userID.Get())) : 0;
                     return balance >= amount;
 
                 case "serverrewards":
-                    var srpbalance = ServerRewards != null && ServerRewards.IsLoaded ? (int)ServerRewards.Call("CheckPoints", player.userID.Get()) : 0;
+                    var srpbalance = ServerRewards != null && ServerRewards.IsLoaded ? Convert.ToInt32(ServerRewards.Call("CheckPoints", player.userID.Get())) : 0;
                     return srpbalance >= amount;
 
                 default:
@@ -9348,7 +9599,7 @@ namespace Harmony.Plugins
             [nameof(OnPlayerWound)] = new List<Buff>() { Buff.Wounded_Resist },
             [nameof(CanDropActiveItem)] = new List<Buff>() { Buff.Wounded_Resist },
             [nameof(OnLoseCondition)] = new List<Buff>() { Buff.Condition_Loss_Reduction },
-            [nameof(OnEntityTakeDamage)] = new List<Buff>() { Buff.Barrel_Smasher, Buff.Wealth, Buff.Component_Luck, Buff.Electronics_Luck, Buff.Passive_Regen, Buff.Fall_Damage_resist, Buff.Fire_Resist, Buff.Cold_Resist, Buff.Bleed_Resist, Buff.Radiation_Resist, Buff.Explosion_Resist, Buff.Animal_Resist, Buff.Melee_Resist },
+            [nameof(OnEntityTakeDamage)] = new List<Buff>() { Buff.Barrel_Smasher, Buff.Wealth, Buff.Component_Luck, Buff.Electronics_Luck, Buff.Passive_Regen, Buff.Fall_Damage_resist, Buff.Fire_Resist, Buff.Cold_Resist, Buff.Bleed_Resist, Buff.Radiation_Resist, Buff.Explosion_Resist, Buff.Animal_Resist, Buff.Melee_Resist, Buff.Lifelink },
             [nameof(OnItemCraftFinished)] = new List<Buff>() { Buff.Crafting_Refund, Buff.Duplicator },
             [nameof(OnPayForUpgrade)] = new List<Buff>() { Buff.Upgrade_Refund },
             [nameof(OnResearchCostDetermine)] = new List<Buff>() { Buff.Research_Refund },
@@ -9570,7 +9821,7 @@ namespace Harmony.Plugins
         [HookMethod("IsCustomIngredient")]
         public bool IsCustomIngredient(Item item)
         {
-            return item.name != null && config.ingredientSettings.ingredients.ContainsKey(item.name);
+            return item.name != null && config.ingredientSettings.ingredients.ContainsKey(item.name) && HasCustomName(item.info, item.skin, item.name);
         }
 
         object OnEventJoin(BasePlayer player, string eventName)
@@ -9656,7 +9907,7 @@ namespace Harmony.Plugins
                 }
 
                 removed += item.amount;
-                item.RemoveFromContainer(null);
+                item.RemoveFromContainer();
                 item.Remove();
 
                 container.inventory.MarkDirty();
@@ -9994,7 +10245,7 @@ namespace Harmony.Plugins
             ingredients.AddRange(config.ingredientSettings.ingredients.Where(x => x.Value.enabled));
 
             var ingredient = ingredients.GetRandom();
-            GiveMeal(target, ingredient.Value.shortname, ingredient.Value.skin, ingredient.Key, ingredient.Value.spoilTime, amount);
+            GiveMeal(target, ingredient.Value.shortname, ingredient.Value.skin, ingredient.Key, ingredient.Value.spoilTime, amount, ingredient.Value.vanillaSpoilTime);
 
             Pool.FreeUnmanaged(ref ingredients);
         }
@@ -10006,7 +10257,7 @@ namespace Harmony.Plugins
         {
             var player = arg.Player();
 
-            GiveRecipeCommand(player, arg.FullString.ToString().Split(' '), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
+            GiveRecipeCommand(player, arg.FullString.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
         }
 
         [ChatCommand("giverecipe")]
@@ -10063,7 +10314,7 @@ namespace Harmony.Plugins
         {
             var player = arg.Player();
 
-            GiveMealFromCommand(player, arg.FullString.ToString().Split(' '), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
+            GiveMealFromCommand(player, arg.FullString.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
         }
         
         void GiveMealFromCommand(BasePlayer player, string[] args, CommandType commandType)
@@ -10118,7 +10369,7 @@ namespace Harmony.Plugins
         {
             var player = arg.Player();
 
-            GiveIngredientFromCMD(player, arg.FullString.ToString().Split(' '), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
+            GiveIngredientFromCMD(player, arg.FullString.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
         }
 
         void GiveIngredientFromCMD(BasePlayer player, string[] args, CommandType commandType)
@@ -10150,11 +10401,11 @@ namespace Harmony.Plugins
             IngredientsInfo ingredientData;
             if (!config.ingredientSettings.ingredients.TryGetValue(ingredient, out ingredientData))
             {
-                SendFeedbackToCommandUser(player, $"{ingredient} is not a valid meal.", commandType);
+                SendFeedbackToCommandUser(player, $"{ingredient} is not a valid ingredient.", commandType);
                 return;
             }
 
-            GiveMeal(target, ingredientData.shortname, ingredientData.skin, ingredient, ingredientData.spoilTime, amount);
+            GiveMeal(target, ingredientData.shortname, ingredientData.skin, ingredient, ingredientData.spoilTime, amount, ingredientData.vanillaSpoilTime);
             SendFeedbackToCommandUser(player, $"You gave {amount}x {ingredient} to {target.displayName}.", commandType);
         }
 
@@ -10192,7 +10443,7 @@ namespace Harmony.Plugins
         void SetmarketQuantityConsole(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            SetMarketQuantity(player, arg.FullString.ToString().Split(' '), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
+            SetMarketQuantity(player, arg.FullString.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries), player != null ? CommandType.PlayerConsole : CommandType.ServerConsole);
         }
 
         void SetMarketQuantity(BasePlayer player, string[] args, CommandType commandType)
@@ -10350,6 +10601,190 @@ namespace Harmony.Plugins
         }
 
         #endregion
+
+        #region Livestock patches
+
+        static bool TryGetActiveBuff(ulong userId, Buff buff, out float value)
+        {
+            value = 0f;
+            if (Instance == null || !Instance.BuffManagerDirectory.TryGetValue(userId, out var buffManager) || buffManager == null) return false;
+            return buffManager.GetBuffModifiers.TryGetValue(buff, out value);
+        }
+
+        static int RollAmount(float value)
+        {
+            var whole = Mathf.FloorToInt(value);
+            if (UnityEngine.Random.value < value - whole) whole++;
+            return whole;
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(SingleUseMissionStorageContainer), "Server_UpdateNoteText")]
+        internal class Cooking_MissionNote_Update_Patch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix(SingleUseMissionStorageContainer __instance, BaseEntity.RPCMessage msg)
+            {
+                if (Instance == null) return true;
+                var slot = __instance?.inventory?.GetSlot(0);
+                if (slot == null) return true;
+                var card = Instance.config.mealSettings.cookbookSettings.blueprint;
+                if (slot.skin == card.skin && slot.info.shortname == card.shortname) return false;
+                return !Instance.IsIngredientBag(slot);
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(global::note), nameof(global::note.update))]
+        internal class Cooking_Note_Update_Patch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix(ConsoleSystem.Arg arg)
+            {
+                if (Instance == null) return true;
+                var player = arg.Player();
+                if (player == null || player.inventory == null) return true;
+                var item = player.inventory.FindItemByUID(arg.GetItemID(0));
+                if (item == null) return true;
+                var card = Instance.config.mealSettings.cookbookSettings.blueprint;
+                if (item.skin == card.skin && item.info.shortname == card.shortname) return false;
+                return !Instance.IsIngredientBag(item);
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(LivestockAnimal), nameof(LivestockAnimal.AddFamiliarity))]
+        internal class Cooking_LivestockAnimal_AddFamiliarity_Patch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(LivestockAnimal __instance, ulong userId, float seconds, LivestockAnimal.FamiliarityReason reason)
+            {
+                if (seconds <= 0f || reason != LivestockAnimal.FamiliarityReason.Handled) return;
+                if (!TryGetActiveBuff(userId, Buff.Livestock_Handling, out var value)) return;
+
+                __instance.CreditFamiliarity(userId, seconds * value);
+                __instance.RefreshHusbandryClocks();
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(LivestockAnimal), "HandlingCreditFor")]
+        internal class Cooking_LivestockAnimal_HandlingCreditFor_Patch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(BasePlayer player, ref float __result)
+            {
+                if (player == null) return;
+                var floor = ConVar.Livestock.calmedTrustFloor;
+                if (floor <= 0f || __result >= floor) return;
+                if (!TryGetActiveBuff(player.userID, Buff.Livestock_Calm, out _)) return;
+
+                __result = floor;
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(Cow), nameof(Cow.TryMilk))]
+        internal class Cooking_Cow_TryMilk_Patch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(Cow __instance, BasePlayer player, bool __result)
+            {
+                if (!__result || player == null) return;
+
+                if (__instance.MilkDef != null && TryGetActiveBuff(player.userID, Buff.Husbandry_Yield, out var yield))
+                {
+                    var bonus = RollAmount(__instance.MilkedAmount() * yield);
+                    if (bonus > 0) player.GiveItem(ItemManager.Create(__instance.MilkDef, bonus));
+                }
+
+                if (TryGetActiveBuff(player.userID, Buff.Husbandry_Cooldown, out var reduction))
+                    __instance.milkTimer.Start(__instance.milkTimer.Remaining * Mathf.Max(1f - reduction, 0f));
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(Sheep), "GiveShearItems")]
+        internal class Cooking_Sheep_GiveShearItems_Patch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(Sheep __instance, BasePlayer player)
+            {
+                if (player == null || !TryGetActiveBuff(player.userID, Buff.Husbandry_Yield, out var yield)) return;
+
+                foreach (var shearItem in __instance.ShearItems)
+                {
+                    if (shearItem == null || shearItem.itemDef == null) continue;
+                    var bonus = RollAmount(__instance.ShornAmount(shearItem) * yield);
+                    if (bonus <= 0) continue;
+
+                    var item = ItemManager.Create(shearItem.itemDef, bonus);
+                    item.SetItemOwnership(player, ItemOwnershipPhrases.GatheredPhrase);
+                    player.GiveItem(item, BaseEntity.GiveItemReason.ResourceHarvested, GiveItemOptions.BackpackOverflow);
+                }
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(Sheep), nameof(Sheep.Shear))]
+        internal class Cooking_Sheep_Shear_Patch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(Sheep __instance, BasePlayer player, bool __result)
+            {
+                if (!__result || player == null || !TryGetActiveBuff(player.userID, Buff.Husbandry_Cooldown, out var reduction)) return;
+
+                __instance.shearTimer.Start(__instance.shearTimer.Remaining * Mathf.Max(1f - reduction, 0f));
+            }
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(LivestockVendor), nameof(LivestockVendor.Server_SelectAnimal))]
+        internal class Cooking_LivestockVendor_Server_SelectAnimal_Patch
+        {
+            public static BasePlayer SellingPlayer;
+
+            [HarmonyPrefix]
+            private static void Prefix(BasePlayer player) => SellingPlayer = player;
+
+            [HarmonyFinalizer]
+            private static void Finalizer() => SellingPlayer = null;
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(LivestockVendor), nameof(LivestockVendor.Server_SelectWool))]
+        internal class Cooking_LivestockVendor_Server_SelectWool_Patch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(BasePlayer player) => Cooking_LivestockVendor_Server_SelectAnimal_Patch.SellingPlayer = player;
+
+            [HarmonyFinalizer]
+            private static void Finalizer() => Cooking_LivestockVendor_Server_SelectAnimal_Patch.SellingPlayer = null;
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(LivestockVendor), "RollOffers")]
+        internal class Cooking_LivestockVendor_RollOffers_Patch
+        {
+            [HarmonyPostfix]
+            [HarmonyPriority(Priority.High)]
+            private static void Postfix(LivestockVendor __instance, LivestockVendor.Negotiation negotiation, NetworkableId subjectId, string subjectName, float quality, ref LivestockVendor.Offer[] __result)
+            {
+                var player = Cooking_LivestockVendor_Server_SelectAnimal_Patch.SellingPlayer;
+                if (__result == null || player == null || !TryGetActiveBuff(player.userID, Buff.Livestock_Offers, out var extraOffers)) return;
+
+                var original = __result.Length;
+                var total = Mathf.Min(original + RollAmount(extraOffers), byte.MaxValue);
+                if (total <= original) return;
+
+                var offers = new LivestockVendor.Offer[total];
+                Array.Copy(__result, offers, original);
+                for (int i = original; i < total; i++)
+                    offers[i] = __instance.RollOffer(negotiation, subjectId, subjectName, quality);
+                __result = offers;
+            }
+        }
+
+        #endregion
     }
 }
- 

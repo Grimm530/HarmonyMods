@@ -14,6 +14,11 @@ public static class Patch_BaseCombatEntity_Hurt
     static void Postfix(BaseCombatEntity __instance, HitInfo info)
     {
         if (info?.HitEntity != __instance) return;
+        if (__instance is PatrolHelicopter heli)
+        {
+            CombatTracking.NoteHeliAttacker(heli, info.InitiatorPlayer);
+            return;
+        }
         if (__instance is not BasePlayer victim) return;
 
         var attacker = info.InitiatorPlayer;

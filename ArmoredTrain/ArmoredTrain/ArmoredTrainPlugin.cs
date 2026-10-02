@@ -2794,10 +2794,10 @@ namespace Harmony.Plugins
                 AutoTurret autoTurret = BuildManager.SpawnChildEntity(trainCar, "assets/prefabs/npc/autoturret/autoturret_deployed.prefab", locationConfig, 0, false) as AutoTurret;
                 BuildManager.UpdateEntityMaxHealth(autoTurret, turretConfig.Hp);
 
-                autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameWeapon), null);
+                autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameWeapon));
                 
                 if (turretConfig.CountAmmo > 0)
-                    autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameAmmo, turretConfig.CountAmmo), null);
+                    autoTurret.inventory.Insert(ItemManager.CreateByName(turretConfig.ShortNameAmmo, turretConfig.CountAmmo));
 
                 autoTurret.UpdateFromInput(IsAggressive() ? 10 : 0, 0);
                 autoTurret.isLootable = false;
@@ -2825,7 +2825,7 @@ namespace Harmony.Plugins
                 BuildManager.UpdateEntityMaxHealth(samSite, samSiteConfig.Hp);
 
                 if (samSiteConfig.CountAmmo > 0)
-                    samSite.inventory.Insert(ItemManager.CreateByName("ammo.rocket.sam", samSiteConfig.CountAmmo), null);
+                    samSite.inventory.Insert(ItemManager.CreateByName("ammo.rocket.sam", samSiteConfig.CountAmmo));
                 
                 samSite.UpdateFromInput(IsAggressive() ? 100 : 0, 0);
                 samSite.isLootable = false;
