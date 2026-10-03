@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Rust.Ai.Gen2;
 using UnityEngine;
 using Building = BuildingManager.Building;
 using Pool = Facepunch.Pool;
@@ -492,6 +493,7 @@ namespace LimitEntities
 
         public void Shutdown()
         {
+            LivestockLimits.Reset();
             _initialized = false;
             _cache.PlayersData.Clear();
             _cache.Buildings.Clear();
@@ -774,6 +776,7 @@ namespace LimitEntities
                 _cache.EntitiesTracked.Add(entity.net.ID.Value);
             }
             Log($"Cached entities for {_cache.PlayersData.Count} players ({i}/{count} scanned)", LogLevel.Debug);
+            LivestockLimits.Install(this);
         }
 
         #endregion
@@ -1012,6 +1015,8 @@ namespace LimitEntities
 
         public void OnEntityKill(BaseEntity entity)
         {
+            if (entity is LivestockAnimal livestock)
+                LivestockLimits.OnKilled(livestock);
             if (!_initialized || entity == null || !entity.IsValid()) return;
             if (!_cache.EntitiesTracked.Contains(entity.net.ID.Value)) return;
             if (!entity.OwnerID.IsSteamId()) return;

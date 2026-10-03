@@ -65,3 +65,9 @@ Unload Oxide `LimitEntities` plugin first if present.
 ## Horses
 
 Do **not** place horses under LimitEntities — use Shop `Horse Limits` / `shop.horse` instead.
+
+## Livestock
+
+Cows and sheep are limited to **10 of each prefab** (cow, bull, calf, sheep, lamb, and any other livestock prefab) per tool cupboard owner. The owner is the cupboard's `OwnerID`, or the first authorized player if that is empty.
+
+Animals with no player cupboard are not counted. `cowfix.purge` deletes those. Births past the cap are removed. A calf does not grow into an adult prefab that is already at 10; it tries again on the next grow timer. Putting a livestock prefab path under `Limits Entities` overrides the 10.
